@@ -1,0 +1,22 @@
+[package]
+name = "libclient"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-trait = "0.1.51"
+libc = "0.2.107"
+log = {version = "0.4.14", features = ["std"] }
+raw-window-handle = "0.4.2"
+reqwest = { version = "0.11.6", features = ["json"] }
+serde = {version = "1.0.130", features = ["derive"] }
+serde_json = "1.0.70"
+tokio = { version = "1.13.1", features = ["rt-multi-thread", "sync"] }
+
+libkynput-rs = "0.1.0"
+libkynput-sys = "0.1.0"
+vlc-rs = "0.3.0"
+
+[features]
+capi = []
+default = []

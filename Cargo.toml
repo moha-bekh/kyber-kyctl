@@ -1,0 +1,13 @@
+[workspace]
+
+members = [
+    "libclient",
+    "libclient-rs",
+]
+
+exclude = [
+    "libkynput",
+]
+
+[patch.crates-io]
+vlc-rs = { path = "libclient/external/vlc-rs" }

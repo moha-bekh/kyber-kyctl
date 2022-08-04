@@ -1,0 +1,153 @@
+variables:
+  GIT_SUBMODULE_STRATEGY: recursive
+  DEBIAN_IMAGE: registry.gitlab.com/kyber-labs/kyber-streamer/docker-images/debian-bullseye:20220804152839
+  WIN64_IMAGE: registry.gitlab.com/kyber-labs/kyber-streamer/docker-images/debian-win64:20220808092349
+
+stages:
+  - lint
+  - contrib
+  - build
+  - misc
+
+lint:
+  stage: lint
+  image: $DEBIAN_IMAGE
+  tags:
+    - docker
+  only:
+    - main
+    - merge_requests
+    - tags
+  script:
+    - cargo fmt -- --check
+  cache: []
+
+contrib-debian-buster-x86_64:
+  stage: contrib
+  image: $DEBIAN_IMAGE
+  tags:
+    - docker
+  only:
+    - main
+    - merge_requests
+    - tags
+  script: |
+    export KYBER_DIRNAME=rootfs
+    export KYBER_PREFIX=$(pwd)/$KYBER_DIRNAME
+    # Build contribs
+    ./libclient/contrib/build-linux.sh -o $KYBER_PREFIX
+    # Prepare rootfs to be shared to other jobs
+    cd $KYBER_PREFIX
+    ../scripts/change_prefix.sh $(pwd)
+    cd -
+  artifacts:
+    paths:
+      - rootfs
+
+contrib-windows-x86_64:
+  stage: contrib
+  image: $WIN64_IMAGE
+  tags:
+    - docker
+  only:
+    - main
+    - merge_requests
+    - tags
+  script: |
+    export KYBER_DIRNAME=rootfs
+    export KYBER_PREFIX=$(pwd)/$KYBER_DIRNAME
+    # Build contribs
+    ./libclient/contrib/build-win32.sh -o $KYBER_PREFIX
+    # Prepare rootfs to be shared to other jobs
+    cd $KYBER_PREFIX
+    ../scripts/change_prefix.sh $(pwd)
+    cd -
+  artifacts:
+    paths:
+      - rootfs
+
+build-debian-buster-x86_64:
+  stage: build
+  image: $DEBIAN_IMAGE
+  tags:
+    - docker
+  only:
+    - main
+    - merge_requests
+    - tags
+  needs:
+    - contrib-debian-buster-x86_64
+  script: |
+    export KYBER_DIRNAME=rootfs
+    export KYBER_PREFIX=$(pwd)/$KYBER_DIRNAME
+    # Configure imported rootfs
+    cd $KYBER_PREFIX
+    ../scripts/change_prefix.sh
+    cd -
+    # Build component
+    ./build-linux.sh -k -s -o $KYBER_PREFIX
+
+clippy-debian-buster-x86_64:
+  stage: misc
+  image: $DEBIAN_IMAGE
+  tags:
+    - docker
+  only:
+    - main
+    - merge_requests
+    - tags
+  needs:
+    - contrib-debian-buster-x86_64
+  script: |
+    export KYBER_DIRNAME=rootfs
+    export KYBER_PREFIX=$(pwd)/$KYBER_DIRNAME
+    # Configure imported rootfs
+    cd $KYBER_PREFIX
+    ../scripts/change_prefix.sh
+    cd -
+    # Build component
+    ./build-linux.sh -k -s -o $KYBER_PREFIX
+    ./build-linux.sh -k -s -c -o $KYBER_PREFIX
+
+build-windows-x86_64:
+  stage: build
+  image: $WIN64_IMAGE
+  tags:
+    - docker
+  only:
+    - main
+    - merge_requests
+    - tags
+  needs:
+    - contrib-windows-x86_64
+  script: |
+    export KYBER_DIRNAME=rootfs
+    export KYBER_PREFIX=$(pwd)/$KYBER_DIRNAME
+    # Configure imported rootfs
+    cd $KYBER_PREFIX
+    ../scripts/change_prefix.sh
+    cd -
+    # Build component
+    ./build-win32.sh -k -s -o $KYBER_PREFIX
+
+clippy-windows-x86_64:
+  stage: misc
+  image: $WIN64_IMAGE
+  tags:
+    - docker
+  only:
+    - main
+    - merge_requests
+    - tags
+  needs:
+    - contrib-windows-x86_64
+  script: |
+    export KYBER_DIRNAME=rootfs
+    export KYBER_PREFIX=$(pwd)/$KYBER_DIRNAME
+    # Configure imported rootfs
+    cd $KYBER_PREFIX
+    ../scripts/change_prefix.sh
+    cd -
+    # Build component
+    ./build-win32.sh -k -s -o $KYBER_PREFIX
+    ./build-win32.sh -k -s -c -o $KYBER_PREFIX

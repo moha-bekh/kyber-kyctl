@@ -1,0 +1,5 @@
+.cargo
+libclient/contrib/work
+libkynput
+rootfs*
+target
