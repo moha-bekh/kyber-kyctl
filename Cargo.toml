@@ -1,0 +1,6 @@
+[workspace]
+
+members = [
+    "controller",
+    "windows_service",
+]
