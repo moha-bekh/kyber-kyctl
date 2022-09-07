@@ -3,38 +3,16 @@ use log::{info, LevelFilter};
 use tokio::sync::Mutex;
 
 use actix_web::{get, middleware, post, web, App, HttpRequest, HttpResponse, HttpServer};
-use serde::{Deserialize, Serialize};
 
 mod controller;
 mod error;
 mod input_server;
+mod requests;
 mod streamer_video;
 mod utils;
 
 use controller::Controller;
-
-#[derive(Debug, Deserialize, Serialize)]
-struct GenerateSdpRequest {
-    yuv444: bool,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct GenerateSdpResponse {
-    params: String,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct StartRequest {
-    ip: String,
-    port: u16,
-    yuv444: bool,
-    inputs: bool,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct StartResponse {
-    ip: String,
-}
+use requests::{GenerateSdpRequest, GenerateSdpResponse, StartRequest, StartResponse};
 
 #[get("/hello")]
 async fn hello(req: HttpRequest) -> HttpResponse {
@@ -52,11 +30,11 @@ async fn hello(req: HttpRequest) -> HttpResponse {
 #[post("/generate_sdp")]
 async fn generate_sdp(
     ctrl: web::Data<Mutex<Controller>>,
-    start_req: web::Json<GenerateSdpRequest>,
+    request: web::Json<GenerateSdpRequest>,
 ) -> HttpResponse {
     let ctrl = ctrl.lock().await;
 
-    let ret = ctrl.generate_video_sdp(start_req.yuv444).await;
+    let ret = ctrl.generate_video_sdp(request.into_inner()).await;
     match ret {
         Ok(params) => {
             info!("SDP generated: {}", params);
@@ -73,18 +51,11 @@ async fn generate_sdp(
 #[post("/start")]
 async fn start(
     ctrl: web::Data<Mutex<Controller>>,
-    start_req: web::Json<StartRequest>,
+    request: web::Json<StartRequest>,
 ) -> HttpResponse {
     let mut ctrl = ctrl.lock().await;
 
-    let ret = ctrl
-        .start(
-            &start_req.ip,
-            start_req.port,
-            start_req.yuv444,
-            start_req.inputs,
-        )
-        .await;
+    let ret = ctrl.start(request.into_inner()).await;
     match ret {
         Ok(_) => {
             info!("Stream started");

@@ -7,6 +7,7 @@ use tokio::time::{delay_for, Duration};
 
 use crate::error::{Error, Result};
 use crate::input_server;
+use crate::requests::{GenerateSdpRequest, StartRequest};
 use crate::streamer_video;
 
 pub struct Controller {
@@ -22,7 +23,7 @@ impl Controller {
         }
     }
 
-    pub async fn generate_video_sdp(&self, yuv444: bool) -> Result<String> {
+    pub async fn generate_video_sdp(&self, request: GenerateSdpRequest) -> Result<String> {
         // Run the streamer once to generate the SDP
         let sdp_path = env::temp_dir().join("video.sdp");
         let ret = fs::remove_file(sdp_path.clone()).await;
@@ -38,7 +39,7 @@ impl Controller {
             .start(
                 "localhost",
                 30000,
-                yuv444,
+                request.yuv444,
                 Some(
                     sdp_path
                         .clone()
@@ -81,7 +82,7 @@ impl Controller {
         Err(Error::Rejected)
     }
 
-    pub async fn start(&mut self, ip: &str, port: u16, yuv444: bool, inputs: bool) -> Result<()> {
+    pub async fn start(&mut self, request: StartRequest) -> Result<()> {
         // Stop streamer if any
         if let Some(streamer) = self.streamer_video.as_mut() {
             info!("Stop running streamer");
@@ -103,13 +104,15 @@ impl Controller {
         }
 
         // SDP file will contain some required parameters on client side.
-        info!("Start video. ip: {} - port: {}", ip, port);
+        info!("Start video. ip: {} - port: {}", request.ip, request.port);
         let mut streamer_video = streamer_video::Handler::new();
-        streamer_video.start(ip, port, yuv444, None).await?;
+        streamer_video
+            .start(request.ip.as_str(), request.port, request.yuv444, None)
+            .await?;
 
         self.streamer_video = Some(streamer_video);
 
-        if inputs {
+        if request.inputs {
             let mut input_server = input_server::Handler::new();
             input_server.start().await?;
 
