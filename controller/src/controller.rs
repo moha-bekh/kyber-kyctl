@@ -7,22 +7,22 @@ use tokio::time::{delay_for, Duration};
 
 use crate::error::{Error, Result};
 use crate::input_server;
-use crate::streamer;
+use crate::streamer_video;
 
 pub struct Controller {
-    streamer: Option<streamer::Handler>,
+    streamer_video: Option<streamer_video::Handler>,
     input_server: Option<input_server::Handler>,
 }
 
 impl Controller {
     pub fn new() -> Self {
         Self {
-            streamer: None,
+            streamer_video: None,
             input_server: None,
         }
     }
 
-    pub async fn generate_sdp(&self, yuv444: bool) -> Result<String> {
+    pub async fn generate_video_sdp(&self, yuv444: bool) -> Result<String> {
         // Run the streamer once to generate the SDP
         let sdp_path = env::temp_dir().join("video.sdp");
         let ret = fs::remove_file(sdp_path.clone()).await;
@@ -33,7 +33,7 @@ impl Controller {
             }
         }
 
-        let mut streamer = streamer::Handler::new();
+        let mut streamer = streamer_video::Handler::new();
         streamer
             .start(
                 "localhost",
@@ -83,13 +83,13 @@ impl Controller {
 
     pub async fn start(&mut self, ip: &str, port: u16, yuv444: bool, inputs: bool) -> Result<()> {
         // Stop streamer if any
-        if let Some(streamer) = self.streamer.as_mut() {
+        if let Some(streamer) = self.streamer_video.as_mut() {
             info!("Stop running streamer");
 
             if streamer.is_running() {
                 streamer.stop().await?;
             }
-            self.streamer = None
+            self.streamer_video = None
         }
 
         // Stop input_server if any
@@ -103,11 +103,11 @@ impl Controller {
         }
 
         // SDP file will contain some required parameters on client side.
-        info!("Start. ip: {} - port: {}", ip, port);
-        let mut streamer = streamer::Handler::new();
-        streamer.start(ip, port, yuv444, None).await?;
+        info!("Start video. ip: {} - port: {}", ip, port);
+        let mut streamer_video = streamer_video::Handler::new();
+        streamer_video.start(ip, port, yuv444, None).await?;
 
-        self.streamer = Some(streamer);
+        self.streamer_video = Some(streamer_video);
 
         if inputs {
             let mut input_server = input_server::Handler::new();
@@ -125,10 +125,10 @@ impl Controller {
     pub async fn stop(&mut self) -> Result<()> {
         info!("Stop");
 
-        match self.streamer.as_mut() {
+        match self.streamer_video.as_mut() {
             Some(streamer) => {
                 streamer.stop().await?;
-                self.streamer = None
+                self.streamer_video = None
             }
             None => {
                 info!("No active streamer");

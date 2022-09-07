@@ -29,7 +29,7 @@ impl Handler {
         }
 
         // Build mandatory parameters
-        let script_path = utils::get_resource_path("txproto_stream.lua");
+        let script_path = utils::get_resource_path("txproto_stream_video.lua");
         let mut params = format!(
             "-s {} {} {} {}",
             script_path.to_str().ok_or(Error::Rejected)?,

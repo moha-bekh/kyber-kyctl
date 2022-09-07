@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 mod controller;
 mod error;
 mod input_server;
-mod streamer;
+mod streamer_video;
 mod utils;
 
 use controller::Controller;
@@ -56,7 +56,7 @@ async fn generate_sdp(
 ) -> HttpResponse {
     let ctrl = ctrl.lock().await;
 
-    let ret = ctrl.generate_sdp(start_req.yuv444).await;
+    let ret = ctrl.generate_video_sdp(start_req.yuv444).await;
     match ret {
         Ok(params) => {
             info!("SDP generated: {}", params);
