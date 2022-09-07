@@ -118,6 +118,7 @@ export PKG_CONFIG_PATH=$OUT_DIR/lib/pkgconfig:$OUT_DIR/lib/x86_64-linux-gnu/pkgc
 case "$ACTION" in
     "build")
         cargo cinstall -p libclient --release --prefix=$OUT_DIR
+        cargo build
     ;;
     "clippy")
         cargo clippy --features capi -- -D warnings -A clippy::missing_safety_doc

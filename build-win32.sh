@@ -126,6 +126,8 @@ case "$ACTION" in
             --prefix=$OUT_DIR \
             --target x86_64-pc-windows-gnu \
             --dlltool x86_64-w64-mingw32-dlltool
+
+        cargo build --target x86_64-pc-windows-gnu
     ;;
     "clippy")
         cargo clippy --target x86_64-pc-windows-gnu --features capi -- -D warnings -A clippy::missing_safety_doc
