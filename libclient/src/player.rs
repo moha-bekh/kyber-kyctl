@@ -1,4 +1,4 @@
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 use std::path::PathBuf;
 use std::{env, fs};
 
@@ -6,6 +6,10 @@ use crate::error::{Error, PlayerError, Result};
 
 use super::window_handle::WindowHandle;
 use super::{Message, MessageProxy};
+
+// RTP seems to use multiple port for a session. Fix a large offset to get
+// a safe port.
+const AUDIO_PORT_OFFSET: u16 = 10;
 
 fn create_video_sdp_file(streamer: &str, video_port: u16, sdp_param: String) -> Result<PathBuf> {
     // Prepare SDP
@@ -32,9 +36,35 @@ fn create_video_sdp_file(streamer: &str, video_port: u16, sdp_param: String) -> 
     Ok(sdp_path)
 }
 
+fn create_audio_sdp_file(streamer: &str, audio_port: u16) -> Result<PathBuf> {
+    // Prepare SDP
+    let sdp_path = env::temp_dir().join("audio.sdp");
+
+    let sdp = format!(
+        "v=0\n\
+        o=- 0 0 IN IP4 {streamer_ip}\n\
+        s=No Name\n\
+        c=IN IP4 {streamer_ip}\n\
+        t=0 0\n\
+        a=tool:libavformat 59.16.100\n\
+        m=audio {audio_port} RTP/AVP 97\n\
+        b=AS:128\n\
+        a=rtpmap:97 opus/48000/2\n\
+        a=fmtp:97 sprop-stereo=1\n",
+        streamer_ip = streamer,
+        audio_port = audio_port,
+    );
+
+    debug!("Write audio SDP to {:?}", sdp_path);
+    fs::write(&sdp_path, sdp)?;
+
+    Ok(sdp_path)
+}
+
 pub struct Player {
     instance: vlc::Instance,
     video_mediaplayer: Option<vlc::MediaPlayer>,
+    audio_mediaplayer: Option<vlc::MediaPlayer>,
     window_handle: WindowHandle,
     message_proxy: MessageProxy,
 }
@@ -62,6 +92,7 @@ impl Player {
         Ok(Self {
             instance,
             video_mediaplayer: None,
+            audio_mediaplayer: None,
             window_handle,
             message_proxy,
         })
@@ -124,18 +155,59 @@ impl Player {
         Ok(())
     }
 
-    pub fn play(&mut self, ip: &str, video_port: u16, sdp_param: String) -> Result<()> {
-        self.play_video(ip, video_port, sdp_param)?;
+    fn play_audio(&mut self, ip: &str, audio_port: u16) -> Result<()> {
+        let sdp_path = create_audio_sdp_file(ip, audio_port)?;
+
+        let mrl = format!(
+            "file:///{}",
+            sdp_path.to_str().ok_or(Error::InvalidUnicodeStr)?
+        );
+
+        let md = vlc::Media::new_location(&mrl).ok_or(PlayerError::MediaCreateFailed)?;
+
+        let mdp =
+            vlc::MediaPlayer::new(&self.instance).ok_or(PlayerError::MediaPlayerCreateFailed)?;
+        mdp.set_media(&md);
+
+        // Play
+        mdp.play().or(Err(PlayerError::PlayFailed))?;
+
+        self.audio_mediaplayer = Some(mdp);
 
         Ok(())
     }
 
-    pub async fn stop_async(&mut self) -> Result<()> {
-        let mdp = self
-            .video_mediaplayer
-            .as_mut()
-            .ok_or(PlayerError::AlreadyStopped)?;
+    pub fn play(
+        &mut self,
+        ip: &str,
+        video_port: u16,
+        sdp_param: String,
+        audio: bool,
+    ) -> Result<()> {
+        // Video playback
+        info!("Play video from {ip}:{video_port}");
+        let ret = self.play_video(ip, video_port, sdp_param);
+        if let Err(err) = ret {
+            error!("Fail to start video playback: {:?}", err);
+            return Err(err);
+        }
 
+        // Audio playback
+        if audio {
+            let audio_port = video_port + AUDIO_PORT_OFFSET;
+
+            info!("Play audio from {ip}:{audio_port}");
+            let ret = self.play_audio(ip, audio_port);
+            if let Err(err) = ret {
+                error!("Fail to start audio playback: {:?}", err);
+                return Err(err);
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn mdp_stop_async(mdp: &vlc::MediaPlayer) -> Result<()> {
         let (tx, mut rx) = tokio::sync::mpsc::channel(1);
 
         let cb = move |event, _| match event {
@@ -154,6 +226,25 @@ impl Player {
 
         mdp.stop();
         let _ = rx.recv().await;
+
+        Ok(())
+    }
+
+    pub async fn stop_async(&mut self) -> Result<()> {
+        if let Some(audio_mediaplayer) = self.audio_mediaplayer.as_mut() {
+            info!("Stop audio player");
+            let ret = Self::mdp_stop_async(audio_mediaplayer).await;
+            if ret.is_err() {
+                warn!("Failed to stop audio player");
+            }
+        }
+
+        info!("Stop video player");
+        let video_mediaplayer = self
+            .video_mediaplayer
+            .as_mut()
+            .ok_or(PlayerError::AlreadyStopped)?;
+        Self::mdp_stop_async(video_mediaplayer).await?;
 
         Ok(())
     }

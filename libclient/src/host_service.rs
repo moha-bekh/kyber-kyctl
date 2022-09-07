@@ -65,6 +65,7 @@ pub async fn start_stream(
     local_ip: &str,
     video_port: u16,
     yuv444: bool,
+    audio: bool,
     inputs: bool,
 ) -> Result<()> {
     let client = reqwest::Client::new();
@@ -79,6 +80,7 @@ pub async fn start_stream(
         "ip": local_ip,
         "port": video_port,
         "yuv444": yuv444,
+        "audio": audio,
         "inputs": inputs,
     });
 

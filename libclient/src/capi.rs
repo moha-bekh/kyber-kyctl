@@ -141,6 +141,7 @@ pub unsafe extern "C" fn libclient_config_default(
         window_handle: window_handle.handle,
         yuv444: false,
         inputs: true,
+        audio: false,
     };
 
     *out_config = Box::into_raw(Box::new(libclient_ClientConfig { config }));
@@ -161,6 +162,14 @@ pub unsafe extern "C" fn libclient_config_set_inputs(
     inputs: bool,
 ) {
     (*config).config.inputs = inputs;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_config_set_audio(
+    config: *mut libclient_ClientConfig,
+    audio: bool,
+) {
+    (*config).config.audio = audio;
 }
 
 #[no_mangle]

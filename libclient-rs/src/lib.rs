@@ -100,6 +100,10 @@ impl Config {
     pub fn set_inputs(&self, inputs: bool) {
         unsafe { sys::libclient_config_set_inputs(self.ptr, inputs) }
     }
+
+    pub fn set_audio(&self, audio: bool) {
+        unsafe { sys::libclient_config_set_audio(self.ptr, audio) }
+    }
 }
 
 impl Drop for Config {

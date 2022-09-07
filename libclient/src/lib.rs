@@ -82,13 +82,14 @@ impl Handler {
 
         let mut player =
             player::Player::new(self.config.window_handle, self.create_message_proxy())?;
-        player.play(&local_ip, RTP_PORT, sdp_param)?;
+        player.play(&local_ip, RTP_PORT, sdp_param, self.config.audio)?;
 
         host_service::start_stream(
             &self.config.streamer_ip,
             &local_ip,
             RTP_PORT,
             self.config.yuv444,
+            self.config.audio,
             self.config.inputs,
         )
         .await?;
@@ -108,20 +109,28 @@ impl Handler {
     }
 
     async fn stop(&mut self) -> Result<()> {
+        info!("Stop requested");
         if let Some(player) = self.player.as_mut() {
+            info!("Stop player");
             player.stop_async().await?;
+            info!("Player stopped");
         }
 
         if let Some(input_service) = self.input_service.as_mut() {
+            info!("Stop input service");
             input_service.stop().await?;
+            info!("Input service stopped");
         }
 
+        info!("Request to stop streaming services");
         let ret = host_service::stop_stream(&self.config.streamer_ip).await;
         if let Err(err) = ret {
             warn!(
                 "Stop stream rejected by controller ({:?}). Stop client anyway.",
                 err
             );
+        } else {
+            info!("Host service stopped");
         }
 
         let mut event_manager = self.event_manager.lock()?;
@@ -173,6 +182,7 @@ pub struct ClientConfig {
     pub input_pipeline: Pipeline,
     pub yuv444: bool,
     pub inputs: bool,
+    pub audio: bool,
 }
 
 pub struct Client {
