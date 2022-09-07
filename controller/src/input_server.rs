@@ -35,8 +35,9 @@ impl Handler {
     pub async fn stop(&mut self) -> Result<()> {
         match self.child.as_mut() {
             Some(child) => {
-                child.kill()?;
-                let status = child.await.expect("wait() failed");
+                child.kill().await.expect("kill() failed");
+
+                let status = child.wait().await.expect("wait() failed");
                 info!("Input server exited with: {}", status);
                 Ok(())
             }

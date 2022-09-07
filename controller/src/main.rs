@@ -102,7 +102,7 @@ pub async fn run() -> std::io::Result<()> {
             .service(hello)
             .service(generate_sdp)
             .service(start)
-            .data(web::JsonConfig::default().limit(1024))
+            .app_data(web::JsonConfig::default().limit(1024))
             .service(stop)
     })
     .bind("0.0.0.0:8080")?

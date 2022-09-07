@@ -3,7 +3,7 @@ use std::io;
 
 use log::{info, warn};
 use tokio::fs;
-use tokio::time::{delay_for, Duration};
+use tokio::time::{self, Duration};
 
 use crate::error::{Error, Result};
 use crate::input_server;
@@ -70,7 +70,7 @@ impl Controller {
                 }
                 Err(_) => {
                     info!("Waiting for SDP file");
-                    delay_for(Duration::from_millis(100)).await;
+                    time::sleep(Duration::from_millis(100)).await;
                     continue;
                 }
             };
@@ -140,7 +140,7 @@ impl Controller {
             warn!("Input server disabled");
         }
 
-        delay_for(Duration::from_millis(100)).await;
+        time::sleep(Duration::from_millis(100)).await;
         Ok(())
     }
 
