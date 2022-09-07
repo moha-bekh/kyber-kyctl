@@ -7,7 +7,7 @@ use crate::error::{Error, PlayerError, Result};
 use super::window_handle::WindowHandle;
 use super::{Message, MessageProxy};
 
-fn create_sdp_file(streamer: &str, video_port: u16, sdp_param: String) -> Result<PathBuf> {
+fn create_video_sdp_file(streamer: &str, video_port: u16, sdp_param: String) -> Result<PathBuf> {
     // Prepare SDP
     let sdp_path = env::temp_dir().join("video.sdp");
 
@@ -26,7 +26,7 @@ fn create_sdp_file(streamer: &str, video_port: u16, sdp_param: String) -> Result
         sdp_param = sdp_param,
     );
 
-    debug!("Write SDP to {:?}", sdp_path);
+    debug!("Write video SDP to {:?}", sdp_path);
     fs::write(&sdp_path, sdp)?;
 
     Ok(sdp_path)
@@ -34,7 +34,7 @@ fn create_sdp_file(streamer: &str, video_port: u16, sdp_param: String) -> Result
 
 pub struct Player {
     instance: vlc::Instance,
-    mediaplayer: Option<vlc::MediaPlayer>,
+    video_mediaplayer: Option<vlc::MediaPlayer>,
     window_handle: WindowHandle,
     message_proxy: MessageProxy,
 }
@@ -61,15 +61,15 @@ impl Player {
 
         Ok(Self {
             instance,
-            mediaplayer: None,
+            video_mediaplayer: None,
             window_handle,
             message_proxy,
         })
     }
 
-    pub fn play(&mut self, ip: &str, video_port: u16, sdp_param: String) -> Result<()> {
+    fn play_video(&mut self, ip: &str, video_port: u16, sdp_param: String) -> Result<()> {
         // Create player
-        let sdp_path = create_sdp_file(ip, video_port, sdp_param)?;
+        let sdp_path = create_video_sdp_file(ip, video_port, sdp_param)?;
 
         let mrl = format!(
             "file:///{}",
@@ -119,14 +119,20 @@ impl Player {
         // Play
         mdp.play().or(Err(PlayerError::PlayFailed))?;
 
-        self.mediaplayer = Some(mdp);
+        self.video_mediaplayer = Some(mdp);
+
+        Ok(())
+    }
+
+    pub fn play(&mut self, ip: &str, video_port: u16, sdp_param: String) -> Result<()> {
+        self.play_video(ip, video_port, sdp_param)?;
 
         Ok(())
     }
 
     pub async fn stop_async(&mut self) -> Result<()> {
         let mdp = self
-            .mediaplayer
+            .video_mediaplayer
             .as_mut()
             .ok_or(PlayerError::AlreadyStopped)?;
 
