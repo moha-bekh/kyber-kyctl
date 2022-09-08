@@ -8,6 +8,12 @@ stages:
   - build
   - misc
 
+.variables-macos-x86_64: &variables-macos-x86_64
+  HOST_ARCH: x86_64
+
+.variables-macos-arm64: &variables-macos-arm64
+  HOST_ARCH: arm64
+
 lint:
   stage: lint
   image: $DEBIAN_IMAGE
@@ -68,3 +74,41 @@ clippy-windows-x86_64:
     - tags
   script: |
     ./build-win32.sh -c -o $(pwd)/rootfs
+
+.build-macos-common:
+  stage: build
+  tags:
+    - macos
+  only:
+    - main
+    - merge_requests
+    - tags
+  script: |
+    ./build-macos.sh -a $HOST_ARCH -o $(pwd)/rootfs
+
+.clippy-macos-common:
+  stage: misc
+  tags:
+    - macos
+  only:
+    - main
+    - merge_requests
+    - tags
+  script: |
+    ./build-macos.sh -c -a $HOST_ARCH -o $(pwd)/rootfs
+
+build-macos-x86_64:
+  extends: .build-macos-common
+  variables: *variables-macos-x86_64
+
+clippy-macos-x86_64:
+  extends: .clippy-macos-common
+  variables: *variables-macos-x86_64
+
+build-macos-arm64:
+  extends: .build-macos-common
+  variables: *variables-macos-arm64
+
+clippy-macos-arm64:
+  extends: .clippy-macos-common
+  variables: *variables-macos-arm64
