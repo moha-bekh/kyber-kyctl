@@ -108,6 +108,16 @@ pub unsafe extern "C" fn libclient_windowshandle_from_x11(
     }))
 }
 
+#[cfg(target_os = "macos")]
+#[no_mangle]
+pub unsafe extern "C" fn libclient_windowshandle_from_ns_view(
+    handle: u64,
+) -> *mut libclient_WindowHandle {
+    Box::into_raw(Box::new(libclient_WindowHandle {
+        handle: crate::window_handle::WindowHandle::AppKit(handle),
+    }))
+}
+
 #[cfg(target_os = "windows")]
 #[no_mangle]
 pub unsafe extern "C" fn libclient_windowshandle_from_hwnd(

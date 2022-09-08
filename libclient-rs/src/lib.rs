@@ -23,6 +23,13 @@ impl WindowHandle {
         }
     }
 
+    #[cfg(target_os = "macos")]
+    pub fn from_ns_view(handle: u64) -> Self {
+        Self {
+            ptr: unsafe { sys::libclient_windowshandle_from_ns_view(handle) },
+        }
+    }
+
     #[cfg(target_os = "windows")]
     pub fn from_hwnd(hwnd: u64) -> Self {
         Self {

@@ -120,6 +120,11 @@ impl Player {
                 info!("Xlib");
                 mdp.set_xwindow(handle as u32);
             }
+            #[cfg(target_os = "macos")]
+            WindowHandle::AppKit(handle) => {
+                info!("macos ({})", handle);
+                mdp.set_nsobject(unsafe { std::mem::transmute(handle) });
+            }
             #[cfg(target_os = "windows")]
             WindowHandle::Win32(handle) => {
                 info!("Windows");
