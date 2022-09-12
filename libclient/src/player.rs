@@ -76,8 +76,7 @@ impl Player {
             sdp_path.to_str().ok_or(Error::InvalidUnicodeStr)?
         );
 
-        let md =
-            vlc::Media::new_location(&self.instance, &mrl).ok_or(PlayerError::MediaCreateFailed)?;
+        let md = vlc::Media::new_location(&mrl).ok_or(PlayerError::MediaCreateFailed)?;
 
         let mdp =
             vlc::MediaPlayer::new(&self.instance).ok_or(PlayerError::MediaPlayerCreateFailed)?;
