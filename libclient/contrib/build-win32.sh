@@ -87,7 +87,7 @@ build_libvlc() {
 
     # Get sources
     cd $WORKSPACE_ROOT/external/vlc
-    ./extras/package/win32/build.sh -r -l -z -a x86_64 -o $OUT_DIR
+    ./extras/package/win32/build.sh -r -z -a x86_64 -o $OUT_DIR
 
     cd $init_cwd
 }
