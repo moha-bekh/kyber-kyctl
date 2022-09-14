@@ -8,10 +8,16 @@ use tokio::time::{delay_for, Duration};
 use crate::error::{Error, Result};
 use crate::input_server;
 use crate::requests::{GenerateSdpRequest, StartRequest};
+use crate::streamer_audio;
 use crate::streamer_video;
+
+// RTP seems to use multiple port for a session. Fix a large offset to get
+// a safe port.
+const AUDIO_PORT_OFFSET: u16 = 10;
 
 pub struct Controller {
     streamer_video: Option<streamer_video::Handler>,
+    streamer_audio: Option<streamer_audio::Handler>,
     input_server: Option<input_server::Handler>,
 }
 
@@ -19,6 +25,7 @@ impl Controller {
     pub fn new() -> Self {
         Self {
             streamer_video: None,
+            streamer_audio: None,
             input_server: None,
         }
     }
@@ -112,6 +119,18 @@ impl Controller {
 
         self.streamer_video = Some(streamer_video);
 
+        if request.audio {
+            let audio_port = request.port + AUDIO_PORT_OFFSET;
+            info!("Start audio. ip: {} - port: {audio_port}", request.ip);
+
+            let mut streamer_audio = streamer_audio::Handler::new();
+            streamer_audio
+                .start(request.ip.as_str(), audio_port)
+                .await?;
+
+            self.streamer_audio = Some(streamer_audio);
+        }
+
         if request.inputs {
             let mut input_server = input_server::Handler::new();
             input_server.start().await?;
@@ -135,6 +154,16 @@ impl Controller {
             }
             None => {
                 info!("No active streamer");
+            }
+        }
+
+        match self.streamer_audio.as_mut() {
+            Some(streamer) => {
+                streamer.stop().await?;
+                self.streamer_audio = None
+            }
+            None => {
+                info!("No active audio streamer");
             }
         }
 

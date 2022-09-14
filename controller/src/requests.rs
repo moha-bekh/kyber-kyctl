@@ -15,6 +15,7 @@ pub struct StartRequest {
     pub ip: String,
     pub port: u16,
     pub yuv444: bool,
+    pub audio: bool,
     pub inputs: bool,
 }
 

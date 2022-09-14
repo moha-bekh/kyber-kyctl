@@ -58,7 +58,8 @@ case "$ACTION" in
             target/x86_64-pc-windows-gnu/release/service.exe \
             $OUT_DIR/bin
 
-        cp controller/txproto_stream.lua $OUT_DIR/bin
+        cp controller/txproto_stream_audio.lua $OUT_DIR/bin
+        cp controller/txproto_stream_video.lua $OUT_DIR/bin
     ;;
     "clippy")
         cargo clippy --target x86_64-pc-windows-gnu -- -D warnings

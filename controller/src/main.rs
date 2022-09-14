@@ -8,6 +8,7 @@ mod controller;
 mod error;
 mod input_server;
 mod requests;
+mod streamer_audio;
 mod streamer_video;
 mod utils;
 
