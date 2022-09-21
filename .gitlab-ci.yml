@@ -1,5 +1,6 @@
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
+  ANDROID_IMAGE: registry.gitlab.com/kyber-labs/kyber-streamer/docker-images/debian-android:20250819181536
   DEBIAN_IMAGE: registry.gitlab.com/kyber-labs/kyber-streamer/docker-images/debian-bookworm:20250819182152
   WASM_IMAGE: registry.gitlab.com/kyber-labs/kyber-streamer/docker-images/debian-wasm:20250822133647
   WIN64_IMAGE: registry.gitlab.com/kyber-labs/kyber-streamer/docker-images/debian-win64:20250819183159
@@ -28,6 +29,12 @@ stages:
 .variables-visionos: &variables-visionos
   BUILD_TARGET: visionos
   RUST_VERSION: nightly-2025-08-24
+
+.variables-android-arm64: &variables-android-arm64
+  HOST_ARCH: arm64
+
+.variables-android-armv7a: &variables-android-armv7a
+  HOST_ARCH: armv7a
 
 lint:
   stage: lint
@@ -292,3 +299,51 @@ build-tvos:
 build-visionos:
   extends: .build-ios-common
   variables: *variables-visionos
+
+build-android-arm64:
+  stage: build
+  image: $ANDROID_IMAGE
+  tags:
+    - docker
+  only:
+    - main
+    - merge_requests
+    - tags
+  script: |
+    export KYBER_PREFIX=$(pwd)/rootfs
+    # Build
+    ./build-android.sh -k -o $KYBER_PREFIX
+    # Prepare rootfs to be shared to other jobs
+    cd $KYBER_PREFIX
+    ../scripts/change_prefix.sh $(pwd)
+  artifacts:
+    paths:
+      - rootfs
+
+.build-android-common:
+  stage: build
+  image: $ANDROID_IMAGE
+  tags:
+    - docker
+  only:
+    - main
+    - merge_requests
+    - tags
+  script: |
+    export KYBER_PREFIX=$(pwd)/rootfs
+    # Build
+    ./build-android.sh -k -a $HOST_ARCH -o $KYBER_PREFIX
+    # Prepare rootfs to be shared to other jobs
+    cd $KYBER_PREFIX
+    ../scripts/change_prefix.sh $(pwd)
+  needs:
+    - lint
+  when: manual
+
+build-android-arm64:
+  extends: .build-android-common
+  variables: *variables-android-arm64
+
+build-android-armv7a:
+  extends: .build-android-common
+  variables: *variables-android-armv7a
