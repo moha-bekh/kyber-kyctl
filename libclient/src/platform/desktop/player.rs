@@ -221,6 +221,11 @@ impl Player {
         }
 
         match config.window_handle {
+            #[cfg(target_os = "android")]
+            WindowHandle::Android(handle) => {
+                info!("Android");
+                mp.set_android_context(handle as *mut libc::c_void);
+            }
             #[cfg(target_os = "linux")]
             WindowHandle::Xlib(handle) => {
                 info!("Xlib");

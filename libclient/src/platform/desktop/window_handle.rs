@@ -3,6 +3,8 @@ use raw_window_handle::RawWindowHandle;
 #[derive(Clone, Copy, Debug)]
 #[allow(dead_code)]
 pub enum WindowHandle {
+    #[cfg(target_os = "android")]
+    Android(u64),
     #[cfg(target_os = "linux")]
     Xlib(libc::c_ulong),
     #[cfg(target_os = "macos")]

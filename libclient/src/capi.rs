@@ -186,6 +186,20 @@ pub unsafe extern "C" fn libclient_set_log_cb(cb: LogCb, userdata: *mut c_void) 
     log::set_max_level(log::LevelFilter::Trace);
 }
 
+#[cfg(target_os = "android")]
+#[no_mangle]
+pub unsafe extern "C" fn libclient_windowshandle_set_android_context(
+    awindow_handler: *mut c_void,
+) -> *mut libclient_WindowHandle {
+    log::info!(
+        "libclient_windowshandle_set_android_context {:?}",
+        awindow_handler
+    );
+    Box::into_raw(Box::new(libclient_WindowHandle {
+        handle: crate::platform::WindowHandle::Android(awindow_handler as u64),
+    }))
+}
+
 #[cfg(target_os = "linux")]
 #[no_mangle]
 pub unsafe extern "C" fn libclient_windowshandle_from_x11(
