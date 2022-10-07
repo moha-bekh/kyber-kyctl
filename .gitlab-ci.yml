@@ -197,21 +197,21 @@ clippy-windows-x86_64:
     # Build component
     ./build-macos.sh -k -s -a $HOST_ARCH -o $KYBER_PREFIX
 
-.contrib-macos-x86_64:
+contrib-macos-x86_64:
   extends: .contrib-macos-common
   variables: *variables-macos-x86_64
 
-.build-macos-x86_64:
+build-macos-x86_64:
   extends: .build-macos-common
   variables: *variables-macos-x86_64
   needs:
     - contrib-macos-x86_64
 
-.contrib-macos-arm64:
+contrib-macos-arm64:
     extends: .contrib-macos-common
     variables: *variables-macos-arm64
 
-.build-macos-arm64:
+build-macos-arm64:
   extends: .build-macos-common
   variables: *variables-macos-arm64
   needs:
