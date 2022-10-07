@@ -206,15 +206,9 @@ build_libvlc() {
     spushd $VLC_SRCDIR
 
     # Configure build env
-    export VLC_FORCE_KERNELVERSION=19
-
-    #VLC_CONTRIB_SHA1=`./extras/ci/get-contrib-sha.sh`
     VLC_HOST_ARCH=`get_buildsystem_arch $HOST_ARCH`
-    VLC_HOST="${VLC_HOST_ARCH}-apple-darwin${VLC_FORCE_KERNELVERSION}"
-    VLC_BUILD="${BUILD_ARCH}-apple-darwin${VLC_FORCE_KERNELVERSION}"
-
-    VLC_CONTRIB_SHA1="fc75a318d85232bed66adaf72e70b11deb94f975"
-    VLC_CONTRIB_ARTIFACT="https://artifacts.videolan.org/vlc/macos-${HOST_ARCH}/vlc-contrib-${VLC_HOST_ARCH}-apple-darwin${VLC_FORCE_KERNELVERSION}-${VLC_CONTRIB_SHA1}.tar.bz2"
+    VLC_HOST="${VLC_HOST_ARCH}-apple-darwin"
+    VLC_BUILD="${BUILD_ARCH}-apple-darwin"
 
     VLC_CONTRIB_FOLDER="vlc-contrib-${VLC_HOST}-${VLC_BUILD}"
     VLC_BUILD_FOLDER="build-${VLC_HOST}-${VLC_BUILD}"
@@ -228,7 +222,22 @@ build_libvlc() {
     make > $out
     spopd
 
+    # Common build env
+    export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+
+    export AR="$(xcrun --find ar)"
+    export CC="$(xcrun --find clang)"
+    export CXX="$(xcrun --find clang++)"
+    export NM="$(xcrun --find nm)"
+    export OBJC="$(xcrun --find clang)"
+    export OBJCXX="$(xcrun --find clang++)"
+    export RANLIB="$(xcrun --find ranlib)"
+    export STRIP="$(xcrun --find strip)"
+
     # Build contrib
+    export EXTRA_CFLAGS="-isysroot $SDKROOT -arch ${HOST_ARCH}"
+    export EXTRA_LDFLAGS="-isysroot $SDKROOT -arch ${HOST_ARCH}"
+
     spushd contrib
     if ! [ -e $VLC_CONTRIB_FOLDER ]; then
         mkdir $VLC_CONTRIB_FOLDER
@@ -236,12 +245,30 @@ build_libvlc() {
     if ! [ -e $VLC_BUILD ]; then
         spushd $VLC_CONTRIB_FOLDER
 
-        ../bootstrap --build=$VLC_BUILD --host=$VLC_HOST
-        make prebuilt PREBUILT_URL=$VLC_CONTRIB_ARTIFACT > $out
+        CONTRIBFLAGS=$(cat << EOF
+--disable-aom --disable-rav1e --disable-dvdcss --disable-dvdnav --disable-dvdread --disable-theora
+--disable-upnp --disable-vncclient --disable-vpx --disable-bluray
+--disable-protobuf --disable-protoc --disable-x264 --disable-x265 --disable-live555
+--disable-medialibrary --disable-nfs --disable-ass --disable-caca --disable-decklink
+--disable-goom --disable-mpg123 --disable-sqlite --disable-ssh2 --disable-twolame --disable-taglib
+--disable-lua --disable-luac --disable-aribb24 --disable-fribidi
+--disable-a52 --disable-aribb25 --disable-asdcplib --disable-cddb --disable-gsm
+--disable-mpcdec --disable-lame --disable-kate --disable-mad --disable-mysofa --disable-projectM
+--disable-schroedinger --disable-shout --disable-sidplay2 --disable-zvbi --disable-srt --disable-ncurses
+--disable-flac --disable-dav1d --disable-libxml2 --disable-gpg-error
+--disable-soxr --disable-chromaprint
+EOF
+)
+        ../bootstrap --build=$VLC_BUILD --host=$VLC_HOST $CONTRIBFLAGS > $out
+        make list
+        make -j $NJOBS -k || make -j1 > $out
 
         spopd
     fi
     spopd
+
+    unset EXTRA_CFLAGS
+    unset EXTRA_LDFLAGS
 
     # Build libvlc
     if ! [ -e configure ]; then
@@ -251,7 +278,18 @@ build_libvlc() {
         mkdir ${VLC_BUILD_FOLDER}
     fi
 
-    SLIMFLAG="--disable-vlc --disable-dca --disable-zvbi --disable-vpx --disable-macosx --disable-faad --disable-fribidi --disable-qt --disable-skins2 --disable-vcd --disable-vlm --disable-nls --disable-notify --disable-live555 --enable-swscale --disable-projectm --disable-libass --disable-libxml2 --disable-goom --disable-dvdread --disable-dvdnav --disable-bluray --disable-linsys --disable-libva --disable-gme --disable-tremor --disable-vorbis --disable-fluidsynth --disable-jack --disable-pulse --disable-mtp --disable-ogg --disable-speex --disable-theora --disable-flac --disable-screen --disable-freetype --disable-taglib --disable-smb2 --disable-sparkle --disable-addonmanagermodules --disable-mad --disable-chromecast --disable-lua --disable-medialibrary --disable-a52 --disable-rav1e --disable-jpeg --disable-ncurses --disable-chromaprint"
+    CONFIGFLAGS=$(cat << EOF
+--disable-vlc --disable-dca --disable-zvbi --disable-vpx --disable-macosx --disable-faad --disable-fribidi
+--disable-qt --disable-skins2 --disable-vcd --disable-vlm --disable-nls --disable-notify --disable-live555
+--enable-swscale --disable-projectm --disable-libass --disable-libxml2 --disable-goom --disable-dvdread
+--disable-dvdnav --disable-bluray --disable-linsys --disable-libva --disable-gme --disable-tremor --disable-vorbis
+--disable-fluidsynth --disable-jack --disable-pulse --disable-mtp --disable-ogg --disable-speex --disable-theora
+--disable-flac --disable-screen --disable-freetype --disable-taglib --disable-smb2 --disable-sparkle
+--disable-addonmanagermodules --disable-mad --disable-chromecast --disable-lua --disable-medialibrary --disable-a52
+--disable-rav1e --disable-jpeg --disable-ncurses --disable-chromaprint --disable-shout --disable-schroedinger
+--disable-soxr --disable-chromaprint --without-x --disable-xcb
+EOF
+)
 
     export CFLAGS="-g -arch $HOST_ARCH"
     export CXXFLAGS="-g -arch $HOST_ARCH"
@@ -259,7 +297,13 @@ build_libvlc() {
     export LDFLAGS="-arch $HOST_ARCH"
 
     spushd ${VLC_BUILD_FOLDER}
-    ../configure --build=$VLC_BUILD --host=$VLC_HOST --prefix=$OUT_DIR ${SLIMFLAG} > $out
+    ../configure \
+        --build=$VLC_BUILD \
+        --host=$VLC_HOST \
+        --with-macosx-sdk=$SDKROOT \
+        --prefix=$OUT_DIR \
+        ${CONFIGFLAGS} > $out
+
     make -j $NJOBS > $out
     make install -j $NJOBS > $out
     spopd
@@ -269,7 +313,17 @@ build_libvlc() {
     unset OBJCFLAGS
     unset LDFLAGS
 
-    unset VLC_FORCE_KERNELVERSION
+    # Clear env
+    unset SDKROOT
+
+    unset AR
+    unset CC
+    unset CXX
+    unset NM
+    unset OBJC
+    unset OBJCXX
+    unset RANLIB
+    unset STRIP
 
     export PATH=$OLD_PATH
 
