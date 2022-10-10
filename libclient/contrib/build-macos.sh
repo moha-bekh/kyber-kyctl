@@ -161,7 +161,7 @@ build_ffmpeg() {
     fi
     spushd build
 
-    COMMON_FLAGS="--prefix=$OUT_DIR --disable-shared --disable-sdl2 --disable-libxcb --disable-lzma"
+    COMMON_FLAGS="--prefix=$OUT_DIR --disable-shared --disable-sdl2 --disable-libxcb --disable-lzma --disable-xlib"
 
     if [ $HOST_ARCH != $BUILD_ARCH ]; then
         case $HOST_ARCH in
