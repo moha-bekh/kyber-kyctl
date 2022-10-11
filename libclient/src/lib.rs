@@ -185,6 +185,7 @@ impl Handler {
 #[repr(C)]
 pub enum StreamingProtocol {
     Rtp,
+    Kymux,
 }
 
 #[derive(Clone)]

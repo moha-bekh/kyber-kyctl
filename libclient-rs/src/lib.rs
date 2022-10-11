@@ -14,12 +14,16 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Clone, Copy, Debug)]
 pub enum StreamingProtocol {
     Rtp,
+    Kymux,
 }
 
 impl StreamingProtocol {
     pub fn from_u32(u: sys::libclient_StreamingProtocol) -> Option<Self> {
         match u {
             sys::libclient_StreamingProtocol_LIBCLIENT_STREAMING_PROTOCOL_RTP => Some(Self::Rtp),
+            sys::libclient_StreamingProtocol_LIBCLIENT_STREAMING_PROTOCOL_KYMUX => {
+                Some(Self::Kymux)
+            }
             _ => None,
         }
     }
@@ -27,6 +31,7 @@ impl StreamingProtocol {
     fn to_u32(self) -> u32 {
         match self {
             Self::Rtp => sys::libclient_StreamingProtocol_LIBCLIENT_STREAMING_PROTOCOL_RTP,
+            Self::Kymux => sys::libclient_StreamingProtocol_LIBCLIENT_STREAMING_PROTOCOL_KYMUX,
         }
     }
 }
