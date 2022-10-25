@@ -84,7 +84,21 @@ build_libvlc() {
     # Build
     ./bootstrap
     mkdir build && cd build
-    ../configure --disable-vlc --prefix=$OUT_DIR
+
+    CONFIGFLAGS=$(cat << EOF
+--disable-dca --disable-zvbi --disable-vpx --disable-faad --disable-fribidi
+--disable-qt --disable-skins2 --disable-vcd --disable-vlm --disable-nls --disable-notify --disable-live555
+--enable-swscale --disable-projectm --disable-libass --disable-libxml2 --disable-goom --disable-dvdread
+--disable-dvdnav --disable-bluray --disable-linsys --disable-gme --disable-tremor --disable-vorbis
+--disable-fluidsynth --disable-jack --disable-mtp --disable-speex --disable-theora
+--disable-flac --disable-screen --disable-freetype --disable-taglib --disable-smb2 --disable-sparkle
+--disable-addonmanagermodules --disable-mad --disable-chromecast --disable-lua --disable-medialibrary --disable-a52
+--disable-rav1e --disable-jpeg --disable-ncurses --disable-chromaprint --disable-shout --disable-schroedinger
+--disable-soxr --disable-chromaprint
+EOF
+)
+
+    ../configure --prefix=$OUT_DIR $CONFIGFLAGS
     make -j $NJOBS
     make install -j $NJOBS
 
