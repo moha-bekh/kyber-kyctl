@@ -113,6 +113,7 @@ fi
 # Output directory
 export PATH=$OUT_DIR/bin:$PATH
 export PKG_CONFIG_PATH=$OUT_DIR/lib/pkgconfig:$OUT_DIR/lib/x86_64-linux-gnu/pkgconfig
+export LD_LIBRARY_PATH=$OUT_DIR/lib:$OUT_DIR/lib/x86_64-linux-gnu
 
 # Build
 case "$ACTION" in
