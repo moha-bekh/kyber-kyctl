@@ -97,7 +97,8 @@ case "$ACTION" in
     ;;
     "clippy")
         cargo clippy \
-            --target $CARGO_TARGET
+            --target $CARGO_TARGET \
+            -- -D warnings
     ;;
     "test")
         cargo test
