@@ -1,7 +1,8 @@
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
-  DEBIAN_IMAGE: registry.gitlab.com/kyber-labs/kyber-streamer/docker-images/debian-bullseye:20220804152839
-  WIN64_IMAGE: registry.gitlab.com/kyber-labs/kyber-streamer/docker-images/debian-win64:20220808092349
+  DEBIAN_IMAGE: registry.gitlab.com/kyber-labs/kyber-streamer/docker-images/debian-bullseye:20221108113934
+  WIN64_IMAGE: registry.gitlab.com/kyber-labs/kyber-streamer/docker-images/debian-win64:20221108114804
+  MACOS_RUST_VERSION: 1.65.0
 
 stages:
   - lint
@@ -75,7 +76,12 @@ clippy-windows-x86_64:
   script: |
     ./build-win32.sh -c -o $(pwd)/rootfs
 
+.macos-common:
+  before_script: |
+    rustup override set $MACOS_RUST_VERSION
+
 .build-macos-common:
+  extends: .macos-common
   stage: build
   tags:
     - macos
@@ -87,6 +93,7 @@ clippy-windows-x86_64:
     ./build-macos.sh -a $HOST_ARCH -o $(pwd)/rootfs
 
 .clippy-macos-common:
+  extends: .macos-common
   stage: misc
   tags:
     - macos
