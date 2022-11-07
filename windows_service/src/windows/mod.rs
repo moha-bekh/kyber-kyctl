@@ -11,6 +11,7 @@ use std::time::Duration;
 use log::{info, warn, LevelFilter};
 use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Config, Root};
+use windows_sys::Win32::{Foundation::*, System::Threading::*};
 use windows_service::{
     service::{
         ServiceControl, ServiceControlAccept, ServiceExitCode, ServiceState, ServiceStatus,
@@ -27,12 +28,6 @@ const SERVICE_NAME: &str = "kyber";
 
 #[allow(non_snake_case)]
 fn service_main(stop: Arc<AtomicBool>) -> Result<()> {
-    use winapi::shared::winerror::*;
-    use winapi::um::handleapi::*;
-    use winapi::um::processthreadsapi::*;
-    use winapi::um::synchapi::*;
-    use winapi::um::winbase::*;
-
     let exe_path = if let Ok(mut exe_path) = current_exe() {
         exe_path.pop();
         exe_path

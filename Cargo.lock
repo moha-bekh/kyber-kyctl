@@ -1189,8 +1189,8 @@ dependencies = [
  "env_logger",
  "log",
  "log4rs",
- "winapi",
  "windows-service",
+ "windows-sys 0.42.0",
 ]
 
 [[package]]

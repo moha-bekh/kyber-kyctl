@@ -1,28 +1,21 @@
 use std::ffi::OsStr;
 use std::mem;
-use std::os::windows::{ffi::OsStrExt, raw::HANDLE};
+use std::os::windows::ffi::OsStrExt;
 use std::ptr;
 
 use log::warn;
-
-use winapi::ctypes::c_void;
-use winapi::shared::minwindef::*;
-use winapi::um::handleapi::*;
-use winapi::um::processthreadsapi::*;
-use winapi::um::securitybaseapi::*;
-use winapi::um::winbase::*;
-use winapi::um::winnt::*;
+use windows_sys::Win32::{Security::*, Foundation::*, System::{RemoteDesktop::*, SystemServices::*, Threading::*}};
 
 use super::error::{check_win32_error, last_win32_error, Error, Result};
 
 pub unsafe fn get_subprocess_token() -> Result<HANDLE> {
     let process = GetCurrentProcess();
 
-    let mut process_token: HANDLE = ptr::null_mut();
+    let mut process_token: HANDLE = 0;
     let mut b = OpenProcessToken(process, TOKEN_DUPLICATE, &mut process_token);
-    check_win32_error!(OpenProcessToken, b == TRUE)?;
+    check_win32_error!(OpenProcessToken, b == 1)?;
 
-    let mut child_token: HANDLE = ptr::null_mut();
+    let mut child_token: HANDLE = 0;
     b = DuplicateTokenEx(
         process_token,
         MAXIMUM_ALLOWED,
@@ -31,9 +24,9 @@ pub unsafe fn get_subprocess_token() -> Result<HANDLE> {
         TokenPrimary,
         &mut child_token,
     );
-    check_win32_error!(DuplicateTokenEx, b == TRUE)?;
+    check_win32_error!(DuplicateTokenEx, b == 1)?;
 
-    let mut session_id: DWORD = WTSGetActiveConsoleSessionId();
+    let mut session_id: u32 = WTSGetActiveConsoleSessionId();
     if session_id == 0xFFFFFFFF {
         warn!("No session attached (WTSGetActiveConsoleSessionId() failed");
         return Err(Error::Rejected);
@@ -42,10 +35,10 @@ pub unsafe fn get_subprocess_token() -> Result<HANDLE> {
     b = SetTokenInformation(
         child_token,
         TokenSessionId,
-        (&mut session_id as *mut _) as *mut c_void,
-        mem::size_of::<DWORD>() as u32,
+        (&mut session_id as *mut _) as *const _,
+        mem::size_of::<u32>() as u32,
     );
-    check_win32_error!(SetTokenInformation, b == TRUE)?;
+    check_win32_error!(SetTokenInformation, b == 1)?;
 
     Ok(child_token)
 }
@@ -67,14 +60,14 @@ pub unsafe fn start_subprocess(path: &str, token: HANDLE) -> Result<HANDLE> {
         wide_path.as_mut_ptr(),
         ptr::null_mut(),
         ptr::null_mut(),
-        FALSE,
+        0,
         NORMAL_PRIORITY_CLASS,
         ptr::null_mut(),
         ptr::null_mut(),
-        &mut si,
+        &si,
         &mut pi,
     );
-    if b == FALSE {
+    if b == 0 {
         warn!("Fail to spawn executable '{}'", path);
         let err = last_win32_error("CreateProcessAsUserW", std::file!(), std::line!());
         return match err {

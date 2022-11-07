@@ -1,15 +1,23 @@
 use std::ptr;
 
-use winapi::{
-    shared::minwindef::HLOCAL,
-    um::{errhandlingapi::GetLastError, winbase::*, winnt::*},
+use windows_sys::{
+    core::*,
+    Win32::{
+        Foundation::*,
+        System::{Diagnostics::Debug::*, Memory::*, SystemServices::*},
+    },
 };
+
+#[inline]
+pub fn makelangid(p: u32, s: u32) -> u32 {
+    (s << 10) | p
+}
 
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct Win32Error {
     func: &'static str,
-    os_error: u32,
+    pub os_error: u32,
     os_str_error: Option<String>,
 
     file: &'static str,
@@ -22,7 +30,7 @@ pub(crate) fn last_win32_error(func: &'static str, file: &'static str, line: u32
         return Ok(());
     }
 
-    let mut buffer: LPWSTR = ptr::null_mut();
+    let buffer: PWSTR = ptr::null_mut();
 
     let s = unsafe {
         let len = FormatMessageW(
@@ -31,14 +39,14 @@ pub(crate) fn last_win32_error(func: &'static str, file: &'static str, line: u32
                 | FORMAT_MESSAGE_IGNORE_INSERTS,
             ptr::null_mut(),
             error_code,
-            MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT).into(),
-            (&mut buffer as *mut _) as LPWSTR,
+            makelangid(LANG_NEUTRAL, SUBLANG_DEFAULT),
+            buffer,
             0,
             ptr::null_mut(),
         );
 
         let s = String::from_utf16(std::slice::from_raw_parts(buffer as *mut u16, len as usize));
-        LocalFree(buffer as HLOCAL);
+        LocalFree(buffer as _);
 
         s
     };
