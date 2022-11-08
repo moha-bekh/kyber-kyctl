@@ -123,12 +123,12 @@ impl Player {
             #[cfg(target_os = "macos")]
             WindowHandle::AppKit(handle) => {
                 info!("macos ({})", handle);
-                mdp.set_nsobject(unsafe { std::mem::transmute(handle) });
+                mdp.set_nsobject(handle as _);
             }
             #[cfg(target_os = "windows")]
             WindowHandle::Win32(handle) => {
                 info!("Windows");
-                mdp.set_hwnd(unsafe { std::mem::transmute(handle) });
+                mdp.set_hwnd(handle as _);
             }
         }
 

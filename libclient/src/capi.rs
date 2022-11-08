@@ -228,7 +228,7 @@ pub unsafe extern "C" fn libclient_client_ref(
 
 #[no_mangle]
 pub unsafe extern "C" fn libclient_client_unref(client: *mut libclient_Client) {
-    Box::from_raw(client);
+    let _ = Box::from_raw(client);
 }
 
 #[allow(non_camel_case_types)]

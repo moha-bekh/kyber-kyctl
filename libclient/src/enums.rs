@@ -10,7 +10,7 @@ pub enum Message {
     InputServiceDisconnected,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(C)]
 pub enum Event {
     Stopped,
