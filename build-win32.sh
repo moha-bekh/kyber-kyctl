@@ -77,6 +77,10 @@ if [ "$BUILD_KYBER_DEPS" = true ]; then
         git_clone "kyber-labs/kyber-streamer/avserver.git"
     fi
 
+    if [[ ! -d kymux ]]; then
+        git_clone "kyber-labs/kyber-streamer/kymux.git"
+    fi
+
     if [[ ! -d libkypc ]]; then
         git_clone "kyber-labs/kyber-streamer/libkypc.git"
     fi
@@ -92,6 +96,7 @@ if [ "$BUILD_KYBER_DEPS" = true ]; then
     echo '[patch.crates-io]' > .cargo/config.toml
     echo 'avservice-types = { path = "avserver/avservice-types" }' >> .cargo/config.toml
     echo 'inputservice-types = { path = "libkynput/inputservice-types" }' >> .cargo/config.toml
+    echo 'kymux = { path = "kymux/kymux" }' >> .cargo/config.toml
     echo 'libkypc = { path = "libkypc" }' >> .cargo/config.toml
 fi
 
