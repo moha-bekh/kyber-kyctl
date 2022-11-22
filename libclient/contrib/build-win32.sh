@@ -116,7 +116,7 @@ EOF
 EOF
 )
 
-    ./extras/package/win32/build.sh -r -z -a x86_64 -o $OUT_DIR
+    ./extras/package/win32/build.sh -r -i none -z -a x86_64 -o $OUT_DIR
 
     cd $init_cwd
 }
