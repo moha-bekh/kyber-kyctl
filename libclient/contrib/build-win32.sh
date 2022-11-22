@@ -87,6 +87,35 @@ build_libvlc() {
 
     # Get sources
     cd $WORKSPACE_ROOT/external/vlc
+
+    export EXTRACONTRIBFLAGS=$(cat << EOF
+--disable-aom --disable-rav1e --disable-dvdcss --disable-dvdnav --disable-dvdread --disable-theora
+--disable-upnp --disable-vncclient --disable-vpx --disable-bluray
+--disable-protobuf --disable-protoc --disable-x264 --disable-x265 --disable-live555
+--disable-medialibrary --disable-nfs --disable-ass --disable-caca --disable-decklink
+--disable-goom --disable-mpg123 --disable-sqlite --disable-ssh2 --disable-twolame --disable-taglib
+--disable-lua --disable-luac --disable-aribb24 --disable-fribidi
+--disable-a52 --disable-aribb25 --disable-asdcplib --disable-cddb --disable-gsm
+--disable-mpcdec --disable-lame --disable-kate --disable-mad --disable-mysofa --disable-projectM
+--disable-schroedinger --disable-shout --disable-sidplay2 --disable-zvbi --disable-srt --disable-ncurses
+--disable-flac --disable-dav1d --disable-libxml2 --disable-gpg-error
+--disable-soxr --disable-chromaprint --disable-spatialaudio
+EOF
+)
+
+    export EXTRACONFIGFLAGS=$(cat << EOF
+--disable-vlc --disable-dca --disable-zvbi --disable-vpx --disable-macosx --disable-faad --disable-fribidi
+--disable-qt --disable-skins2 --disable-vcd --disable-vlm --disable-nls --disable-notify --disable-live555
+--enable-swscale --disable-projectm --disable-libass --disable-libxml2 --disable-goom --disable-dvdread
+--disable-dvdnav --disable-bluray --disable-linsys --disable-libva --disable-gme --disable-tremor --disable-vorbis
+--disable-fluidsynth --disable-jack --disable-pulse --disable-mtp --disable-ogg --disable-speex --disable-theora
+--disable-flac --disable-screen --disable-freetype --disable-taglib --disable-smb2 --disable-sparkle
+--disable-addonmanagermodules --disable-mad --disable-chromecast --disable-lua --disable-medialibrary --disable-a52
+--disable-rav1e --disable-jpeg --disable-ncurses --disable-chromaprint --disable-shout --disable-schroedinger
+--disable-soxr --disable-spatialaudio --disable-caca
+EOF
+)
+
     ./extras/package/win32/build.sh -r -z -a x86_64 -o $OUT_DIR
 
     cd $init_cwd
