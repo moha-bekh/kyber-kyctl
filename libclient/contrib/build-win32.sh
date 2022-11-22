@@ -82,10 +82,8 @@ download_tarball() {
 }
 
 build_libvlc() {
-    # mingw-w64-tools openjdk-11-jdk-headless
     local init_cwd=$(pwd)
 
-    # Get sources
     cd $WORKSPACE_ROOT/external/vlc
 
     export EXTRACONTRIBFLAGS=$(cat << EOF
