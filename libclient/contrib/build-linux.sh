@@ -76,14 +76,12 @@ download_tarball() {
 build_libvlc() {
     local init_cwd=$(pwd)
 
-    # Get sources
-    cd $BUILD_DIR
-    git clone $VLC_SRCDIR
-    cd vlc
+    # Bootstrap
+    cd $VLC_SRCDIR
+    ./bootstrap
 
     # Build
-    ./bootstrap
-    mkdir build && cd build
+    cd $BUILD_DIR
 
     CONFIGFLAGS=$(cat << EOF
 --disable-dca --disable-zvbi --disable-vpx --disable-faad --disable-fribidi
@@ -98,7 +96,7 @@ build_libvlc() {
 EOF
 )
 
-    ../configure --prefix=$OUT_DIR $CONFIGFLAGS
+    $VLC_SRCDIR/configure --prefix=$OUT_DIR $CONFIGFLAGS
     make -j $NJOBS
     make install -j $NJOBS
 
