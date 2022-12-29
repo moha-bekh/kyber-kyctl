@@ -81,7 +81,8 @@ build_libvlc() {
     ./bootstrap
 
     # Build
-    cd $BUILD_DIR
+    mkdir -p $BUILD_DIR/vlc
+    cd $BUILD_DIR/vlc
 
     CONFIGFLAGS=$(cat << EOF
 --disable-dca --disable-zvbi --disable-vpx --disable-faad --disable-fribidi
