@@ -93,7 +93,7 @@ build_libvlc() {
 --disable-flac --disable-screen --disable-freetype --disable-taglib --disable-smb2 --disable-sparkle
 --disable-addonmanagermodules --disable-mad --disable-chromecast --disable-lua --disable-medialibrary --disable-a52
 --disable-rav1e --disable-jpeg --disable-ncurses --disable-chromaprint --disable-shout --disable-schroedinger
---disable-soxr
+--disable-soxr --disable-x264 --disable-x26410b
 EOF
 )
 
