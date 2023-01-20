@@ -40,13 +40,13 @@ pub async fn run() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(ctrl.clone()) // add shared state
+            .app_data(web::JsonConfig::default().limit(1024))
             // enable logger
             .wrap(middleware::Logger::default())
             // register simple handler
             .service(rtp::requests::hello)
             .service(rtp::requests::generate_sdp)
             .service(rtp::requests::start)
-            .app_data(web::JsonConfig::default().limit(1024))
             .service(stop)
     })
     .bind("0.0.0.0:8080")?
