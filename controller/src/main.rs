@@ -14,8 +14,8 @@ mod utils;
 
 use controller::Controller;
 
-#[post("/stop")]
-async fn stop(ctrl: web::Data<Mutex<Controller>>) -> HttpResponse {
+#[post("/stop_session")]
+async fn stop_session(ctrl: web::Data<Mutex<Controller>>) -> HttpResponse {
     let mut ctrl = ctrl.lock().await;
 
     let ret = ctrl.stop().await;
@@ -50,7 +50,7 @@ pub async fn run() -> std::io::Result<()> {
                     .service(rtp::requests::generate_sdp)
                     .service(rtp::requests::start),
             )
-            .service(stop)
+            .service(stop_session)
     })
     .bind("0.0.0.0:8080")?
     .run()
