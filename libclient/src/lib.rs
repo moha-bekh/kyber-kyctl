@@ -3,7 +3,7 @@ mod error;
 pub mod event_manager;
 mod host_service;
 pub mod input_service;
-mod player;
+mod rtp;
 pub mod window_handle;
 
 #[cfg(any(cargo_c, feature = "capi"))]
@@ -25,7 +25,9 @@ use enums::Message;
 use event_manager::EventManager;
 use window_handle::WindowHandle;
 
-const RTP_PORT: u16 = 30000;
+enum Player {
+    Rtp(rtp::Player),
+}
 
 #[derive(Clone)]
 pub struct MessageProxy {
@@ -49,7 +51,7 @@ struct Handler {
     event_manager: Arc<Mutex<EventManager>>,
     sender: Sender<Message>,
 
-    player: Option<player::Player>,
+    player: Option<Player>,
     input_service: Option<input_service::Client>,
 }
 
@@ -75,45 +77,25 @@ impl Handler {
     }
 
     async fn start(&mut self) -> Result<()> {
-        let local_ip = host_service::hello(&self.config.streamer_ip).await?;
+        let result = rtp::start(&self.config, self.create_message_proxy()).await?;
 
-        let sdp_param =
-            host_service::generate_sdp(&self.config.streamer_ip, self.config.yuv444).await?;
-
-        let mut player =
-            player::Player::new(self.config.window_handle, self.create_message_proxy())?;
-        player.play(&local_ip, RTP_PORT, sdp_param, self.config.audio)?;
-
-        host_service::start_stream(
-            &self.config.streamer_ip,
-            &local_ip,
-            RTP_PORT,
-            self.config.yuv444,
-            self.config.audio,
-            self.config.inputs,
-        )
-        .await?;
-
-        self.player = Some(player);
-
-        if self.config.inputs {
-            let input_service = input_service::Client::new(
-                &self.config.streamer_ip,
-                self.create_message_proxy(),
-                self.config.input_pipeline.get_input_sink(),
-            )?;
-            self.input_service = Some(input_service);
-        }
+        self.player = Some(Player::Rtp(result.player));
+        self.input_service = result.input_service;
 
         Ok(())
     }
 
     async fn stop(&mut self) -> Result<()> {
         info!("Stop requested");
-        if let Some(player) = self.player.as_mut() {
-            info!("Stop player");
-            player.stop_async().await?;
-            info!("Player stopped");
+
+        #[allow(clippy::single_match)]
+        match self.player.take() {
+            Some(Player::Rtp(mut player)) => {
+                info!("Stop player");
+                player.stop_async().await?;
+                info!("Player stopped");
+            }
+            None => {}
         }
 
         if let Some(input_service) = self.input_service.as_mut() {

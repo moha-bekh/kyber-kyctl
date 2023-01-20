@@ -4,8 +4,8 @@ use std::{env, fs};
 
 use crate::error::{Error, PlayerError, Result};
 
-use super::window_handle::WindowHandle;
-use super::{Message, MessageProxy};
+use crate::window_handle::WindowHandle;
+use crate::{Message, MessageProxy};
 
 // RTP seems to use multiple port for a session. Fix a large offset to get
 // a safe port.
