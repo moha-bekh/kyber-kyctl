@@ -77,10 +77,14 @@ impl Handler {
     }
 
     async fn start(&mut self) -> Result<()> {
-        let result = rtp::start(&self.config, self.create_message_proxy()).await?;
+        match self.config.protocol {
+            StreamingProtocol::Rtp => {
+                let result = rtp::start(&self.config, self.create_message_proxy()).await?;
 
-        self.player = Some(Player::Rtp(result.player));
-        self.input_service = result.input_service;
+                self.player = Some(Player::Rtp(result.player));
+                self.input_service = result.input_service;
+            }
+        }
 
         Ok(())
     }
@@ -158,8 +162,15 @@ impl Handler {
 }
 
 #[derive(Clone)]
+#[repr(C)]
+pub enum StreamingProtocol {
+    Rtp,
+}
+
+#[derive(Clone)]
 pub struct ClientConfig {
     pub streamer_ip: String,
+    pub protocol: StreamingProtocol,
     pub window_handle: WindowHandle,
     pub input_pipeline: Pipeline,
     pub yuv444: bool,

@@ -131,6 +131,7 @@ pub unsafe extern "C" fn libclient_windowshandle_from_hwnd(
 #[no_mangle]
 pub unsafe extern "C" fn libclient_config_default(
     ip: *const c_char,
+    protocol: crate::StreamingProtocol,
     pipeline: *mut libkynput_sys::libkynput_Pipeline,
     window_handle: *mut libclient_WindowHandle,
     out_config: *mut *mut libclient_ClientConfig,
@@ -147,6 +148,7 @@ pub unsafe extern "C" fn libclient_config_default(
 
     let config = crate::ClientConfig {
         streamer_ip: ip.to_string(),
+        protocol,
         input_pipeline: pipeline,
         window_handle: window_handle.handle,
         yuv444: false,

@@ -11,6 +11,26 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+#[derive(Clone, Copy, Debug)]
+pub enum StreamingProtocol {
+    Rtp,
+}
+
+impl StreamingProtocol {
+    pub fn from_u32(u: sys::libclient_StreamingProtocol) -> Option<Self> {
+        match u {
+            sys::libclient_StreamingProtocol_LIBCLIENT_STREAMING_PROTOCOL_RTP => Some(Self::Rtp),
+            _ => None,
+        }
+    }
+
+    fn to_u32(self) -> u32 {
+        match self {
+            Self::Rtp => sys::libclient_StreamingProtocol_LIBCLIENT_STREAMING_PROTOCOL_RTP,
+        }
+    }
+}
+
 pub struct WindowHandle {
     pub ptr: *mut sys::libclient_WindowHandle,
 }
@@ -81,13 +101,19 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn default(ip: &str, pipeline: &Pipeline, window_handle: &WindowHandle) -> Result<Self> {
+    pub fn default(
+        ip: &str,
+        protocol: StreamingProtocol,
+        pipeline: &Pipeline,
+        window_handle: &WindowHandle,
+    ) -> Result<Self> {
         let cip = to_cstr(ip);
 
         unsafe {
             let mut ptr: *mut _ = std::mem::zeroed();
             let ret = sys::libclient_config_default(
                 cip.as_ptr(),
+                protocol.to_u32(),
                 pipeline.to_ptr(),
                 window_handle.ptr,
                 &mut ptr,

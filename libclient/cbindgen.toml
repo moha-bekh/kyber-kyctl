@@ -18,3 +18,4 @@ prefix_with_name = true
 "Event" = "libclient_Event"
 "LogCb" = "libclient_LogCb"
 "LogLevel" = "libclient_LogLevel"
+"StreamingProtocol" = "libclient_StreamingProtocol"
