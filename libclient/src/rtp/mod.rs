@@ -31,10 +31,15 @@ pub(crate) async fn start(config: &ClientConfig, msg_proxy: MessageProxy) -> Res
     .await?;
 
     let input_service = if config.inputs {
+        let ip = config.streamer_ip.clone();
+
+        let create_stream_cb =
+            |_target, msg_sink| libkynput_rs::tcp::new_client(ip.as_str(), msg_sink);
+
         let input_service = input_service::Client::new(
-            &config.streamer_ip,
             msg_proxy,
             config.input_pipeline.get_input_sink(),
+            create_stream_cb,
         )?;
 
         Some(input_service)

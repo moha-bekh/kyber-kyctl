@@ -1,6 +1,6 @@
 use log::info;
 
-use libkynput_rs::{Consumer, NetworkStream, NetworkStreamMsg, NetworkStreamObserver};
+use libkynput_rs::{Consumer, InputTarget, NetworkStream, NetworkStreamMsg, NetworkStreamObserver};
 
 use super::{Message, MessageProxy};
 use crate::error::Result;
@@ -31,33 +31,36 @@ impl NetworkStreamObserver for MsgSink {
 
 pub struct Client {
     _message_proxy: MessageProxy,
-    tcp_service: NetworkStream,
+    stream: NetworkStream,
 }
 
 impl Client {
-    pub fn new(
-        consumer_ip: &str,
+    pub fn new<F>(
         message_proxy: MessageProxy,
         rx_consumer: Consumer,
-    ) -> Result<Self> {
+        stream_factory: F,
+    ) -> Result<Self>
+    where
+        F: FnOnce(InputTarget, Box<dyn NetworkStreamObserver>) -> NetworkStream,
+    {
         let msg_sink = Box::new(MsgSink::new(message_proxy.clone()));
-        let tcp_service = libkynput_rs::tcp::new_client(consumer_ip, msg_sink);
-        tcp_service.plug_consumer(&rx_consumer)?;
+        let stream = stream_factory(InputTarget::Client, msg_sink);
+        stream.plug_consumer(&rx_consumer)?;
         info!("run_client");
-        tcp_service.run()?;
+        stream.run()?;
 
         Ok(Self {
             _message_proxy: message_proxy,
-            tcp_service,
+            stream,
         })
     }
 
     pub fn get_tx_consumer(&self) -> Consumer {
-        self.tcp_service.clone_consumer()
+        self.stream.clone_consumer()
     }
 
     pub async fn stop(&mut self) -> Result<()> {
-        self.tcp_service.stop()?;
+        self.stream.stop()?;
 
         Ok(())
     }
