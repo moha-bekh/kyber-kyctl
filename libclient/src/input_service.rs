@@ -1,6 +1,6 @@
 use log::info;
 
-use libkynput_rs::{Consumer, InputTarget, NetworkStream, NetworkStreamMsg, NetworkStreamObserver};
+use libkynput_rs::{Consumer, NetworkStream, NetworkStreamMsg, NetworkStreamObserver};
 
 use super::{Message, MessageProxy};
 use crate::error::Result;
@@ -40,13 +40,11 @@ impl Client {
         message_proxy: MessageProxy,
         rx_consumer: Consumer,
     ) -> Result<Self> {
-        let host = String::from(consumer_ip);
-
         let msg_sink = Box::new(MsgSink::new(message_proxy.clone()));
-        let tcp_service = libkynput_rs::create_input_stream_tcp(InputTarget::Client, msg_sink);
+        let tcp_service = libkynput_rs::tcp::new_client(consumer_ip, msg_sink);
         tcp_service.plug_consumer(&rx_consumer)?;
         info!("run_client");
-        tcp_service.run_client(&host)?;
+        tcp_service.run()?;
 
         Ok(Self {
             _message_proxy: message_proxy,
