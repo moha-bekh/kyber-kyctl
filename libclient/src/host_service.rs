@@ -9,7 +9,7 @@ pub async fn stop_stream(streamer_ip: &str) -> Result<()> {
     info!("Request stop stream to {}", streamer_ip);
 
     let url = format!(
-        "http://{ip}:{port}/stop",
+        "http://{ip}:{port}/stop_session",
         ip = streamer_ip,
         port = STREAMER_PORT
     );

@@ -24,7 +24,7 @@ struct GenerateSdpResponse {
 
 pub async fn hello(streamer_ip: &str) -> Result<String> {
     let url = format!(
-        "http://{ip}:{port}/hello",
+        "http://{ip}:{port}/rtp/hello",
         ip = streamer_ip,
         port = STREAMER_PORT
     );
@@ -39,7 +39,7 @@ pub async fn generate_sdp(streamer_ip: &str, yuv444: bool) -> Result<String> {
     let client = reqwest::Client::new();
 
     let url = format!(
-        "http://{ip}:{port}/generate_sdp",
+        "http://{ip}:{port}/rtp/generate_sdp",
         ip = streamer_ip,
         port = STREAMER_PORT
     );
@@ -71,7 +71,7 @@ pub async fn start_stream(
     let client = reqwest::Client::new();
 
     let url = format!(
-        "http://{ip}:{port}/start",
+        "http://{ip}:{port}/rtp/start",
         ip = streamer_ip,
         port = STREAMER_PORT
     );
