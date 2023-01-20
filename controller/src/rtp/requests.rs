@@ -1,0 +1,80 @@
+use actix_web::{get, post, web, HttpRequest, HttpResponse};
+use log::info;
+use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
+
+use crate::controller::Controller;
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct GenerateSdpRequest {
+    pub yuv444: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct GenerateSdpResponse {
+    pub params: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct StartRequest {
+    pub ip: String,
+    pub port: u16,
+    pub yuv444: bool,
+    pub audio: bool,
+    pub inputs: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct StartResponse {
+    pub ip: String,
+}
+
+#[get("/hello")]
+async fn hello(req: HttpRequest) -> HttpResponse {
+    let peer_addr = if let Some(peer_addr) = req.peer_addr() {
+        peer_addr
+    } else {
+        return HttpResponse::Forbidden().finish();
+    };
+
+    HttpResponse::Ok().json(StartResponse {
+        ip: peer_addr.ip().to_string(),
+    })
+}
+
+#[post("/generate_sdp")]
+async fn generate_sdp(request: web::Json<GenerateSdpRequest>) -> HttpResponse {
+    let ret = super::generate_video_sdp(request.into_inner()).await;
+    match ret {
+        Ok(params) => {
+            info!("SDP generated: {}", params);
+
+            HttpResponse::Ok().json(GenerateSdpResponse { params })
+        }
+        Err(err) => {
+            info!("SDP generation rejected: {:?}", err);
+            HttpResponse::Forbidden().finish()
+        }
+    }
+}
+
+#[post("/start")]
+async fn start(
+    ctrl: web::Data<Mutex<Controller>>,
+    request: web::Json<StartRequest>,
+) -> HttpResponse {
+    let mut ctrl = ctrl.lock().await;
+
+    let ret = super::start(&mut ctrl, request.into_inner()).await;
+    match ret {
+        Ok(_) => {
+            info!("Stream started");
+
+            HttpResponse::Ok().finish()
+        }
+        Err(err) => {
+            info!("Stream start rejected: {:?}", err);
+            HttpResponse::Forbidden().finish()
+        }
+    }
+}
