@@ -43,10 +43,13 @@ pub async fn run() -> std::io::Result<()> {
             .app_data(web::JsonConfig::default().limit(1024))
             // enable logger
             .wrap(middleware::Logger::default())
-            // register simple handler
-            .service(rtp::requests::hello)
-            .service(rtp::requests::generate_sdp)
-            .service(rtp::requests::start)
+            // RTP
+            .service(
+                web::scope("/rtp")
+                    .service(rtp::requests::hello)
+                    .service(rtp::requests::generate_sdp)
+                    .service(rtp::requests::start),
+            )
             .service(stop)
     })
     .bind("0.0.0.0:8080")?
