@@ -25,13 +25,13 @@ impl Handler {
         // Build mandatory parameters
         let script_path = utils::get_resource_path("txproto_stream_audio.lua");
         let params = format!(
-            "-s {} {} {}",
+            "{} {} {}",
             script_path.to_str().ok_or(Error::Rejected)?,
             ip,
             port,
         );
 
-        let txproto_path = utils::get_executable_path("txproto");
+        let txproto_path = utils::get_executable_path("avserver");
 
         info!("Run {:?} {}", txproto_path, params);
 

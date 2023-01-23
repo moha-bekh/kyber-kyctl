@@ -31,7 +31,7 @@ impl Handler {
         // Build mandatory parameters
         let script_path = utils::get_resource_path("txproto_stream_video.lua");
         let mut params = format!(
-            "-s {} {} {} {}",
+            "{} {} {} {}",
             script_path.to_str().ok_or(Error::Rejected)?,
             ip,
             port,
@@ -42,7 +42,7 @@ impl Handler {
             params += &format!(" {}", &sdp_file);
         };
 
-        let txproto_path = utils::get_executable_path("txproto");
+        let txproto_path = utils::get_executable_path("avserver");
 
         info!("Run {:?} {}", txproto_path, params);
 
