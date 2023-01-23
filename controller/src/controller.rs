@@ -1,19 +1,24 @@
 use log::info;
 
+use libkypc::process::ProcessFactory;
+
 use crate::error::Result;
 use crate::input_server;
 use crate::streamer_audio;
 use crate::streamer_video;
 
 pub struct Controller {
+    pub(crate) process_factory: ProcessFactory,
+
     pub streamer_video: Option<streamer_video::Handler>,
     pub streamer_audio: Option<streamer_audio::Handler>,
-    pub input_server: Option<input_server::Handler>,
+    pub(crate) input_server: Option<input_server::Handler>,
 }
 
 impl Controller {
     pub fn new() -> Self {
         Self {
+            process_factory: ProcessFactory::new(false),
             streamer_video: None,
             streamer_audio: None,
             input_server: None,
