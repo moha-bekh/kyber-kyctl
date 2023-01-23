@@ -43,8 +43,13 @@ async fn hello(req: HttpRequest) -> HttpResponse {
 }
 
 #[post("/generate_sdp")]
-async fn generate_sdp(request: web::Json<GenerateSdpRequest>) -> HttpResponse {
-    let ret = super::generate_video_sdp(request.into_inner()).await;
+async fn generate_sdp(
+    ctrl: web::Data<Mutex<Controller>>,
+    request: web::Json<GenerateSdpRequest>,
+) -> HttpResponse {
+    let mut ctrl = ctrl.lock().await;
+
+    let ret = super::generate_video_sdp(&mut ctrl, request.into_inner()).await;
     match ret {
         Ok(params) => {
             info!("SDP generated: {}", params);

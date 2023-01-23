@@ -18,6 +18,8 @@ pub enum Error {
     StreamerStarted,
     #[error("Streamer already stopped")]
     StreamerStopped,
+    #[error("OsString '{s:?}' conversion to string failed")]
+    OsStringConversion { s: std::ffi::OsString },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

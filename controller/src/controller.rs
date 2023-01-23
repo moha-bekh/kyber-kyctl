@@ -9,8 +9,8 @@ use crate::streamer;
 pub struct Controller {
     pub(crate) process_factory: ProcessFactory,
 
-    pub streamer_video: Option<streamer::Handler>,
-    pub streamer_audio: Option<streamer::Handler>,
+    pub(crate) streamer_video: Option<streamer::Handler>,
+    pub(crate) streamer_audio: Option<streamer::Handler>,
     pub(crate) input_server: Option<input_server::Handler>,
 }
 

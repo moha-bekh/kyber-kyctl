@@ -14,7 +14,10 @@ use crate::{input_server, streamer, Controller};
 // a safe port.
 const AUDIO_PORT_OFFSET: u16 = 10;
 
-pub async fn generate_video_sdp(request: requests::GenerateSdpRequest) -> Result<String> {
+pub async fn generate_video_sdp(
+    ctrl: &mut Controller,
+    request: requests::GenerateSdpRequest,
+) -> Result<String> {
     // Run the streamer once to generate the SDP
     let sdp_path = env::temp_dir().join("video.sdp");
     let ret = fs::remove_file(sdp_path.clone()).await;
@@ -36,9 +39,13 @@ pub async fn generate_video_sdp(request: requests::GenerateSdpRequest) -> Result
             .or(Err(Error::Rejected))?,
     ];
 
-    let mut streamer = streamer::Handler::new();
+    let mut streamer = streamer::Handler::new("VideoSDP");
     streamer
-        .start("txproto_stream_video.lua", Some(params))
+        .start(
+            &mut ctrl.process_factory,
+            "txproto_stream_video.lua",
+            Some(params),
+        )
         .await?;
 
     // Wait for sdp file to be available
@@ -102,9 +109,13 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
         format!("{}", request.yuv444),
     ];
 
-    let mut streamer = streamer::Handler::new();
+    let mut streamer = streamer::Handler::new("Video");
     streamer
-        .start("txproto_stream_video.lua", Some(params))
+        .start(
+            &mut ctrl.process_factory,
+            "txproto_stream_video.lua",
+            Some(params),
+        )
         .await?;
 
     ctrl.streamer_video = Some(streamer);
@@ -115,9 +126,13 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
 
         let params = vec![request.ip, format!("{audio_port}")];
 
-        let mut streamer_audio = streamer::Handler::new();
+        let mut streamer_audio = streamer::Handler::new("Audio");
         streamer_audio
-            .start("txproto_stream_audio.lua", Some(params))
+            .start(
+                &mut ctrl.process_factory,
+                "txproto_stream_audio.lua",
+                Some(params),
+            )
             .await?;
 
         ctrl.streamer_audio = Some(streamer_audio);

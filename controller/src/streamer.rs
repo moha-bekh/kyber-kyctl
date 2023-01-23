@@ -1,60 +1,99 @@
-use log::info;
-use tokio::process::{Child, Command};
+use std::path::PathBuf;
+
+use log::{debug, info};
+
+use avservice_types::{Command, Event};
+use libkypc::{
+    process::{Process, ProcessFactory},
+    CommandSender, Commander, EventReceiver,
+};
 
 use crate::error::{Error, Result};
 use crate::utils;
 
-pub struct Handler {
-    child: Option<Child>,
+struct Inner {
+    child: Process,
+    commander: Commander<Command, Event>,
+    sender: CommandSender<Command, Event>,
+    _receiver: EventReceiver<Event>,
+}
+
+pub(crate) struct Handler {
+    name: String,
+    avserver_path: PathBuf,
+    inner: Option<Inner>,
 }
 
 impl Handler {
-    pub fn new() -> Self {
-        Self { child: None }
+    pub(crate) fn new(name: &str) -> Self {
+        Self {
+            name: name.into(),
+            avserver_path: utils::get_executable_path("avserver"),
+            inner: None,
+        }
     }
 
-    pub fn is_running(&self) -> bool {
-        self.child.is_some()
+    pub(crate) fn is_running(&self) -> bool {
+        self.inner.is_some()
     }
 
-    pub async fn start(&mut self, script: &str, args: Option<Vec<String>>) -> Result<()> {
-        if self.is_running() {
+    async fn spawn_process(&self, process_factory: &mut ProcessFactory) -> Result<Inner> {
+        info!("Run AvServer {name}", name = self.name);
+
+        let (child, mut commander): (_, Commander<Command, Event>) =
+            process_factory.spawn(&self.avserver_path, None).await?;
+        let (sender, receiver) = master.get_sender_receiver()?;
+
+        Ok(Inner {
+            child,
+            commander,
+            sender,
+            _receiver: receiver,
+        })
+    }
+
+    pub(crate) async fn start(
+        &mut self,
+        process_factory: &mut ProcessFactory,
+        script: &str,
+        args: Option<Vec<String>>,
+    ) -> Result<()> {
+        if self.inner.is_some() {
             return Err(Error::StreamerStarted);
         }
 
-        // Build mandatory parameters
-        let txproto_path = utils::get_executable_path("avserver");
-        let script_path = utils::get_resource_path(&script);
+        let script_path = utils::get_resource_path(script);
 
-        let mut params: Vec<String> = vec![
-            script_path.into_os_string().into_string().unwrap(),
-        ];
-
-        if let Some(mut args) = args {
-            params.append(&mut args);
-        };
-
-        info!("Run {:?} {:?}", txproto_path, params);
-
-        let child = Command::new(txproto_path)
-            .args(params)
-            .spawn()
-            .expect("spawn() failed");
-        self.child = Some(child);
+        let mut inner = self.spawn_process(process_factory).await?;
+        inner
+            .sender
+            .send(Command::Start {
+                script: utils::path_to_string(&script_path)?,
+                args,
+            })
+            .await?;
+        self.inner = Some(inner);
 
         Ok(())
     }
 
-    pub async fn stop(&mut self) -> Result<()> {
-        match self.child.as_mut() {
-            Some(child) => {
-                child.kill().await.expect("kill() failed");
+    pub(crate) async fn stop(&mut self) -> Result<()> {
+        let Some(mut inner) = self.inner.take() else {
+            return Err(Error::StreamerStopped);
+        };
 
-                let status = child.wait().await.expect("wait() failed");
-                info!("Streamer exited with: {}", status);
-                Ok(())
-            }
-            None => Err(Error::StreamerStopped),
-        }
+        inner.sender.send(Command::Stop).await?;
+
+        debug!("Stop child");
+        inner.child.stop().await?;
+        debug!("Stop child: Done");
+
+        debug!("Stop commander");
+        inner.commander.stop().await?;
+        debug!("Commander {name} stopped", name = self.name);
+
+        info!("AvServer exited");
+
+        Ok(())
     }
 }
