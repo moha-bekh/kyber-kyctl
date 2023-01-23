@@ -4,14 +4,13 @@ use libkypc::process::ProcessFactory;
 
 use crate::error::Result;
 use crate::input_server;
-use crate::streamer_audio;
-use crate::streamer_video;
+use crate::streamer;
 
 pub struct Controller {
     pub(crate) process_factory: ProcessFactory,
 
-    pub streamer_video: Option<streamer_video::Handler>,
-    pub streamer_audio: Option<streamer_audio::Handler>,
+    pub streamer_video: Option<streamer::Handler>,
+    pub streamer_audio: Option<streamer::Handler>,
     pub(crate) input_server: Option<input_server::Handler>,
 }
 

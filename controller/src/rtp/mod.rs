@@ -8,7 +8,7 @@ use log::{info, warn};
 use tokio::{fs, time};
 
 use crate::error::{Error, Result};
-use crate::{input_server, streamer_video, Controller};
+use crate::{input_server, streamer, Controller};
 
 // RTP seems to use multiple port for a session. Fix a large offset to get
 // a safe port.
@@ -25,20 +25,20 @@ pub async fn generate_video_sdp(request: requests::GenerateSdpRequest) -> Result
         }
     }
 
-    let mut streamer = streamer_video::Handler::new();
+    let params = vec![
+        "localhost".into(),
+        "30000".into(),
+        format!("{}", request.yuv444),
+        sdp_path
+            .clone()
+            .into_os_string()
+            .into_string()
+            .or(Err(Error::Rejected))?,
+    ];
+
+    let mut streamer = streamer::Handler::new();
     streamer
-        .start(
-            "localhost",
-            30000,
-            request.yuv444,
-            Some(
-                sdp_path
-                    .clone()
-                    .into_os_string()
-                    .into_string()
-                    .or(Err(Error::Rejected))?,
-            ),
-        )
+        .start("txproto_stream_video.lua", Some(params))
         .await?;
 
     // Wait for sdp file to be available
@@ -96,20 +96,28 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
 
     // SDP file will contain some required parameters on client side.
     info!("Start video. ip: {} - port: {}", request.ip, request.port);
-    let mut streamer_video = streamer_video::Handler::new();
-    streamer_video
-        .start(request.ip.as_str(), request.port, request.yuv444, None)
+    let params = vec![
+        request.ip.clone(),
+        format!("{}", request.port),
+        format!("{}", request.yuv444),
+    ];
+
+    let mut streamer = streamer::Handler::new();
+    streamer
+        .start("txproto_stream_video.lua", Some(params))
         .await?;
 
-    ctrl.streamer_video = Some(streamer_video);
+    ctrl.streamer_video = Some(streamer);
 
     if request.audio {
         let audio_port = request.port + AUDIO_PORT_OFFSET;
         info!("Start audio. ip: {} - port: {audio_port}", request.ip);
 
-        let mut streamer_audio = crate::streamer_audio::Handler::new();
+        let params = vec![request.ip, format!("{audio_port}")];
+
+        let mut streamer_audio = streamer::Handler::new();
         streamer_audio
-            .start(request.ip.as_str(), audio_port)
+            .start("txproto_stream_audio.lua", Some(params))
             .await?;
 
         ctrl.streamer_audio = Some(streamer_audio);

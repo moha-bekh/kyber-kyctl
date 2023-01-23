@@ -8,8 +8,7 @@ mod controller;
 mod error;
 mod input_server;
 mod rtp;
-mod streamer_audio;
-mod streamer_video;
+mod streamer;
 mod utils;
 
 use controller::Controller;
