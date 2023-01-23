@@ -38,7 +38,7 @@ build-debian-buster-x86_64:
     - merge_requests
     - tags
   script: |
-    ./build-linux.sh -o $(pwd)/rootfs
+    ./build-linux.sh -k -o $(pwd)/rootfs
 
 clippy-debian-buster-x86_64:
   stage: misc
@@ -50,7 +50,7 @@ clippy-debian-buster-x86_64:
     - merge_requests
     - tags
   script: |
-    ./build-linux.sh -c -o $(pwd)/rootfs
+    ./build-linux.sh -k -c -o $(pwd)/rootfs
 
 build-windows-x86_64:
   stage: build
@@ -62,7 +62,7 @@ build-windows-x86_64:
     - merge_requests
     - tags
   script: |
-    ./build-win32.sh -o $(pwd)/rootfs
+    ./build-win32.sh -k -o $(pwd)/rootfs
 
 clippy-windows-x86_64:
   stage: misc
@@ -74,7 +74,7 @@ clippy-windows-x86_64:
     - merge_requests
     - tags
   script: |
-    ./build-win32.sh -c -o $(pwd)/rootfs
+    ./build-win32.sh -k -c -o $(pwd)/rootfs
 
 .macos-common:
   before_script: |
@@ -90,7 +90,7 @@ clippy-windows-x86_64:
     - merge_requests
     - tags
   script: |
-    ./build-macos.sh -a $HOST_ARCH -o $(pwd)/rootfs
+    ./build-macos.sh -k -a $HOST_ARCH -o $(pwd)/rootfs
 
 .clippy-macos-common:
   extends: .macos-common
@@ -102,7 +102,7 @@ clippy-windows-x86_64:
     - merge_requests
     - tags
   script: |
-    ./build-macos.sh -c -a $HOST_ARCH -o $(pwd)/rootfs
+    ./build-macos.sh -k -c -a $HOST_ARCH -o $(pwd)/rootfs
 
 build-macos-x86_64:
   extends: .build-macos-common

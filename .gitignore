@@ -1,2 +1,5 @@
+avserver
+libkynput
+libkypc
 rootfs*
 target
