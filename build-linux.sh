@@ -53,8 +53,6 @@ case "$ACTION" in
     "build")
         cargo build --release
         cp target/release/controller $OUT_DIR/bin
-        cp controller/txproto_stream_audio.lua $OUT_DIR/bin
-        cp controller/txproto_stream_video.lua $OUT_DIR/bin
     ;;
     "clippy")
         cargo clippy -- -D warnings
