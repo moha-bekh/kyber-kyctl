@@ -117,7 +117,7 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
 
     if request.inputs {
         let mut input_server = input_server::Handler::new();
-        input_server.start().await?;
+        input_server.start_tcp(&mut ctrl.process_factory).await?;
 
         ctrl.input_server = Some(input_server);
     } else {

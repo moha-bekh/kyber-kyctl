@@ -9,6 +9,11 @@ pub enum Error {
         #[from]
         source: std::io::Error,
     },
+    #[error("libkypc error: {source:?}")]
+    LibypcError {
+        #[from]
+        source: libkypc::Error,
+    },
     #[error("Streamer already started")]
     StreamerStarted,
     #[error("Streamer already stopped")]
