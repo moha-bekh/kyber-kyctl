@@ -1,15 +1,18 @@
-#[derive(Debug)]
-pub enum Error {
-    Rejected,
-    IO(std::io::Error),
-    StreamerStarted,
-    StreamerStopped,
-}
+use thiserror::Error;
 
-impl From<std::io::Error> for Error {
-    fn from(err: std::io::Error) -> Error {
-        Error::IO(err)
-    }
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("Unknown error")]
+    Rejected,
+    #[error("IO Error: {source:?}")]
+    IO {
+        #[from]
+        source: std::io::Error,
+    },
+    #[error("Streamer already started")]
+    StreamerStarted,
+    #[error("Streamer already stopped")]
+    StreamerStopped,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

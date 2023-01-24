@@ -21,7 +21,7 @@ pub async fn generate_video_sdp(request: requests::GenerateSdpRequest) -> Result
     if let Err(err) = ret {
         if err.kind() != io::ErrorKind::NotFound {
             warn!("Fail to delete SDP file");
-            return Err(Error::IO(err));
+            return Err(Error::IO { source: err });
         }
     }
 
