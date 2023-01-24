@@ -6,7 +6,7 @@ use actix_web::{middleware, post, web, App, HttpResponse, HttpServer};
 
 mod controller;
 mod error;
-mod input_server;
+mod inputservice;
 mod rtp;
 mod streamer;
 mod utils;

@@ -6,7 +6,7 @@ use log::{info, warn};
 use tokio::time;
 
 use crate::error::Result;
-use crate::{input_server, streamer, Controller};
+use crate::{inputservice, streamer, Controller};
 
 // RTP seems to use multiple port for a session. Fix a large offset to get
 // a safe port.
@@ -33,14 +33,14 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
         ctrl.streamer_video = None
     }
 
-    // Stop input_server if any
-    if let Some(input_server) = ctrl.input_server.as_mut() {
+    // Stop inputservice if any
+    if let Some(inputservice) = ctrl.inputservice.as_mut() {
         info!("Stop running Input Server");
 
-        if input_server.is_running() {
-            input_server.stop().await?;
+        if inputservice.is_running() {
+            inputservice.stop().await?;
         }
-        ctrl.input_server = None
+        ctrl.inputservice = None
     }
 
     // SDP file will contain some required parameters on client side.
@@ -71,10 +71,10 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
     }
 
     if request.inputs {
-        let mut input_server = input_server::Handler::new();
-        input_server.start_tcp(&mut ctrl.process_factory).await?;
+        let mut inputservice = inputservice::Handler::new();
+        inputservice.start_tcp(&mut ctrl.process_factory).await?;
 
-        ctrl.input_server = Some(input_server);
+        ctrl.inputservice = Some(inputservice);
     } else {
         warn!("Input server disabled");
     }

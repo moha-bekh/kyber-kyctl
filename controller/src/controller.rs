@@ -3,7 +3,7 @@ use log::info;
 use libkypc::process::ProcessFactory;
 
 use crate::error::Result;
-use crate::input_server;
+use crate::inputservice;
 use crate::streamer;
 
 pub struct Controller {
@@ -11,7 +11,7 @@ pub struct Controller {
 
     pub(crate) streamer_video: Option<streamer::Handler>,
     pub(crate) streamer_audio: Option<streamer::Handler>,
-    pub(crate) input_server: Option<input_server::Handler>,
+    pub(crate) inputservice: Option<inputservice::Handler>,
 }
 
 impl Controller {
@@ -20,7 +20,7 @@ impl Controller {
             process_factory: ProcessFactory::new(false),
             streamer_video: None,
             streamer_audio: None,
-            input_server: None,
+            inputservice: None,
         }
     }
 
@@ -47,10 +47,10 @@ impl Controller {
             }
         }
 
-        match self.input_server.as_mut() {
-            Some(input_server) => {
-                input_server.stop().await?;
-                self.input_server = None
+        match self.inputservice.as_mut() {
+            Some(inputservice) => {
+                inputservice.stop().await?;
+                self.inputservice = None
             }
             None => {
                 info!("No active Input Server");
