@@ -6,7 +6,7 @@ use log::{info, warn};
 use tokio::time;
 
 use crate::error::Result;
-use crate::{inputservice, streamer, Controller};
+use crate::{avservice, inputservice, Controller};
 
 // RTP seems to use multiple port for a session. Fix a large offset to get
 // a safe port.
@@ -16,21 +16,21 @@ pub async fn generate_video_sdp(
     ctrl: &mut Controller,
     request: requests::GenerateSdpRequest,
 ) -> Result<String> {
-    let streamer = streamer::Handler::new("VideoSDP");
-    streamer
+    let avservice = avservice::Handler::new("VideoSDP");
+    avservice
         .rtp_generate_video_sdp(&mut ctrl.process_factory, request.yuv444)
         .await
 }
 
 pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Result<()> {
-    // Stop streamer if any
-    if let Some(streamer) = ctrl.streamer_video.as_mut() {
-        info!("Stop running streamer");
+    // Stop avservice if any
+    if let Some(avservice) = ctrl.avservice_video.as_mut() {
+        info!("Stop running avservice");
 
-        if streamer.is_running() {
-            streamer.stop().await?;
+        if avservice.is_running() {
+            avservice.stop().await?;
         }
-        ctrl.streamer_video = None
+        ctrl.avservice_video = None
     }
 
     // Stop inputservice if any
@@ -46,8 +46,8 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
     // SDP file will contain some required parameters on client side.
     info!("Start video. ip: {} - port: {}", request.ip, request.port);
 
-    let mut streamer = streamer::Handler::new("Video");
-    streamer
+    let mut avservice = avservice::Handler::new("Video");
+    avservice
         .rtp_start_video(
             &mut ctrl.process_factory,
             request.ip.clone(),
@@ -56,18 +56,18 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
         )
         .await?;
 
-    ctrl.streamer_video = Some(streamer);
+    ctrl.avservice_video = Some(avservice);
 
     if request.audio {
         let audio_port = request.port + AUDIO_PORT_OFFSET;
         info!("Start audio. ip: {} - port: {audio_port}", &request.ip);
 
-        let mut streamer_audio = streamer::Handler::new("Audio");
-        streamer_audio
+        let mut avservice_audio = avservice::Handler::new("Audio");
+        avservice_audio
             .rtp_start_audio(&mut ctrl.process_factory, request.ip, audio_port)
             .await?;
 
-        ctrl.streamer_audio = Some(streamer_audio);
+        ctrl.avservice_audio = Some(avservice_audio);
     }
 
     if request.inputs {

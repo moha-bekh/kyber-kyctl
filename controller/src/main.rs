@@ -4,11 +4,11 @@ use tokio::sync::Mutex;
 
 use actix_web::{middleware, post, web, App, HttpResponse, HttpServer};
 
+mod avservice;
 mod controller;
 mod error;
 mod inputservice;
 mod rtp;
-mod streamer;
 mod utils;
 
 use controller::Controller;

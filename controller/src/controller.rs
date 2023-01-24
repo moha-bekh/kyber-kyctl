@@ -2,15 +2,15 @@ use log::info;
 
 use libkypc::process::ProcessFactory;
 
+use crate::avservice;
 use crate::error::Result;
 use crate::inputservice;
-use crate::streamer;
 
 pub struct Controller {
     pub(crate) process_factory: ProcessFactory,
 
-    pub(crate) streamer_video: Option<streamer::Handler>,
-    pub(crate) streamer_audio: Option<streamer::Handler>,
+    pub(crate) avservice_video: Option<avservice::Handler>,
+    pub(crate) avservice_audio: Option<avservice::Handler>,
     pub(crate) inputservice: Option<inputservice::Handler>,
 }
 
@@ -18,8 +18,8 @@ impl Controller {
     pub fn new() -> Self {
         Self {
             process_factory: ProcessFactory::new(false),
-            streamer_video: None,
-            streamer_audio: None,
+            avservice_video: None,
+            avservice_audio: None,
             inputservice: None,
         }
     }
@@ -27,23 +27,23 @@ impl Controller {
     pub async fn stop(&mut self) -> Result<()> {
         info!("Stop");
 
-        match self.streamer_video.as_mut() {
-            Some(streamer) => {
-                streamer.stop().await?;
-                self.streamer_video = None
+        match self.avservice_video.as_mut() {
+            Some(avservice) => {
+                avservice.stop().await?;
+                self.avservice_video = None
             }
             None => {
-                info!("No active streamer");
+                info!("No active avservice");
             }
         }
 
-        match self.streamer_audio.as_mut() {
-            Some(streamer) => {
-                streamer.stop().await?;
-                self.streamer_audio = None
+        match self.avservice_audio.as_mut() {
+            Some(avservice) => {
+                avservice.stop().await?;
+                self.avservice_audio = None
             }
             None => {
-                info!("No active audio streamer");
+                info!("No active audio avservice");
             }
         }
 
