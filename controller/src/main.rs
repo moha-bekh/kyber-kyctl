@@ -1,3 +1,5 @@
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
 use actix_web::{middleware, post, web, App, HttpResponse, HttpServer};
 use log::{info, LevelFilter};
 use tokio::sync::Mutex;
@@ -12,6 +14,8 @@ mod utils;
 
 use controller::Controller;
 use error::{Error, Result};
+
+const LISTENING_PORT: u16 = 8080;
 
 const STREAMER_CERT: &str = "kybertest_cert.pem";
 const STREAMER_KEY: &str = "kybertest_key.pem";
@@ -61,6 +65,8 @@ async fn main() {
 
     let ctrl = web::Data::new(Mutex::new(Controller::new()));
 
+    let bind_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), LISTENING_PORT);
+
     HttpServer::new(move || {
         App::new()
             .app_data(ctrl.clone())
@@ -75,7 +81,7 @@ async fn main() {
             )
             .service(stop_session)
     })
-    .bind_rustls("0.0.0.0:8080", server_config)
+    .bind_rustls(bind_addr, server_config)
     .unwrap()
     .run()
     .await
