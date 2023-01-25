@@ -37,6 +37,10 @@ impl Handler {
         self.inner.is_some()
     }
 
+    pub(crate) fn name(&self) -> String {
+        self.name.clone()
+    }
+
     async fn spawn_process(&self, process_factory: &mut ProcessFactory) -> Result<Inner> {
         info!("Run AvServer {name}", name = self.name);
 
