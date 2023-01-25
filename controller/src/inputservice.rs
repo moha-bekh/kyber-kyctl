@@ -58,6 +58,22 @@ impl Handler {
         Ok(())
     }
 
+    pub(crate) async fn start_kymux(
+        &mut self,
+        process_factory: &mut ProcessFactory,
+        uri: String,
+    ) -> Result<()> {
+        if self.inner.is_some() {
+            return Err(Error::StreamerStarted);
+        }
+
+        let mut inner = Self::spawn_process(process_factory).await?;
+        inner.sender.send(Command::StartKymux { uri }).await?;
+        self.inner = Some(inner);
+
+        Ok(())
+    }
+
     pub(crate) async fn stop(&mut self) -> Result<()> {
         let Some(mut inner) = self.inner.take() else {
             return Err(Error::StreamerStopped);

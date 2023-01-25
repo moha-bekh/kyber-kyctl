@@ -8,6 +8,7 @@ mod avservice;
 mod controller;
 mod error;
 mod inputservice;
+mod kymux_controller;
 mod rtp;
 mod tls;
 mod utils;
@@ -63,7 +64,7 @@ async fn main() {
     let tls_config = tls::load_config(STREAMER_CERT, STREAMER_KEY).unwrap();
     let server_config = build_serverconfig(&tls_config).unwrap();
 
-    let ctrl = web::Data::new(Mutex::new(Controller::new()));
+    let ctrl = web::Data::new(Mutex::new(Controller::new(tls_config)));
 
     let bind_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), LISTENING_PORT);
 
@@ -72,6 +73,12 @@ async fn main() {
             .app_data(ctrl.clone())
             .app_data(web::JsonConfig::default().limit(1024))
             .wrap(middleware::Logger::default())
+            // Kymux
+            .service(
+                web::scope("/kymux")
+                    .service(kymux_controller::requests::start_mux)
+                    .service(kymux_controller::requests::start_session),
+            )
             // RTP
             .service(
                 web::scope("/rtp")

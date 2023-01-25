@@ -6,6 +6,7 @@ use log::error;
 use crate::utils::get_resource_path;
 use crate::{Error, Result};
 
+#[derive(Clone)]
 pub(crate) struct Config {
     pub(crate) certificate: Vec<u8>,
     pub(crate) private_key: Vec<u8>,

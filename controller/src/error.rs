@@ -9,6 +9,11 @@ pub enum Error {
         #[from]
         source: std::io::Error,
     },
+    #[error("kymux error: {source:?}")]
+    KymuxError {
+        #[from]
+        source: kymux::Error,
+    },
     #[error("libkypc error: {source:?}")]
     LibypcError {
         #[from]
@@ -18,17 +23,25 @@ pub enum Error {
     StreamerStarted,
     #[error("Streamer already stopped")]
     StreamerStopped,
+    #[error("Kymux has no connection")]
+    KymuxNotConnected,
     #[error("Got an unexpected response from AvServer")]
     AvServerUnexpectedResponse,
     #[error("Couldn't open file {path}")]
     FileNotFound { path: PathBuf },
     #[error("Invalid TLS file")]
     TlsInvalidFile,
+    #[error("Invalid TLS certificate: {source:?}")]
+    TlsInvalidCertificate { source: webpki::Error },
     #[error("rustls error: {source:?}")]
     RustlsError {
         #[from]
         source: rustls::Error,
     },
+    #[error("Thread panicked")]
+    ThreadPanicked,
+    #[error("Invalid Video codec {codec}")]
+    InvalidVideoCodec { codec: String },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use log::{debug, info, warn};
 
-use avservice_types::{Command, Event};
+use avservice_types::{Command, Event, VideoCodec};
 use libkypc::{
     process::{Process, ProcessFactory},
     CommandSender, Commander, EventReceiver,
@@ -111,6 +111,39 @@ impl Handler {
             .sender
             .send(Command::RtpStartAudio { ip, port })
             .await?;
+
+        self.inner = Some(inner);
+
+        Ok(())
+    }
+
+    pub(crate) async fn kymux_start_video(
+        &mut self,
+        process_factory: &mut ProcessFactory,
+        uri: String,
+        codec: VideoCodec,
+        yuv444: bool,
+    ) -> Result<()> {
+        let mut inner = self.spawn_process(process_factory).await?;
+
+        inner
+            .sender
+            .send(Command::KymuxStartVideo { uri, codec, yuv444 })
+            .await?;
+
+        self.inner = Some(inner);
+
+        Ok(())
+    }
+
+    pub(crate) async fn kymux_start_audio(
+        &mut self,
+        process_factory: &mut ProcessFactory,
+        uri: String,
+    ) -> Result<()> {
+        let mut inner = self.spawn_process(process_factory).await?;
+
+        inner.sender.send(Command::KymuxStartAudio { uri }).await?;
 
         self.inner = Some(inner);
 
