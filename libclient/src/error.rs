@@ -13,6 +13,7 @@ pub enum PlayerError {
 #[derive(Debug)]
 pub enum Error {
     IO(std::io::Error),
+    InvalidAddress { addr: String },
     InvalidUnicodeStr,
     ChannelSend,
     Rejected,
@@ -21,6 +22,7 @@ pub enum Error {
     NoClient,
     NoInputService,
     Input(libkynput_rs::Error),
+    Kymux(kymux::Error),
     TaskJoin(tokio::task::JoinError),
     FileNotFound(PathBuf),
     TlsInvalidFile,
