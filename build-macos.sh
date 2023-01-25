@@ -120,7 +120,17 @@ if [ "$BUILD_KYBER_DEPS" = true ]; then
         git_clone "kyber-labs/kyber-streamer/libkynput.git"
     fi
 
+    if [[ ! -d libkypc ]]; then
+        git_clone "kyber-labs/kyber-streamer/libkypc.git"
+    fi
+
+    # Build libkynput
     cd libkynput
+
+    mkdir -p .cargo
+    echo '[patch.crates-io]' > .cargo/config.toml
+    echo 'libkypc = { path = "../libkypc" }' >> .cargo/config.toml
+
     ./build-macos.sh -a $HOST_ARCH -o $OUT_DIR
     cd -
 
@@ -131,6 +141,7 @@ if [ "$BUILD_KYBER_DEPS" = true ]; then
     echo '[patch.crates-io]' > .cargo/config.toml
     echo 'libkynput-rs = { path = "libkynput/libkynput-rs" }' >> .cargo/config.toml
     echo 'libkynput-sys = { path = "libkynput/libkynput-rs/libkynput-sys" }' >> .cargo/config.toml
+    echo 'libkypc = { path = "libkypc" }' >> .cargo/config.toml
 fi
 
 # Build dependencies
