@@ -6,6 +6,36 @@ use crate::avservice;
 use crate::error::Result;
 use crate::inputservice;
 
+pub(crate) async fn stop_avservice(handler: Option<avservice::Handler>) -> Result<()> {
+    let Some(mut handler) = handler else {
+        return Ok(());
+    };
+
+    if !handler.is_running() {
+        return Ok(());
+    }
+
+    info!("Stop running {} AVServer", handler.name());
+    handler.stop().await?;
+
+    Ok(())
+}
+
+pub(crate) async fn stop_input(handler: Option<inputservice::Handler>) -> Result<()> {
+    let Some(mut handler) = handler else {
+        return Ok(());
+    };
+
+    if !handler.is_running() {
+        return Ok(());
+    }
+
+    info!("Stop running InputServer");
+    handler.stop().await?;
+
+    Ok(())
+}
+
 pub struct Controller {
     pub(crate) process_factory: ProcessFactory,
 
@@ -27,17 +57,9 @@ impl Controller {
     pub async fn stop(&mut self) -> Result<()> {
         info!("Stop");
 
-        if let Some(mut avservice) = self.avservice_video.take() {
-            avservice.stop().await?;
-        }
-
-        if let Some(mut avservice) = self.avservice_audio.take() {
-            avservice.stop().await?;
-        }
-
-        if let Some(mut inputservice) = self.inputservice.take() {
-            inputservice.stop().await?;
-        }
+        stop_avservice(self.avservice_video.take()).await?;
+        stop_avservice(self.avservice_audio.take()).await?;
+        stop_input(self.inputservice.take()).await?;
 
         Ok(())
     }
