@@ -86,6 +86,10 @@ mkdir -p $OUT_DIR
 
 # Build kyber dependencies
 if [ "$BUILD_KYBER_DEPS" = true ]; then
+    if [[ ! -d kymux ]]; then
+        git_clone "kyber-labs/kyber-streamer/kymux.git"
+    fi
+
     if [[ ! -d libkynput ]]; then
         git_clone "kyber-labs/kyber-streamer/libkynput.git"
     fi
@@ -99,6 +103,7 @@ if [ "$BUILD_KYBER_DEPS" = true ]; then
 
     mkdir -p .cargo
     echo '[patch.crates-io]' > .cargo/config.toml
+    echo 'kymux_client = { path = "../kymux/kymux_client" }' >> .cargo/config.toml
     echo 'libkypc = { path = "../libkypc" }' >> .cargo/config.toml
 
     ./build-linux.sh -o $OUT_DIR
@@ -109,6 +114,8 @@ if [ "$BUILD_KYBER_DEPS" = true ]; then
 
     mkdir -p .cargo
     echo '[patch.crates-io]' > .cargo/config.toml
+    echo 'kymux = { path = "kymux/kymux" }' >> .cargo/config.toml
+    echo 'kymux_client = { path = "kymux/kymux_client" }' >> .cargo/config.toml
     echo 'libkynput-rs = { path = "libkynput/libkynput-rs" }' >> .cargo/config.toml
     echo 'libkynput-sys = { path = "libkynput/libkynput-rs/libkynput-sys" }' >> .cargo/config.toml
     echo 'libkypc = { path = "libkypc" }' >> .cargo/config.toml
