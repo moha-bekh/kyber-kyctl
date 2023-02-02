@@ -32,6 +32,15 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
         }
     }
 
+    // Stop audio avservice if any
+    if let Some(mut avservice) = ctrl.avservice_audio.take() {
+        info!("Stop running AV Audio service");
+
+        if avservice.is_running() {
+            avservice.stop().await?;
+        }
+    }
+
     // Stop inputservice if any
     if let Some(mut inputservice) = ctrl.inputservice.take() {
         info!("Stop running Input Server");
