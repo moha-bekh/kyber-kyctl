@@ -23,24 +23,22 @@ pub async fn generate_video_sdp(
 }
 
 pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Result<()> {
-    // Stop avservice if any
-    if let Some(avservice) = ctrl.avservice_video.as_mut() {
+    // Stop video avservice if any
+    if let Some(mut avservice) = ctrl.avservice_video.take() {
         info!("Stop running AV Video service");
 
         if avservice.is_running() {
             avservice.stop().await?;
         }
-        ctrl.avservice_video = None
     }
 
     // Stop inputservice if any
-    if let Some(inputservice) = ctrl.inputservice.as_mut() {
+    if let Some(mut inputservice) = ctrl.inputservice.take() {
         info!("Stop running Input Server");
 
         if inputservice.is_running() {
             inputservice.stop().await?;
         }
-        ctrl.inputservice = None
     }
 
     // SDP file will contain some required parameters on client side.

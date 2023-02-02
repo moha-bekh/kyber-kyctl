@@ -27,34 +27,16 @@ impl Controller {
     pub async fn stop(&mut self) -> Result<()> {
         info!("Stop");
 
-        match self.avservice_video.as_mut() {
-            Some(avservice) => {
-                avservice.stop().await?;
-                self.avservice_video = None
-            }
-            None => {
-                info!("No active Video AV service");
-            }
+        if let Some(mut avservice) = self.avservice_video.take() {
+            avservice.stop().await?;
         }
 
-        match self.avservice_audio.as_mut() {
-            Some(avservice) => {
-                avservice.stop().await?;
-                self.avservice_audio = None
-            }
-            None => {
-                info!("No active Audio AV service");
-            }
+        if let Some(mut avservice) = self.avservice_audio.take() {
+            avservice.stop().await?;
         }
 
-        match self.inputservice.as_mut() {
-            Some(inputservice) => {
-                inputservice.stop().await?;
-                self.inputservice = None
-            }
-            None => {
-                info!("No active Input service");
-            }
+        if let Some(mut inputservice) = self.inputservice.take() {
+            inputservice.stop().await?;
         }
 
         Ok(())
