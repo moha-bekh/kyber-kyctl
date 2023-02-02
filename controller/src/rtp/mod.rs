@@ -25,7 +25,7 @@ pub async fn generate_video_sdp(
 pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Result<()> {
     // Stop avservice if any
     if let Some(avservice) = ctrl.avservice_video.as_mut() {
-        info!("Stop running avservice");
+        info!("Stop running AV Video service");
 
         if avservice.is_running() {
             avservice.stop().await?;

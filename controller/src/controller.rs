@@ -33,7 +33,7 @@ impl Controller {
                 self.avservice_video = None
             }
             None => {
-                info!("No active avservice");
+                info!("No active Video AV service");
             }
         }
 
@@ -43,7 +43,7 @@ impl Controller {
                 self.avservice_audio = None
             }
             None => {
-                info!("No active audio avservice");
+                info!("No active Audio AV service");
             }
         }
 
@@ -53,7 +53,7 @@ impl Controller {
                 self.inputservice = None
             }
             None => {
-                info!("No active Input Server");
+                info!("No active Input service");
             }
         }
 
