@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use log::{debug, info};
+use log::{debug, info, warn};
 
 use avservice_types::{Command, Event};
 use libkypc::{
@@ -42,7 +42,7 @@ impl Handler {
 
         let (child, mut commander): (_, Commander<Command, Event>) =
             process_factory.spawn(&self.avserver_path, None).await?;
-        let (sender, receiver) = master.get_sender_receiver()?;
+        let (sender, receiver) = commander.get_sender_receiver()?;
 
         Ok(Inner {
             child,
@@ -52,47 +52,91 @@ impl Handler {
         })
     }
 
-    pub(crate) async fn start(
+    pub(crate) async fn rtp_generate_video_sdp(
+        &self,
+        process_factory: &mut ProcessFactory,
+        yuv444: bool,
+    ) -> Result<String> {
+        // Generate SDP
+        let mut inner = self.spawn_process(process_factory).await?;
+
+        let evt = inner
+            .sender
+            .send(Command::RtpGenerateVideoSdp { yuv444 })
+            .await?;
+
+        // Stop avserver
+        self.stop_inner(inner).await?;
+
+        // Unpack results
+        let Some(Event::RtpSdpGenerated { sdp }) = evt else {
+            return Err(Error::AvServerUnexpectedResponse);
+        };
+
+        Ok(sdp)
+    }
+
+    pub(crate) async fn rtp_start_video(
         &mut self,
         process_factory: &mut ProcessFactory,
-        script: &str,
-        args: Option<Vec<String>>,
+        ip: String,
+        port: u16,
+        yuv444: bool,
     ) -> Result<()> {
-        if self.inner.is_some() {
-            return Err(Error::StreamerStarted);
-        }
-
-        let script_path = utils::get_resource_path(script);
-
         let mut inner = self.spawn_process(process_factory).await?;
+
         inner
             .sender
-            .send(Command::Start {
-                script: utils::path_to_string(&script_path)?,
-                args,
-            })
+            .send(Command::RtpStartVideo { ip, port, yuv444 })
             .await?;
+
         self.inner = Some(inner);
 
         Ok(())
     }
 
-    pub(crate) async fn stop(&mut self) -> Result<()> {
-        let Some(mut inner) = self.inner.take() else {
-            return Err(Error::StreamerStopped);
-        };
+    pub(crate) async fn rtp_start_audio(
+        &mut self,
+        process_factory: &mut ProcessFactory,
+        ip: String,
+        port: u16,
+    ) -> Result<()> {
+        let mut inner = self.spawn_process(process_factory).await?;
 
-        inner.sender.send(Command::Stop).await?;
+        inner
+            .sender
+            .send(Command::RtpStartAudio { ip, port })
+            .await?;
 
-        debug!("Stop child");
+        self.inner = Some(inner);
+
+        Ok(())
+    }
+
+    async fn stop_inner(&self, mut inner: Inner) -> Result<()> {
+        debug!("Send stop request to {name}", name = self.name);
+        let ret = inner.sender.send(Command::Stop).await;
+        if let Err(err) = ret {
+            warn!("Stop request send failed: {err:?}");
+        }
+
         inner.child.stop().await?;
-        debug!("Stop child: Done");
+        debug!("Child {name} stopped", name = self.name);
 
-        debug!("Stop commander");
         inner.commander.stop().await?;
         debug!("Commander {name} stopped", name = self.name);
 
-        info!("AvServer exited");
+        Ok(())
+    }
+
+    pub(crate) async fn stop(&mut self) -> Result<()> {
+        let Some(inner) = self.inner.take() else {
+            return Err(Error::StreamerStopped);
+        };
+
+        self.stop_inner(inner).await?;
+
+        info!("AvServer {name} exited", name = self.name);
 
         Ok(())
     }

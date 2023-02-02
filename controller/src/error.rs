@@ -2,8 +2,6 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Unknown error")]
-    Rejected,
     #[error("IO Error: {source:?}")]
     IO {
         #[from]
@@ -18,8 +16,8 @@ pub enum Error {
     StreamerStarted,
     #[error("Streamer already stopped")]
     StreamerStopped,
-    #[error("OsString '{s:?}' conversion to string failed")]
-    OsStringConversion { s: std::ffi::OsString },
+    #[error("Got an unexpected response from AvServer")]
+    AvServerUnexpectedResponse,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
