@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -18,6 +20,15 @@ pub enum Error {
     StreamerStopped,
     #[error("Got an unexpected response from AvServer")]
     AvServerUnexpectedResponse,
+    #[error("Couldn't open file {path}")]
+    FileNotFound { path: PathBuf },
+    #[error("Invalid TLS file")]
+    TlsInvalidFile,
+    #[error("rustls error: {source:?}")]
+    RustlsError {
+        #[from]
+        source: rustls::Error,
+    },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

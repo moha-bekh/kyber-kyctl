@@ -9,9 +9,11 @@ mod controller;
 mod error;
 mod inputservice;
 mod rtp;
+mod tls;
 mod utils;
 
 use controller::Controller;
+use error::{Error, Result};
 
 #[post("/stop_session")]
 async fn stop_session(ctrl: web::Data<Mutex<Controller>>) -> HttpResponse {
