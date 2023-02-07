@@ -30,17 +30,18 @@ async fn stop_session(ctrl: web::Data<Mutex<Controller>>) -> HttpResponse {
     }
 }
 
-pub async fn run() -> std::io::Result<()> {
-    std::env::set_var("RUST_LOG", "actix_web=info");
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    env_logger::Builder::new()
+        .filter_level(LevelFilter::Info)
+        .init();
 
     let ctrl = web::Data::new(Mutex::new(Controller::new()));
 
-    // move is necessary to give closure below ownership of counter1
     HttpServer::new(move || {
         App::new()
-            .app_data(ctrl.clone()) // add shared state
+            .app_data(ctrl.clone())
             .app_data(web::JsonConfig::default().limit(1024))
-            // enable logger
             .wrap(middleware::Logger::default())
             // RTP
             .service(
@@ -54,13 +55,4 @@ pub async fn run() -> std::io::Result<()> {
     .bind("0.0.0.0:8080")?
     .run()
     .await
-}
-
-#[actix_web::main]
-async fn main() -> std::io::Result<()> {
-    env_logger::Builder::new()
-        .filter_level(LevelFilter::Info)
-        .init();
-
-    run().await
 }
