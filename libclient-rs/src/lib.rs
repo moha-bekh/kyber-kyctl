@@ -102,17 +102,23 @@ pub struct Config {
 
 impl Config {
     pub fn default(
+        host: &str,
         ip: &str,
+        cert: &str,
         protocol: StreamingProtocol,
         pipeline: &Pipeline,
         window_handle: &WindowHandle,
     ) -> Result<Self> {
+        let chost = to_cstr(host);
         let cip = to_cstr(ip);
+        let ccert = to_cstr(cert);
 
         unsafe {
             let mut ptr: *mut _ = std::mem::zeroed();
             let ret = sys::libclient_config_default(
+                chost.as_ptr(),
                 cip.as_ptr(),
+                ccert.as_ptr(),
                 protocol.to_u32(),
                 pipeline.to_ptr(),
                 window_handle.ptr,

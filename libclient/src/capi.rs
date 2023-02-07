@@ -130,7 +130,9 @@ pub unsafe extern "C" fn libclient_windowshandle_from_hwnd(
 
 #[no_mangle]
 pub unsafe extern "C" fn libclient_config_default(
+    host: *const c_char,
     ip: *const c_char,
+    cert: *const c_char,
     protocol: crate::StreamingProtocol,
     pipeline: *mut libkynput_sys::libkynput_Pipeline,
     window_handle: *mut libclient_WindowHandle,
@@ -139,15 +141,25 @@ pub unsafe extern "C" fn libclient_config_default(
     let pipeline = Pipeline::from_ptr(pipeline);
     let window_handle = Box::from_raw(window_handle);
 
-    let ip = if let Ok(ip) = CStr::from_ptr(ip).to_str() {
-        ip
-    } else {
+    let Ok(ip) = CStr::from_ptr(ip).to_str() else {
+        warn!("Fail to convert client's host");
+        return -1;
+    };
+
+    let Ok(host) = CStr::from_ptr(host).to_str() else {
         warn!("Fail to convert client IP");
         return -1;
     };
 
+    let Ok(cert) = CStr::from_ptr(cert).to_str() else {
+        warn!("Fail to convert client cert");
+        return -1;
+    };
+
     let config = crate::ClientConfig {
+        streamer_host: host.to_string(),
         streamer_ip: ip.to_string(),
+        streamer_cert: cert.to_string(),
         protocol,
         input_pipeline: pipeline,
         window_handle: window_handle.handle,

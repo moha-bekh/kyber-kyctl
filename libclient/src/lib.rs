@@ -171,7 +171,9 @@ pub enum StreamingProtocol {
 
 #[derive(Clone)]
 pub struct ClientConfig {
+    pub streamer_host: String,
     pub streamer_ip: String,
+    pub streamer_cert: String,
     pub protocol: StreamingProtocol,
     pub window_handle: WindowHandle,
     pub input_pipeline: Pipeline,
