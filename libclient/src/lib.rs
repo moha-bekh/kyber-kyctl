@@ -25,7 +25,10 @@ use libkynput_rs::Pipeline;
 use crate::error::{Error, Result};
 use enums::Message;
 use event_manager::EventManager;
+use http::HttpClient;
 use window_handle::WindowHandle;
+
+const STREAMER_PORT: u16 = 8080;
 
 enum Player {
     Rtp(rtp::Player),
@@ -50,6 +53,8 @@ impl MessageProxy {
 
 struct Handler {
     config: ClientConfig,
+    _tls_config: tls::Config,
+    http_client: HttpClient,
     event_manager: Arc<Mutex<EventManager>>,
     sender: Sender<Message>,
 
@@ -63,8 +68,19 @@ impl Handler {
         event_manager: Arc<Mutex<EventManager>>,
         sender: Sender<Message>,
     ) -> Result<Self> {
+        let tls_config = tls::load_tls_certificate(&config.streamer_cert)?;
+
+        let http_client = HttpClient::new(
+            &config.streamer_host,
+            &config.streamer_ip,
+            STREAMER_PORT,
+            &tls_config,
+        )?;
+
         Ok(Self {
             config,
+            _tls_config: tls_config,
+            http_client,
             event_manager,
             sender,
             player: None,
@@ -81,7 +97,9 @@ impl Handler {
     async fn start(&mut self) -> Result<()> {
         match self.config.protocol {
             StreamingProtocol::Rtp => {
-                let result = rtp::start(&self.config, self.create_message_proxy()).await?;
+                let result =
+                    rtp::start(&self.config, &self.http_client, self.create_message_proxy())
+                        .await?;
 
                 self.player = Some(Player::Rtp(result.player));
                 self.input_service = result.input_service;
@@ -111,7 +129,7 @@ impl Handler {
         }
 
         info!("Request to stop streaming services");
-        let ret = host_service::stop_stream(&self.config.streamer_ip).await;
+        let ret = host_service::stop_stream(&self.http_client).await;
         if let Err(err) = ret {
             warn!(
                 "Stop stream rejected by controller ({:?}). Stop client anyway.",

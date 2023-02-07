@@ -1,6 +1,7 @@
 pub mod host_service;
 pub mod player;
 
+use crate::http::HttpClient;
 use crate::input_service;
 use crate::{ClientConfig, MessageProxy, Result};
 
@@ -12,16 +13,20 @@ pub(crate) struct StartResult {
     pub(crate) input_service: Option<input_service::Client>,
 }
 
-pub(crate) async fn start(config: &ClientConfig, msg_proxy: MessageProxy) -> Result<StartResult> {
-    let local_ip = host_service::hello(&config.streamer_ip).await?;
+pub(crate) async fn start(
+    config: &ClientConfig,
+    client: &HttpClient,
+    msg_proxy: MessageProxy,
+) -> Result<StartResult> {
+    let local_ip = host_service::hello(client).await?;
 
-    let sdp_param = host_service::generate_sdp(&config.streamer_ip, config.yuv444).await?;
+    let sdp_param = host_service::generate_sdp(client, config.yuv444).await?;
 
     let mut player = Player::new(config.window_handle, msg_proxy.clone())?;
     player.play(&local_ip, RTP_PORT, sdp_param, config.audio)?;
 
     host_service::start_stream(
-        &config.streamer_ip,
+        client,
         &local_ip,
         RTP_PORT,
         config.yuv444,
