@@ -1,8 +1,6 @@
-use log::{info, LevelFilter};
-
-use tokio::sync::Mutex;
-
 use actix_web::{middleware, post, web, App, HttpResponse, HttpServer};
+use log::{info, LevelFilter};
+use tokio::sync::Mutex;
 
 mod avservice;
 mod controller;
@@ -32,13 +30,33 @@ async fn stop_session(ctrl: web::Data<Mutex<Controller>>) -> HttpResponse {
     }
 }
 
+// Load TLS config
+//
+// /!\/!\ WARNING /!\/!\
+// 1. This TLS configuration is only valid for tests.
+//    It must NOT be used in production
+// 2. Those files are provided by the project that packages the final bundle
+fn load_tls_config(cert_path: &str, key_path: &str) -> Result<rustls::ServerConfig> {
+    let config = tls::load_config(cert_path, key_path)?;
+
+    let certificate = rustls::Certificate(config.certificate);
+    let private_key = rustls::PrivateKey(config.private_key);
+
+    // Build configuration
+    Ok(rustls::ServerConfig::builder()
+        .with_safe_defaults()
+        .with_no_client_auth()
+        .with_single_cert(vec![certificate], private_key)?)
+}
+
 #[actix_web::main]
-async fn main() -> std::io::Result<()> {
+async fn main() {
     env_logger::Builder::new()
         .filter_level(LevelFilter::Info)
         .init();
 
     let ctrl = web::Data::new(Mutex::new(Controller::new()));
+    let tls_config = load_tls_config("kybertest_cert.pem", "kybertest_key.pem").unwrap();
 
     HttpServer::new(move || {
         App::new()
@@ -54,7 +72,9 @@ async fn main() -> std::io::Result<()> {
             )
             .service(stop_session)
     })
-    .bind("0.0.0.0:8080")?
+    .bind_rustls("0.0.0.0:8080", tls_config)
+    .unwrap()
     .run()
     .await
+    .unwrap();
 }

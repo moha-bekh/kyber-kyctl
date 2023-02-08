@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-actix-web = "4.2.1"
+actix-web = { version = "4.2.1", features = ["rustls"] }
 env_logger = "0.9.0"
 log = "0.4.14"
 rustls = "0.20.8"
