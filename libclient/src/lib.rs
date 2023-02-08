@@ -2,6 +2,7 @@ mod enums;
 mod error;
 pub mod event_manager;
 mod host_service;
+pub(crate) mod http;
 pub mod input_service;
 mod rtp;
 mod tls;
