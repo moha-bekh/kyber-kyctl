@@ -13,6 +13,9 @@ mod utils;
 use controller::Controller;
 use error::{Error, Result};
 
+const STREAMER_CERT: &str = "kybertest_cert.pem";
+const STREAMER_KEY: &str = "kybertest_key.pem";
+
 #[post("/stop_session")]
 async fn stop_session(ctrl: web::Data<Mutex<Controller>>) -> HttpResponse {
     let mut ctrl = ctrl.lock().await;
@@ -30,17 +33,9 @@ async fn stop_session(ctrl: web::Data<Mutex<Controller>>) -> HttpResponse {
     }
 }
 
-// Load TLS config
-//
-// /!\/!\ WARNING /!\/!\
-// 1. This TLS configuration is only valid for tests.
-//    It must NOT be used in production
-// 2. Those files are provided by the project that packages the final bundle
-fn load_tls_config(cert_path: &str, key_path: &str) -> Result<rustls::ServerConfig> {
-    let config = tls::load_config(cert_path, key_path)?;
-
-    let certificate = rustls::Certificate(config.certificate);
-    let private_key = rustls::PrivateKey(config.private_key);
+fn build_serverconfig(tls_config: &tls::Config) -> Result<rustls::ServerConfig> {
+    let certificate = rustls::Certificate(tls_config.certificate.clone());
+    let private_key = rustls::PrivateKey(tls_config.private_key.clone());
 
     // Build configuration
     Ok(rustls::ServerConfig::builder()
@@ -55,8 +50,16 @@ async fn main() {
         .filter_level(LevelFilter::Info)
         .init();
 
+    // Load TLS config
+    //
+    // /!\/!\ WARNING /!\/!\
+    // 1. This TLS configuration is only valid for tests.
+    //    It must NOT be used in production
+    // 2. Those files are provided by the project that packages the final bundle
+    let tls_config = tls::load_config(STREAMER_CERT, STREAMER_KEY).unwrap();
+    let server_config = build_serverconfig(&tls_config).unwrap();
+
     let ctrl = web::Data::new(Mutex::new(Controller::new()));
-    let tls_config = load_tls_config("kybertest_cert.pem", "kybertest_key.pem").unwrap();
 
     HttpServer::new(move || {
         App::new()
@@ -72,7 +75,7 @@ async fn main() {
             )
             .service(stop_session)
     })
-    .bind_rustls("0.0.0.0:8080", tls_config)
+    .bind_rustls("0.0.0.0:8080", server_config)
     .unwrap()
     .run()
     .await
