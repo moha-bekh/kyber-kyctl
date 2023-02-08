@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 #[derive(Debug)]
 pub enum PlayerError {
     InstanceCreateFailed,
@@ -20,6 +22,8 @@ pub enum Error {
     NoInputService,
     Input(libkynput_rs::Error),
     TaskJoin(tokio::task::JoinError),
+    FileNotFound(PathBuf),
+    TlsInvalidFile,
     // Player errors
     Player(PlayerError),
     // Host service errors

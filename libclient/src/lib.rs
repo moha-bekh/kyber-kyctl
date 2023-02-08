@@ -4,6 +4,7 @@ pub mod event_manager;
 mod host_service;
 pub mod input_service;
 mod rtp;
+mod tls;
 pub mod window_handle;
 
 #[cfg(any(cargo_c, feature = "capi"))]
