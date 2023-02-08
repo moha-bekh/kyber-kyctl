@@ -60,14 +60,14 @@ impl Handler {
         config: ClientConfig,
         event_manager: Arc<Mutex<EventManager>>,
         sender: Sender<Message>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        Ok(Self {
             config,
             event_manager,
             sender,
             player: None,
             input_service: None,
-        }
+        })
     }
 
     fn create_message_proxy(&self) -> MessageProxy {
@@ -201,7 +201,8 @@ impl Client {
                 .unwrap();
 
             rt.block_on(async move {
-                let mut handler = Handler::new(config, event_manager_handler, sender_handler);
+                let mut handler =
+                    Handler::new(config, event_manager_handler, sender_handler).unwrap();
 
                 loop {
                     let msg = receiver.recv().await;
