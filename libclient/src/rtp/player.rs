@@ -3,9 +3,10 @@ use std::path::PathBuf;
 use std::{env, fs};
 
 use crate::error::{Error, PlayerError, Result};
+use crate::utils;
 
 use crate::window_handle::WindowHandle;
-use crate::{Message, MessageProxy};
+use crate::MessageProxy;
 
 // RTP seems to use multiple port for a session. Fix a large offset to get
 // a safe port.
@@ -113,44 +114,8 @@ impl Player {
             vlc::MediaPlayer::new(&self.instance).ok_or(PlayerError::MediaPlayerCreateFailed)?;
         mdp.set_media(&md);
 
-        // Attach Window
-        match self.window_handle {
-            #[cfg(target_os = "linux")]
-            WindowHandle::Xlib(handle) => {
-                info!("Xlib");
-                mdp.set_xwindow(handle as u32);
-            }
-            #[cfg(target_os = "macos")]
-            WindowHandle::AppKit(handle) => {
-                info!("macos ({})", handle);
-                mdp.set_nsobject(handle as _);
-            }
-            #[cfg(target_os = "windows")]
-            WindowHandle::Win32(handle) => {
-                info!("Windows");
-                mdp.set_hwnd(handle as _);
-            }
-        }
-
-        // Register to libvlc's event manager
-        let event_manager = mdp.event_manager();
-
-        let message_proxy = self.message_proxy.clone();
-        let cb = move |event, _| {
-            let msg = match event {
-                vlc::Event::MediaPlayerPlaying => Some(Message::PlayerStarted),
-                vlc::Event::MediaPlayerStopped => Some(Message::PlayerStopped),
-                _ => None,
-            };
-
-            if let Some(msg) = msg {
-                message_proxy.send(msg).unwrap();
-            }
-        };
-
-        event_manager
-            .attach(vlc::EventType::MediaPlayerPlaying, cb)
-            .map_err(|_| PlayerError::EvtRegisterFailed)?;
+        utils::attach_window_to_player(&mdp, self.window_handle)?;
+        utils::plug_event_manager_to_player(&mdp, self.message_proxy.clone())?;
 
         // Play
         mdp.play().or(Err(PlayerError::PlayFailed))?;
@@ -173,6 +138,8 @@ impl Player {
         let mdp =
             vlc::MediaPlayer::new(&self.instance).ok_or(PlayerError::MediaPlayerCreateFailed)?;
         mdp.set_media(&md);
+
+        utils::plug_event_manager_to_player(&mdp, self.message_proxy.clone())?;
 
         // Play
         mdp.play().or(Err(PlayerError::PlayFailed))?;

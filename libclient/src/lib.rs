@@ -6,6 +6,7 @@ pub(crate) mod http;
 pub mod input_service;
 mod rtp;
 mod tls;
+mod utils;
 pub mod window_handle;
 
 #[cfg(any(cargo_c, feature = "capi"))]
