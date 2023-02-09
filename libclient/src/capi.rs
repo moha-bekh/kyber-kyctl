@@ -7,6 +7,8 @@ use log::warn;
 
 use libkynput_rs::Pipeline;
 
+use crate::VideoCodec;
+
 #[allow(non_camel_case_types)]
 pub struct libclient_WindowHandle {
     handle: crate::window_handle::WindowHandle,
@@ -163,6 +165,7 @@ pub unsafe extern "C" fn libclient_config_default(
         protocol,
         input_pipeline: pipeline,
         window_handle: window_handle.handle,
+        video_codec: VideoCodec::H264,
         yuv444: false,
         inputs: true,
         audio: false,
@@ -178,6 +181,14 @@ pub unsafe extern "C" fn libclient_config_set_yuv444(
     yuv444: bool,
 ) {
     (*config).config.yuv444 = yuv444;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_config_set_video_codec(
+    config: *mut libclient_ClientConfig,
+    video_codec: VideoCodec,
+) {
+    (*config).config.video_codec = video_codec;
 }
 
 #[no_mangle]

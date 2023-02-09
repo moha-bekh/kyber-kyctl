@@ -36,6 +36,32 @@ impl StreamingProtocol {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum VideoCodec {
+    H264,
+    HEVC,
+    AV1,
+}
+
+impl VideoCodec {
+    pub fn from_u32(u: sys::libclient_VideoCodec) -> Option<Self> {
+        match u {
+            sys::libclient_VideoCodec_LIBCLIENT_VIDEO_CODEC_H264 => Some(Self::H264),
+            sys::libclient_VideoCodec_LIBCLIENT_VIDEO_CODEC_HEVC => Some(Self::HEVC),
+            sys::libclient_VideoCodec_LIBCLIENT_VIDEO_CODEC_AV1 => Some(Self::AV1),
+            _ => None,
+        }
+    }
+
+    fn to_u32(self) -> u32 {
+        match self {
+            Self::H264 => sys::libclient_VideoCodec_LIBCLIENT_VIDEO_CODEC_H264,
+            Self::HEVC => sys::libclient_VideoCodec_LIBCLIENT_VIDEO_CODEC_HEVC,
+            Self::AV1 => sys::libclient_VideoCodec_LIBCLIENT_VIDEO_CODEC_AV1,
+        }
+    }
+}
+
 pub struct WindowHandle {
     pub ptr: *mut sys::libclient_WindowHandle,
 }
@@ -135,6 +161,10 @@ impl Config {
                 Err(Error::Generic)
             }
         }
+    }
+
+    pub fn set_video_codec(&self, codec: VideoCodec) {
+        unsafe { sys::libclient_config_set_video_codec(self.ptr, codec.to_u32()) }
     }
 
     pub fn set_yuv444(&self, yuv444: bool) {

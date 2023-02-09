@@ -192,6 +192,14 @@ pub enum StreamingProtocol {
     Kymux,
 }
 
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub enum VideoCodec {
+    H264,
+    HEVC,
+    AV1,
+}
+
 #[derive(Clone)]
 pub struct ClientConfig {
     pub streamer_host: String,
@@ -200,6 +208,7 @@ pub struct ClientConfig {
     pub protocol: StreamingProtocol,
     pub window_handle: WindowHandle,
     pub input_pipeline: Pipeline,
+    pub video_codec: VideoCodec,
     pub yuv444: bool,
     pub inputs: bool,
     pub audio: bool,
