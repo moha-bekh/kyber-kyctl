@@ -4,6 +4,7 @@ pub mod event_manager;
 mod host_service;
 pub(crate) mod http;
 pub mod input_service;
+mod kymux_backend;
 mod rtp_backend;
 mod tls;
 mod utils;
@@ -33,6 +34,7 @@ const STREAMER_PORT: u16 = 8080;
 
 enum Player {
     Rtp(rtp_backend::Player),
+    Kymux(kymux_backend::Player),
 }
 
 #[derive(Clone)]
@@ -59,6 +61,7 @@ struct Handler {
     event_manager: Arc<Mutex<EventManager>>,
     sender: Sender<Message>,
 
+    kymux: Option<kymux::Connection>,
     player: Option<Player>,
     input_service: Option<input_service::Client>,
 }
@@ -80,10 +83,11 @@ impl Handler {
 
         Ok(Self {
             config,
-            _tls_config: tls_config,
+            tls_config,
             http_client,
             event_manager,
             sender,
+            kymux: None,
             player: None,
             input_service: None,
         })
@@ -97,6 +101,19 @@ impl Handler {
 
     async fn start(&mut self) -> Result<()> {
         match self.config.protocol {
+            StreamingProtocol::Kymux => {
+                let result = kymux_backend::start(
+                    &self.config,
+                    &self.tls_config,
+                    &self.http_client,
+                    self.create_message_proxy(),
+                )
+                .await?;
+
+                self.kymux = Some(result.kymux);
+                self.player = Some(Player::Kymux(result.player));
+                self.input_service = result.input_service;
+            }
             StreamingProtocol::Rtp => {
                 let result = rtp_backend::start(
                     &self.config,
@@ -116,8 +133,12 @@ impl Handler {
     async fn stop(&mut self) -> Result<()> {
         info!("Stop requested");
 
-        #[allow(clippy::single_match)]
         match self.player.take() {
+            Some(Player::Kymux(mut player)) => {
+                info!("Stop player");
+                player.stop_async().await?;
+                info!("Player stopped");
+            }
             Some(Player::Rtp(mut player)) => {
                 info!("Stop player");
                 player.stop_async().await?;
@@ -141,6 +162,18 @@ impl Handler {
             );
         } else {
             info!("Host service stopped");
+        }
+
+        if let Some(mut kymux) = self.kymux.take() {
+            let ret = kymux.stop().await;
+            match ret {
+                Ok(_) => {
+                    info!("Kymux stopped");
+                }
+                Err(err) => {
+                    warn!("Failed to stop kymux: {err:?}");
+                }
+            }
         }
 
         let mut event_manager = self.event_manager.lock()?;
