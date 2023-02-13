@@ -4,7 +4,7 @@ pub mod event_manager;
 mod host_service;
 pub(crate) mod http;
 pub mod input_service;
-mod rtp;
+mod rtp_backend;
 mod tls;
 mod utils;
 pub mod window_handle;
@@ -32,7 +32,7 @@ use window_handle::WindowHandle;
 const STREAMER_PORT: u16 = 8080;
 
 enum Player {
-    Rtp(rtp::Player),
+    Rtp(rtp_backend::Player),
 }
 
 #[derive(Clone)]
@@ -54,7 +54,7 @@ impl MessageProxy {
 
 struct Handler {
     config: ClientConfig,
-    _tls_config: tls::Config,
+    tls_config: tls::Config,
     http_client: HttpClient,
     event_manager: Arc<Mutex<EventManager>>,
     sender: Sender<Message>,
@@ -98,9 +98,12 @@ impl Handler {
     async fn start(&mut self) -> Result<()> {
         match self.config.protocol {
             StreamingProtocol::Rtp => {
-                let result =
-                    rtp::start(&self.config, &self.http_client, self.create_message_proxy())
-                        .await?;
+                let result = rtp_backend::start(
+                    &self.config,
+                    &self.http_client,
+                    self.create_message_proxy(),
+                )
+                .await?;
 
                 self.player = Some(Player::Rtp(result.player));
                 self.input_service = result.input_service;
