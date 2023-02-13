@@ -178,6 +178,10 @@ impl Config {
     pub fn set_audio(&self, audio: bool) {
         unsafe { sys::libclient_config_set_audio(self.ptr, audio) }
     }
+
+    pub fn set_streamer_port(&self, port: u16) {
+        unsafe { sys::libclient_config_set_streamer_port(self.ptr, port) }
+    }
 }
 
 impl Drop for Config {

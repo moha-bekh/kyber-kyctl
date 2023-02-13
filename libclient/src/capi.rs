@@ -161,6 +161,7 @@ pub unsafe extern "C" fn libclient_config_default(
     let config = crate::ClientConfig {
         streamer_host: host.to_string(),
         streamer_ip: ip.to_string(),
+        streamer_port: crate::STREAMER_PORT,
         streamer_cert: cert.to_string(),
         protocol,
         input_pipeline: pipeline,
@@ -205,6 +206,14 @@ pub unsafe extern "C" fn libclient_config_set_audio(
     audio: bool,
 ) {
     (*config).config.audio = audio;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_config_set_streamer_port(
+    config: *mut libclient_ClientConfig,
+    port: u16,
+) {
+    (*config).config.streamer_port = port;
 }
 
 #[no_mangle]

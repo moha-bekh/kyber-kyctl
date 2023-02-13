@@ -30,7 +30,7 @@ use event_manager::EventManager;
 use http::HttpClient;
 use window_handle::WindowHandle;
 
-const STREAMER_PORT: u16 = 8080;
+pub(crate) const STREAMER_PORT: u16 = 8080;
 
 enum Player {
     Rtp(rtp_backend::Player),
@@ -77,7 +77,7 @@ impl Handler {
         let http_client = HttpClient::new(
             &config.streamer_host,
             &config.streamer_ip,
-            STREAMER_PORT,
+            config.streamer_port,
             &tls_config,
         )?;
 
@@ -237,6 +237,7 @@ pub enum VideoCodec {
 pub struct ClientConfig {
     pub streamer_host: String,
     pub streamer_ip: String,
+    pub streamer_port: u16,
     pub streamer_cert: String,
     pub protocol: StreamingProtocol,
     pub window_handle: WindowHandle,

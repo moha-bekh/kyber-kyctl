@@ -10,12 +10,20 @@ pub(crate) struct StartKymuxResponse {
     pub(crate) port: u16,
 }
 
-pub(crate) async fn start_kymux(client: &HttpClient) -> Result<StartKymuxResponse> {
+pub(crate) async fn start_kymux(
+    client: &HttpClient,
+    streamer_port: u16,
+) -> Result<StartKymuxResponse> {
     let url = format!("{base_url}/kymux/start_mux", base_url = client.base_url());
+
+    let body = json!({
+        "public_streamer_port": streamer_port,
+    });
 
     Ok(client
         .client()
         .post(&url)
+        .json(&body)
         .send()
         .await?
         .json::<StartKymuxResponse>()

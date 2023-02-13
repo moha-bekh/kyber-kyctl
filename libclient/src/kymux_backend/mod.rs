@@ -25,7 +25,7 @@ pub(crate) async fn start(
     msg_proxy: MessageProxy,
 ) -> Result<StartResult> {
     // Request remote Kymux start
-    let start_response = host_service::start_kymux(client).await?;
+    let start_response = host_service::start_kymux(client, config.streamer_port).await?;
 
     // Connect to remote Kymux
     let mut certs_store = rustls::RootCertStore::empty();
