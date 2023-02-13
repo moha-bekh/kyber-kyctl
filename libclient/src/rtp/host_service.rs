@@ -74,6 +74,7 @@ pub(crate) async fn start_stream(
         "inputs": inputs,
     });
 
+    info!("Starting stream with parameters {body:?}");
     let response = client.client().post(&url).json(&body).send().await?;
     info!("Start response: {:?}", response);
 
