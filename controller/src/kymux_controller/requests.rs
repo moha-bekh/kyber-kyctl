@@ -5,17 +5,26 @@ use tokio::sync::Mutex;
 
 use crate::controller::{self, Controller};
 
+#[derive(Debug, Deserialize, Serialize)]
+pub(crate) struct StartKymux {
+    pub(crate) public_streamer_port: u16,
+}
+
 #[derive(Debug, Serialize)]
 pub(crate) struct StartKymuxResponse {
     pub(crate) port: u16,
 }
 
 #[post("/start_mux")]
-pub(crate) async fn start_mux(ctrl: web::Data<Mutex<Controller>>) -> HttpResponse {
-    let ret = super::start_kymux(ctrl.clone()).await;
+pub(crate) async fn start_mux(
+    ctrl: web::Data<Mutex<Controller>>,
+    request: web::Json<StartKymux>,
+) -> HttpResponse {
+    // Assume that the public port used for UDP is the same than the port for TCP.
+    let ret = super::start_kymux(ctrl.clone(), request.public_streamer_port).await;
     match ret {
         Ok(port) => {
-            info!("Kymux started");
+            info!("Kymux started. Listening on {port}");
             HttpResponse::Ok().json(StartKymuxResponse { port })
         }
         Err(err) => {

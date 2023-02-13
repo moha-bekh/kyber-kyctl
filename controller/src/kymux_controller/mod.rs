@@ -75,7 +75,7 @@ impl KymuxListener {
     }
 }
 
-async fn start_kymux(ctrl: web::Data<Mutex<Controller>>) -> Result<u16> {
+async fn start_kymux(ctrl: web::Data<Mutex<Controller>>, public_port: u16) -> Result<u16> {
     // Load TLS config
     let tls_config = {
         let ctrl = ctrl.lock().await;
@@ -91,9 +91,8 @@ async fn start_kymux(ctrl: web::Data<Mutex<Controller>>) -> Result<u16> {
         Error::TlsInvalidCertificate { source: err }
     })?;
 
-    // Start connection listener
-    let listening_port = LISTENING_PORT;
-    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), listening_port);
+    // Start connection listener.
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), LISTENING_PORT);
 
     info!("kymux: Listening to {addr}");
     let config = kymux::ServerConfig::new(addr, vec![certificate.clone()], private_key);
@@ -106,7 +105,7 @@ async fn start_kymux(ctrl: web::Data<Mutex<Controller>>) -> Result<u16> {
     let mut ctrl = ctrl.lock().await;
     ctrl.kymux_listener = Some(listener);
 
-    Ok(listening_port)
+    Ok(public_port)
 }
 
 async fn start_video(
