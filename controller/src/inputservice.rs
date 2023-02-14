@@ -30,7 +30,7 @@ impl Handler {
     }
 
     async fn spawn_process(process_factory: &mut ProcessFactory) -> Result<Inner> {
-        info!("Run Input Server");
+        debug!("Run Input Server");
 
         let exe_path = utils::get_executable_path("inputserver");
 

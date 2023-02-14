@@ -42,7 +42,7 @@ impl Handler {
     }
 
     async fn spawn_process(&self, process_factory: &mut ProcessFactory) -> Result<Inner> {
-        info!("Run AvServer {name}", name = self.name);
+        debug!("Run AvServer {name}", name = self.name);
 
         let (child, mut commander): (_, Commander<Command, Event>) =
             process_factory.spawn(&self.avserver_path, None).await?;
