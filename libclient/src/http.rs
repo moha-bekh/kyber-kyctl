@@ -9,7 +9,12 @@ pub(crate) struct HttpClient {
 }
 
 impl HttpClient {
-    pub(crate) fn new(host: &str, ip: &str, port: u16, tls_config: &tls::Config) -> Result<Self> {
+    pub(crate) fn new(
+        tls_host: &str,
+        ip: &str,
+        port: u16,
+        tls_config: &tls::Config,
+    ) -> Result<Self> {
         // Prepare target address
         let addr = format!("{ip}:{port}");
         let addr = addr.parse().map_err(|err| {
@@ -22,11 +27,11 @@ impl HttpClient {
 
         // Create client
         let client = reqwest::ClientBuilder::new()
-            .resolve(host, addr)
+            .resolve(tls_host, addr)
             .add_root_certificate(certificate)
             .build()?;
 
-        let base_url = format!("https://{host}:{port}");
+        let base_url = format!("https://{tls_host}:{port}");
         Ok(Self { base_url, client })
     }
 

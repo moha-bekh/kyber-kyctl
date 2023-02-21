@@ -132,7 +132,7 @@ pub unsafe extern "C" fn libclient_windowshandle_from_hwnd(
 
 #[no_mangle]
 pub unsafe extern "C" fn libclient_config_default(
-    host: *const c_char,
+    tls_host: *const c_char,
     ip: *const c_char,
     cert: *const c_char,
     protocol: crate::StreamingProtocol,
@@ -144,12 +144,12 @@ pub unsafe extern "C" fn libclient_config_default(
     let window_handle = Box::from_raw(window_handle);
 
     let Ok(ip) = CStr::from_ptr(ip).to_str() else {
-        warn!("Fail to convert client's host");
+        warn!("Fail to convert client IP");
         return -1;
     };
 
-    let Ok(host) = CStr::from_ptr(host).to_str() else {
-        warn!("Fail to convert client IP");
+    let Ok(tls_host) = CStr::from_ptr(tls_host).to_str() else {
+        warn!("Fail to convert client TLS host");
         return -1;
     };
 
@@ -159,7 +159,7 @@ pub unsafe extern "C" fn libclient_config_default(
     };
 
     let config = crate::ClientConfig {
-        streamer_host: host.to_string(),
+        streamer_tls_host: tls_host.to_string(),
         streamer_ip: ip.to_string(),
         streamer_port: crate::STREAMER_PORT,
         streamer_cert: cert.to_string(),

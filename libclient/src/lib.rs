@@ -75,7 +75,7 @@ impl Handler {
         let tls_config = tls::load_tls_certificate(&config.streamer_cert)?;
 
         let http_client = HttpClient::new(
-            &config.streamer_host,
+            &config.streamer_tls_host,
             &config.streamer_ip,
             config.streamer_port,
             &tls_config,
@@ -235,7 +235,7 @@ pub enum VideoCodec {
 
 #[derive(Clone)]
 pub struct ClientConfig {
-    pub streamer_host: String,
+    pub streamer_tls_host: String,
     pub streamer_ip: String,
     pub streamer_port: u16,
     pub streamer_cert: String,
