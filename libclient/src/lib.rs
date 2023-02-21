@@ -308,7 +308,7 @@ impl Client {
                     if let Some(msg) = msg.as_ref() {
                         let ret = handler.handle_message(msg).await;
                         if let Err(err) = ret {
-                            info!(
+                            warn!(
                                 "Processing of message {:?} failed with error {:?}",
                                 msg, err
                             );
