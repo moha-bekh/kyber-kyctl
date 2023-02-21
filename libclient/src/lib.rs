@@ -15,7 +15,7 @@ pub mod capi;
 
 pub use enums::Event;
 
-use std::net::SocketAddr;
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -55,6 +55,23 @@ impl MessageProxy {
     }
 }
 
+fn resolve_streamer_host(host: &str, port: u16) -> Result<SocketAddr> {
+    let str_addr = format!("{host}:{port}");
+    let mut addrs = str_addr.to_socket_addrs().map_err(|err| {
+        error!("Fail to resolve host {host}: {err:?}");
+        Error::FailToResolveAddress {
+            addr: str_addr.clone(),
+        }
+    })?;
+
+    let ipv4_addr = addrs.find(|addr| matches!(addr, SocketAddr::V4(_)));
+
+    ipv4_addr.ok_or_else(|| {
+        error!("Fail to find an IPv4 address for {host}");
+        Error::FailToResolveAddress { addr: str_addr }
+    })
+}
+
 struct Handler {
     config: ClientConfig,
     tls_config: tls::Config,
@@ -75,11 +92,7 @@ impl Handler {
         sender: Sender<Message>,
     ) -> Result<Self> {
         let tls_config = tls::load_tls_certificate(&config.streamer_cert)?;
-        let streamer_addr = format!("{}:{}", config.streamer_ip, config.streamer_port);
-        let streamer_addr = streamer_addr.parse().map_err(|err| {
-            error!("Fail to parse address {streamer_addr}: {err:?}");
-            Error::Rejected
-        })?;
+        let streamer_addr = resolve_streamer_host(&config.streamer_ip, config.streamer_port)?;
 
         let http_client = HttpClient::new(&config.streamer_tls_host, &streamer_addr, &tls_config)?;
 

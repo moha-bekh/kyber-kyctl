@@ -14,6 +14,7 @@ pub enum PlayerError {
 pub enum Error {
     IO(std::io::Error),
     InvalidAddress { addr: String },
+    FailToResolveAddress { addr: String },
     InvalidUnicodeStr,
     ChannelSend,
     Rejected,
