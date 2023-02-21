@@ -15,10 +15,11 @@ pub mod capi;
 
 pub use enums::Event;
 
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use log::{info, warn};
+use log::{error, info, warn};
 use tokio::runtime;
 use tokio::sync::mpsc::{self, Sender};
 
@@ -57,6 +58,7 @@ impl MessageProxy {
 struct Handler {
     config: ClientConfig,
     tls_config: tls::Config,
+    streamer_addr: SocketAddr,
     http_client: HttpClient,
     event_manager: Arc<Mutex<EventManager>>,
     sender: Sender<Message>,
@@ -73,17 +75,18 @@ impl Handler {
         sender: Sender<Message>,
     ) -> Result<Self> {
         let tls_config = tls::load_tls_certificate(&config.streamer_cert)?;
+        let streamer_addr = format!("{}:{}", config.streamer_ip, config.streamer_port);
+        let streamer_addr = streamer_addr.parse().map_err(|err| {
+            error!("Fail to parse address {streamer_addr}: {err:?}");
+            Error::Rejected
+        })?;
 
-        let http_client = HttpClient::new(
-            &config.streamer_tls_host,
-            &config.streamer_ip,
-            config.streamer_port,
-            &tls_config,
-        )?;
+        let http_client = HttpClient::new(&config.streamer_tls_host, &streamer_addr, &tls_config)?;
 
         Ok(Self {
             config,
             tls_config,
+            streamer_addr,
             http_client,
             event_manager,
             sender,
@@ -104,6 +107,7 @@ impl Handler {
             StreamingProtocol::Kymux => {
                 let result = kymux_backend::start(
                     &self.config,
+                    &self.streamer_addr,
                     &self.tls_config,
                     &self.http_client,
                     self.create_message_proxy(),
@@ -117,6 +121,7 @@ impl Handler {
             StreamingProtocol::Rtp => {
                 let result = rtp_backend::start(
                     &self.config,
+                    &self.streamer_addr,
                     &self.http_client,
                     self.create_message_proxy(),
                 )

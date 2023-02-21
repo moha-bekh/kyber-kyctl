@@ -1,6 +1,8 @@
 pub mod host_service;
 pub mod player;
 
+use std::net::SocketAddr;
+
 use crate::http::HttpClient;
 use crate::input_service;
 use crate::{ClientConfig, MessageProxy, Result};
@@ -15,6 +17,7 @@ pub(crate) struct StartResult {
 
 pub(crate) async fn start(
     config: &ClientConfig,
+    addr: &SocketAddr,
     client: &HttpClient,
     msg_proxy: MessageProxy,
 ) -> Result<StartResult> {
@@ -36,10 +39,8 @@ pub(crate) async fn start(
     .await?;
 
     let input_service = if config.inputs {
-        let ip = config.streamer_ip.clone();
-
         let create_stream_cb =
-            |_target, msg_sink| libkynput_rs::tcp::new_client(ip.as_str(), msg_sink);
+            |_target, msg_sink| libkynput_rs::tcp::new_client(&addr.ip().to_string(), msg_sink);
 
         let input_service = input_service::Client::new(
             msg_proxy,

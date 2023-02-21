@@ -1,7 +1,7 @@
-use log::error;
+use std::net::SocketAddr;
 
 use crate::tls;
-use crate::{Error, Result};
+use crate::Result;
 
 pub(crate) struct HttpClient {
     base_url: String,
@@ -9,29 +9,17 @@ pub(crate) struct HttpClient {
 }
 
 impl HttpClient {
-    pub(crate) fn new(
-        tls_host: &str,
-        ip: &str,
-        port: u16,
-        tls_config: &tls::Config,
-    ) -> Result<Self> {
-        // Prepare target address
-        let addr = format!("{ip}:{port}");
-        let addr = addr.parse().map_err(|err| {
-            error!("Fail to parse address {addr}: {err:?}");
-            Error::Rejected
-        })?;
-
+    pub(crate) fn new(tls_host: &str, addr: &SocketAddr, tls_config: &tls::Config) -> Result<Self> {
         // Load TLS certificate
         let certificate = reqwest::Certificate::from_der(&tls_config.certificate)?;
 
         // Create client
         let client = reqwest::ClientBuilder::new()
-            .resolve(tls_host, addr)
+            .resolve(tls_host, *addr)
             .add_root_certificate(certificate)
             .build()?;
 
-        let base_url = format!("https://{tls_host}:{port}");
+        let base_url = format!("https://{tls_host}:{port}", port = addr.port());
         Ok(Self { base_url, client })
     }
 

@@ -20,12 +20,13 @@ pub(crate) struct StartResult {
 
 pub(crate) async fn start(
     config: &ClientConfig,
+    addr: &SocketAddr,
     tls_config: &tls::Config,
     client: &HttpClient,
     msg_proxy: MessageProxy,
 ) -> Result<StartResult> {
     // Request remote Kymux start
-    let start_response = host_service::start_kymux(client, config.streamer_port).await?;
+    let start_response = host_service::start_kymux(client, addr.port()).await?;
 
     // Connect to remote Kymux
     let mut certs_store = rustls::RootCertStore::empty();
@@ -36,17 +37,11 @@ pub(crate) async fn start(
             Error::Rejected
         })?;
 
-    let ip = config.streamer_ip.parse().map_err(|err| {
-        error!("Fail to parse IP {}: {err:?}", config.streamer_ip);
-        Error::InvalidAddress {
-            addr: config.streamer_ip.clone(),
-        }
-    })?;
-
-    let addr = SocketAddr::new(ip, start_response.port);
-
-    let kymux_config =
-        kymux::ClientConfig::new(addr, certs_store, config.streamer_tls_host.clone());
+    let kymux_config = kymux::ClientConfig::new(
+        SocketAddr::new(addr.ip(), start_response.port),
+        certs_store,
+        config.streamer_tls_host.clone(),
+    );
 
     let kymux = kymux::Connection::connect(kymux_config)
         .await
