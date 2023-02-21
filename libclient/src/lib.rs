@@ -194,16 +194,28 @@ impl Handler {
             }
         }
 
-        let mut event_manager = self.event_manager.lock()?;
-        event_manager.send_event(Event::Stopped);
-
         Ok(())
     }
 
     async fn handle_message(&mut self, msg: &Message) -> Result<()> {
         match msg {
-            Message::Start => self.start().await,
-            Message::Stop => self.stop().await,
+            Message::Start => {
+                let ret = self.start().await;
+                if ret.is_err() {
+                    let mut event_manager = self.event_manager.lock()?;
+                    event_manager.send_event(Event::Stopped);
+                }
+
+                ret
+            }
+            Message::Stop => {
+                let ret = self.stop().await;
+
+                let mut event_manager = self.event_manager.lock()?;
+                event_manager.send_event(Event::Stopped);
+
+                ret
+            }
             Message::PlayerStarted => {
                 info!("Player started");
                 Ok(())
