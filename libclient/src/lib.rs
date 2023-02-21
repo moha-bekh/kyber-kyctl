@@ -272,12 +272,14 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(config: ClientConfig) -> Self {
+    pub fn new(config: ClientConfig) -> Result<Self> {
         let event_manager = Arc::new(Mutex::new(EventManager::new()));
 
         let (sender, mut receiver) = mpsc::channel(32);
         let event_manager_handler = event_manager.clone();
         let sender_handler = sender.clone();
+
+        let mut handler = Handler::new(config, event_manager_handler, sender_handler)?;
 
         thread::spawn(move || {
             let rt = runtime::Builder::new_multi_thread()
@@ -289,9 +291,6 @@ impl Client {
                 .unwrap();
 
             rt.block_on(async move {
-                let mut handler =
-                    Handler::new(config, event_manager_handler, sender_handler).unwrap();
-
                 loop {
                     let msg = receiver.recv().await;
                     if let Some(msg) = msg.as_ref() {
@@ -309,10 +308,10 @@ impl Client {
             });
         });
 
-        Self {
+        Ok(Self {
             event_manager,
             sender,
-        }
+        })
     }
 
     pub fn start(&self) -> Result<()> {

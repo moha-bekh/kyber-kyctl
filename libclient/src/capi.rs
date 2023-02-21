@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int, c_void};
+use std::ptr;
 
 use log::warn;
 
@@ -234,9 +235,14 @@ pub unsafe extern "C" fn libclient_client_new(
 ) -> *mut libclient_Client {
     let config = Box::from_raw(config);
 
-    Box::into_raw(Box::new(libclient_Client {
-        client: Arc::new(crate::Client::new(config.config)),
-    }))
+    let client = crate::Client::new(config.config);
+    if let Ok(client) = client {
+        Box::into_raw(Box::new(libclient_Client {
+            client: Arc::new(client),
+        }))
+    } else {
+        ptr::null_mut()
+    }
 }
 
 #[no_mangle]

@@ -195,9 +195,13 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(config: &Config) -> Self {
-        Self {
-            ptr: unsafe { sys::libclient_client_new(config.ptr) },
+    pub fn new(config: &Config) -> Result<Self> {
+        let ptr = unsafe { sys::libclient_client_new(config.ptr) };
+
+        if !ptr.is_null() {
+            Ok(Self { ptr })
+        } else {
+            Err(Error::Generic)
         }
     }
 
