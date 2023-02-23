@@ -42,7 +42,7 @@ contrib-debian-buster-x86_64:
     export KYBER_DIRNAME=rootfs
     export KYBER_PREFIX=$(pwd)/$KYBER_DIRNAME
     # Build contribs
-    ./libclient/contrib/build-linux.sh -o $KYBER_PREFIX
+    ./contrib/build-linux.sh -o $KYBER_PREFIX
     # Prepare rootfs to be shared to other jobs
     cd $KYBER_PREFIX
     ../scripts/change_prefix.sh $(pwd)
@@ -64,7 +64,7 @@ contrib-windows-x86_64:
     export KYBER_DIRNAME=rootfs
     export KYBER_PREFIX=$(pwd)/$KYBER_DIRNAME
     # Build contribs
-    ./libclient/contrib/build-win32.sh -o $KYBER_PREFIX
+    ./contrib/build-win32.sh -o $KYBER_PREFIX
     # Prepare rootfs to be shared to other jobs
     cd $KYBER_PREFIX
     ../scripts/change_prefix.sh $(pwd)
@@ -176,7 +176,7 @@ clippy-windows-x86_64:
     export KYBER_DIRNAME=rootfs
     export KYBER_PREFIX=$(pwd)/$KYBER_DIRNAME
     # Build contribs
-    ./libclient/contrib/build-macos.sh -a $HOST_ARCH -o $KYBER_PREFIX
+    ./contrib/build-macos.sh -a $HOST_ARCH -o $KYBER_PREFIX
     # Prepare rootfs to be shared to other jobs
     cd $KYBER_PREFIX
     ../scripts/change_prefix.sh $(pwd)

@@ -126,7 +126,7 @@ fi
 
 # Build dependencies
 if [ "$BUILD_DEPS" = true ]; then
-    ./libclient/contrib/build-win32.sh -o $OUT_DIR
+    ./contrib/build-win32.sh -o $OUT_DIR
 else
     echo "Skip dependencies build"
 fi

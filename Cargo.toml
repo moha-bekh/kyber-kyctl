@@ -10,4 +10,4 @@ exclude = [
 ]
 
 [patch.crates-io]
-vlc-rs = { path = "libclient/external/vlc-rs" }
+vlc-rs = { path = "external/vlc-rs" }

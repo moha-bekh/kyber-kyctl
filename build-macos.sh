@@ -153,7 +153,7 @@ fi
 
 # Build dependencies
 if [ "$BUILD_DEPS" = true ]; then
-    ./libclient/contrib/build-macos.sh -a $HOST_ARCH -o $OUT_DIR
+    ./contrib/build-macos.sh -a $HOST_ARCH -o $OUT_DIR
 else
     echo "Skip dependencies build"
 fi

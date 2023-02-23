@@ -1,6 +1,6 @@
 .cargo
 kymux
-libclient/contrib/work
+contrib/work
 libkynput
 rootfs*
 target

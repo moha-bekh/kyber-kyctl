@@ -123,7 +123,7 @@ fi
 
 # Build dependencies
 if [ "$BUILD_DEPS" = true ]; then
-    ./libclient/contrib/build-linux.sh -o $OUT_DIR
+    ./contrib/build-linux.sh -o $OUT_DIR
 else
     echo "Skip dependencies build"
 fi

@@ -1,6 +1,6 @@
 [submodule "external/vlc-rs"]
-	path = libclient/external/vlc-rs
+	path = external/vlc-rs
 	url = ../vlc-rs.git
 [submodule "external/vlc"]
-	path = libclient/external/vlc
+	path = external/vlc
 	url = ../vlc.git
