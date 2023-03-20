@@ -256,7 +256,7 @@ build_libvlc() {
 --disable-mpcdec --disable-lame --disable-kate --disable-mad --disable-mysofa --disable-projectM
 --disable-schroedinger --disable-shout --disable-sidplay2 --disable-zvbi --disable-srt --disable-ncurses
 --disable-flac --disable-dav1d --disable-libxml2 --disable-gpg-error
---disable-soxr --disable-chromaprint --disable-ffmpeg
+--disable-soxr --disable-chromaprint --disable-ffmpeg --disable-breakpad
 EOF
 )
         ../bootstrap --build=$VLC_BUILD --host=$VLC_HOST $CONTRIBFLAGS > $out
