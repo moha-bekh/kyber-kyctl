@@ -173,9 +173,7 @@ async fn start_session(
 
     let (video_endpoint, avservice_video) = if let Some(video_request) = request.video {
         // AV Server
-        let video_endpoint = kymux
-            .register_endpoint(kymux::StreamType::Video, kymux::StreamDirection::Uni)
-            .await?;
+        let video_endpoint = kymux.register_endpoint(kymux::StreamType::Video).await?;
 
         info!("Start Video avservice. Endpoint: {video_endpoint:X}");
         let video_uri = kymux.get_uri_for_endpoint(video_endpoint)?;
@@ -197,9 +195,7 @@ async fn start_session(
 
     // Audio server
     let (audio_endpoint, avservice_audio) = if request.audio {
-        let audio_endpoint = kymux
-            .register_endpoint(kymux::StreamType::Audio, kymux::StreamDirection::Uni)
-            .await?;
+        let audio_endpoint = kymux.register_endpoint(kymux::StreamType::Audio).await?;
 
         info!("Start Audio avservice. Endpoint: {audio_endpoint:X}");
 
@@ -214,9 +210,7 @@ async fn start_session(
 
     // Input server
     let (input_endpoint, inputservice) = if request.inputs {
-        let input_endpoint = kymux
-            .register_endpoint(kymux::StreamType::Input, kymux::StreamDirection::Bi)
-            .await?;
+        let input_endpoint = kymux.register_endpoint(kymux::StreamType::Input).await?;
 
         info!("Start Inputservice. Endpoint: {input_endpoint:X}");
         let uri = kymux.get_uri_for_endpoint(input_endpoint)?;
