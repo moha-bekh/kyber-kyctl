@@ -40,7 +40,7 @@ pub(crate) async fn start(
     let kymux_config = kymux::ClientConfig::new(
         SocketAddr::new(addr.ip(), start_response.port),
         certs_store,
-        config.streamer_tls_host.clone(),
+        &config.streamer_tls_host,
     );
 
     let kymux = kymux::Connection::connect(kymux_config)
