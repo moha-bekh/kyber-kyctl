@@ -1,6 +1,7 @@
 pub(crate) mod requests;
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::Arc;
 
 use actix_web::web;
 use log::{error, info, warn};
@@ -109,7 +110,7 @@ async fn start_kymux(ctrl: web::Data<Mutex<Controller>>, public_port: u16) -> Re
 }
 
 async fn start_video(
-    process_factory: &mut ProcessFactory,
+    process_factory: &Arc<ProcessFactory>,
     uri: String,
     codec: VideoCodec,
     yuv444: bool,
@@ -124,7 +125,7 @@ async fn start_video(
 }
 
 async fn start_audio(
-    process_factory: &mut ProcessFactory,
+    process_factory: &Arc<ProcessFactory>,
     uri: String,
 ) -> Result<avservice::Handler> {
     let mut handler = avservice::Handler::new("Audio");
@@ -135,7 +136,7 @@ async fn start_audio(
 }
 
 async fn start_input(
-    process_factory: &mut ProcessFactory,
+    process_factory: &Arc<ProcessFactory>,
     uri: String,
 ) -> Result<inputservice::Handler> {
     let mut inputservice = inputservice::Handler::new();
@@ -187,7 +188,7 @@ async fn start_session(
     };
 
     let avservice_video = start_video(
-        &mut ctrl.process_factory,
+        &ctrl.process_factory,
         video_uri,
         video_codec,
         request.yuv444,
@@ -204,7 +205,7 @@ async fn start_session(
 
         let audio_uri = kymux.get_uri_for_endpoint(audio_endpoint)?;
 
-        let avservice_audio = start_audio(&mut ctrl.process_factory, audio_uri).await?;
+        let avservice_audio = start_audio(&ctrl.process_factory, audio_uri).await?;
         (Some(audio_endpoint), Some(avservice_audio))
     } else {
         warn!("Audio disabled");
@@ -220,7 +221,7 @@ async fn start_session(
         info!("Start Inputservice. Endpoint: {input_endpoint:X}");
         let uri = kymux.get_uri_for_endpoint(input_endpoint)?;
 
-        let inputservice = start_input(&mut ctrl.process_factory, uri).await?;
+        let inputservice = start_input(&ctrl.process_factory, uri).await?;
         (Some(input_endpoint), Some(inputservice))
     } else {
         warn!("Input server disabled");

@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use log::{debug, info, warn};
 
@@ -41,7 +42,7 @@ impl Handler {
         self.name.clone()
     }
 
-    async fn spawn_process(&self, process_factory: &mut ProcessFactory) -> Result<Inner> {
+    async fn spawn_process(&self, process_factory: &Arc<ProcessFactory>) -> Result<Inner> {
         debug!("Run AvServer {name}", name = self.name);
 
         let (child, mut commander): (_, Commander<Command, Event>) =
@@ -58,7 +59,7 @@ impl Handler {
 
     pub(crate) async fn rtp_generate_video_sdp(
         &self,
-        process_factory: &mut ProcessFactory,
+        process_factory: &Arc<ProcessFactory>,
         yuv444: bool,
     ) -> Result<String> {
         // Generate SDP
@@ -82,7 +83,7 @@ impl Handler {
 
     pub(crate) async fn rtp_start_video(
         &mut self,
-        process_factory: &mut ProcessFactory,
+        process_factory: &Arc<ProcessFactory>,
         ip: String,
         port: u16,
         yuv444: bool,
@@ -101,7 +102,7 @@ impl Handler {
 
     pub(crate) async fn rtp_start_audio(
         &mut self,
-        process_factory: &mut ProcessFactory,
+        process_factory: &Arc<ProcessFactory>,
         ip: String,
         port: u16,
     ) -> Result<()> {
@@ -119,7 +120,7 @@ impl Handler {
 
     pub(crate) async fn kymux_start_video(
         &mut self,
-        process_factory: &mut ProcessFactory,
+        process_factory: &Arc<ProcessFactory>,
         uri: String,
         codec: VideoCodec,
         yuv444: bool,
@@ -138,7 +139,7 @@ impl Handler {
 
     pub(crate) async fn kymux_start_audio(
         &mut self,
-        process_factory: &mut ProcessFactory,
+        process_factory: &Arc<ProcessFactory>,
         uri: String,
     ) -> Result<()> {
         let mut inner = self.spawn_process(process_factory).await?;

@@ -1,4 +1,5 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::Arc;
 
 use actix_web::{middleware, post, web, App, HttpResponse, HttpServer};
 use log::{info, LevelFilter};
@@ -12,6 +13,8 @@ mod kymux_controller;
 mod rtp;
 mod tls;
 mod utils;
+
+use libkypc::process::ProcessFactory;
 
 use controller::Controller;
 use error::{Error, Result};
@@ -64,7 +67,9 @@ async fn main() {
     let tls_config = tls::load_config(STREAMER_CERT, STREAMER_KEY).unwrap();
     let server_config = build_serverconfig(&tls_config).unwrap();
 
-    let ctrl = web::Data::new(Mutex::new(Controller::new(tls_config)));
+    let process_factory = Arc::new(ProcessFactory::new(false));
+
+    let ctrl = web::Data::new(Mutex::new(Controller::new(process_factory, tls_config)));
 
     let bind_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), LISTENING_PORT);
 

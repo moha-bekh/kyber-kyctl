@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use log::{debug, info, warn};
 
 use inputservice_types::{Command, Event};
@@ -29,7 +31,7 @@ impl Handler {
         self.inner.is_some()
     }
 
-    async fn spawn_process(process_factory: &mut ProcessFactory) -> Result<Inner> {
+    async fn spawn_process(process_factory: &Arc<ProcessFactory>) -> Result<Inner> {
         debug!("Run Input Server");
 
         let exe_path = utils::get_executable_path("inputserver");
@@ -46,7 +48,7 @@ impl Handler {
         })
     }
 
-    pub(crate) async fn start_tcp(&mut self, process_factory: &mut ProcessFactory) -> Result<()> {
+    pub(crate) async fn start_tcp(&mut self, process_factory: &Arc<ProcessFactory>) -> Result<()> {
         if self.inner.is_some() {
             return Err(Error::StreamerStarted);
         }
@@ -60,7 +62,7 @@ impl Handler {
 
     pub(crate) async fn start_kymux(
         &mut self,
-        process_factory: &mut ProcessFactory,
+        process_factory: &Arc<ProcessFactory>,
         uri: String,
     ) -> Result<()> {
         if self.inner.is_some() {

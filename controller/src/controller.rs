@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use log::info;
 
 use libkypc::process::ProcessFactory;
@@ -56,7 +58,7 @@ pub(crate) async fn stop_input(handler: Option<inputservice::Handler>) -> Result
 }
 
 pub struct Controller {
-    pub(crate) process_factory: ProcessFactory,
+    pub(crate) process_factory: Arc<ProcessFactory>,
 
     pub(crate) tls_config: tls::Config,
     pub(crate) kymux_listener: Option<KymuxListener>,
@@ -67,9 +69,9 @@ pub struct Controller {
 }
 
 impl Controller {
-    pub(crate) fn new(tls_config: tls::Config) -> Self {
+    pub(crate) fn new(process_factory: Arc<ProcessFactory>, tls_config: tls::Config) -> Self {
         Self {
-            process_factory: ProcessFactory::new(false),
+            process_factory,
             tls_config,
             kymux_listener: None,
             kymux: None,

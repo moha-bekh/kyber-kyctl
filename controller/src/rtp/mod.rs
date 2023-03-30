@@ -18,7 +18,7 @@ pub async fn generate_video_sdp(
 ) -> Result<String> {
     let avservice = avservice::Handler::new("VideoSDP");
     avservice
-        .rtp_generate_video_sdp(&mut ctrl.process_factory, request.yuv444)
+        .rtp_generate_video_sdp(&ctrl.process_factory, request.yuv444)
         .await
 }
 
@@ -56,7 +56,7 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
     let mut avservice = avservice::Handler::new("Video");
     avservice
         .rtp_start_video(
-            &mut ctrl.process_factory,
+            &ctrl.process_factory,
             request.ip.clone(),
             request.port,
             request.yuv444,
@@ -71,7 +71,7 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
 
         let mut avservice_audio = avservice::Handler::new("Audio");
         avservice_audio
-            .rtp_start_audio(&mut ctrl.process_factory, request.ip, audio_port)
+            .rtp_start_audio(&ctrl.process_factory, request.ip, audio_port)
             .await?;
 
         ctrl.avservice_audio = Some(avservice_audio);
@@ -79,7 +79,7 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
 
     if request.inputs {
         let mut inputservice = inputservice::Handler::new();
-        inputservice.start_tcp(&mut ctrl.process_factory).await?;
+        inputservice.start_tcp(&ctrl.process_factory).await?;
 
         ctrl.inputservice = Some(inputservice);
     } else {
