@@ -8,10 +8,6 @@ use tokio::time;
 use crate::error::Result;
 use crate::{avservice, inputservice, Controller};
 
-// RTP seems to use multiple port for a session. Fix a large offset to get
-// a safe port.
-const AUDIO_PORT_OFFSET: u16 = 10;
-
 pub async fn generate_video_sdp(
     ctrl: &mut Controller,
     request: requests::GenerateSdpRequest,
@@ -51,27 +47,31 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
     }
 
     // SDP file will contain some required parameters on client side.
-    info!("Start video. ip: {} - port: {}", request.ip, request.port);
+    if let Some(video_request) = request.video {
+        info!(
+            "Start video. ip: {} - port: {}",
+            request.ip, video_request.port
+        );
 
-    let mut avservice = avservice::Handler::new("Video");
-    avservice
-        .rtp_start_video(
-            &ctrl.process_factory,
-            request.ip.clone(),
-            request.port,
-            request.yuv444,
-        )
-        .await?;
+        let mut avservice = avservice::Handler::new("Video");
+        avservice
+            .rtp_start_video(
+                &ctrl.process_factory,
+                request.ip.clone(),
+                video_request.port,
+                video_request.yuv444,
+            )
+            .await?;
 
-    ctrl.avservice_video = Some(avservice);
+        ctrl.avservice_video = Some(avservice);
+    }
 
-    if request.audio {
-        let audio_port = request.port + AUDIO_PORT_OFFSET;
-        info!("Start audio. ip: {} - port: {audio_port}", &request.ip);
+    if let Some(config) = request.audio {
+        info!("Start audio. ip: {} - port: {}", request.ip, config.port);
 
         let mut avservice_audio = avservice::Handler::new("Audio");
         avservice_audio
-            .rtp_start_audio(&ctrl.process_factory, request.ip, audio_port)
+            .rtp_start_audio(&ctrl.process_factory, request.ip, config.port)
             .await?;
 
         ctrl.avservice_audio = Some(avservice_audio);
@@ -79,6 +79,7 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
 
     if request.inputs {
         let mut inputservice = inputservice::Handler::new();
+
         inputservice.start_tcp(&ctrl.process_factory).await?;
 
         ctrl.inputservice = Some(inputservice);

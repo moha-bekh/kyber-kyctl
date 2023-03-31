@@ -15,12 +15,22 @@ pub struct GenerateSdpResponse {
     pub params: String,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct StartRequest {
-    pub ip: String,
+#[derive(Debug, Deserialize)]
+pub struct StartRequestVideo {
     pub port: u16,
     pub yuv444: bool,
-    pub audio: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct StartRequestAudio {
+    pub port: u16,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct StartRequest {
+    pub ip: String,
+    pub video: Option<StartRequestVideo>,
+    pub audio: Option<StartRequestAudio>,
     pub inputs: bool,
 }
 
