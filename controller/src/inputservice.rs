@@ -67,6 +67,7 @@ impl Handler {
     pub(crate) async fn start_kymux(
         &mut self,
         process_factory: &Arc<ProcessFactory>,
+        host_config: HostConfig,
         uri: String,
     ) -> Result<()> {
         if self.inner.is_some() {
@@ -74,7 +75,10 @@ impl Handler {
         }
 
         let mut inner = Self::spawn_process(process_factory).await?;
-        inner.sender.send(Command::StartKymux { uri }).await?;
+        inner
+            .sender
+            .send(Command::StartKymux { host_config, uri })
+            .await?;
         self.inner = Some(inner);
 
         Ok(())
