@@ -28,6 +28,7 @@ use libkynput_rs::Pipeline;
 use crate::error::{Error, Result};
 use enums::{Display, Event, Message};
 use event_manager::EventManager;
+use host_events::HostEventReceiver;
 use http::HttpClient;
 use window_handle::WindowHandle;
 
@@ -101,6 +102,7 @@ struct Handler {
     sender: Sender<Message>,
 
     kymux: Option<kymux::Connection>,
+    host_events: Option<HostEventReceiver>,
     player: Option<Player>,
 
     input_service: Option<input_service::Client>,
@@ -130,6 +132,7 @@ impl Handler {
             event_manager,
             sender,
             kymux: None,
+            host_events: None,
             player: None,
             input_service: None,
             input_pipeline: None,
@@ -154,6 +157,17 @@ impl Handler {
         .await?;
 
         self.kymux = Some(kymux);
+
+        // Connect to websocket
+        let host_events = HostEventReceiver::new(
+            self.streamer_addr,
+            self.tls_config.clone(),
+            self.connect_config.tls_host.clone(),
+            self.create_message_proxy(),
+        )
+        .await?;
+
+        self.host_events = Some(host_events);
 
         // Enumerate displays
         host_service::enumerate_displays(&self.http_client).await
@@ -191,6 +205,18 @@ impl Handler {
             );
         } else {
             info!("Host service stopped");
+        }
+
+        if let Some(host_events) = self.host_events.take() {
+            let ret = host_events.stop().await;
+            match ret {
+                Ok(_) => {
+                    info!("HostEventHandler stopped");
+                }
+                Err(err) => {
+                    warn!("Failed to stop HostEventHandler: {err:?}");
+                }
+            }
         }
 
         if let Some(mut kymux) = self.kymux.take() {
@@ -299,9 +325,7 @@ impl Handler {
 
                 Ok(())
             }
-            Message::DisplayListUpdated { displays } => {
-                Ok(())
-            }
+            Message::DisplayListUpdated { displays: _ } => Ok(()),
         }
     }
 }
