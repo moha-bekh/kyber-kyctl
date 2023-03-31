@@ -6,6 +6,7 @@ use log::error;
 
 use crate::{Error, Result};
 
+#[derive(Clone)]
 pub(crate) struct Config {
     pub(crate) certificate: Vec<u8>,
 }
