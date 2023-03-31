@@ -114,18 +114,24 @@ impl Handler {
     }
 
     async fn start(&mut self) -> Result<()> {
+        let mut kymux = kymux_backend::start_kymux(
+            &self.streamer_addr,
+            &self.config.streamer_tls_host,
+            &self.tls_config,
+            &self.http_client,
+        )
+        .await?;
+
         match self.config.protocol {
             StreamingProtocol::Kymux => {
                 let result = kymux_backend::start(
                     &self.config,
-                    &self.streamer_addr,
-                    &self.tls_config,
                     &self.http_client,
+                    &mut kymux,
                     self.create_message_proxy(),
                 )
                 .await?;
 
-                self.kymux = Some(result.kymux);
                 self.player = Some(Player::Kymux(result.player));
                 self.input_service = result.input_service;
             }
@@ -142,6 +148,8 @@ impl Handler {
                 self.input_service = result.input_service;
             }
         }
+
+        self.kymux = Some(kymux);
 
         Ok(())
     }

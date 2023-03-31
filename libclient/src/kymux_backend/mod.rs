@@ -13,22 +13,20 @@ pub(crate) mod player;
 pub(crate) use player::Player;
 
 pub(crate) struct StartResult {
-    pub(crate) kymux: kymux::Connection,
     pub(crate) player: Player,
     pub(crate) input_service: Option<input_service::Client>,
 }
 
-pub(crate) async fn start(
-    config: &ClientConfig,
+pub(crate) async fn start_kymux(
     addr: &SocketAddr,
+    streamer_tls_host: &str,
     tls_config: &tls::Config,
     client: &HttpClient,
-    msg_proxy: MessageProxy,
-) -> Result<StartResult> {
+) -> Result<kymux::Connection> {
     // Request remote Kymux start
     let start_response = host_service::start_kymux(client, addr.port()).await?;
 
-    // Connect to remote Kymux
+    // Start Kymux connection
     let mut certs_store = rustls::RootCertStore::empty();
     certs_store
         .add(&rustls::Certificate(tls_config.certificate.clone()))
@@ -40,7 +38,7 @@ pub(crate) async fn start(
     let kymux_config = kymux::ClientConfig::new(
         SocketAddr::new(addr.ip(), start_response.port),
         certs_store,
-        &config.streamer_tls_host,
+        streamer_tls_host,
     );
 
     let kymux = kymux::Connection::connect(kymux_config)
@@ -49,8 +47,18 @@ pub(crate) async fn start(
             error!("Fail to connect to Kymux: {err:?}");
             Error::Kymux(err)
         })?;
+
     info!("kymux: Connected to {addr}");
 
+    Ok(kymux)
+}
+
+pub(crate) async fn start(
+    config: &ClientConfig,
+    client: &HttpClient,
+    kymux: &mut kymux::Connection,
+    msg_proxy: MessageProxy,
+) -> Result<StartResult> {
     // Start stream
     let start_resp = host_service::start_stream(
         client,
@@ -110,7 +118,6 @@ pub(crate) async fn start(
     };
 
     Ok(StartResult {
-        kymux,
         player,
         input_service,
     })
