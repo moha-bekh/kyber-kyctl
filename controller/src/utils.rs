@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use crate::host_events;
+
 pub(crate) fn get_resource_path(resource_name: &str) -> PathBuf {
     if let Ok(mut path) = std::env::current_exe() {
         path.pop();
@@ -40,6 +42,19 @@ where
 {
     fn convert(&self) -> Vec<T> {
         self.iter().map(|i| i.convert()).collect()
+    }
+}
+
+impl TypeConvert<host_events::Display> for avservice_types::Display {
+    fn convert(&self) -> host_events::Display {
+        host_events::Display {
+            id: self.id,
+            name: self.name.clone(),
+            width: self.width,
+            height: self.height,
+            x: self.x,
+            y: self.y,
+        }
     }
 }
 

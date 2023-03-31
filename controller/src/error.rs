@@ -40,6 +40,11 @@ pub enum Error {
         #[from]
         source: rustls::Error,
     },
+    #[error("Actix Web error: {source:?}")]
+    ActixError {
+        #[from]
+        source: actix_web::Error,
+    },
     #[error("Thread panicked")]
     ThreadPanicked,
     #[error("DisplayList empty")]

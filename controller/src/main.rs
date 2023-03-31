@@ -1,13 +1,14 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
-use actix_web::{get, middleware, post, web, App, HttpResponse, HttpServer};
-use log::{info, LevelFilter};
+use actix_web::{get, middleware, post, web, App, HttpRequest, HttpResponse, HttpServer};
+use log::{info, warn, LevelFilter};
 use tokio::sync::Mutex;
 
 mod avservice;
 mod controller;
 mod error;
+mod host_events;
 mod inputservice;
 mod kymux_controller;
 mod rtp;
@@ -19,11 +20,40 @@ use libkypc::process::ProcessFactory;
 
 use controller::Controller;
 use error::{Error, Result};
+use host_events::{HostEvent, HostEventSender};
+use utils::TypeConvert;
 
 const LISTENING_PORT: u16 = 8080;
 
 const STREAMER_CERT: &str = "kybertest_cert.pem";
 const STREAMER_KEY: &str = "kybertest_key.pem";
+
+#[get("/ws")]
+async fn websocket_service(
+    ctrl: web::Data<Mutex<Controller>>,
+    req: HttpRequest,
+    stream: web::Payload,
+) -> HttpResponse {
+    let (host_event_sender, http_response) = match HostEventSender::new(req, stream) {
+        Ok((host_event_sender, http_response)) => (host_event_sender, http_response),
+        Err(err) => {
+            warn!("Fail to start websocket: {err:?}");
+            return HttpResponse::Forbidden().finish();
+        }
+    };
+
+    let mut ctrl = ctrl.lock().await;
+
+    host_event_sender
+        .send(HostEvent::DisplayList {
+            displays: ctrl.displays.convert(),
+        })
+        .await;
+
+    ctrl.host_event_sender = Some(host_event_sender);
+
+    http_response
+}
 
 #[get("/enumerate_displays")]
 async fn enumerate_displays(ctrl: web::Data<Mutex<Controller>>) -> HttpResponse {
