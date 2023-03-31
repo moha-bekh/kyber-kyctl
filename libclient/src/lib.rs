@@ -13,8 +13,6 @@ pub mod window_handle;
 #[cfg(any(cargo_c, feature = "capi"))]
 pub mod capi;
 
-pub use enums::Event;
-
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -26,7 +24,7 @@ use tokio::sync::mpsc::{self, Sender};
 use libkynput_rs::Pipeline;
 
 use crate::error::{Error, Result};
-use enums::Message;
+use enums::{Event, Message};
 use event_manager::EventManager;
 use http::HttpClient;
 use window_handle::WindowHandle;
