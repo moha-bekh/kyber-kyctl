@@ -16,7 +16,7 @@ struct Inner {
     child: Process,
     commander: Commander<Command, Event>,
     sender: CommandSender<Command, Event>,
-    _receiver: EventReceiver<Event>,
+    receiver: Option<EventReceiver<Event>>,
 }
 
 pub(crate) struct Handler {
@@ -42,6 +42,14 @@ impl Handler {
         self.name.clone()
     }
 
+    pub(crate) fn get_receiver(&mut self) -> Option<EventReceiver<Event>> {
+        let Some(inner) = self.inner.as_mut() else {
+            return None;
+        };
+
+        inner.receiver.take()
+    }
+
     async fn spawn_process(&self, process_factory: &Arc<ProcessFactory>) -> Result<Inner> {
         debug!("Run AvServer {name}", name = self.name);
 
@@ -53,7 +61,7 @@ impl Handler {
             child,
             commander,
             sender,
-            _receiver: receiver,
+            receiver: Some(receiver),
         })
     }
 
