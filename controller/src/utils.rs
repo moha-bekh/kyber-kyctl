@@ -29,3 +29,16 @@ pub fn get_executable_path(exe_name: &str) -> PathBuf {
 pub fn get_executable_path(exe_name: &str) -> PathBuf {
     PathBuf::from(exe_name)
 }
+
+pub(crate) trait TypeConvert<T> {
+    fn convert(&self) -> T;
+}
+
+impl<F, T> TypeConvert<Vec<T>> for Vec<F>
+where
+    F: TypeConvert<T>,
+{
+    fn convert(&self) -> Vec<T> {
+        self.iter().map(|i| i.convert()).collect()
+    }
+}
