@@ -25,7 +25,7 @@ use tokio::sync::mpsc::{self, Sender};
 use libkynput_rs::Pipeline;
 
 use crate::error::{Error, Result};
-use enums::{Event, Message};
+use enums::{Display, Event, Message};
 use event_manager::EventManager;
 use http::HttpClient;
 use window_handle::WindowHandle;
@@ -91,6 +91,8 @@ struct Handler {
 
     input_service: Option<input_service::Client>,
     input_pipeline: Option<Pipeline>,
+
+    displays: Vec<Display>,
 }
 
 impl Handler {
@@ -117,6 +119,7 @@ impl Handler {
             player: None,
             input_service: None,
             input_pipeline: None,
+            displays: vec![],
         })
     }
 
@@ -126,7 +129,8 @@ impl Handler {
         }
     }
 
-    async fn start(&mut self) -> Result<()> {
+    async fn start(&mut self) -> Result<Vec<Display>> {
+        // Start Kymux
         let kymux = kymux_backend::start_kymux(
             &self.streamer_addr,
             &self.connect_config.tls_host,
@@ -137,7 +141,8 @@ impl Handler {
 
         self.kymux = Some(kymux);
 
-        Ok(())
+        // Enumerate displays
+        host_service::enumerate_displays(&self.http_client).await
     }
 
     async fn stop(&mut self) -> Result<()> {
@@ -224,7 +229,7 @@ impl Handler {
         match msg {
             Message::Start => {
                 // Connect to Kymux, Websocket, and enumerate displays
-                self.start().await?;
+                self.displays = self.start().await?;
 
                 // Start streaming session
                 self.start_streaming_session().await?;
