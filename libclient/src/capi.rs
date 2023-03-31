@@ -200,11 +200,13 @@ pub unsafe extern "C" fn libclient_connect_config_unref(cfg: *mut libclient_Conn
 #[no_mangle]
 pub unsafe extern "C" fn libclient_video_session_config_default(
     window_handle: *mut libclient_WindowHandle,
+    display_index: usize,
     out_config: *mut *mut libclient_VideoSessionConfig,
 ) -> c_int {
     let window_handle = Box::from_raw(window_handle);
 
     let config = crate::VideoSessionConfig {
+        display_index,
         window_handle: window_handle.handle,
         codec: VideoCodec::H264,
         yuv444: false,

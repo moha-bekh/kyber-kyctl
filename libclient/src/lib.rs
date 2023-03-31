@@ -71,6 +71,19 @@ fn resolve_streamer_host(host: &str, port: u16) -> Result<SocketAddr> {
     })
 }
 
+fn get_display_id<'a>(displays: &'a Vec<Display>, config: &VideoSessionConfig) -> &'a Display {
+    if config.display_index < displays.len() {
+        &displays[config.display_index]
+    } else {
+        warn!(
+            "Display index {} is out of range, fallback to first screen",
+            config.display_index
+        );
+
+        &displays[0]
+    }
+}
+
 struct StartStreamResult {
     player: Option<Player>,
     input_pipeline: Option<Pipeline>,
@@ -307,6 +320,7 @@ pub struct ConnectConfig {
 
 #[derive(Clone, Debug)]
 pub struct VideoSessionConfig {
+    pub display_index: usize,
     pub window_handle: WindowHandle,
     pub codec: VideoCodec,
     pub yuv444: bool,
