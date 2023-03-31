@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use log::{debug, info, warn};
 
-use inputservice_types::{Command, Event};
+use inputservice_types::{Command, Event, HostConfig};
 use libkypc::{
     process::{Process, ProcessFactory},
     CommandSender, Commander, EventReceiver,
@@ -48,13 +48,17 @@ impl Handler {
         })
     }
 
-    pub(crate) async fn start_tcp(&mut self, process_factory: &Arc<ProcessFactory>) -> Result<()> {
+    pub(crate) async fn start_tcp(
+        &mut self,
+        process_factory: &Arc<ProcessFactory>,
+        host_config: HostConfig,
+    ) -> Result<()> {
         if self.inner.is_some() {
             return Err(Error::StreamerStarted);
         }
 
         let mut inner = Self::spawn_process(process_factory).await?;
-        inner.sender.send(Command::StartTcp).await?;
+        inner.sender.send(Command::StartTcp { host_config }).await?;
         self.inner = Some(inner);
 
         Ok(())
