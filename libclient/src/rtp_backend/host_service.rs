@@ -11,6 +11,7 @@ use super::{AudioConfig, VideoConfig};
 #[derive(Debug, Serialize)]
 struct StartRequestVideo {
     port: u16,
+    display_id: u32,
     yuv444: bool,
 }
 
@@ -57,11 +58,16 @@ pub(crate) async fn hello(client: &HttpClient) -> Result<String> {
     Ok(response.ip)
 }
 
-pub(crate) async fn generate_sdp(client: &HttpClient, yuv444: bool) -> Result<String> {
+pub(crate) async fn generate_sdp(
+    client: &HttpClient,
+    yuv444: bool,
+    display_id: u32,
+) -> Result<String> {
     let url = format!("{base_url}/rtp/generate_sdp", base_url = client.base_url());
 
     let body = json!({
         "yuv444": yuv444,
+        "display_id": display_id,
     });
 
     let response = client
@@ -87,6 +93,7 @@ pub(super) async fn start_stream(
     let url = format!("{base_url}/rtp/start", base_url = client.base_url());
 
     let video = video.as_ref().map(|video| StartRequestVideo {
+        display_id: video.display_id,
         port: video.port,
         yuv444: video.yuv444,
     });

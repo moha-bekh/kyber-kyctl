@@ -6,9 +6,9 @@ use std::net::SocketAddr;
 use libkynput_rs::Pipeline;
 
 use crate::http::HttpClient;
-use crate::input_service;
+use crate::{get_display_id, input_service};
 use crate::{
-    InputSessionConfig, MessageProxy, Result, StartStreamResult, StreamingSessionConfig,
+    Display, InputSessionConfig, MessageProxy, Result, StartStreamResult, StreamingSessionConfig,
     VideoSessionConfig, WindowHandle,
 };
 
@@ -21,6 +21,7 @@ const RTP_VIDEO_PORT: u16 = 30000;
 const RTP_AUDIO_PORT: u16 = RTP_VIDEO_PORT + 10;
 
 struct VideoConfig {
+    display_id: u32,
     yuv444: bool,
 
     window_handle: WindowHandle,
@@ -37,6 +38,7 @@ struct AudioConfig {
 
 async fn create_video_config(
     client: &HttpClient,
+    displays: &Vec<Display>,
     ip: &str,
     config: &Option<VideoSessionConfig>,
 ) -> Result<Option<VideoConfig>> {
@@ -44,9 +46,12 @@ async fn create_video_config(
         return Ok(None);
     };
 
-    let sdp_param = host_service::generate_sdp(client, config.yuv444).await?;
+    let display_id = get_display_id(displays, config).id;
+
+    let sdp_param = host_service::generate_sdp(client, config.yuv444, display_id).await?;
 
     Ok(Some(VideoConfig {
+        display_id,
         yuv444: config.yuv444,
         ip: ip.into(),
         port: RTP_VIDEO_PORT,
@@ -74,6 +79,7 @@ fn start_input(
 pub(crate) async fn start(
     addr: &SocketAddr,
     client: &HttpClient,
+    displays: &Vec<Display>,
     streaming_config: &StreamingSessionConfig,
     msg_proxy: MessageProxy,
 ) -> Result<StartStreamResult> {
@@ -82,7 +88,8 @@ pub(crate) async fn start(
     // Prepare video config
     let local_ip = host_service::hello(client).await?;
 
-    let video_config = create_video_config(client, &local_ip, &streaming_config.video).await?;
+    let video_config =
+        create_video_config(client, displays, &local_ip, &streaming_config.video).await?;
 
     // Prepare audio config
     let audio_config = if streaming_config.audio {

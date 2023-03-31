@@ -224,6 +224,7 @@ impl Handler {
                 rtp_backend::start(
                     &self.streamer_addr,
                     &self.http_client,
+                    &self.displays,
                     &self.streaming_config,
                     msg_proxy,
                 )
