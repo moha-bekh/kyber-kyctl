@@ -1,6 +1,7 @@
 mod enums;
 mod error;
 pub mod event_manager;
+mod host_events;
 mod host_service;
 pub(crate) mod http;
 pub mod input_service;
@@ -296,6 +297,9 @@ impl Handler {
 
                 self.input_service = None;
 
+                Ok(())
+            }
+            Message::DisplayListUpdated { displays } => {
                 Ok(())
             }
         }

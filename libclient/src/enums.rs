@@ -20,6 +20,8 @@ pub enum Message {
 
     InputServiceConnected,
     InputServiceDisconnected,
+
+    DisplayListUpdated { displays: Vec<Display> },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
