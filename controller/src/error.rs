@@ -27,6 +27,8 @@ pub enum Error {
     KymuxNotConnected,
     #[error("Got an unexpected response from AvServer")]
     AvServerUnexpectedResponse,
+    #[error("Couldn't get a receiver from AvServer")]
+    AvServerNoReceiver,
     #[error("Couldn't open file {path}")]
     FileNotFound { path: PathBuf },
     #[error("Invalid TLS file")]
@@ -40,6 +42,8 @@ pub enum Error {
     },
     #[error("Thread panicked")]
     ThreadPanicked,
+    #[error("DisplayList empty")]
+    DisplayListEmpty,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

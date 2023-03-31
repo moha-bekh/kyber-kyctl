@@ -13,6 +13,7 @@ mod kymux_controller;
 mod rtp;
 mod tls;
 mod utils;
+mod watchdog;
 
 use libkypc::process::ProcessFactory;
 
@@ -69,7 +70,20 @@ async fn main() {
 
     let process_factory = Arc::new(ProcessFactory::new(false));
 
-    let ctrl = web::Data::new(Mutex::new(Controller::new(process_factory, tls_config)));
+    let ctrl = web::Data::new(Mutex::new(Controller::new(
+        process_factory.clone(),
+        tls_config,
+    )));
+
+    let watchdog = {
+        let mut ctrl = ctrl.lock().await;
+
+        let (watchdog, displays) = watchdog::Watchdog::new(&process_factory).await.unwrap();
+
+        ctrl.displays = displays;
+
+        watchdog
+    };
 
     let bind_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), LISTENING_PORT);
 
@@ -98,4 +112,6 @@ async fn main() {
     .run()
     .await
     .unwrap();
+
+    watchdog.stop().await.unwrap();
 }

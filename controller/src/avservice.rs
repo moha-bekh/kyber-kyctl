@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use log::{debug, info, warn};
 
-use avservice_types::{Command, Event, VideoCodec};
+use avservice_types::{Command, Display, Event, VideoCodec};
 use libkypc::{
     process::{Process, ProcessFactory},
     CommandSender, Commander, EventReceiver,
@@ -63,6 +63,22 @@ impl Handler {
             sender,
             receiver: Some(receiver),
         })
+    }
+
+    pub(crate) async fn enumerate_displays(
+        &mut self,
+        process_factory: &Arc<ProcessFactory>,
+    ) -> Result<Vec<Display>> {
+        let mut inner = self.spawn_process(process_factory).await?;
+        let ret = inner.sender.send(Command::EnumerateDisplays).await?;
+
+        let Some(Event::DisplayList { displays }) = ret else {
+            return Err(Error::DisplayListEmpty);
+        };
+
+        self.inner = Some(inner);
+
+        Ok(displays)
     }
 
     pub(crate) async fn rtp_generate_video_sdp(

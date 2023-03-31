@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use log::info;
 
+use avservice_types::Display;
 use libkypc::process::ProcessFactory;
 
 use crate::avservice;
@@ -60,6 +61,8 @@ pub(crate) async fn stop_input(handler: Option<inputservice::Handler>) -> Result
 pub struct Controller {
     pub(crate) process_factory: Arc<ProcessFactory>,
 
+    pub(crate) displays: Vec<Display>,
+
     pub(crate) tls_config: tls::Config,
     pub(crate) kymux_listener: Option<KymuxListener>,
     pub(crate) kymux: Option<kymux::Connection>,
@@ -72,6 +75,7 @@ impl Controller {
     pub(crate) fn new(process_factory: Arc<ProcessFactory>, tls_config: tls::Config) -> Self {
         Self {
             process_factory,
+            displays: vec![],
             tls_config,
             kymux_listener: None,
             kymux: None,
@@ -90,5 +94,9 @@ impl Controller {
         stop_kymux(self.kymux_listener.take(), self.kymux.take()).await?;
 
         Ok(())
+    }
+
+    pub(crate) fn display_known(&self, display_id: u32) -> bool {
+        self.displays.iter().any(|d| d.id == display_id)
     }
 }
