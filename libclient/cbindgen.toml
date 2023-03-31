@@ -15,6 +15,7 @@ rename_variants = "ScreamingSnakeCase"
 prefix_with_name = true
 
 [export.rename]
+"Display" = "libclient_Display"
 "Event" = "libclient_Event"
 "LogCb" = "libclient_LogCb"
 "LogLevel" = "libclient_LogLevel"

@@ -2,6 +2,8 @@ use std::ffi::{CStr, CString};
 use std::mem;
 use std::os::raw::c_void;
 
+use log::{error, warn};
+
 use libclient_sys as sys;
 use libkynput_rs::Pipeline;
 
@@ -11,6 +13,8 @@ pub enum Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+pub type Display = sys::libclient_Display;
 
 #[derive(Clone, Copy, Debug)]
 pub enum StreamingProtocol {
@@ -90,24 +94,14 @@ impl WindowHandle {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub enum Event {
+    Started { displays: Vec<Display> },
     Stopped,
 }
 
-impl Event {
-    fn from_u32(u: sys::libclient_Event) -> Self {
-        match u {
-            sys::libclient_Event_LIBCLIENT_EVENT_STOPPED => Self::Stopped,
-            _ => {
-                panic!("Invalid libclient_Event {}", u)
-            }
-        }
-    }
-}
-
 pub trait EventSink {
-    fn on_event(&self, event: &Event);
+    fn on_event(&self, event: Event);
 }
 
 struct EventSinkData {
@@ -120,7 +114,34 @@ impl EventSinkData {
         userdata: *mut c_void,
     ) {
         let data: &EventSinkData = &*(userdata as *mut _);
-        data.sink.on_event(&Event::from_u32(*event));
+
+        let event_type = unsafe { sys::libclient_event_get_type(event) };
+        match event_type {
+            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_STARTED => {
+                let mut cdisplays: *mut Display = std::ptr::null_mut();
+                let mut len: u32 = 0;
+
+                let ret = unsafe {
+                    sys::libclient_event_unpack_started(event, &mut cdisplays, &mut len as *mut _)
+                };
+                if ret != 0 {
+                    warn!("Fail to unpack EventType::Started");
+                    return;
+                }
+
+                let displays = unsafe { std::slice::from_raw_parts(cdisplays, len as usize) };
+                data.sink.on_event(Event::Started {
+                    displays: displays.to_vec(),
+                });
+                unsafe { sys::libclient_event_free_displays(cdisplays) };
+            }
+            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_STOPPED => {
+                data.sink.on_event(Event::Stopped);
+            }
+            _ => {
+                error!("Invalid libclient_EventType {}", event_type)
+            }
+        }
     }
 }
 

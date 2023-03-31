@@ -234,6 +234,11 @@ impl Handler {
                 // Start streaming session
                 self.start_streaming_session().await?;
 
+                let mut event_manager = self.event_manager.lock()?;
+                event_manager.send_event(Event::Started {
+                    displays: self.displays.clone(),
+                });
+
                 Ok(())
             }
             Message::Stop => {

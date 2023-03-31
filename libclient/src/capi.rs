@@ -11,6 +11,9 @@ use libkynput_rs::Pipeline;
 use crate::VideoCodec;
 
 #[allow(non_camel_case_types)]
+pub type Display = super::Display;
+
+#[allow(non_camel_case_types)]
 pub struct libclient_WindowHandle {
     handle: crate::window_handle::WindowHandle,
 }
@@ -362,6 +365,46 @@ pub unsafe extern "C" fn libclient_client_unref(client: *mut libclient_Client) {
 
 #[allow(non_camel_case_types)]
 pub type Event = super::Event;
+
+#[repr(C)]
+pub enum libclient_EventType {
+    Started,
+    Stopped,
+    DisplayListUpdated,
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_event_get_type(event: *const Event) -> libclient_EventType {
+    match *event {
+        Event::Started { .. } => libclient_EventType::Started,
+        Event::Stopped => libclient_EventType::Stopped,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_event_unpack_started(
+    event: *const Event,
+    out_displays: *mut *mut Display,
+    out_len: *mut u32,
+) -> c_int {
+    if let Event::Started { displays } = &*event {
+        let mut displays = Box::new(displays.clone());
+
+        *out_displays = displays.as_mut_ptr();
+        *out_len = displays.len() as u32;
+
+        std::mem::forget(displays);
+
+        0
+    } else {
+        -1
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_event_free_displays(displays: *mut Display) {
+    let _ = Box::from_raw(displays);
+}
 
 #[repr(C)]
 #[derive(Clone, Copy)]

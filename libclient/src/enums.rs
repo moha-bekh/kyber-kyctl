@@ -22,8 +22,8 @@ pub enum Message {
     InputServiceDisconnected,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(C)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Event {
+    Started { displays: Vec<Display> },
     Stopped,
 }
