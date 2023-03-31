@@ -6,7 +6,7 @@ use tokio::{sync::oneshot, task};
 use libkypc::{process::ProcessFactory, EventReceiver};
 
 use crate::avservice;
-use crate::{Error, Result};
+use crate::{Error, Result, StateMachineEvent, StateMachineProxy};
 
 pub(crate) struct Watchdog {
     avservice: avservice::Handler,
@@ -17,6 +17,7 @@ pub(crate) struct Watchdog {
 impl Watchdog {
     pub(crate) async fn new(
         process_factory: &Arc<ProcessFactory>,
+        statemachine_proxy: StateMachineProxy,
     ) -> Result<(Self, Vec<avservice_types::Display>)> {
         let mut avservice = avservice::Handler::new("DisplayEnum");
 
@@ -28,6 +29,7 @@ impl Watchdog {
 
         let avservice_handle = task::spawn(Self::avserver_task_entry(
             avservice_receiver,
+            statemachine_proxy,
             avservice_stop_rx,
         ));
 
@@ -59,16 +61,24 @@ impl Watchdog {
 
     async fn avserver_task_entry(
         receiver: EventReceiver<avservice_types::Event>,
+        statemachine_proxy: StateMachineProxy,
         stop_rx: oneshot::Receiver<()>,
     ) {
         tokio::select! {
             _ = stop_rx => {
             }
-            _ = Self::avserver_process_receiver(receiver) => {}
+            _ = Self::avserver_process_receiver(receiver, statemachine_proxy) => {}
         }
     }
 
-    async fn avserver_process_receiver(mut receiver: EventReceiver<avservice_types::Event>) {
-        while let Ok(_event) = receiver.recv().await {}
+    async fn avserver_process_receiver(
+        mut receiver: EventReceiver<avservice_types::Event>,
+        statemachine_proxy: StateMachineProxy,
+    ) {
+        while let Ok(event) = receiver.recv().await {
+            statemachine_proxy
+                .send(StateMachineEvent::AvService { event })
+                .await;
+        }
     }
 }

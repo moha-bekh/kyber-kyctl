@@ -84,6 +84,17 @@ impl Handler {
         Ok(())
     }
 
+    pub(crate) async fn update_host_config(&mut self, host_config: HostConfig) -> Result<()> {
+        if let Some(inner) = self.inner.as_mut() {
+            inner
+                .sender
+                .send(Command::UpdateHostConfig { host_config })
+                .await?;
+        }
+
+        Ok(())
+    }
+
     pub(crate) async fn stop(&mut self) -> Result<()> {
         let Some(mut inner) = self.inner.take() else {
             return Err(Error::StreamerStopped);

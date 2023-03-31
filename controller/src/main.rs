@@ -12,6 +12,7 @@ mod host_events;
 mod inputservice;
 mod kymux_controller;
 mod rtp;
+mod statemachine;
 mod tls;
 mod utils;
 mod watchdog;
@@ -21,6 +22,7 @@ use libkypc::process::ProcessFactory;
 use controller::Controller;
 use error::{Error, Result};
 use host_events::{HostEvent, HostEventSender};
+use statemachine::{StateMachine, StateMachineEvent, StateMachineProxy};
 use utils::TypeConvert;
 
 const LISTENING_PORT: u16 = 8080;
@@ -112,10 +114,15 @@ async fn main() {
         tls_config,
     )));
 
+    let statemachine = StateMachine::new(ctrl.clone()).unwrap();
+
     let watchdog = {
         let mut ctrl = ctrl.lock().await;
 
-        let (watchdog, displays) = watchdog::Watchdog::new(&process_factory).await.unwrap();
+        let (watchdog, displays) =
+            watchdog::Watchdog::new(&process_factory, statemachine.create_proxy())
+                .await
+                .unwrap();
 
         ctrl.displays = displays;
 
@@ -142,6 +149,7 @@ async fn main() {
                     .service(rtp::requests::generate_sdp)
                     .service(rtp::requests::start),
             )
+            .service(websocket_service)
             .service(enumerate_displays)
             .service(stop_session)
     })
@@ -152,4 +160,5 @@ async fn main() {
     .unwrap();
 
     watchdog.stop().await.unwrap();
+    statemachine.stop().await.unwrap();
 }
