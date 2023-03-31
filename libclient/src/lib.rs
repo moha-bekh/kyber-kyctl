@@ -254,14 +254,14 @@ impl Handler {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 #[repr(C)]
 pub enum StreamingProtocol {
     Rtp,
     Kymux,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub enum VideoCodec {
     H264,

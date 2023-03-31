@@ -1,6 +1,6 @@
 use raw_window_handle::RawWindowHandle;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 #[allow(dead_code)]
 pub enum WindowHandle {
     #[cfg(target_os = "linux")]
