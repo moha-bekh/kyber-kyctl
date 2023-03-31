@@ -4,15 +4,11 @@ use std::{env, fs};
 
 use crate::error::{Error, PlayerError, Result};
 use crate::utils;
-
-use crate::window_handle::WindowHandle;
 use crate::MessageProxy;
 
-// RTP seems to use multiple port for a session. Fix a large offset to get
-// a safe port.
-const AUDIO_PORT_OFFSET: u16 = 10;
+use super::{AudioConfig, VideoConfig};
 
-fn create_video_sdp_file(streamer: &str, video_port: u16, sdp_param: String) -> Result<PathBuf> {
+fn create_video_sdp_file(streamer: &str, video_port: u16, sdp_param: &str) -> Result<PathBuf> {
     // Prepare SDP
     let sdp_path = env::temp_dir().join("video.sdp");
 
@@ -66,12 +62,11 @@ pub struct Player {
     instance: vlc::Instance,
     video_mediaplayer: Option<vlc::MediaPlayer>,
     audio_mediaplayer: Option<vlc::MediaPlayer>,
-    window_handle: WindowHandle,
     message_proxy: MessageProxy,
 }
 
 impl Player {
-    pub fn new(window_handle: WindowHandle, message_proxy: MessageProxy) -> Result<Self> {
+    pub fn new(message_proxy: MessageProxy) -> Result<Self> {
         let mut options = vec![
             "--0latency",
             "--network-caching=0",
@@ -94,14 +89,13 @@ impl Player {
             instance,
             video_mediaplayer: None,
             audio_mediaplayer: None,
-            window_handle,
             message_proxy,
         })
     }
 
-    fn play_video(&mut self, ip: &str, video_port: u16, sdp_param: String) -> Result<()> {
+    fn play_video(&mut self, config: &VideoConfig) -> Result<()> {
         // Create player
-        let sdp_path = create_video_sdp_file(ip, video_port, sdp_param)?;
+        let sdp_path = create_video_sdp_file(&config.ip, config.port, &config.sdp_param)?;
 
         let mrl = format!(
             "file:///{}",
@@ -114,7 +108,7 @@ impl Player {
             vlc::MediaPlayer::new(&self.instance).ok_or(PlayerError::MediaPlayerCreateFailed)?;
         mdp.set_media(&md);
 
-        utils::attach_window_to_player(&mdp, self.window_handle)?;
+        utils::attach_window_to_player(&mdp, config.window_handle)?;
         utils::plug_event_manager_to_player(&mdp, self.message_proxy.clone())?;
 
         // Play
@@ -125,8 +119,8 @@ impl Player {
         Ok(())
     }
 
-    fn play_audio(&mut self, ip: &str, audio_port: u16) -> Result<()> {
-        let sdp_path = create_audio_sdp_file(ip, audio_port)?;
+    fn play_audio(&mut self, config: &AudioConfig) -> Result<()> {
+        let sdp_path = create_audio_sdp_file(&config.ip, config.port)?;
 
         let mrl = format!(
             "file:///{}",
@@ -149,27 +143,32 @@ impl Player {
         Ok(())
     }
 
-    pub fn play(
+    pub(super) fn play(
         &mut self,
-        ip: &str,
-        video_port: u16,
-        sdp_param: String,
-        audio: bool,
+        video_config: Option<VideoConfig>,
+        audio_config: Option<AudioConfig>,
     ) -> Result<()> {
+        if video_config.is_none() && audio_config.is_none() {
+            error!("play() rejected because no video and audio conf have been provided");
+            return Err(Error::Rejected);
+        }
+
         // Video playback
-        info!("Play video from {ip}:{video_port}");
-        let ret = self.play_video(ip, video_port, sdp_param);
-        if let Err(err) = ret {
-            error!("Fail to start video playback: {:?}", err);
-            return Err(err);
+        if let Some(video_config) = video_config {
+            info!("Play video from {}:{}", video_config.ip, video_config.port);
+
+            let ret = self.play_video(&video_config);
+            if let Err(err) = ret {
+                error!("Fail to start video playback: {:?}", err);
+                return Err(err);
+            }
         }
 
         // Audio playback
-        if audio {
-            let audio_port = video_port + AUDIO_PORT_OFFSET;
+        if let Some(audio_config) = audio_config {
+            info!("Play audio from {}:{}", audio_config.ip, audio_config.port);
 
-            info!("Play audio from {ip}:{audio_port}");
-            let ret = self.play_audio(ip, audio_port);
+            let ret = self.play_audio(&audio_config);
             if let Err(err) = ret {
                 error!("Fail to start audio playback: {:?}", err);
                 return Err(err);

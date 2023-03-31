@@ -3,7 +3,7 @@ use serde_json::json;
 
 use crate::error::Result;
 use crate::http::HttpClient;
-use crate::VideoCodec;
+use crate::{VideoCodec, VideoSessionConfig};
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct StartKymuxResponse {
@@ -30,17 +30,29 @@ pub(crate) async fn start_kymux(
         .await?)
 }
 
+#[derive(Debug, Serialize)]
+struct StartRequestVideo {
+    codec: VideoCodec,
+    yuv444: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct StartRequest {
+    video: Option<StartRequestVideo>,
+    audio: bool,
+    inputs: bool,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct StartResponse {
-    pub(crate) video_endpoint: u64,
+    pub(crate) video_endpoint: Option<u64>,
     pub(crate) audio_endpoint: Option<u64>,
     pub(crate) input_endpoint: Option<u64>,
 }
 
 pub(crate) async fn start_stream(
     client: &HttpClient,
-    video_codec: VideoCodec,
-    yuv444: bool,
+    video: &Option<VideoSessionConfig>,
     audio: bool,
     inputs: bool,
 ) -> Result<StartResponse> {
@@ -49,18 +61,16 @@ pub(crate) async fn start_stream(
         base_url = client.base_url()
     );
 
-    let video_codec = match video_codec {
-        VideoCodec::H264 => "h264",
-        VideoCodec::HEVC => "hevc",
-        VideoCodec::AV1 => "av1",
-    };
-
-    let body = json!({
-        "video_codec": video_codec,
-        "yuv444": yuv444,
-        "audio": audio,
-        "inputs": inputs,
+    let video = video.as_ref().map(|video| StartRequestVideo {
+        codec: video.codec,
+        yuv444: video.yuv444,
     });
+
+    let body = StartRequest {
+        video,
+        audio,
+        inputs,
+    };
 
     Ok(client
         .client()

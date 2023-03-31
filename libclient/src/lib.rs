@@ -18,6 +18,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use log::{error, info, warn};
+use serde::Serialize;
 use tokio::runtime;
 use tokio::sync::mpsc::{self, Sender};
 
@@ -70,8 +71,15 @@ fn resolve_streamer_host(host: &str, port: u16) -> Result<SocketAddr> {
     })
 }
 
+struct StartStreamResult {
+    player: Option<Player>,
+    input_pipeline: Option<Pipeline>,
+    input_service: Option<input_service::Client>,
+}
+
 struct Handler {
-    config: ClientConfig,
+    connect_config: ConnectConfig,
+    streaming_config: StreamingSessionConfig,
     tls_config: tls::Config,
     streamer_addr: SocketAddr,
     http_client: HttpClient,
@@ -80,22 +88,26 @@ struct Handler {
 
     kymux: Option<kymux::Connection>,
     player: Option<Player>,
+
     input_service: Option<input_service::Client>,
+    input_pipeline: Option<Pipeline>,
 }
 
 impl Handler {
     fn new(
-        config: ClientConfig,
+        connect_config: ConnectConfig,
+        streaming_config: StreamingSessionConfig,
         event_manager: Arc<Mutex<EventManager>>,
         sender: Sender<Message>,
     ) -> Result<Self> {
-        let tls_config = tls::load_tls_certificate(&config.streamer_cert)?;
-        let streamer_addr = resolve_streamer_host(&config.streamer_ip, config.streamer_port)?;
+        let tls_config = tls::load_tls_certificate(&connect_config.tls_cert)?;
+        let streamer_addr = resolve_streamer_host(&connect_config.ip, connect_config.port)?;
 
-        let http_client = HttpClient::new(&config.streamer_tls_host, &streamer_addr, &tls_config)?;
+        let http_client = HttpClient::new(&connect_config.tls_host, &streamer_addr, &tls_config)?;
 
         Ok(Self {
-            config,
+            connect_config,
+            streaming_config,
             tls_config,
             streamer_addr,
             http_client,
@@ -104,6 +116,7 @@ impl Handler {
             kymux: None,
             player: None,
             input_service: None,
+            input_pipeline: None,
         })
     }
 
@@ -114,40 +127,13 @@ impl Handler {
     }
 
     async fn start(&mut self) -> Result<()> {
-        let mut kymux = kymux_backend::start_kymux(
+        let kymux = kymux_backend::start_kymux(
             &self.streamer_addr,
-            &self.config.streamer_tls_host,
+            &self.connect_config.tls_host,
             &self.tls_config,
             &self.http_client,
         )
         .await?;
-
-        match self.config.protocol {
-            StreamingProtocol::Kymux => {
-                let result = kymux_backend::start(
-                    &self.config,
-                    &self.http_client,
-                    &mut kymux,
-                    self.create_message_proxy(),
-                )
-                .await?;
-
-                self.player = Some(Player::Kymux(result.player));
-                self.input_service = result.input_service;
-            }
-            StreamingProtocol::Rtp => {
-                let result = rtp_backend::start(
-                    &self.config,
-                    &self.streamer_addr,
-                    &self.http_client,
-                    self.create_message_proxy(),
-                )
-                .await?;
-
-                self.player = Some(Player::Rtp(result.player));
-                self.input_service = result.input_service;
-            }
-        }
 
         self.kymux = Some(kymux);
 
@@ -203,16 +189,47 @@ impl Handler {
         Ok(())
     }
 
+    async fn start_streaming_session(&mut self) -> Result<()> {
+        let msg_proxy = self.create_message_proxy();
+
+        let result = match self.streaming_config.protocol {
+            StreamingProtocol::Kymux => {
+                let Some(kymux) = self.kymux.as_mut() else {
+                    error!("Got start Kymux session, but kymux isn't started");
+                    return Err(Error::KymuxNotStarted);
+                };
+
+                kymux_backend::start(&self.http_client, &self.streaming_config, kymux, msg_proxy)
+                    .await?
+            }
+            StreamingProtocol::Rtp => {
+                rtp_backend::start(
+                    &self.streamer_addr,
+                    &self.http_client,
+                    &self.streaming_config,
+                    msg_proxy,
+                )
+                .await?
+            }
+        };
+
+        self.player = result.player;
+        self.input_pipeline = result.input_pipeline;
+        self.input_service = result.input_service;
+
+        Ok(())
+    }
+
     async fn handle_message(&mut self, msg: &Message) -> Result<()> {
         match msg {
             Message::Start => {
-                let ret = self.start().await;
-                if ret.is_err() {
-                    let mut event_manager = self.event_manager.lock()?;
-                    event_manager.send_event(Event::Stopped);
-                }
+                // Connect to Kymux, Websocket, and enumerate displays
+                self.start().await?;
 
-                ret
+                // Start streaming session
+                self.start_streaming_session().await?;
+
+                Ok(())
             }
             Message::Stop => {
                 let ret = self.stop().await;
@@ -233,19 +250,20 @@ impl Handler {
             Message::InputServiceConnected => {
                 info!("Input service connected");
 
+                let input_pipeline = self.input_pipeline.as_mut().ok_or(Error::NoInputPipeline)?;
                 let input_service = self.input_service.as_mut().ok_or(Error::NoInputService)?;
-                self.config
-                    .input_pipeline
-                    .plug_network(&input_service.get_tx_consumer())?;
 
-                self.config.input_pipeline.start()?;
+                input_pipeline.plug_network(&input_service.get_tx_consumer())?;
+                input_pipeline.start()?;
 
                 Ok(())
             }
             Message::InputServiceDisconnected => {
                 info!("Input service disconnected");
 
-                self.config.input_pipeline.stop()?;
+                let input_pipeline = self.input_pipeline.as_mut().ok_or(Error::NoInputPipeline)?;
+                input_pipeline.stop()?;
+
                 self.input_service = None;
 
                 Ok(())
@@ -261,7 +279,7 @@ pub enum StreamingProtocol {
     Kymux,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize)]
 #[repr(C)]
 pub enum VideoCodec {
     H264,
@@ -269,19 +287,32 @@ pub enum VideoCodec {
     AV1,
 }
 
-#[derive(Clone)]
-pub struct ClientConfig {
-    pub streamer_tls_host: String,
-    pub streamer_ip: String,
-    pub streamer_port: u16,
-    pub streamer_cert: String,
-    pub protocol: StreamingProtocol,
+#[derive(Clone, Debug)]
+pub struct ConnectConfig {
+    pub ip: String,
+    pub port: u16,
+    pub tls_host: String,
+    pub tls_cert: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct VideoSessionConfig {
     pub window_handle: WindowHandle,
-    pub input_pipeline: Pipeline,
-    pub video_codec: VideoCodec,
+    pub codec: VideoCodec,
     pub yuv444: bool,
-    pub inputs: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct InputSessionConfig {
+    pub pipeline: Pipeline,
+}
+
+#[derive(Clone, Debug)]
+pub struct StreamingSessionConfig {
+    pub protocol: StreamingProtocol,
+    pub video: Option<VideoSessionConfig>,
     pub audio: bool,
+    pub input: Option<InputSessionConfig>,
 }
 
 pub struct Client {
@@ -290,14 +321,22 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(config: ClientConfig) -> Result<Self> {
+    pub fn new(
+        connect_config: ConnectConfig,
+        streaming_config: StreamingSessionConfig,
+    ) -> Result<Self> {
         let event_manager = Arc::new(Mutex::new(EventManager::new()));
 
         let (sender, mut receiver) = mpsc::channel(32);
         let event_manager_handler = event_manager.clone();
         let sender_handler = sender.clone();
 
-        let mut handler = Handler::new(config, event_manager_handler, sender_handler)?;
+        let mut handler = Handler::new(
+            connect_config,
+            streaming_config,
+            event_manager_handler,
+            sender_handler,
+        )?;
 
         thread::spawn(move || {
             let rt = runtime::Builder::new_multi_thread()

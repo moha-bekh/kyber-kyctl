@@ -16,8 +16,23 @@ pub struct libclient_WindowHandle {
 }
 
 #[allow(non_camel_case_types)]
-pub struct libclient_ClientConfig {
-    config: crate::ClientConfig,
+pub struct libclient_ConnectConfig {
+    config: crate::ConnectConfig,
+}
+
+#[allow(non_camel_case_types)]
+pub struct libclient_StreamingSessionConfig {
+    config: crate::StreamingSessionConfig,
+}
+
+#[allow(non_camel_case_types)]
+pub struct libclient_VideoSessionConfig {
+    config: crate::VideoSessionConfig,
+}
+
+#[allow(non_camel_case_types)]
+pub struct libclient_InputSessionConfig {
+    config: crate::InputSessionConfig,
 }
 
 fn result_to_c_int<T>(result: crate::Result<T>) -> c_int {
@@ -132,18 +147,12 @@ pub unsafe extern "C" fn libclient_windowshandle_from_hwnd(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn libclient_config_default(
-    tls_host: *const c_char,
+pub unsafe extern "C" fn libclient_connect_config_default(
     ip: *const c_char,
-    cert: *const c_char,
-    protocol: crate::StreamingProtocol,
-    pipeline: *mut libkynput_sys::libkynput_Pipeline,
-    window_handle: *mut libclient_WindowHandle,
-    out_config: *mut *mut libclient_ClientConfig,
+    tls_host: *const c_char,
+    tls_cert: *const c_char,
+    out_config: *mut *mut libclient_ConnectConfig,
 ) -> c_int {
-    let pipeline = Pipeline::from_ptr(pipeline);
-    let window_handle = Box::from_raw(window_handle);
-
     let Ok(ip) = CStr::from_ptr(ip).to_str() else {
         warn!("Fail to convert client IP");
         return -1;
@@ -154,74 +163,152 @@ pub unsafe extern "C" fn libclient_config_default(
         return -1;
     };
 
-    let Ok(cert) = CStr::from_ptr(cert).to_str() else {
-        warn!("Fail to convert client cert");
+    let Ok(tls_cert) = CStr::from_ptr(tls_cert).to_str() else {
+        warn!("Fail to convert client TLS cert");
         return -1;
     };
 
-    let config = crate::ClientConfig {
-        streamer_tls_host: tls_host.to_string(),
-        streamer_ip: ip.to_string(),
-        streamer_port: crate::STREAMER_PORT,
-        streamer_cert: cert.to_string(),
-        protocol,
-        input_pipeline: pipeline,
-        window_handle: window_handle.handle,
-        video_codec: VideoCodec::H264,
-        yuv444: false,
-        inputs: true,
-        audio: false,
+    let config = crate::ConnectConfig {
+        tls_host: tls_host.into(),
+        ip: ip.into(),
+        port: crate::STREAMER_PORT,
+        tls_cert: tls_cert.into(),
     };
 
-    *out_config = Box::into_raw(Box::new(libclient_ClientConfig { config }));
+    *out_config = Box::into_raw(Box::new(libclient_ConnectConfig { config }));
     0
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn libclient_config_set_yuv444(
-    config: *mut libclient_ClientConfig,
+pub unsafe extern "C" fn libclient_connect_config_set_streamer_port(
+    config: *mut libclient_ConnectConfig,
+    port: u16,
+) {
+    (*config).config.port = port;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_connect_config_unref(cfg: *mut libclient_ConnectConfig) {
+    if !cfg.is_null() {
+        let _ = Box::from_raw(cfg);
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_video_session_config_default(
+    window_handle: *mut libclient_WindowHandle,
+    out_config: *mut *mut libclient_VideoSessionConfig,
+) -> c_int {
+    let window_handle = Box::from_raw(window_handle);
+
+    let config = crate::VideoSessionConfig {
+        window_handle: window_handle.handle,
+        codec: VideoCodec::H264,
+        yuv444: false,
+    };
+
+    *out_config = Box::into_raw(Box::new(libclient_VideoSessionConfig { config }));
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_video_session_config_unref(
+    cfg: *mut libclient_VideoSessionConfig,
+) {
+    if !cfg.is_null() {
+        let _ = Box::from_raw(cfg);
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_video_session_config_set_yuv444(
+    config: *mut libclient_VideoSessionConfig,
     yuv444: bool,
 ) {
     (*config).config.yuv444 = yuv444;
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn libclient_config_set_video_codec(
-    config: *mut libclient_ClientConfig,
-    video_codec: VideoCodec,
+pub unsafe extern "C" fn libclient_video_session_config_set_codec(
+    config: *mut libclient_VideoSessionConfig,
+    codec: VideoCodec,
 ) {
-    (*config).config.video_codec = video_codec;
+    (*config).config.codec = codec;
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn libclient_config_set_inputs(
-    config: *mut libclient_ClientConfig,
-    inputs: bool,
-) {
-    (*config).config.inputs = inputs;
+pub unsafe extern "C" fn libclient_input_session_config_default(
+    pipeline: *mut libkynput_sys::libkynput_Pipeline,
+    out_config: *mut *mut libclient_InputSessionConfig,
+) -> c_int {
+    let pipeline = Pipeline::from_ptr(pipeline);
+
+    let config = crate::InputSessionConfig { pipeline };
+
+    *out_config = Box::into_raw(Box::new(libclient_InputSessionConfig { config }));
+    0
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn libclient_config_set_audio(
-    config: *mut libclient_ClientConfig,
+pub unsafe extern "C" fn libclient_input_session_config_unref(
+    cfg: *mut libclient_InputSessionConfig,
+) {
+    if !cfg.is_null() {
+        let _ = Box::from_raw(cfg);
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_streaming_session_config_default(
+    protocol: crate::StreamingProtocol,
+    out_config: *mut *mut libclient_StreamingSessionConfig,
+) -> c_int {
+    let config = crate::StreamingSessionConfig {
+        protocol,
+        video: None,
+        audio: false,
+        input: None,
+    };
+
+    *out_config = Box::into_raw(Box::new(libclient_StreamingSessionConfig { config }));
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_streaming_session_config_unref(
+    cfg: *mut libclient_StreamingSessionConfig,
+) {
+    if !cfg.is_null() {
+        let _ = Box::from_raw(cfg);
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_streaming_session_config_set_audio(
+    config: *mut libclient_StreamingSessionConfig,
     audio: bool,
 ) {
     (*config).config.audio = audio;
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn libclient_config_set_streamer_port(
-    config: *mut libclient_ClientConfig,
-    port: u16,
+pub unsafe extern "C" fn libclient_streaming_session_config_set_video(
+    config: *mut libclient_StreamingSessionConfig,
+    video: *mut libclient_VideoSessionConfig,
 ) {
-    (*config).config.streamer_port = port;
+    let video = Box::from_raw(video);
+
+    (*config).config.video = Some(video.config);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn libclient_client_config_unref(cfg: *mut libclient_ClientConfig) {
-    if !cfg.is_null() {
-        let _ = Box::from_raw(cfg);
-    }
+pub unsafe extern "C" fn libclient_streaming_session_config_set_input(
+    config: *mut libclient_StreamingSessionConfig,
+    input: *mut libclient_InputSessionConfig,
+) {
+    let input = Box::from_raw(input);
+
+    (*config).config.input = Some(input.config);
 }
 
 #[allow(non_camel_case_types)]
@@ -231,11 +318,13 @@ pub struct libclient_Client {
 
 #[no_mangle]
 pub unsafe extern "C" fn libclient_client_new(
-    config: *mut libclient_ClientConfig,
+    connect_config: *mut libclient_ConnectConfig,
+    session_config: *mut libclient_StreamingSessionConfig,
 ) -> *mut libclient_Client {
-    let config = Box::from_raw(config);
+    let connect_config = Box::from_raw(connect_config);
+    let session_config = Box::from_raw(session_config);
 
-    let client = crate::Client::new(config.config);
+    let client = crate::Client::new(connect_config.config, session_config.config);
     if let Ok(client) = client {
         Box::into_raw(Box::new(libclient_Client {
             client: Arc::new(client),

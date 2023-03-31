@@ -21,12 +21,16 @@ pub enum Error {
     ThreadPanicked,
     NoPipeline,
     NoClient,
+    NoInputPipeline,
     NoInputService,
     Input(libkynput_rs::Error),
     Kymux(kymux::Error),
+    KymuxNotStarted,
     TaskJoin(tokio::task::JoinError),
     FileNotFound(PathBuf),
     TlsInvalidFile,
+    InvalidState,
+
     // Player errors
     Player(PlayerError),
     // Host service errors

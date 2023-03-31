@@ -1,4 +1,5 @@
 use std::ffi::{CStr, CString};
+use std::mem;
 use std::os::raw::c_void;
 
 use libclient_sys as sys;
@@ -127,32 +128,118 @@ fn to_cstr(s: &str) -> CString {
     CString::new(s.to_owned()).expect("Error: Unexpected null byte")
 }
 
-pub struct Config {
-    ptr: *mut sys::libclient_ClientConfig,
+pub struct VideoSessionConfig {
+    ptr: *mut sys::libclient_VideoSessionConfig,
 }
 
-impl Config {
-    pub fn default(
-        tls_host: &str,
-        ip: &str,
-        cert: &str,
-        protocol: StreamingProtocol,
-        pipeline: &Pipeline,
-        window_handle: &WindowHandle,
-    ) -> Result<Self> {
+impl VideoSessionConfig {
+    pub fn default(window_handle: &WindowHandle) -> Result<Self> {
+        unsafe {
+            let mut ptr: *mut _ = std::mem::zeroed();
+            let ret = sys::libclient_video_session_config_default(window_handle.ptr, &mut ptr);
+            if ret == 0 {
+                Ok(Self { ptr })
+            } else {
+                Err(Error::Generic)
+            }
+        }
+    }
+
+    pub fn set_codec(&self, codec: VideoCodec) {
+        unsafe { sys::libclient_video_session_config_set_codec(self.ptr, codec.to_u32()) }
+    }
+
+    pub fn set_yuv444(&self, yuv444: bool) {
+        unsafe { sys::libclient_video_session_config_set_yuv444(self.ptr, yuv444) }
+    }
+}
+
+impl Drop for VideoSessionConfig {
+    fn drop(&mut self) {
+        unsafe { sys::libclient_video_session_config_unref(self.ptr) }
+    }
+}
+
+pub struct InputSessionConfig {
+    ptr: *mut sys::libclient_InputSessionConfig,
+}
+
+impl InputSessionConfig {
+    pub fn default(pipeline: &Pipeline) -> Result<Self> {
+        unsafe {
+            let mut ptr: *mut _ = std::mem::zeroed();
+            let ret = sys::libclient_input_session_config_default(pipeline.to_ptr(), &mut ptr);
+            if ret == 0 {
+                Ok(Self { ptr })
+            } else {
+                Err(Error::Generic)
+            }
+        }
+    }
+}
+
+impl Drop for InputSessionConfig {
+    fn drop(&mut self) {
+        unsafe { sys::libclient_input_session_config_unref(self.ptr) }
+    }
+}
+
+pub struct StreamingSessionConfig {
+    ptr: *mut sys::libclient_StreamingSessionConfig,
+}
+
+impl StreamingSessionConfig {
+    pub fn default(protocol: StreamingProtocol) -> Result<Self> {
+        unsafe {
+            let mut ptr: *mut _ = std::mem::zeroed();
+            let ret = sys::libclient_streaming_session_config_default(protocol.to_u32(), &mut ptr);
+            if ret == 0 {
+                Ok(Self { ptr })
+            } else {
+                Err(Error::Generic)
+            }
+        }
+    }
+
+    pub fn set_video(&self, config: VideoSessionConfig) {
+        unsafe { sys::libclient_streaming_session_config_set_video(self.ptr, config.ptr) }
+
+        mem::forget(config);
+    }
+
+    pub fn set_audio(&self, enabled: bool) {
+        unsafe { sys::libclient_streaming_session_config_set_audio(self.ptr, enabled) }
+    }
+
+    pub fn set_input(&self, config: InputSessionConfig) {
+        unsafe { sys::libclient_streaming_session_config_set_input(self.ptr, config.ptr) }
+
+        mem::forget(config);
+    }
+}
+
+impl Drop for StreamingSessionConfig {
+    fn drop(&mut self) {
+        unsafe { sys::libclient_streaming_session_config_unref(self.ptr) }
+    }
+}
+
+pub struct ConnectConfig {
+    ptr: *mut sys::libclient_ConnectConfig,
+}
+
+impl ConnectConfig {
+    pub fn default(ip: &str, tls_host: &str, tls_cert: &str) -> Result<Self> {
         let ctlshost = to_cstr(tls_host);
         let cip = to_cstr(ip);
-        let ccert = to_cstr(cert);
+        let ctls_cert = to_cstr(tls_cert);
 
         unsafe {
             let mut ptr: *mut _ = std::mem::zeroed();
-            let ret = sys::libclient_config_default(
-                ctlshost.as_ptr(),
+            let ret = sys::libclient_connect_config_default(
                 cip.as_ptr(),
-                ccert.as_ptr(),
-                protocol.to_u32(),
-                pipeline.to_ptr(),
-                window_handle.ptr,
+                ctlshost.as_ptr(),
+                ctls_cert.as_ptr(),
                 &mut ptr,
             );
             if ret == 0 {
@@ -163,30 +250,14 @@ impl Config {
         }
     }
 
-    pub fn set_video_codec(&self, codec: VideoCodec) {
-        unsafe { sys::libclient_config_set_video_codec(self.ptr, codec.to_u32()) }
-    }
-
-    pub fn set_yuv444(&self, yuv444: bool) {
-        unsafe { sys::libclient_config_set_yuv444(self.ptr, yuv444) }
-    }
-
-    pub fn set_inputs(&self, inputs: bool) {
-        unsafe { sys::libclient_config_set_inputs(self.ptr, inputs) }
-    }
-
-    pub fn set_audio(&self, audio: bool) {
-        unsafe { sys::libclient_config_set_audio(self.ptr, audio) }
-    }
-
     pub fn set_streamer_port(&self, port: u16) {
-        unsafe { sys::libclient_config_set_streamer_port(self.ptr, port) }
+        unsafe { sys::libclient_connect_config_set_streamer_port(self.ptr, port) }
     }
 }
 
-impl Drop for Config {
+impl Drop for ConnectConfig {
     fn drop(&mut self) {
-        unsafe { sys::libclient_client_config_unref(self.ptr) }
+        unsafe { sys::libclient_connect_config_unref(self.ptr) }
     }
 }
 
@@ -195,9 +266,11 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(config: &Config) -> Result<Self> {
-        let ptr = unsafe { sys::libclient_client_new(config.ptr) };
-
+    pub fn new(
+        connect_config: &ConnectConfig,
+        session_config: &StreamingSessionConfig,
+    ) -> Result<Self> {
+        let ptr = unsafe { sys::libclient_client_new(connect_config.ptr, session_config.ptr) };
         if !ptr.is_null() {
             Ok(Self { ptr })
         } else {

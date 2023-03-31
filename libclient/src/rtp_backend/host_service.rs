@@ -6,17 +6,38 @@ use serde_json::json;
 use crate::error::{Error, Result};
 use crate::http::HttpClient;
 
-#[derive(Debug, Deserialize, Serialize)]
+use super::{AudioConfig, VideoConfig};
+
+#[derive(Debug, Serialize)]
+struct StartRequestVideo {
+    port: u16,
+    yuv444: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct StartRequestAudio {
+    port: u16,
+}
+
+#[derive(Debug, Serialize)]
+struct StartRequest {
+    ip: String,
+    video: Option<StartRequestVideo>,
+    audio: Option<StartRequestAudio>,
+    inputs: bool,
+}
+
+#[derive(Debug, Deserialize)]
 struct StartResponse {
     ip: String,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Serialize)]
 struct GenerateSdpRequest {
     yuv444: bool,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize)]
 struct GenerateSdpResponse {
     params: String,
 }
@@ -56,23 +77,30 @@ pub(crate) async fn generate_sdp(client: &HttpClient, yuv444: bool) -> Result<St
     Ok(response.params)
 }
 
-pub(crate) async fn start_stream(
+pub(super) async fn start_stream(
     client: &HttpClient,
     local_ip: &str,
-    video_port: u16,
-    yuv444: bool,
-    audio: bool,
+    video: &Option<VideoConfig>,
+    audio: &Option<AudioConfig>,
     inputs: bool,
 ) -> Result<()> {
     let url = format!("{base_url}/rtp/start", base_url = client.base_url());
 
-    let body = json!({
-        "ip": local_ip,
-        "port": video_port,
-        "yuv444": yuv444,
-        "audio": audio,
-        "inputs": inputs,
+    let video = video.as_ref().map(|video| StartRequestVideo {
+        port: video.port,
+        yuv444: video.yuv444,
     });
+
+    let audio = audio
+        .as_ref()
+        .map(|audio| StartRequestAudio { port: audio.port });
+
+    let body = StartRequest {
+        ip: local_ip.into(),
+        video,
+        audio,
+        inputs,
+    };
 
     info!("Starting stream with parameters {body:?}");
     let response = client.client().post(&url).json(&body).send().await?;

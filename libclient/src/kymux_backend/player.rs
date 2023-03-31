@@ -1,20 +1,20 @@
 use log::{error, info, warn};
 
-use crate::error::{PlayerError, Result};
+use crate::error::{Error, PlayerError, Result};
 use crate::utils;
-use crate::window_handle::WindowHandle;
 use crate::MessageProxy;
+
+use super::{AudioConfig, VideoConfig};
 
 pub(crate) struct Player {
     instance: vlc::Instance,
     video_mediaplayer: Option<vlc::MediaPlayer>,
     audio_mediaplayer: Option<vlc::MediaPlayer>,
-    window_handle: WindowHandle,
     message_proxy: MessageProxy,
 }
 
 impl Player {
-    pub(crate) fn new(window_handle: WindowHandle, message_proxy: MessageProxy) -> Result<Self> {
+    pub(crate) fn new(message_proxy: MessageProxy) -> Result<Self> {
         let mut options = vec![
             "--0latency",
             "--network-caching=0",
@@ -37,20 +37,19 @@ impl Player {
             instance,
             video_mediaplayer: None,
             audio_mediaplayer: None,
-            window_handle,
             message_proxy,
         })
     }
 
-    fn play_video(&mut self, uri: &str) -> Result<()> {
-        info!("Play video. URI: {uri}");
+    fn play_video(&mut self, config: VideoConfig) -> Result<()> {
+        info!("Play video. URI: {}", config.uri);
 
-        let media = vlc::Media::new_location(uri).ok_or(PlayerError::MediaCreateFailed)?;
+        let media = vlc::Media::new_location(&config.uri).ok_or(PlayerError::MediaCreateFailed)?;
         let mp =
             vlc::MediaPlayer::new(&self.instance).ok_or(PlayerError::MediaPlayerCreateFailed)?;
         mp.set_media(&media);
 
-        utils::attach_window_to_player(&mp, self.window_handle)?;
+        utils::attach_window_to_player(&mp, config.window_handle)?;
         utils::plug_event_manager_to_player(&mp, self.message_proxy.clone())?;
 
         // Play
@@ -61,10 +60,10 @@ impl Player {
         Ok(())
     }
 
-    fn play_audio(&mut self, uri: &str) -> Result<()> {
-        info!("Play audio. URI: {uri}");
+    fn play_audio(&mut self, config: AudioConfig) -> Result<()> {
+        info!("Play audio. URI: {}", config.uri);
 
-        let media = vlc::Media::new_location(uri).ok_or(PlayerError::MediaCreateFailed)?;
+        let media = vlc::Media::new_location(&config.uri).ok_or(PlayerError::MediaCreateFailed)?;
         let mp =
             vlc::MediaPlayer::new(&self.instance).ok_or(PlayerError::MediaPlayerCreateFailed)?;
         mp.set_media(&media);
@@ -79,17 +78,28 @@ impl Player {
         Ok(())
     }
 
-    pub(crate) fn play(&mut self, video_uri: String, audio_uri: Option<String>) -> Result<()> {
+    pub(super) fn play(
+        &mut self,
+        video_config: Option<VideoConfig>,
+        audio_config: Option<AudioConfig>,
+    ) -> Result<()> {
+        if video_config.is_none() && audio_config.is_none() {
+            error!("play() rejected because no video and audio conf have been provided");
+            return Err(Error::Rejected);
+        }
+
         // Video playback
-        let ret = self.play_video(&video_uri);
-        if let Err(err) = ret {
-            error!("Fail to start video playback: {:?}", err);
-            return Err(err);
+        if let Some(video_config) = video_config {
+            let ret = self.play_video(video_config);
+            if let Err(err) = ret {
+                error!("Fail to start video playback: {:?}", err);
+                return Err(err);
+            }
         }
 
         // Audio playback
-        if let Some(audio_uri) = audio_uri {
-            let ret = self.play_audio(&audio_uri);
+        if let Some(audio_config) = audio_config {
+            let ret = self.play_audio(audio_config);
             if let Err(err) = ret {
                 error!("Fail to start audio playback: {:?}", err);
                 return Err(err);

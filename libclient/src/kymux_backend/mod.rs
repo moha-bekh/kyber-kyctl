@@ -2,19 +2,28 @@ use std::net::SocketAddr;
 
 use log::{error, info, warn};
 
+use libkynput_rs::Pipeline;
+
 use crate::error::{Error, Result};
 use crate::http::HttpClient;
 use crate::{input_service, tls};
-use crate::{ClientConfig, MessageProxy};
+use crate::{
+    InputSessionConfig, MessageProxy, StartStreamResult, StreamingSessionConfig,
+    VideoSessionConfig, WindowHandle,
+};
 
 pub(crate) mod host_service;
 pub(crate) mod player;
 
 pub(crate) use player::Player;
 
-pub(crate) struct StartResult {
-    pub(crate) player: Player,
-    pub(crate) input_service: Option<input_service::Client>,
+pub(self) struct VideoConfig {
+    pub(self) window_handle: WindowHandle,
+    pub(self) uri: String,
+}
+
+pub(self) struct AudioConfig {
+    pub(self) uri: String,
 }
 
 pub(crate) async fn start_kymux(
@@ -53,72 +62,129 @@ pub(crate) async fn start_kymux(
     Ok(kymux)
 }
 
+fn create_video_config(
+    kymux: &kymux::Connection,
+    config: &Option<VideoSessionConfig>,
+    endpoint: &Option<u64>,
+) -> Result<Option<VideoConfig>> {
+    let config = match (config.as_ref(), endpoint) {
+        (Some(config), Some(endpoint)) => {
+            let uri = kymux.get_uri_for_endpoint(*endpoint).map_err(|err| {
+                error!("Fail to get URI for Video endpoint {endpoint}");
+                Error::Kymux(err)
+            })?;
+
+            Some(VideoConfig {
+                window_handle: config.window_handle,
+                uri,
+            })
+        }
+        (None, None) => None,
+        _ => {
+            error!("Invalid Video config. Should either get a config and an endpoint, or none of them.");
+            return Err(Error::InvalidState);
+        }
+    };
+
+    Ok(config)
+}
+
+fn create_audio_config(
+    kymux: &kymux::Connection,
+    enabled: bool,
+    endpoint: &Option<u64>,
+) -> Result<Option<AudioConfig>> {
+    let config = match (enabled, endpoint) {
+        (true, Some(endpoint)) => {
+            let uri = kymux.get_uri_for_endpoint(*endpoint).map_err(|err| {
+                error!("Fail to get URI for audio endpoint {endpoint}");
+                Error::Kymux(err)
+            })?;
+
+            Some(AudioConfig { uri })
+        }
+        (false, None) => None,
+        _ => {
+            error!("Invalid Audio config. Should either get a config and an endpoint, or none of them.");
+            return Err(Error::InvalidState);
+        }
+    };
+
+    Ok(config)
+}
+
+fn start_input(
+    kymux: &kymux::Connection,
+    config: &InputSessionConfig,
+    endpoint: u64,
+    msg_proxy: MessageProxy,
+) -> Result<(Option<input_service::Client>, Option<Pipeline>)> {
+    let input_uri = kymux.get_uri_for_endpoint(endpoint).map_err(|err| {
+        error!("Fail to get URI for input endpoint {endpoint}");
+        Error::Kymux(err)
+    })?;
+
+    info!("Start input. URI: {input_uri}");
+
+    let create_stream_cb =
+        |target, msg_sink| libkynput_rs::kymux::new_stream(target, msg_sink, &input_uri);
+
+    let input_service = input_service::Client::new(
+        msg_proxy,
+        config.pipeline.get_input_sink(),
+        create_stream_cb,
+    )?;
+
+    Ok((Some(input_service), Some(config.pipeline.clone())))
+}
+
 pub(crate) async fn start(
-    config: &ClientConfig,
     client: &HttpClient,
+    streaming_config: &StreamingSessionConfig,
     kymux: &mut kymux::Connection,
     msg_proxy: MessageProxy,
-) -> Result<StartResult> {
+) -> Result<StartStreamResult> {
     // Start stream
     let start_resp = host_service::start_stream(
         client,
-        config.video_codec,
-        config.yuv444,
-        config.audio,
-        config.inputs,
+        &streaming_config.video,
+        streaming_config.audio,
+        streaming_config.input.is_some(),
     )
     .await?;
 
     // Play Video and Audio
-    let mut player = player::Player::new(config.window_handle, msg_proxy.clone())?;
-    let video_uri = kymux
-        .get_uri_for_endpoint(start_resp.video_endpoint)
-        .map_err(|err| {
-            error!(
-                "Fail to get URI for Video endpoint {}",
-                start_resp.video_endpoint
-            );
-            Error::Kymux(err)
-        })?;
+    let video_config =
+        create_video_config(kymux, &streaming_config.video, &start_resp.video_endpoint)?;
 
-    let audio_uri = if let Some(audio_endpoint) = start_resp.audio_endpoint {
-        let uri = kymux.get_uri_for_endpoint(audio_endpoint).map_err(|err| {
-            error!("Fail to get URI for audio endpoint {audio_endpoint}");
-            Error::Kymux(err)
-        })?;
+    let audio_config =
+        create_audio_config(kymux, streaming_config.audio, &start_resp.audio_endpoint)?;
 
-        Some(uri)
+    let player = if video_config.is_some() || audio_config.is_some() {
+        let mut player = player::Player::new(msg_proxy.clone())?;
+        player.play(video_config, audio_config)?;
+
+        Some(crate::Player::Kymux(player))
     } else {
         None
     };
-
-    player.play(video_uri, audio_uri)?;
 
     // Start input
-    let input_service = if let Some(input_endpoint) = start_resp.input_endpoint {
-        let input_uri = kymux.get_uri_for_endpoint(input_endpoint).map_err(|err| {
-            error!("Fail to get URI for input endpoint {input_endpoint}");
-            Error::Kymux(err)
-        })?;
-
-        info!("Start input. URI: {input_uri}");
-
-        let create_stream_cb =
-            |target, msg_sink| libkynput_rs::kymux::new_stream(target, msg_sink, &input_uri);
-
-        let input_service = input_service::Client::new(
-            msg_proxy,
-            config.input_pipeline.get_input_sink(),
-            create_stream_cb,
-        )?;
-
-        Some(input_service)
-    } else {
-        None
+    let (input_service, input_pipeline) = match (
+        streaming_config.input.as_ref(),
+        start_resp.input_endpoint,
+    ) {
+        (Some(config), Some(endpoint)) => start_input(kymux, config, endpoint, msg_proxy.clone())?,
+        (None, None) => (None, None),
+        _ => {
+            error!("Invalid Input config. Should either get a config and an endpoint, or none of them.");
+            return Err(Error::InvalidState);
+        }
     };
 
-    Ok(StartResult {
+    Ok(StartStreamResult {
         player,
         input_service,
+        input_pipeline,
     })
 }
