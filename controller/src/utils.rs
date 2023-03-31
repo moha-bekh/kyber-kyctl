@@ -42,3 +42,15 @@ where
         self.iter().map(|i| i.convert()).collect()
     }
 }
+
+impl TypeConvert<inputservice_types::Display> for avservice_types::Display {
+    fn convert(&self) -> inputservice_types::Display {
+        inputservice_types::Display {
+            id: self.id,
+            width: self.width,
+            height: self.height,
+            x: self.x,
+            y: self.y,
+        }
+    }
+}
