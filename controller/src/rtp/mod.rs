@@ -6,6 +6,7 @@ use log::{info, warn};
 use tokio::time;
 
 use crate::error::Result;
+use crate::utils::TypeConvert;
 use crate::{avservice, inputservice, Controller};
 
 pub async fn generate_video_sdp(
@@ -14,7 +15,7 @@ pub async fn generate_video_sdp(
 ) -> Result<String> {
     let avservice = avservice::Handler::new("VideoSDP");
     avservice
-        .rtp_generate_video_sdp(&ctrl.process_factory, request.yuv444)
+        .rtp_generate_video_sdp(&ctrl.process_factory, request.display_id, request.yuv444)
         .await
 }
 
@@ -57,6 +58,7 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
         avservice
             .rtp_start_video(
                 &ctrl.process_factory,
+                video_request.display_id,
                 request.ip.clone(),
                 video_request.port,
                 video_request.yuv444,
@@ -80,7 +82,13 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
     if request.inputs {
         let mut inputservice = inputservice::Handler::new();
 
-        inputservice.start_tcp(&ctrl.process_factory).await?;
+        let host_config = inputservice_types::HostConfig {
+            display_list: ctrl.displays.convert(),
+        };
+
+        inputservice
+            .start_tcp(&ctrl.process_factory, host_config)
+            .await?;
 
         ctrl.inputservice = Some(inputservice);
     } else {

@@ -1,5 +1,5 @@
 use actix_web::{get, post, web, HttpRequest, HttpResponse};
-use log::info;
+use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
@@ -8,6 +8,7 @@ use crate::controller::Controller;
 #[derive(Debug, Deserialize, Serialize)]
 pub struct GenerateSdpRequest {
     pub yuv444: bool,
+    pub display_id: u32,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -18,6 +19,7 @@ pub struct GenerateSdpResponse {
 #[derive(Debug, Deserialize)]
 pub struct StartRequestVideo {
     pub port: u16,
+    pub display_id: u32,
     pub yuv444: bool,
 }
 
@@ -59,6 +61,12 @@ async fn generate_sdp(
 ) -> HttpResponse {
     let mut ctrl = ctrl.lock().await;
 
+    // Check request validity
+    if !ctrl.display_known(request.display_id) {
+        warn!("Unknown Display Id {}", request.display_id);
+        return HttpResponse::Forbidden().finish();
+    }
+
     let ret = super::generate_video_sdp(&mut ctrl, request.into_inner()).await;
     match ret {
         Ok(params) => {
@@ -79,6 +87,14 @@ async fn start(
     request: web::Json<StartRequest>,
 ) -> HttpResponse {
     let mut ctrl = ctrl.lock().await;
+
+    // Check request validity
+    if let Some(video_request) = request.video.as_ref() {
+        if !ctrl.display_known(video_request.display_id) {
+            warn!("Unknown Display Id {}", video_request.display_id);
+            return HttpResponse::Forbidden().finish();
+        }
+    }
 
     let ret = super::start(&mut ctrl, request.into_inner()).await;
     match ret {

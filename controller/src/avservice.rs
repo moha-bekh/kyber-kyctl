@@ -84,6 +84,7 @@ impl Handler {
     pub(crate) async fn rtp_generate_video_sdp(
         &self,
         process_factory: &Arc<ProcessFactory>,
+        display_id: u32,
         yuv444: bool,
     ) -> Result<String> {
         // Generate SDP
@@ -91,7 +92,7 @@ impl Handler {
 
         let evt = inner
             .sender
-            .send(Command::RtpGenerateVideoSdp { yuv444 })
+            .send(Command::RtpGenerateVideoSdp { display_id, yuv444 })
             .await?;
 
         // Stop avserver
@@ -108,6 +109,7 @@ impl Handler {
     pub(crate) async fn rtp_start_video(
         &mut self,
         process_factory: &Arc<ProcessFactory>,
+        display_id: u32,
         ip: String,
         port: u16,
         yuv444: bool,
@@ -116,7 +118,12 @@ impl Handler {
 
         inner
             .sender
-            .send(Command::RtpStartVideo { ip, port, yuv444 })
+            .send(Command::RtpStartVideo {
+                display_id,
+                ip,
+                port,
+                yuv444,
+            })
             .await?;
 
         self.inner = Some(inner);
