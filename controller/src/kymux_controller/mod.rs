@@ -13,6 +13,7 @@ use libkypc::process::ProcessFactory;
 use crate::avservice;
 use crate::error::{Error, Result};
 use crate::inputservice;
+use crate::utils::TypeConvert;
 use crate::Controller;
 
 use crate::LISTENING_PORT;
@@ -110,6 +111,7 @@ async fn start_kymux(ctrl: web::Data<Mutex<Controller>>, public_port: u16) -> Re
 
 async fn start_video(
     process_factory: &Arc<ProcessFactory>,
+    display_id: u32,
     uri: String,
     codec: avservice_types::VideoCodec,
     yuv444: bool,
@@ -117,7 +119,7 @@ async fn start_video(
     let mut handler = avservice::Handler::new("Video");
 
     handler
-        .kymux_start_video(process_factory, uri, codec, yuv444)
+        .kymux_start_video(process_factory, display_id, uri, codec, yuv444)
         .await?;
 
     Ok(handler)
@@ -136,11 +138,14 @@ async fn start_audio(
 
 async fn start_input(
     process_factory: &Arc<ProcessFactory>,
+    host_config: inputservice_types::HostConfig,
     uri: String,
 ) -> Result<inputservice::Handler> {
     let mut inputservice = inputservice::Handler::new();
 
-    inputservice.start_kymux(process_factory, uri).await?;
+    inputservice
+        .start_kymux(process_factory, host_config, uri)
+        .await?;
 
     Ok(inputservice)
 }
@@ -176,6 +181,7 @@ async fn start_session(
 
         let avservice_video = start_video(
             &ctrl.process_factory,
+            video_request.display_id,
             video_uri,
             video_request.codec,
             video_request.yuv444,
@@ -213,7 +219,11 @@ async fn start_session(
         info!("Start Inputservice. Endpoint: {input_endpoint:X}");
         let uri = kymux.get_uri_for_endpoint(input_endpoint)?;
 
-        let inputservice = start_input(&ctrl.process_factory, uri).await?;
+        let host_config = inputservice_types::HostConfig {
+            display_list: ctrl.displays.convert(),
+        };
+
+        let inputservice = start_input(&ctrl.process_factory, host_config, uri).await?;
         (Some(input_endpoint), Some(inputservice))
     } else {
         warn!("Input server disabled");

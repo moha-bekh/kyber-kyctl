@@ -152,6 +152,7 @@ impl Handler {
     pub(crate) async fn kymux_start_video(
         &mut self,
         process_factory: &Arc<ProcessFactory>,
+        display_id: u32,
         uri: String,
         codec: VideoCodec,
         yuv444: bool,
@@ -160,7 +161,12 @@ impl Handler {
 
         inner
             .sender
-            .send(Command::KymuxStartVideo { uri, codec, yuv444 })
+            .send(Command::KymuxStartVideo {
+                display_id,
+                uri,
+                codec,
+                yuv444,
+            })
             .await?;
 
         self.inner = Some(inner);

@@ -1,5 +1,5 @@
 use actix_web::{post, web, HttpResponse};
-use log::info;
+use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
@@ -38,6 +38,7 @@ pub(crate) async fn start_mux(
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct StartRequestVideo {
+    pub(crate) display_id: u32,
     pub(crate) codec: VideoCodec,
     pub(crate) yuv444: bool,
 }
@@ -50,7 +51,7 @@ pub(crate) struct StartRequest {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct StartRequestResponse {
+pub(crate) struct StartSessionResponse {
     pub(crate) video_endpoint: Option<u64>,
     pub(crate) audio_endpoint: Option<u64>,
     pub(crate) input_endpoint: Option<u64>,
@@ -62,6 +63,14 @@ pub(crate) async fn start_session(
     request: web::Json<StartRequest>,
 ) -> HttpResponse {
     let mut ctrl = ctrl.lock().await;
+
+    // Check request validity
+    if let Some(video_request) = request.video.as_ref() {
+        if !ctrl.display_known(video_request.display_id) {
+            warn!("Unknown Display Id {}", video_request.display_id);
+            return HttpResponse::Forbidden().finish();
+        }
+    }
 
     // Stop running components
     let ret = controller::stop_avservice(ctrl.avservice_video.take()).await;
@@ -80,7 +89,7 @@ pub(crate) async fn start_session(
             ctrl.avservice_audio = response.avservice_audio;
             ctrl.inputservice = response.inputservice;
 
-            HttpResponse::Ok().json(StartRequestResponse {
+            HttpResponse::Ok().json(StartSessionResponse {
                 video_endpoint: response.video_endpoint,
                 audio_endpoint: response.audio_endpoint,
                 input_endpoint: response.input_endpoint,
