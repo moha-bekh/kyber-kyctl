@@ -28,4 +28,6 @@ pub enum Message {
 pub enum Event {
     Started { displays: Vec<Display> },
     Stopped,
+
+    DisplayListUpdated { displays: Vec<Display> },
 }

@@ -98,6 +98,7 @@ impl WindowHandle {
 pub enum Event {
     Started { displays: Vec<Display> },
     Stopped,
+    DisplayListUpdated { displays: Vec<Display> },
 }
 
 pub trait EventSink {
@@ -137,6 +138,28 @@ impl EventSinkData {
             }
             sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_STOPPED => {
                 data.sink.on_event(Event::Stopped);
+            }
+            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_DISPLAY_LIST_UPDATED => {
+                let mut cdisplays: *mut Display = std::ptr::null_mut();
+                let mut len: u32 = 0;
+
+                let ret = unsafe {
+                    sys::libclient_event_unpack_display_list_updated(
+                        event,
+                        &mut cdisplays,
+                        &mut len as *mut _,
+                    )
+                };
+                if ret != 0 {
+                    warn!("Fail to unpack EventType::DisplayListUpdated");
+                    return;
+                }
+
+                let displays = unsafe { std::slice::from_raw_parts(cdisplays, len as usize) };
+                data.sink.on_event(Event::DisplayListUpdated {
+                    displays: displays.to_vec(),
+                });
+                unsafe { sys::libclient_event_free_displays(cdisplays) };
             }
             _ => {
                 error!("Invalid libclient_EventType {}", event_type)
