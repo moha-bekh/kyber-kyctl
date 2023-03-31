@@ -4,11 +4,10 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use actix_web::web;
-use log::{error, info, warn};
+use log::{info, warn};
 use tokio::sync::{oneshot, Mutex};
 use tokio::task::{self, JoinHandle};
 
-use avservice_types::VideoCodec;
 use libkypc::process::ProcessFactory;
 
 use crate::avservice;
@@ -112,7 +111,7 @@ async fn start_kymux(ctrl: web::Data<Mutex<Controller>>, public_port: u16) -> Re
 async fn start_video(
     process_factory: &Arc<ProcessFactory>,
     uri: String,
-    codec: VideoCodec,
+    codec: avservice_types::VideoCodec,
     yuv444: bool,
 ) -> Result<avservice::Handler> {
     let mut handler = avservice::Handler::new("Video");
@@ -147,8 +146,8 @@ async fn start_input(
 }
 
 pub(crate) struct StartSessionResponse {
-    pub(crate) avservice_video: avservice::Handler,
-    pub(crate) video_endpoint: u64,
+    pub(crate) avservice_video: Option<avservice::Handler>,
+    pub(crate) video_endpoint: Option<u64>,
 
     pub(crate) avservice_audio: Option<avservice::Handler>,
     pub(crate) audio_endpoint: Option<u64>,
@@ -159,41 +158,34 @@ pub(crate) struct StartSessionResponse {
 
 async fn start_session(
     ctrl: &mut Controller,
-    request: requests::StartSession,
+    request: requests::StartRequest,
 ) -> Result<StartSessionResponse> {
     let Some(kymux) = ctrl.kymux.as_mut() else {
         warn!("Kymux not connected");
         return Err(Error::KymuxNotConnected);
     };
 
-    // AV Server
-    let video_endpoint = kymux
-        .register_endpoint(kymux::StreamType::Video, kymux::StreamDirection::Uni)
+    let (video_endpoint, avservice_video) = if let Some(video_request) = request.video {
+        // AV Server
+        let video_endpoint = kymux
+            .register_endpoint(kymux::StreamType::Video, kymux::StreamDirection::Uni)
+            .await?;
+
+        info!("Start Video avservice. Endpoint: {video_endpoint:X}");
+        let video_uri = kymux.get_uri_for_endpoint(video_endpoint)?;
+
+        let avservice_video = start_video(
+            &ctrl.process_factory,
+            video_uri,
+            video_request.codec,
+            video_request.yuv444,
+        )
         .await?;
 
-    info!("Start Video avservice. Endpoint: {video_endpoint:X}");
-    let video_uri = kymux.get_uri_for_endpoint(video_endpoint)?;
-
-    let video_codec = request.video_codec.as_str();
-    let video_codec = match video_codec {
-        "h264" => VideoCodec::H264,
-        "hevc" => VideoCodec::HEVC,
-        "av1" => VideoCodec::AV1,
-        _ => {
-            error!("Unexpected video codec {video_codec}");
-            return Err(Error::InvalidVideoCodec {
-                codec: video_codec.into(),
-            });
-        }
+        (Some(video_endpoint), Some(avservice_video))
+    } else {
+        (None, None)
     };
-
-    let avservice_video = start_video(
-        &ctrl.process_factory,
-        video_uri,
-        video_codec,
-        request.yuv444,
-    )
-    .await?;
 
     // Audio server
     let (audio_endpoint, avservice_audio) = if request.audio {

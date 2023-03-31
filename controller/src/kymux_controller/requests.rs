@@ -3,6 +3,8 @@ use log::info;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
+use avservice_types::VideoCodec;
+
 use crate::controller::{self, Controller};
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -34,17 +36,22 @@ pub(crate) async fn start_mux(
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct StartSession {
-    pub(crate) video_codec: String,
+#[derive(Debug, Deserialize)]
+pub(crate) struct StartRequestVideo {
+    pub(crate) codec: VideoCodec,
     pub(crate) yuv444: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct StartRequest {
+    pub(crate) video: Option<StartRequestVideo>,
     pub(crate) audio: bool,
     pub(crate) inputs: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct StartSessionResponse {
-    pub(crate) video_endpoint: u64,
+pub(crate) struct StartRequestResponse {
+    pub(crate) video_endpoint: Option<u64>,
     pub(crate) audio_endpoint: Option<u64>,
     pub(crate) input_endpoint: Option<u64>,
 }
@@ -52,7 +59,7 @@ pub(crate) struct StartSessionResponse {
 #[post("/start_session")]
 pub(crate) async fn start_session(
     ctrl: web::Data<Mutex<Controller>>,
-    request: web::Json<StartSession>,
+    request: web::Json<StartRequest>,
 ) -> HttpResponse {
     let mut ctrl = ctrl.lock().await;
 
@@ -69,11 +76,11 @@ pub(crate) async fn start_session(
         Ok(response) => {
             info!("Stream started");
 
-            ctrl.avservice_video = Some(response.avservice_video);
+            ctrl.avservice_video = response.avservice_video;
             ctrl.avservice_audio = response.avservice_audio;
             ctrl.inputservice = response.inputservice;
 
-            HttpResponse::Ok().json(StartSessionResponse {
+            HttpResponse::Ok().json(StartRequestResponse {
                 video_endpoint: response.video_endpoint,
                 audio_endpoint: response.audio_endpoint,
                 input_endpoint: response.input_endpoint,

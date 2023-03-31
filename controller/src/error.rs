@@ -40,8 +40,6 @@ pub enum Error {
     },
     #[error("Thread panicked")]
     ThreadPanicked,
-    #[error("Invalid Video codec {codec}")]
-    InvalidVideoCodec { codec: String },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
