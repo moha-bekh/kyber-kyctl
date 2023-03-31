@@ -1,7 +1,7 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
-use actix_web::{middleware, post, web, App, HttpResponse, HttpServer};
+use actix_web::{get, middleware, post, web, App, HttpResponse, HttpServer};
 use log::{info, LevelFilter};
 use tokio::sync::Mutex;
 
@@ -24,6 +24,13 @@ const LISTENING_PORT: u16 = 8080;
 
 const STREAMER_CERT: &str = "kybertest_cert.pem";
 const STREAMER_KEY: &str = "kybertest_key.pem";
+
+#[get("/enumerate_displays")]
+async fn enumerate_displays(ctrl: web::Data<Mutex<Controller>>) -> HttpResponse {
+    let ctrl = ctrl.lock().await;
+
+    HttpResponse::Ok().json(ctrl.displays.clone())
+}
 
 #[post("/stop_session")]
 async fn stop_session(ctrl: web::Data<Mutex<Controller>>) -> HttpResponse {
@@ -105,6 +112,7 @@ async fn main() {
                     .service(rtp::requests::generate_sdp)
                     .service(rtp::requests::start),
             )
+            .service(enumerate_displays)
             .service(stop_session)
     })
     .bind_rustls(bind_addr, server_config)
