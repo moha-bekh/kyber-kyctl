@@ -8,7 +8,7 @@ use crate::error::{Error, Result};
 use crate::http::HttpClient;
 use crate::{input_service, tls};
 use crate::{
-    InputSessionConfig, MessageProxy, StartStreamResult, StreamingSessionConfig,
+    Display, InputSessionConfig, MessageProxy, StartStreamResult, StreamingSessionConfig,
     VideoSessionConfig, WindowHandle,
 };
 
@@ -140,6 +140,7 @@ fn start_input(
 
 pub(crate) async fn start(
     client: &HttpClient,
+    displays: &Vec<Display>,
     streaming_config: &StreamingSessionConfig,
     kymux: &mut kymux::Connection,
     msg_proxy: MessageProxy,
@@ -147,6 +148,7 @@ pub(crate) async fn start(
     // Start stream
     let start_resp = host_service::start_stream(
         client,
+        displays,
         &streaming_config.video,
         streaming_config.audio,
         streaming_config.input.is_some(),

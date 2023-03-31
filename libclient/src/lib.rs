@@ -217,8 +217,14 @@ impl Handler {
                     return Err(Error::KymuxNotStarted);
                 };
 
-                kymux_backend::start(&self.http_client, &self.streaming_config, kymux, msg_proxy)
-                    .await?
+                kymux_backend::start(
+                    &self.http_client,
+                    &self.displays,
+                    &self.streaming_config,
+                    kymux,
+                    msg_proxy,
+                )
+                .await?
             }
             StreamingProtocol::Rtp => {
                 rtp_backend::start(
