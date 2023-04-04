@@ -80,7 +80,7 @@ fn notify_state(
     let status = ServiceStatus {
         service_type: ServiceType::OWN_PROCESS,
         current_state,
-        controls_accepted: ServiceControlAccept::STOP,
+        controls_accepted: ServiceControlAccept::STOP | ServiceControlAccept::SHUTDOWN | ServiceControlAccept::POWER_EVENT | ServiceControlAccept::PRESHUTDOWN | ServiceControlAccept::SESSION_CHANGE,
         exit_code: ServiceExitCode::Win32(0),
         checkpoint: 0,
         wait_hint: Duration::default(),
@@ -102,8 +102,15 @@ fn service_handler(_arguments: Vec<OsString>) {
                 stop_evt_handler.store(true, Ordering::Relaxed);
                 ServiceControlHandlerResult::NoError
             }
+            ServiceControl::SessionChange(param) => {
+                info!("Session changed: {param:?}");
+                ServiceControlHandlerResult::NoError
+            }
             ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
-            _ => ServiceControlHandlerResult::NotImplemented,
+            _ => {
+                info!("Got event: {control_event:?}");
+                ServiceControlHandlerResult::NoError
+            },
         }
     };
 
