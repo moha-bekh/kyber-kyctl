@@ -1,3 +1,5 @@
+#![cfg_attr(feature = "win32-hide-console", windows_subsystem = "windows")]
+
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 

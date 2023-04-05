@@ -20,3 +20,6 @@ avservice-types = "0.1"
 inputservice-types = "0.1"
 kymux = "0.1"
 libkypc = "0.1"
+
+[features]
+win32-hide-console = []
