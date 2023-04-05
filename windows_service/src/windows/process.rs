@@ -4,11 +4,11 @@ use std::os::windows::ffi::OsStrExt;
 use std::ptr;
 
 use log::warn;
-use windows_sys::Win32::{Security::*, Foundation::*, System::{RemoteDesktop::*, SystemServices::*, Threading::*}};
+use windows_sys::Win32::{Security::*, Foundation::*, System::{SystemServices::*, Threading::*}};
 
 use super::error::{check_win32_error, last_win32_error, Error, Result};
 
-pub unsafe fn get_subprocess_token() -> Result<HANDLE> {
+pub unsafe fn get_subprocess_token(mut session_id: u32) -> Result<HANDLE> {
     let process = GetCurrentProcess();
 
     let mut process_token: HANDLE = 0;
@@ -25,12 +25,6 @@ pub unsafe fn get_subprocess_token() -> Result<HANDLE> {
         &mut child_token,
     );
     check_win32_error!(DuplicateTokenEx, b == 1)?;
-
-    let mut session_id: u32 = WTSGetActiveConsoleSessionId();
-    if session_id == 0xFFFFFFFF {
-        warn!("No session attached (WTSGetActiveConsoleSessionId() failed");
-        return Err(Error::Rejected);
-    }
 
     b = SetTokenInformation(
         child_token,

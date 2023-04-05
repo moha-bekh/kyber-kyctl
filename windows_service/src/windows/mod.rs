@@ -7,11 +7,12 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use std::thread;
 
 use log::{info, warn, LevelFilter};
 use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Config, Root};
-use windows_sys::Win32::{Foundation::*, System::Threading::*};
+use windows_sys::Win32::{Foundation::*, System::{Threading::*, RemoteDesktop::*}};
 use windows_service::{
     service::{
         ServiceControl, ServiceControlAccept, ServiceExitCode, ServiceState, ServiceStatus,
@@ -27,8 +28,33 @@ windows_service::define_windows_service!(ffi_service_main, service_handler);
 const SERVICE_NAME: &str = "kyber";
 
 fn start_subprocess(controller_path: &str) -> Result<HANDLE> {
+    let mut session_id = None;
+
+    // At Windows startup, we can be started before WTSGetActiveConsoleSessionId()
+    // returns a valid value. Retry multiple time before starting the process.
+    let retry_delay = Duration::from_millis(100);
+    let max_retry_count = 100; // 10 seconds
+
+    let mut i = 0;
+    while i < max_retry_count {
+        let id = unsafe { WTSGetActiveConsoleSessionId() };
+        if id != 0xFFFFFFFF {
+            session_id = Some(id);
+            break;
+        } else {
+            thread::sleep(retry_delay);
+        }
+
+        i += 1;
+    }
+
+    let Some(session_id) = session_id else {
+        warn!("No session attached (WTSGetActiveConsoleSessionId() failed");
+        return Err(Error::Rejected);
+    };
+
     unsafe {
-        let token = process::get_subprocess_token()?;
+        let token = process::get_subprocess_token(session_id)?;
         process::start_subprocess(
             controller_path,
             token,
