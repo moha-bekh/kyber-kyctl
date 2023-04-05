@@ -172,7 +172,7 @@ fn service_handler(_arguments: Vec<OsString>) {
 pub fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let mut exe_path = current_exe().unwrap();
     exe_path.pop();
-    let logpath = Path::new(&exe_path).join("service.log");
+    let logpath = Path::new(&exe_path).join("log").join("service.log");
 
     let logfile = FileAppender::builder().append(true).build(logpath).unwrap();
 
