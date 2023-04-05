@@ -26,6 +26,16 @@ windows_service::define_windows_service!(ffi_service_main, service_handler);
 
 const SERVICE_NAME: &str = "kyber";
 
+fn start_subprocess(controller_path: &str) -> Result<HANDLE> {
+    unsafe {
+        let token = process::get_subprocess_token()?;
+        process::start_subprocess(
+            controller_path,
+            token,
+        )
+    }
+}
+
 #[allow(non_snake_case)]
 fn service_main(stop: Arc<AtomicBool>) -> Result<()> {
     let exe_path = if let Ok(mut exe_path) = current_exe() {
@@ -37,21 +47,24 @@ fn service_main(stop: Arc<AtomicBool>) -> Result<()> {
     };
 
     let controller_path = Path::new(&exe_path).join("controller.exe");
+    let controller_path = controller_path.into_os_string().into_string().unwrap();
 
-    let process = unsafe {
-        let token = process::get_subprocess_token()?;
-        process::start_subprocess(
-            &controller_path.into_os_string().into_string().unwrap(),
-            token,
-        )?
-    };
+    let mut process = start_subprocess(&controller_path)?;
 
     while !stop.load(Ordering::Relaxed) {
         let ret = unsafe { WaitForSingleObject(process, 1000) };
         match ret {
             WAIT_OBJECT_0 => {
+                // On log out, all the process from the current session are
+                // stopped. Because we attach controller.exe to the current
+                // interactive session, it is killed. On restart, controller.exe
+                // will be attached to the new session login screen.
+                //
+                // The current service isn't killed because it is attached to
+                // the special Session 0.
                 info!("Process stopped");
-                break;
+                process = start_subprocess(&controller_path)?;
+                info!("Process started again");
             }
             WAIT_TIMEOUT => {}
             _ => {
