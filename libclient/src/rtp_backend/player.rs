@@ -77,13 +77,11 @@ impl Player {
             options.append(&mut vec!["--no-hw-dec"]);
         }
 
-        if std::env::var("KYBER_VLC_VERBOSE").is_ok() {
-            options.append(&mut vec!["-vv"]);
-        }
-
         let instance =
             vlc::Instance::with_args(Some(options.iter().map(|&s| s.to_string()).collect()))
                 .ok_or(PlayerError::InstanceCreateFailed)?;
+
+        utils::plug_vlc_logger(&instance);
 
         Ok(Self {
             instance,
