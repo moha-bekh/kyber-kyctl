@@ -13,6 +13,7 @@ OPTIONS:
    -h            Show some help
    -k            Build Kyber dependencies
    -c            Run clippy
+   -w            Don't spawn cmd.exe when running controller.exe
    -o <path>     Install the built binaries in the absolute path
 EOF
 }
@@ -36,9 +37,10 @@ git_clone() {
 }
 
 BUILD_KYBER_DEPS=false
+HIDE_CONSOLE_FEATURE=""
 ACTION="build"
 
-while getopts "hkco:" OPTION
+while getopts "hkco:w" OPTION
 do
     case $OPTION in
         h)
@@ -53,6 +55,9 @@ do
             ;;
         o)
             OUT_DIR=$OPTARG
+            ;;
+        w)
+            HIDE_CONSOLE_FEATURE="--features win32-hide-console"
             ;;
     esac
 done
@@ -103,7 +108,10 @@ fi
 # Run action
 case "$ACTION" in
     "build")
-        cargo build --release --target x86_64-pc-windows-gnu
+        cargo build \
+            --release \
+            --target x86_64-pc-windows-gnu \
+            $HIDE_CONSOLE_FEATURE
 
         cp \
             target/x86_64-pc-windows-gnu/release/controller.exe \

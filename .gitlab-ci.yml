@@ -62,7 +62,7 @@ build-windows-x86_64:
     - merge_requests
     - tags
   script: |
-    ./build-win32.sh -k -o $(pwd)/rootfs
+    ./build-win32.sh -k -w -o $(pwd)/rootfs
 
 clippy-windows-x86_64:
   stage: misc
