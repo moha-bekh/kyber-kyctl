@@ -149,6 +149,8 @@ fn setup_logs(logfile: &str, level: LevelFilter) -> log4rs::Handle {
 async fn main() {
     let _log_handle = setup_logs("controller", LevelFilter::Info);
 
+    info!("Kyber controller. Revision {}", env!("VERGEN_GIT_DESCRIBE"));
+
     // Load TLS config
     //
     // /!\/!\ WARNING /!\/!\

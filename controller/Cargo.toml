@@ -23,3 +23,6 @@ libkypc = "0.1"
 
 [features]
 win32-hide-console = []
+
+[build-dependencies]
+vergen = { version = "8.1.1", features = ["build", "git", "gix"] }
