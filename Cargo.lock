@@ -2289,6 +2289,7 @@ dependencies = [
  "env_logger",
  "log",
  "log4rs",
+ "vergen",
  "windows-service",
  "windows-sys 0.42.0",
 ]

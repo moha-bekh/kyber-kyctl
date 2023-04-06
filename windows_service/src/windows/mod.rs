@@ -187,6 +187,8 @@ pub fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     log4rs::init_config(config).unwrap();
 
+    info!("Kyber Windows service. Revision {}", env!("VERGEN_GIT_DESCRIBE"));
+
     windows_service::service_dispatcher::start(SERVICE_NAME, ffi_service_main)?;
     Ok(())
 }
