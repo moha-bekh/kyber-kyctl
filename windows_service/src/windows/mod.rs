@@ -1,4 +1,5 @@
 mod error;
+mod event;
 mod process;
 
 use std::env::current_exe;
@@ -25,6 +26,7 @@ use windows_sys::Win32::{
 };
 
 use error::{Error, Result};
+use event::Event;
 
 windows_service::define_windows_service!(ffi_service_main, service_handler);
 
