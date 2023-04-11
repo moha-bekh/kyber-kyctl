@@ -2346,7 +2346,7 @@ dependencies = [
  "log4rs",
  "vergen",
  "windows-service",
- "windows-sys 0.42.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
