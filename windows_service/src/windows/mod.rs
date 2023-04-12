@@ -25,14 +25,14 @@ use windows_sys::Win32::{
     System::{RemoteDesktop::*, Threading::*},
 };
 
-use error::{Error, Result};
+use error::{last_win32_error, Error, Result};
 use event::Event;
 
 windows_service::define_windows_service!(ffi_service_main, service_handler);
 
 const SERVICE_NAME: &str = "kyber";
 
-fn start_subprocess(controller_path: &str) -> Result<HANDLE> {
+fn start_subprocess(controller_path: &str, inherited: &[&Event]) -> Result<HANDLE> {
     let mut session_id = None;
 
     // At Windows startup, we can be started before WTSGetActiveConsoleSessionId()
@@ -60,12 +60,13 @@ fn start_subprocess(controller_path: &str) -> Result<HANDLE> {
 
     unsafe {
         let token = process::get_subprocess_token(session_id)?;
-        process::start_subprocess(controller_path, token)
+        process::start_subprocess(controller_path, token, inherited)
     }
 }
 
 #[allow(non_snake_case)]
 fn service_main(stop: Arc<AtomicBool>) -> Result<()> {
+    // Spawn process
     let exe_path = if let Ok(mut exe_path) = current_exe() {
         exe_path.pop();
         exe_path
@@ -77,10 +78,15 @@ fn service_main(stop: Arc<AtomicBool>) -> Result<()> {
     let controller_path = Path::new(&exe_path).join("controller.exe");
     let controller_path = controller_path.into_os_string().into_string().unwrap();
 
-    let mut process = start_subprocess(&controller_path)?;
+    let inherited_events = vec![];
+    let mut process = start_subprocess(&controller_path, &inherited_events)?;
 
     while !stop.load(Ordering::Relaxed) {
-        let ret = unsafe { WaitForSingleObject(process, 1000) };
+        let events = [process];
+
+        let ret =
+            unsafe { WaitForMultipleObjects(events.len() as u32, events.as_ptr(), FALSE, 1000) };
+
         match ret {
             WAIT_OBJECT_0 => {
                 // On log out, all the process from the current session are
@@ -91,12 +97,16 @@ fn service_main(stop: Arc<AtomicBool>) -> Result<()> {
                 // The current service isn't killed because it is attached to
                 // the special Session 0.
                 info!("Process stopped");
-                process = start_subprocess(&controller_path)?;
+                process = start_subprocess(&controller_path, &inherited_events)?;
                 info!("Process started again");
             }
             WAIT_TIMEOUT => {}
+            WAIT_FAILED => {
+                let err = last_win32_error("WaitForMultipleObjects", std::file!(), std::line!());
+                warn!("WaitForMultipleObjects() failed: {err:?}");
+            }
             _ => {
-                warn!("WaitForSingleObject() unexpected value {}", ret);
+                warn!("WaitForMultipleObjects() unexpected value {}", ret);
                 break;
             }
         }
