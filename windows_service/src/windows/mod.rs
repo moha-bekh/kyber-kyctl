@@ -1,6 +1,7 @@
 mod error;
 mod event;
 mod process;
+mod sas;
 
 use std::env::current_exe;
 use std::ffi::OsString;
@@ -66,6 +67,9 @@ fn start_subprocess(controller_path: &str, inherited: &[&Event]) -> Result<HANDL
 
 #[allow(non_snake_case)]
 fn service_main(stop: Arc<AtomicBool>) -> Result<()> {
+    // Create SasEvent
+    let sas_event = Event::new("KYBER_SAS_EVENT", true)?;
+
     // Spawn process
     let exe_path = if let Ok(mut exe_path) = current_exe() {
         exe_path.pop();
@@ -78,11 +82,13 @@ fn service_main(stop: Arc<AtomicBool>) -> Result<()> {
     let controller_path = Path::new(&exe_path).join("controller.exe");
     let controller_path = controller_path.into_os_string().into_string().unwrap();
 
-    let inherited_events = vec![];
+    let inherited_events = vec![&sas_event];
     let mut process = start_subprocess(&controller_path, &inherited_events)?;
 
+    const WAIT_OBJECT_1: u32 = WAIT_OBJECT_0 + 1;
+
     while !stop.load(Ordering::Relaxed) {
-        let events = [process];
+        let events = [process, sas_event.handle()];
 
         let ret =
             unsafe { WaitForMultipleObjects(events.len() as u32, events.as_ptr(), FALSE, 1000) };
@@ -99,6 +105,10 @@ fn service_main(stop: Arc<AtomicBool>) -> Result<()> {
                 info!("Process stopped");
                 process = start_subprocess(&controller_path, &inherited_events)?;
                 info!("Process started again");
+            }
+            WAIT_OBJECT_1 => {
+                unsafe { ResetEvent(sas_event.handle()) };
+                sas::send();
             }
             WAIT_TIMEOUT => {}
             WAIT_FAILED => {
