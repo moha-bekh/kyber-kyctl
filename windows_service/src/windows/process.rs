@@ -4,7 +4,11 @@ use std::os::windows::ffi::OsStrExt;
 use std::ptr;
 
 use log::warn;
-use windows_sys::Win32::{Security::*, Foundation::*, System::{SystemServices::*, Threading::*}};
+use windows_sys::Win32::{
+    Foundation::*,
+    Security::*,
+    System::{SystemServices::*, Threading::*},
+};
 
 use super::error::{check_win32_error, last_win32_error, Error, Result};
 

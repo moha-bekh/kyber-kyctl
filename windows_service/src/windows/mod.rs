@@ -6,19 +6,22 @@ use std::ffi::OsString;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
 use std::thread;
+use std::time::Duration;
 
 use log::{info, warn, LevelFilter};
 use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Config, Root};
-use windows_sys::Win32::{Foundation::*, System::{Threading::*, RemoteDesktop::*}};
 use windows_service::{
     service::{
         ServiceControl, ServiceControlAccept, ServiceExitCode, ServiceState, ServiceStatus,
         ServiceType,
     },
     service_control_handler::{self, ServiceControlHandlerResult, ServiceStatusHandle},
+};
+use windows_sys::Win32::{
+    Foundation::*,
+    System::{RemoteDesktop::*, Threading::*},
 };
 
 use error::{Error, Result};
@@ -55,10 +58,7 @@ fn start_subprocess(controller_path: &str) -> Result<HANDLE> {
 
     unsafe {
         let token = process::get_subprocess_token(session_id)?;
-        process::start_subprocess(
-            controller_path,
-            token,
-        )
+        process::start_subprocess(controller_path, token)
     }
 }
 
@@ -119,7 +119,11 @@ fn notify_state(
     let status = ServiceStatus {
         service_type: ServiceType::OWN_PROCESS,
         current_state,
-        controls_accepted: ServiceControlAccept::STOP | ServiceControlAccept::SHUTDOWN | ServiceControlAccept::POWER_EVENT | ServiceControlAccept::PRESHUTDOWN | ServiceControlAccept::SESSION_CHANGE,
+        controls_accepted: ServiceControlAccept::STOP
+            | ServiceControlAccept::SHUTDOWN
+            | ServiceControlAccept::POWER_EVENT
+            | ServiceControlAccept::PRESHUTDOWN
+            | ServiceControlAccept::SESSION_CHANGE,
         exit_code: ServiceExitCode::Win32(0),
         checkpoint: 0,
         wait_hint: Duration::default(),
@@ -149,7 +153,7 @@ fn service_handler(_arguments: Vec<OsString>) {
             _ => {
                 info!("Got event: {control_event:?}");
                 ServiceControlHandlerResult::NoError
-            },
+            }
         }
     };
 
@@ -187,7 +191,10 @@ pub fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     log4rs::init_config(config).unwrap();
 
-    info!("Kyber Windows service. Revision {}", env!("VERGEN_GIT_DESCRIBE"));
+    info!(
+        "Kyber Windows service. Revision {}",
+        env!("VERGEN_GIT_DESCRIBE")
+    );
 
     windows_service::service_dispatcher::start(SERVICE_NAME, ffi_service_main)?;
     Ok(())
