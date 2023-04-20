@@ -69,6 +69,7 @@ impl Player {
     pub fn new(message_proxy: MessageProxy) -> Result<Self> {
         let mut options = vec![
             "--0latency",
+            "--low-delay",
             "--network-caching=0",
             "--video-title=Kyber Client",
         ];
@@ -126,6 +127,7 @@ impl Player {
         );
 
         let md = vlc::Media::new_location(&mrl).ok_or(PlayerError::MediaCreateFailed)?;
+        md.add_option(":clock-master=audio");
 
         let mdp =
             vlc::MediaPlayer::new(&self.instance).ok_or(PlayerError::MediaPlayerCreateFailed)?;
