@@ -2,5 +2,9 @@
 
 members = [
     "controller",
+    "kidd_client",
     "windows_service",
 ]
+
+[patch.crates-io]
+kidd_client = { path = "kidd_client" }
