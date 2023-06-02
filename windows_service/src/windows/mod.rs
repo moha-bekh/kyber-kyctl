@@ -1,6 +1,7 @@
 mod config;
 mod error;
 mod event;
+mod monitors;
 mod process;
 mod sas;
 mod utils;
@@ -68,6 +69,16 @@ fn start_subprocess(controller_path: &str, inherited: &[&Event]) -> Result<HANDL
 
 #[allow(non_snake_case)]
 fn service_main(stop: Arc<AtomicBool>) -> Result<()> {
+    // Load configuration
+    let config = config::load()?;
+
+    // Plug monitor if required
+    let _device_interface = if monitors::must_plug_monitor(&config) {
+        monitors::start_kidd(&config)?
+    } else {
+        None
+    };
+
     // Create SasEvent
     let sas_event = Event::new("KYBER_SAS_EVENT", true)?;
 

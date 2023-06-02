@@ -103,6 +103,15 @@ pub enum Error {
 
     #[cfg(target_os = "windows")]
     Win32(Win32Error),
+
+    #[cfg(target_os = "windows")]
+    Idd(kidd_client::Error),
+}
+
+impl From<kidd_client::Error> for Error {
+    fn from(err: kidd_client::Error) -> Self {
+        Self::Idd(err)
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
