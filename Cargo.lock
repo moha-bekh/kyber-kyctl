@@ -2332,6 +2332,7 @@ name = "service"
 version = "0.1.0"
 dependencies = [
  "env_logger",
+ "kidd_client",
  "log",
  "log4rs",
  "vergen",
