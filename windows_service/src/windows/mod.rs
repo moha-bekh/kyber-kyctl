@@ -13,7 +13,6 @@ use std::time::Duration;
 
 use log::{info, warn, LevelFilter};
 use log4rs::append::file::FileAppender;
-use log4rs::config::{Appender, Config, Root};
 use windows_service::{
     service::{
         ServiceControl, ServiceControlAccept, ServiceExitCode, ServiceState, ServiceStatus,
@@ -202,10 +201,10 @@ pub fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     let logfile = FileAppender::builder().append(true).build(logpath).unwrap();
 
-    let config = Config::builder()
-        .appender(Appender::builder().build("logfile", Box::new(logfile)))
+    let config = log4rs::config::Config::builder()
+        .appender(log4rs::config::Appender::builder().build("logfile", Box::new(logfile)))
         .build(
-            Root::builder()
+            log4rs::config::Root::builder()
                 .appender("logfile")
                 .build(LevelFilter::Trace),
         )
