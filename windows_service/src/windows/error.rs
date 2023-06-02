@@ -96,6 +96,11 @@ pub(crate) use check_win32_error;
 pub enum Error {
     Rejected,
 
+    ConfigParseFail,
+    ConfigLoadFail {
+        reason: toml::de::Error,
+    },
+
     #[cfg(target_os = "windows")]
     Win32(Win32Error),
 }

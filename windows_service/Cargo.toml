@@ -7,6 +7,8 @@ edition = "2021"
 env_logger = "0.9.0"
 log = "0.4.14"
 log4rs = "1.2.0"
+serde = {version = "1.0.163", features = ["derive"] }
+toml = "0.7.4"
 windows-service = "0.5.0"
 
 kidd_client = "0.1.0"

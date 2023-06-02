@@ -1,7 +1,9 @@
+mod config;
 mod error;
 mod event;
 mod process;
 mod sas;
+mod utils;
 
 use std::env::current_exe;
 use std::ffi::OsString;
