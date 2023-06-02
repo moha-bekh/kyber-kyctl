@@ -110,6 +110,7 @@ case "$ACTION" in
     "build")
         cargo build \
             --release \
+            --bins --examples \
             --target x86_64-pc-windows-gnu \
             $HIDE_CONSOLE_FEATURE
 
