@@ -72,6 +72,8 @@ impl Player {
             "--low-delay",
             "--network-caching=0",
             "--video-title=Kyber Client",
+            "--no-spu",
+            "--no-osd",
         ];
 
         if std::env::var("KYBER_SOFTWARE_DECODE").is_ok() {
