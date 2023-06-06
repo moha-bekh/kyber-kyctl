@@ -37,6 +37,11 @@ pub(crate) async fn start_mux(
 }
 
 #[derive(Debug, Deserialize)]
+pub(crate) struct KymuxConfig {
+    pub(crate) video_protocol: Option<kymux::VideoProtocol>,
+}
+
+#[derive(Debug, Deserialize)]
 pub(crate) struct StartRequestVideo {
     pub(crate) display_id: u32,
     pub(crate) codec: VideoCodec,
@@ -47,6 +52,7 @@ pub(crate) struct StartRequestVideo {
 pub(crate) struct StartRequest {
     // Global bitrate for the whole Quic connection. Unit: bits/sec
     pub(crate) bitrate: u32,
+    pub(crate) kymux_config: KymuxConfig,
     pub(crate) video: Option<StartRequestVideo>,
     pub(crate) audio: bool,
     pub(crate) inputs: bool,

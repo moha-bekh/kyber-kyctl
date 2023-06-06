@@ -172,10 +172,17 @@ async fn start_session(
     };
 
     let (video_endpoint, avservice_video) = if let Some(video_request) = request.video {
-        // AV Server
-        let video_endpoint = kymux.register_endpoint(kymux::StreamType::Video).await?;
+        // Video Server
+        let video_protocol = request
+            .kymux_config
+            .video_protocol
+            .unwrap_or(kymux::VideoProtocol::Reliable);
 
-        info!("Start Video avservice. Endpoint: {video_endpoint:X}");
+        let video_endpoint = kymux
+            .register_endpoint(kymux::StreamType::Video(video_protocol))
+            .await?;
+
+        info!("Start Video avservice. Protocol: {video_protocol:?}, Endpoint: {video_endpoint:X}");
         let video_uri = kymux.get_uri_for_endpoint(video_endpoint)?;
 
         let avservice_video = start_video(
