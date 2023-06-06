@@ -24,6 +24,11 @@ pub struct libclient_ConnectConfig {
 }
 
 #[allow(non_camel_case_types)]
+pub struct libclient_StreamingProtocol {
+    protocol: crate::StreamingProtocol,
+}
+
+#[allow(non_camel_case_types)]
 pub struct libclient_StreamingSessionConfig {
     config: crate::StreamingSessionConfig,
 }
@@ -42,6 +47,24 @@ fn result_to_c_int<T>(result: crate::Result<T>) -> c_int {
     match result {
         Ok(_) => 0,
         Err(_) => -1,
+    }
+}
+
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub enum libclient_KymuxVideoProtocol {
+    Reliable,
+    GopStream,
+    UnreliableFec,
+}
+
+impl From<libclient_KymuxVideoProtocol> for kymux::VideoProtocol {
+    fn from(value: libclient_KymuxVideoProtocol) -> Self {
+        match value {
+            libclient_KymuxVideoProtocol::Reliable => Self::Reliable,
+            libclient_KymuxVideoProtocol::GopStream => Self::GopStream,
+            libclient_KymuxVideoProtocol::UnreliableFec => Self::UnreliableFec,
+        }
     }
 }
 
@@ -198,6 +221,33 @@ pub unsafe extern "C" fn libclient_connect_config_unref(cfg: *mut libclient_Conn
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn libclient_streaming_protocol_rtp() -> *mut libclient_StreamingProtocol {
+    let protocol = crate::StreamingProtocol::Rtp;
+
+    Box::into_raw(Box::new(libclient_StreamingProtocol { protocol }))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_streaming_protocol_kymux(
+    video_protocol: libclient_KymuxVideoProtocol,
+) -> *mut libclient_StreamingProtocol {
+    let protocol = crate::StreamingProtocol::Kymux(crate::kymux_backend::KymuxConfig {
+        video_protocol: Some(video_protocol.into()),
+    });
+
+    Box::into_raw(Box::new(libclient_StreamingProtocol { protocol }))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_streaming_protocol_unref(
+    protocol: *mut libclient_StreamingProtocol,
+) {
+    if !protocol.is_null() {
+        let _ = Box::from_raw(protocol);
+    }
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn libclient_video_session_config_default(
     window_handle: *mut libclient_WindowHandle,
     display_index: usize,
@@ -265,11 +315,11 @@ pub unsafe extern "C" fn libclient_input_session_config_unref(
 
 #[no_mangle]
 pub unsafe extern "C" fn libclient_streaming_session_config_default(
-    protocol: crate::StreamingProtocol,
+    protocol: *const libclient_StreamingProtocol,
     out_config: *mut *mut libclient_StreamingSessionConfig,
 ) -> c_int {
     let config = crate::StreamingSessionConfig {
-        protocol,
+        protocol: (*protocol).protocol.clone(),
         bitrate: 20_000_000,
         video: None,
         audio: false,

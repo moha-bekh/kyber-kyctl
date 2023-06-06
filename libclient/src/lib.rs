@@ -30,6 +30,7 @@ use enums::{Display, Event, Message};
 use event_manager::EventManager;
 use host_events::HostEventReceiver;
 use http::HttpClient;
+use kymux_backend::KymuxConfig;
 use window_handle::WindowHandle;
 
 pub(crate) const STREAMER_PORT: u16 = 8080;
@@ -339,10 +340,9 @@ impl Handler {
 }
 
 #[derive(Clone, Debug)]
-#[repr(C)]
 pub enum StreamingProtocol {
     Rtp,
-    Kymux,
+    Kymux(KymuxConfig),
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]

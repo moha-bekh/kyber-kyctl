@@ -1,6 +1,7 @@
 use std::net::SocketAddr;
 
 use log::{error, info, warn};
+use serde::Serialize;
 
 use libkynput_rs::Pipeline;
 
@@ -24,6 +25,11 @@ pub(self) struct VideoConfig {
 
 pub(self) struct AudioConfig {
     pub(self) uri: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct KymuxConfig {
+    pub video_protocol: Option<kymux::VideoProtocol>,
 }
 
 pub(crate) async fn start_kymux(
