@@ -21,8 +21,7 @@ fn create_payload(request: PlugMonitorRequest, modes: &[MonitorMode]) -> Vec<u8>
     let raw_request = unsafe { serialize(&request) };
     let raw_modes = unsafe { serialize_array(modes) };
 
-    let payload_size = std::mem::size_of::<PlugMonitorRequest>()
-        + modes.len() * std::mem::size_of::<MonitorMode>();
+    let payload_size = std::mem::size_of::<PlugMonitorRequest>() + std::mem::size_of_val(modes);
     let mut payload: Vec<u8> = vec![0; payload_size];
 
     payload[0..raw_request.len()].copy_from_slice(raw_request);
