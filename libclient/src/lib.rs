@@ -377,6 +377,7 @@ pub struct InputSessionConfig {
 #[derive(Clone, Debug)]
 pub struct StreamingSessionConfig {
     pub protocol: StreamingProtocol,
+    pub bitrate: u32,
     pub video: Option<VideoSessionConfig>,
     pub audio: bool,
     pub input: Option<InputSessionConfig>,
