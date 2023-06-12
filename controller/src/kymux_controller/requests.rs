@@ -45,6 +45,8 @@ pub(crate) struct StartRequestVideo {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct StartRequest {
+    // Global bitrate for the whole Quic connection. Unit: bits/sec
+    pub(crate) bitrate: u32,
     pub(crate) video: Option<StartRequestVideo>,
     pub(crate) audio: bool,
     pub(crate) inputs: bool,
