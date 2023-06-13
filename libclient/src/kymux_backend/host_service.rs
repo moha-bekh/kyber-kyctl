@@ -40,6 +40,9 @@ struct StartRequestVideo {
 
 #[derive(Debug, Serialize)]
 struct StartRequest {
+    // Global bitrate for the whole Quic connection. Unit: bits/sec
+    bitrate: u32,
+
     video: Option<StartRequestVideo>,
     audio: bool,
     inputs: bool,
@@ -55,6 +58,7 @@ pub(crate) struct StartResponse {
 pub(crate) async fn start_stream(
     client: &HttpClient,
     displays: &Vec<Display>,
+    bitrate: u32,
     video: &Option<VideoSessionConfig>,
     audio: bool,
     inputs: bool,
@@ -71,6 +75,7 @@ pub(crate) async fn start_stream(
     });
 
     let body = StartRequest {
+        bitrate,
         video,
         audio,
         inputs,

@@ -149,6 +149,7 @@ pub(crate) async fn start(
     let start_resp = host_service::start_stream(
         client,
         displays,
+        streaming_config.bitrate,
         &streaming_config.video,
         streaming_config.audio,
         streaming_config.input.is_some(),
