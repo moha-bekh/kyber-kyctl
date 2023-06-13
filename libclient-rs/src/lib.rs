@@ -249,6 +249,10 @@ impl StreamingSessionConfig {
         }
     }
 
+    pub fn set_bitrate(&self, bitrate: u32) {
+        unsafe { sys::libclient_streaming_session_config_set_bitrate(self.ptr, bitrate) }
+    }
+
     pub fn set_video(&self, config: VideoSessionConfig) {
         unsafe { sys::libclient_streaming_session_config_set_video(self.ptr, config.ptr) }
 
