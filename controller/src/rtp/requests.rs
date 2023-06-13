@@ -31,6 +31,7 @@ pub struct StartRequestAudio {
 #[derive(Debug, Deserialize)]
 pub struct StartRequest {
     pub ip: String,
+    pub bitrate: u32,
     pub video: Option<StartRequestVideo>,
     pub audio: Option<StartRequestAudio>,
     pub inputs: bool,
