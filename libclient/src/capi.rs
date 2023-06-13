@@ -270,6 +270,7 @@ pub unsafe extern "C" fn libclient_streaming_session_config_default(
 ) -> c_int {
     let config = crate::StreamingSessionConfig {
         protocol,
+        bitrate: 20_000_000,
         video: None,
         audio: false,
         input: None,
@@ -286,6 +287,14 @@ pub unsafe extern "C" fn libclient_streaming_session_config_unref(
     if !cfg.is_null() {
         let _ = Box::from_raw(cfg);
     }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_streaming_session_config_set_bitrate(
+    config: *mut libclient_StreamingSessionConfig,
+    bitrate: u32,
+) {
+    (*config).config.bitrate = bitrate;
 }
 
 #[no_mangle]
