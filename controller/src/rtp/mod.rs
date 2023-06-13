@@ -61,6 +61,7 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
                 video_request.display_id,
                 request.ip.clone(),
                 video_request.port,
+                request.bitrate,
                 video_request.yuv444,
             )
             .await?;

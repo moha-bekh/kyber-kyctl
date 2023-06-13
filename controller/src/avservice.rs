@@ -112,6 +112,7 @@ impl Handler {
         display_id: u32,
         ip: String,
         port: u16,
+        bitrate: u32,
         yuv444: bool,
     ) -> Result<()> {
         let mut inner = self.spawn_process(process_factory).await?;
@@ -122,6 +123,7 @@ impl Handler {
                 display_id,
                 ip,
                 port,
+                bitrate,
                 yuv444,
             })
             .await?;
