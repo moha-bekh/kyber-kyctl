@@ -23,6 +23,7 @@ struct StartRequestAudio {
 #[derive(Debug, Serialize)]
 struct StartRequest {
     ip: String,
+    bitrate: u32,
     video: Option<StartRequestVideo>,
     audio: Option<StartRequestAudio>,
     inputs: bool,
@@ -86,6 +87,7 @@ pub(crate) async fn generate_sdp(
 pub(super) async fn start_stream(
     client: &HttpClient,
     local_ip: &str,
+    bitrate: u32,
     video: &Option<VideoConfig>,
     audio: &Option<AudioConfig>,
     inputs: bool,
@@ -104,6 +106,7 @@ pub(super) async fn start_stream(
 
     let body = StartRequest {
         ip: local_ip.into(),
+        bitrate,
         video,
         audio,
         inputs,

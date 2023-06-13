@@ -105,6 +105,7 @@ pub(crate) async fn start(
     host_service::start_stream(
         client,
         &local_ip,
+        streaming_config.bitrate,
         &video_config,
         &audio_config,
         streaming_config.input.is_some(),
