@@ -154,6 +154,7 @@ impl Handler {
         process_factory: &Arc<ProcessFactory>,
         display_id: u32,
         uri: String,
+        bitrate: u32,
         codec: VideoCodec,
         yuv444: bool,
     ) -> Result<()> {
@@ -164,6 +165,7 @@ impl Handler {
             .send(Command::KymuxStartVideo {
                 display_id,
                 uri,
+                bitrate,
                 codec,
                 yuv444,
             })

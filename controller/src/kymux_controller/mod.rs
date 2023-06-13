@@ -113,13 +113,14 @@ async fn start_video(
     process_factory: &Arc<ProcessFactory>,
     display_id: u32,
     uri: String,
+    bitrate: u32,
     codec: avservice_types::VideoCodec,
     yuv444: bool,
 ) -> Result<avservice::Handler> {
     let mut handler = avservice::Handler::new("Video");
 
     handler
-        .kymux_start_video(process_factory, display_id, uri, codec, yuv444)
+        .kymux_start_video(process_factory, display_id, uri, bitrate, codec, yuv444)
         .await?;
 
     Ok(handler)
@@ -183,6 +184,7 @@ async fn start_session(
             &ctrl.process_factory,
             video_request.display_id,
             video_uri,
+            request.bitrate,
             video_request.codec,
             video_request.yuv444,
         )
