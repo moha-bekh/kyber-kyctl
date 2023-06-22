@@ -148,6 +148,7 @@ pub(crate) async fn start(
     client: &HttpClient,
     displays: &Vec<Display>,
     streaming_config: &StreamingSessionConfig,
+    kymux_config: KymuxConfig,
     kymux: &mut kymux::Connection,
     msg_proxy: MessageProxy,
 ) -> Result<StartStreamResult> {
@@ -156,6 +157,7 @@ pub(crate) async fn start(
         client,
         displays,
         streaming_config.bitrate,
+        kymux_config,
         &streaming_config.video,
         streaming_config.audio,
         streaming_config.input.is_some(),

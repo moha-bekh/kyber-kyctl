@@ -238,8 +238,8 @@ impl Handler {
     async fn start_streaming_session(&mut self) -> Result<()> {
         let msg_proxy = self.create_message_proxy();
 
-        let result = match self.streaming_config.protocol {
-            StreamingProtocol::Kymux => {
+        let result = match &self.streaming_config.protocol {
+            StreamingProtocol::Kymux(kymux_config) => {
                 let Some(kymux) = self.kymux.as_mut() else {
                     error!("Got start Kymux session, but kymux isn't started");
                     return Err(Error::KymuxNotStarted);
@@ -249,6 +249,7 @@ impl Handler {
                     &self.http_client,
                     &self.displays,
                     &self.streaming_config,
+                    kymux_config.clone(),
                     kymux,
                     msg_proxy,
                 )

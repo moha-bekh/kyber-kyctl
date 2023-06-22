@@ -6,6 +6,8 @@ use crate::get_display_id;
 use crate::http::HttpClient;
 use crate::{Display, VideoCodec, VideoSessionConfig};
 
+use super::KymuxConfig;
+
 #[derive(Debug, Deserialize)]
 pub(crate) struct StartKymuxResponse {
     pub(crate) port: u16,
@@ -43,6 +45,7 @@ struct StartRequest {
     // Global bitrate for the whole Quic connection. Unit: bits/sec
     bitrate: u32,
 
+    kymux_config: KymuxConfig,
     video: Option<StartRequestVideo>,
     audio: bool,
     inputs: bool,
@@ -59,6 +62,7 @@ pub(crate) async fn start_stream(
     client: &HttpClient,
     displays: &Vec<Display>,
     bitrate: u32,
+    kymux_config: KymuxConfig,
     video: &Option<VideoSessionConfig>,
     audio: bool,
     inputs: bool,
@@ -76,6 +80,7 @@ pub(crate) async fn start_stream(
 
     let body = StartRequest {
         bitrate,
+        kymux_config,
         video,
         audio,
         inputs,
