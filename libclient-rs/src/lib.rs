@@ -17,28 +17,32 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub type Display = sys::libclient_Display;
 
 #[derive(Clone, Copy, Debug)]
-pub enum StreamingProtocol {
-    Rtp,
-    Kymux,
+pub enum KymuxVideoProtocol {
+    Reliable,
+    GopStream,
+    UnreliableFec,
 }
 
-impl StreamingProtocol {
-    pub fn from_u32(u: sys::libclient_StreamingProtocol) -> Option<Self> {
-        match u {
-            sys::libclient_StreamingProtocol_LIBCLIENT_STREAMING_PROTOCOL_RTP => Some(Self::Rtp),
-            sys::libclient_StreamingProtocol_LIBCLIENT_STREAMING_PROTOCOL_KYMUX => {
-                Some(Self::Kymux)
-            }
-            _ => None,
-        }
-    }
-
+impl KymuxVideoProtocol {
     fn to_u32(self) -> u32 {
         match self {
-            Self::Rtp => sys::libclient_StreamingProtocol_LIBCLIENT_STREAMING_PROTOCOL_RTP,
-            Self::Kymux => sys::libclient_StreamingProtocol_LIBCLIENT_STREAMING_PROTOCOL_KYMUX,
+            Self::Reliable => {
+                sys::libclient_KymuxVideoProtocol_LIBCLIENT_KYMUX_VIDEO_PROTOCOL_RELIABLE
+            }
+            Self::GopStream => {
+                sys::libclient_KymuxVideoProtocol_LIBCLIENT_KYMUX_VIDEO_PROTOCOL_GOP_STREAM
+            }
+            Self::UnreliableFec => {
+                sys::libclient_KymuxVideoProtocol_LIBCLIENT_KYMUX_VIDEO_PROTOCOL_UNRELIABLE_FEC
+            }
         }
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum StreamingProtocol {
+    Rtp,
+    Kymux(KymuxVideoProtocol),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -238,9 +242,18 @@ pub struct StreamingSessionConfig {
 
 impl StreamingSessionConfig {
     pub fn default(protocol: StreamingProtocol) -> Result<Self> {
+        let streaming_protocol = match protocol {
+            StreamingProtocol::Rtp => unsafe { sys::libclient_streaming_protocol_rtp() },
+            StreamingProtocol::Kymux(video_protocol) => unsafe {
+                sys::libclient_streaming_protocol_kymux(video_protocol.to_u32())
+            },
+        };
+
         unsafe {
             let mut ptr: *mut _ = std::mem::zeroed();
-            let ret = sys::libclient_streaming_session_config_default(protocol.to_u32(), &mut ptr);
+            let ret = sys::libclient_streaming_session_config_default(streaming_protocol, &mut ptr);
+            sys::libclient_streaming_protocol_unref(streaming_protocol);
+
             if ret == 0 {
                 Ok(Self { ptr })
             } else {
