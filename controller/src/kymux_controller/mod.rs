@@ -153,13 +153,13 @@ async fn start_input(
 
 pub(crate) struct StartSessionResponse {
     pub(crate) avservice_video: Option<avservice::Handler>,
-    pub(crate) video_endpoint: Option<u64>,
+    pub(crate) video_endpoint: Option<u16>,
 
     pub(crate) avservice_audio: Option<avservice::Handler>,
-    pub(crate) audio_endpoint: Option<u64>,
+    pub(crate) audio_endpoint: Option<u16>,
 
     pub(crate) inputservice: Option<inputservice::Handler>,
-    pub(crate) input_endpoint: Option<u64>,
+    pub(crate) input_endpoint: Option<u16>,
 }
 
 async fn start_session(
@@ -179,7 +179,7 @@ async fn start_session(
             .unwrap_or(kymux::VideoProtocol::Reliable);
 
         let video_endpoint = kymux
-            .register_endpoint(kymux::StreamType::Video(video_protocol))
+            .register_endpoint(None, kymux::StreamType::Video(video_protocol))
             .await?;
 
         info!("Start Video avservice. Protocol: {video_protocol:?}, Endpoint: {video_endpoint:X}");
@@ -202,7 +202,9 @@ async fn start_session(
 
     // Audio server
     let (audio_endpoint, avservice_audio) = if request.audio {
-        let audio_endpoint = kymux.register_endpoint(kymux::StreamType::Audio).await?;
+        let audio_endpoint = kymux
+            .register_endpoint(None, kymux::StreamType::Audio)
+            .await?;
 
         info!("Start Audio avservice. Endpoint: {audio_endpoint:X}");
 
@@ -217,7 +219,9 @@ async fn start_session(
 
     // Input server
     let (input_endpoint, inputservice) = if request.inputs {
-        let input_endpoint = kymux.register_endpoint(kymux::StreamType::Input).await?;
+        let input_endpoint = kymux
+            .register_endpoint(None, kymux::StreamType::Input)
+            .await?;
 
         info!("Start Inputservice. Endpoint: {input_endpoint:X}");
         let uri = kymux.get_uri_for_endpoint(input_endpoint)?;
