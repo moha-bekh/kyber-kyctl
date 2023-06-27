@@ -71,7 +71,7 @@ pub(crate) async fn start_kymux(
 fn create_video_config(
     kymux: &kymux::Connection,
     config: &Option<VideoSessionConfig>,
-    endpoint: &Option<u64>,
+    endpoint: &Option<u16>,
 ) -> Result<Option<VideoConfig>> {
     let config = match (config.as_ref(), endpoint) {
         (Some(config), Some(endpoint)) => {
@@ -98,7 +98,7 @@ fn create_video_config(
 fn create_audio_config(
     kymux: &kymux::Connection,
     enabled: bool,
-    endpoint: &Option<u64>,
+    endpoint: &Option<u16>,
 ) -> Result<Option<AudioConfig>> {
     let config = match (enabled, endpoint) {
         (true, Some(endpoint)) => {
@@ -122,7 +122,7 @@ fn create_audio_config(
 fn start_input(
     kymux: &kymux::Connection,
     config: &InputSessionConfig,
-    endpoint: u64,
+    endpoint: u16,
     msg_proxy: MessageProxy,
 ) -> Result<(Option<input_service::Client>, Option<Pipeline>)> {
     let input_uri = kymux.get_uri_for_endpoint(endpoint).map_err(|err| {

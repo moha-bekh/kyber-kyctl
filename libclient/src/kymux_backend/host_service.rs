@@ -53,9 +53,9 @@ struct StartRequest {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct StartResponse {
-    pub(crate) video_endpoint: Option<u64>,
-    pub(crate) audio_endpoint: Option<u64>,
-    pub(crate) input_endpoint: Option<u64>,
+    pub(crate) video_endpoint: Option<u16>,
+    pub(crate) audio_endpoint: Option<u16>,
+    pub(crate) input_endpoint: Option<u16>,
 }
 
 pub(crate) async fn start_stream(
