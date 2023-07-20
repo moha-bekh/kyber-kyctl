@@ -1,6 +1,6 @@
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
-  DEBIAN_IMAGE: registry.gitlab.com/kyber-labs/kyber-streamer/docker-images/debian-bullseye:20230623133751
+  DEBIAN_IMAGE: registry.gitlab.com/kyber-labs/kyber-streamer/docker-images/debian-bookworm:20230721071624
   WIN64_IMAGE: registry.gitlab.com/kyber-labs/kyber-streamer/docker-images/debian-win64:20230623134530
   MACOS_RUST_VERSION: 1.70.0
 
@@ -29,7 +29,7 @@ lint:
     - cargo fmt -- --check
   cache: []
 
-contrib-debian-buster-x86_64:
+contrib-debian-bookworm-x86_64:
   stage: contrib
   image: $DEBIAN_IMAGE
   tags:
@@ -73,7 +73,7 @@ contrib-windows-x86_64:
     paths:
       - rootfs
 
-build-debian-buster-x86_64:
+build-debian-bookworm-x86_64:
   stage: build
   image: $DEBIAN_IMAGE
   tags:
@@ -83,7 +83,7 @@ build-debian-buster-x86_64:
     - merge_requests
     - tags
   needs:
-    - contrib-debian-buster-x86_64
+    - contrib-debian-bookworm-x86_64
   script: |
     export KYBER_DIRNAME=rootfs
     export KYBER_PREFIX=$(pwd)/$KYBER_DIRNAME
@@ -94,7 +94,7 @@ build-debian-buster-x86_64:
     # Build component
     ./build-linux.sh -k -s -o $KYBER_PREFIX
 
-clippy-debian-buster-x86_64:
+clippy-debian-bookworm-x86_64:
   stage: misc
   image: $DEBIAN_IMAGE
   tags:
@@ -104,7 +104,7 @@ clippy-debian-buster-x86_64:
     - merge_requests
     - tags
   needs:
-    - contrib-debian-buster-x86_64
+    - contrib-debian-bookworm-x86_64
   script: |
     export KYBER_DIRNAME=rootfs
     export KYBER_PREFIX=$(pwd)/$KYBER_DIRNAME
