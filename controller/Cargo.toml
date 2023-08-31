@@ -13,7 +13,7 @@ rustls-pemfile = "1.0.2"
 serde = { version = "1.0.130", features = ["derive"] }
 serde_json = "1.0.70"
 thiserror = "1.0.37"
-tokio = { version = "1.21.2", features = ["fs", "process", "sync", "time"] }
+tokio = { version = "1.33.0", features = ["fs", "process", "sync", "time"] }
 webpki = "0.22.0"
 
 avservice-types = "0.1"
