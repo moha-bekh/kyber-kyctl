@@ -147,8 +147,8 @@ case "$ACTION" in
     ;;
     "clippy")
         cargo clippy \
-        --features capi,desktop,kymux,rtp \
-        -- -D warnings -A clippy::missing_safety_doc
+            --features=capi,desktop,kymux,rtp \
+            -- -D warnings -A clippy::missing_safety_doc
     ;;
 esac
 

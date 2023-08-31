@@ -153,7 +153,7 @@ case "$ACTION" in
     "clippy")
         cargo clippy \
             --target x86_64-pc-windows-gnu \
-            --features capi,desktop,kymux,rtp \
+            --features=capi,desktop,kymux,rtp \
             -- -D warnings -A clippy::missing_safety_doc
     ;;
 esac

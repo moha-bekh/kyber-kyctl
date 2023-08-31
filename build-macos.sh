@@ -187,7 +187,7 @@ case "$ACTION" in
     "clippy")
         cargo clippy \
             --target $CARGO_TARGET \
-            --features capi,desktop,kymux,rtp \
+            --features=capi,desktop,kymux,rtp \
             -- -D warnings -A clippy::missing_safety_doc
     ;;
     "test")
