@@ -34,7 +34,7 @@ pub enum Error {
     #[error("Invalid TLS file")]
     TlsInvalidFile,
     #[error("Invalid TLS certificate: {source:?}")]
-    TlsInvalidCertificate { source: webpki::Error },
+    TlsInvalidCertificate { source: rustls::Error },
     #[error("rustls error: {source:?}")]
     RustlsError {
         #[from]

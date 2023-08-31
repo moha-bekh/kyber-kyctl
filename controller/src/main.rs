@@ -206,7 +206,7 @@ async fn main() {
             .service(enumerate_displays)
             .service(stop_session)
     })
-    .bind_rustls(bind_addr, server_config)
+    .bind_rustls_021(bind_addr, server_config)
     .unwrap()
     .run()
     .await

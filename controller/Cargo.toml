@@ -4,17 +4,16 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-actix-web = { version = "4.3.1", features = ["rustls"] }
+actix-web = { version = "4.4.0", features = ["rustls-0_21"] }
 actix-ws = "0.2.5"
 log = "0.4.14"
 log4rs = "1.2.0"
-rustls = { version = "0.20.8", features = ["quic"] }
-rustls-pemfile = "1.0.2"
+rustls = { version = "0.21.8", features = ["quic"] }
+rustls-pemfile = "1.0.3"
 serde = { version = "1.0.130", features = ["derive"] }
 serde_json = "1.0.70"
 thiserror = "1.0.37"
 tokio = { version = "1.33.0", features = ["fs", "process", "sync", "time"] }
-webpki = "0.22.0"
 
 avservice-types = "0.1"
 inputservice-types = "0.1"
