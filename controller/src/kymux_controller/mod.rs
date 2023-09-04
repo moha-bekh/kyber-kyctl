@@ -8,6 +8,7 @@ use log::{info, warn};
 use tokio::sync::{oneshot, Mutex};
 use tokio::task::{self, JoinHandle};
 
+use inputservice_types::CursorFormat;
 use libkypc::process::ProcessFactory;
 
 use crate::avservice;
@@ -140,12 +141,13 @@ async fn start_audio(
 async fn start_input(
     process_factory: &Arc<ProcessFactory>,
     host_config: inputservice_types::HostConfig,
+    service_config: inputservice_types::ServiceConfig,
     uri: String,
 ) -> Result<inputservice::Handler> {
     let mut inputservice = inputservice::Handler::new();
 
     inputservice
-        .start_kymux(process_factory, host_config, uri)
+        .start_kymux(process_factory, host_config, service_config, uri)
         .await?;
 
     Ok(inputservice)
@@ -230,7 +232,12 @@ async fn start_session(
             display_list: ctrl.displays.convert(),
         };
 
-        let inputservice = start_input(&ctrl.process_factory, host_config, uri).await?;
+        let service_config = inputservice_types::ServiceConfig {
+            cursor_format: CursorFormat::Raw,
+        };
+
+        let inputservice =
+            start_input(&ctrl.process_factory, host_config, service_config, uri).await?;
         (Some(input_endpoint), Some(inputservice))
     } else {
         warn!("Input server disabled");

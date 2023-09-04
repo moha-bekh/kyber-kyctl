@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use log::{debug, info, warn};
 
-use inputservice_types::{Command, Event, HostConfig};
+use inputservice_types::{Command, Event, HostConfig, ServiceConfig};
 use libkypc::{
     process::{Process, ProcessFactory},
     CommandSender, Commander, EventReceiver,
@@ -52,13 +52,20 @@ impl Handler {
         &mut self,
         process_factory: &Arc<ProcessFactory>,
         host_config: HostConfig,
+        service_config: ServiceConfig,
     ) -> Result<()> {
         if self.inner.is_some() {
             return Err(Error::StreamerStarted);
         }
 
         let mut inner = Self::spawn_process(process_factory).await?;
-        inner.sender.send(Command::StartTcp { host_config }).await?;
+        inner
+            .sender
+            .send(Command::StartTcp {
+                host_config,
+                service_config,
+            })
+            .await?;
         self.inner = Some(inner);
 
         Ok(())
@@ -68,6 +75,7 @@ impl Handler {
         &mut self,
         process_factory: &Arc<ProcessFactory>,
         host_config: HostConfig,
+        service_config: ServiceConfig,
         uri: String,
     ) -> Result<()> {
         if self.inner.is_some() {
@@ -77,7 +85,11 @@ impl Handler {
         let mut inner = Self::spawn_process(process_factory).await?;
         inner
             .sender
-            .send(Command::StartKymux { host_config, uri })
+            .send(Command::StartKymux {
+                host_config,
+                service_config,
+                uri,
+            })
             .await?;
         self.inner = Some(inner);
 

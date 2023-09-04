@@ -5,6 +5,8 @@ use std::time::Duration;
 use log::{info, warn};
 use tokio::time;
 
+use inputservice_types::CursorFormat;
+
 use crate::error::Result;
 use crate::utils::TypeConvert;
 use crate::{avservice, inputservice, Controller};
@@ -87,8 +89,12 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
             display_list: ctrl.displays.convert(),
         };
 
+        let service_config = inputservice_types::ServiceConfig {
+            cursor_format: CursorFormat::Raw,
+        };
+
         inputservice
-            .start_tcp(&ctrl.process_factory, host_config)
+            .start_tcp(&ctrl.process_factory, host_config, service_config)
             .await?;
 
         ctrl.inputservice = Some(inputservice);
