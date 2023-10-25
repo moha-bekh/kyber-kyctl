@@ -1,15 +1,15 @@
 use std::net::SocketAddr;
+use std::sync::Arc;
 
-use async_std::net::TcpStream;
 use async_tungstenite::{
-    async_tls::{client_async_tls_with_connector, ClientStream},
+    tokio::{client_async_tls_with_connector, ClientStream},
     tungstenite::Message as tungstenite_Message,
     WebSocketStream,
 };
 use futures::StreamExt;
 use log::{error, info, warn};
 use serde::Deserialize;
-use tokio::{sync::oneshot, task};
+use tokio::{net::TcpStream, sync::oneshot, task};
 
 use crate::tls;
 use crate::{Display, Error, MessageProxy, Result};
@@ -66,10 +66,12 @@ impl HostEventReceiver {
                 Error::Rejected
             })?;
 
-        let config = rustls::ClientConfig::builder()
-            .with_safe_defaults()
-            .with_root_certificates(certs_store)
-            .with_no_client_auth();
+        let config = Arc::new(
+            rustls::ClientConfig::builder()
+                .with_safe_defaults()
+                .with_root_certificates(certs_store)
+                .with_no_client_auth(),
+        );
 
         let ws_url = format!("wss://{streamer_tls_host}/ws");
 

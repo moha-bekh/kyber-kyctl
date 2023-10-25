@@ -4,9 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-async-std = "1.12.0"
 async-trait = "0.1.68"
-async-tungstenite = { version = "0.20.0", features = ["async-tls", "async-std-runtime"] }
+async-tungstenite = { version = "0.20.0", features = ["tokio-rustls-native-certs", "tokio-runtime"] }
 futures = "0.3.26"
 libc = "0.2.107"
 log = {version = "0.4.14", features = ["std"] }
