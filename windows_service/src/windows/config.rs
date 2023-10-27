@@ -48,11 +48,11 @@ pub(crate) struct Config {
 impl Config {
     pub(crate) fn kidd_extra_modes(&self) -> Option<Vec<KiddMonitorMode>> {
         let Some(kidd_config) = &self.kidd else {
-            return None
+            return None;
         };
 
         let Some(extra_modes) = &kidd_config.extra_modes else {
-            return None
+            return None;
         };
 
         Some(extra_modes.clone())
