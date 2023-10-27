@@ -168,7 +168,7 @@ impl DeviceInfoFetcher {
         let mut interface_data_details_buf = vec![0u8; interface_data_details_size as usize];
 
         let interface_data_details = unsafe {
-            let mut p: *mut SP_DEVICE_INTERFACE_DETAIL_DATA_W =
+            let p: *mut SP_DEVICE_INTERFACE_DETAIL_DATA_W =
                 mem::transmute(interface_data_details_buf.as_mut_ptr());
             (*p).cbSize = mem::size_of::<SP_DEVICE_INTERFACE_DETAIL_DATA_W>() as _;
 

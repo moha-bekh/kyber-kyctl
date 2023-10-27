@@ -47,7 +47,7 @@ pub(crate) fn last_win32_error(func: &'static str, file: &'static str, line: u32
             ptr::null_mut(),
         );
 
-        let s = String::from_utf16(std::slice::from_raw_parts(buffer as *mut u16, len as usize));
+        let s = String::from_utf16(std::slice::from_raw_parts(buffer, len as usize));
         LocalFree(buffer as _);
 
         s
