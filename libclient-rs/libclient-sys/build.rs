@@ -11,7 +11,7 @@ fn main() {
         // Use libc
         .ctypes_prefix("libc")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks))
-        .blocklist_item(r#"(\w*libkynput\w*)"#);
+        .blocklist_item(r"(\w*libkynput\w*)");
 
     // Set header include paths
     let libs = ["libkynput", "libclient"];

@@ -18,12 +18,12 @@ pub(crate) mod player;
 
 pub(crate) use player::Player;
 
-pub(self) struct VideoConfig {
+struct VideoConfig {
     pub(self) window_handle: WindowHandle,
     pub(self) uri: String,
 }
 
-pub(self) struct AudioConfig {
+struct AudioConfig {
     pub(self) uri: String,
 }
 
