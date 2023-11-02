@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use avservice_types::VideoCodec;
+use inputservice_types::CursorFormat;
 
 use crate::controller::{self, Controller};
 
@@ -49,13 +50,18 @@ pub(crate) struct StartRequestVideo {
 }
 
 #[derive(Debug, Deserialize)]
+pub(crate) struct StartRequestInput {
+    pub(crate) cursor_format: CursorFormat,
+}
+
+#[derive(Debug, Deserialize)]
 pub(crate) struct StartRequest {
     // Global bitrate for the whole Quic connection. Unit: bits/sec
     pub(crate) bitrate: u32,
     pub(crate) kymux_config: KymuxConfig,
     pub(crate) video: Option<StartRequestVideo>,
     pub(crate) audio: bool,
-    pub(crate) inputs: bool,
+    pub(crate) inputs: Option<StartRequestInput>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

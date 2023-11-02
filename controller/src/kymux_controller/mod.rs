@@ -8,7 +8,6 @@ use log::{info, warn};
 use tokio::sync::{oneshot, Mutex};
 use tokio::task::{self, JoinHandle};
 
-use inputservice_types::CursorFormat;
 use libkypc::process::ProcessFactory;
 
 use crate::avservice;
@@ -220,7 +219,7 @@ async fn start_session(
     };
 
     // Input server
-    let (input_endpoint, inputservice) = if request.inputs {
+    let (input_endpoint, inputservice) = if let Some(inputs_request) = request.inputs {
         let input_endpoint = kymux
             .register_endpoint(None, kymux::StreamType::Input)
             .await?;
@@ -233,7 +232,7 @@ async fn start_session(
         };
 
         let service_config = inputservice_types::ServiceConfig {
-            cursor_format: CursorFormat::Raw,
+            cursor_format: inputs_request.cursor_format,
         };
 
         let inputservice =
