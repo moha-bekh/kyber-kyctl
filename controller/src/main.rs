@@ -189,6 +189,12 @@ async fn main() {
             .app_data(ctrl.clone())
             .app_data(web::JsonConfig::default().limit(1024))
             .wrap(middleware::Logger::default())
+            .wrap(
+                actix_cors::Cors::default()
+                    .allowed_methods(vec!["GET", "POST"])
+                    .allow_any_origin()
+                    .allowed_header(actix_web::http::header::CONTENT_TYPE),
+            )
             // Kymux
             .service(
                 web::scope("/kymux")
