@@ -3,6 +3,8 @@ use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
+use inputservice_types::CursorFormat;
+
 use crate::controller::Controller;
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -29,12 +31,17 @@ pub struct StartRequestAudio {
 }
 
 #[derive(Debug, Deserialize)]
+pub(crate) struct StartRequestInput {
+    pub(crate) cursor_format: CursorFormat,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct StartRequest {
     pub ip: String,
     pub bitrate: u32,
     pub video: Option<StartRequestVideo>,
     pub audio: Option<StartRequestAudio>,
-    pub inputs: bool,
+    pub(crate) inputs: Option<StartRequestInput>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

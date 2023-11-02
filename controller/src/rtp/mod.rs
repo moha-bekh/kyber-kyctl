@@ -5,8 +5,6 @@ use std::time::Duration;
 use log::{info, warn};
 use tokio::time;
 
-use inputservice_types::CursorFormat;
-
 use crate::error::Result;
 use crate::utils::TypeConvert;
 use crate::{avservice, inputservice, Controller};
@@ -82,7 +80,7 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
         ctrl.avservice_audio = Some(avservice_audio);
     }
 
-    if request.inputs {
+    if let Some(inputs_request) = request.inputs {
         let mut inputservice = inputservice::Handler::new();
 
         let host_config = inputservice_types::HostConfig {
@@ -90,7 +88,7 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
         };
 
         let service_config = inputservice_types::ServiceConfig {
-            cursor_format: CursorFormat::Raw,
+            cursor_format: inputs_request.cursor_format,
         };
 
         inputservice
