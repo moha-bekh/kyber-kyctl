@@ -18,6 +18,7 @@ mod statemachine;
 mod tls;
 mod utils;
 mod watchdog;
+mod webclient;
 
 use libkypc::process::ProcessFactory;
 
@@ -28,7 +29,7 @@ use statemachine::{StateMachine, StateMachineEvent, StateMachineProxy};
 use utils::TypeConvert;
 
 const LISTENING_PORT: u16 = 8080;
-
+const WEBCLIENT_ROOT: &str = "webclient";
 const STREAMER_CERT: &str = "kybertest_cert.pem";
 const STREAMER_KEY: &str = "kybertest_key.pem";
 
@@ -184,8 +185,16 @@ async fn main() {
 
     let bind_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), LISTENING_PORT);
 
+    // Serve webclient if found
+    let webclient_root = webclient::root();
+    if let Some(webclient_root) = &webclient_root {
+        info!("Serving webclient from {webclient_root}");
+    } else {
+        info!("Webclient root not found");
+    }
+
     HttpServer::new(move || {
-        App::new()
+        let app = App::new()
             .app_data(ctrl.clone())
             .app_data(web::JsonConfig::default().limit(1024))
             .wrap(middleware::Logger::default())
@@ -210,7 +219,17 @@ async fn main() {
             )
             .service(websocket_service)
             .service(enumerate_displays)
-            .service(stop_session)
+            .service(stop_session);
+
+        if let Some(webclient_root) = &webclient_root {
+            app.service(
+                web::scope("/webclient")
+                    .wrap(webclient::WebClient)
+                    .service(actix_files::Files::new("", webclient_root).index_file("index.html")),
+            )
+        } else {
+            app
+        }
     })
     .bind_rustls_021(bind_addr, server_config)
     .unwrap()
