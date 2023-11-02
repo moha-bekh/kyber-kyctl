@@ -10,6 +10,7 @@ use crate::error::Result;
 use crate::inputservice;
 use crate::kymux_controller::KymuxListener;
 use crate::tls;
+use crate::ws;
 use crate::HostEventSender;
 
 pub(crate) async fn stop_kymux(
@@ -25,6 +26,14 @@ pub(crate) async fn stop_kymux(
         info!("Stop running Kymux Connection");
         connection.stop().await?;
     };
+
+    Ok(())
+}
+
+pub(crate) async fn stop_wsrouter(ws_router: Option<Arc<ws::WsRouter>>) -> Result<()> {
+    if let Some(ws_router) = ws_router {
+        ws_router.stop().await?;
+    }
 
     Ok(())
 }
@@ -76,6 +85,9 @@ pub struct Controller {
     pub(crate) tls_config: tls::Config,
     pub(crate) kymux_listener: Option<KymuxListener>,
     pub(crate) kymux: Option<kymux::Connection>,
+
+    pub(crate) ws_router: Option<Arc<ws::WsRouter>>,
+
     pub(crate) avservice_video: Option<avservice::Handler>,
     pub(crate) avservice_audio: Option<avservice::Handler>,
     pub(crate) inputservice: Option<inputservice::Handler>,
@@ -91,6 +103,7 @@ impl Controller {
             tls_config,
             kymux_listener: None,
             kymux: None,
+            ws_router: None,
             avservice_video: None,
             avservice_audio: None,
             inputservice: None,
@@ -105,6 +118,7 @@ impl Controller {
         stop_avservice(self.avservice_audio.take()).await?;
         stop_input(self.inputservice.take()).await?;
         stop_host_event_sender(self.host_event_sender.take()).await?;
+        stop_wsrouter(self.ws_router.take()).await?;
         stop_kymux(self.kymux_listener.take(), self.kymux.take()).await?;
 
         Ok(())

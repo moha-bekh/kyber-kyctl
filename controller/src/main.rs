@@ -19,6 +19,7 @@ mod tls;
 mod utils;
 mod watchdog;
 mod webclient;
+mod ws;
 
 use libkypc::process::ProcessFactory;
 
@@ -216,6 +217,14 @@ async fn main() {
                     .service(rtp::requests::hello)
                     .service(rtp::requests::generate_sdp)
                     .service(rtp::requests::start),
+            )
+            // Websocket
+            .service(
+                web::scope("/websocket")
+                    .service(ws::requests::start_handler)
+                    .service(ws::requests::inputs)
+                    .service(ws::requests::video)
+                    .service(ws::requests::audio),
             )
             .service(websocket_service)
             .service(enumerate_displays)

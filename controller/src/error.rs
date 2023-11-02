@@ -47,8 +47,18 @@ pub enum Error {
     },
     #[error("Thread panicked")]
     ThreadPanicked,
+    #[error("Channel receive failed (channel closed)")]
+    ChannelClosedRx,
+    #[error("Channel send failed (channel closed)")]
+    ChannelClosedTx,
     #[error("DisplayList empty")]
     DisplayListEmpty,
+    #[error("No Websocket router")]
+    WsNoRouter,
+    #[error("Websocket component {component} not ready")]
+    WsComponentNotReady { component: String },
+    #[error("Websocket got invalid endpoint {endpoint_id:X} from process")]
+    WsInvalidEndpoint { endpoint_id: u16 },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

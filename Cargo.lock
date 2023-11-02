@@ -536,6 +536,7 @@ dependencies = [
  "actix-web",
  "actix-ws",
  "avservice-types",
+ "bytes",
  "inputservice-types",
  "kymux",
  "libkypc",
