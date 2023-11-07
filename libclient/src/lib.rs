@@ -52,21 +52,46 @@ impl MessageProxy {
     }
 }
 
-fn resolve_streamer_host(host: &str, port: u16) -> Result<SocketAddr> {
-    let str_addr = format!("{host}:{port}");
-    let mut addrs = str_addr.to_socket_addrs().map_err(|err| {
-        error!("Fail to resolve host {host}: {err:?}");
-        Error::FailToResolveAddress {
-            addr: str_addr.clone(),
-        }
-    })?;
+#[derive(Clone, Debug)]
+pub(crate) struct ConnectionParams {
+    pub(crate) host: String,
+    pub(crate) port: u16,
+    pub(crate) addr: std::net::SocketAddr,
+    pub(crate) tls_host: String,
+    pub(crate) tls_config: tls::Config,
+}
 
-    let ipv4_addr = addrs.find(|addr| matches!(addr, SocketAddr::V4(_)));
+impl ConnectionParams {
+    pub(crate) fn new(connect_config: ConnectConfig) -> Result<Self> {
+        let addr = Self::resolve_streamer_host(&connect_config.host, connect_config.port)?;
 
-    ipv4_addr.ok_or_else(|| {
-        error!("Fail to find an IPv4 address for {host}");
-        Error::FailToResolveAddress { addr: str_addr }
-    })
+        let tls_config = tls::load_tls_config(&connect_config.tls_root_cert)?;
+
+        Ok(Self {
+            host: connect_config.host,
+            port: connect_config.port,
+            addr,
+            tls_host: connect_config.tls_host.clone(),
+            tls_config,
+        })
+    }
+
+    fn resolve_streamer_host(host: &str, port: u16) -> Result<SocketAddr> {
+        let str_addr = format!("{host}:{port}");
+        let mut addrs = str_addr.to_socket_addrs().map_err(|err| {
+            error!("Fail to resolve host {host}: {err:?}");
+            Error::FailToResolveAddress {
+                addr: str_addr.clone(),
+            }
+        })?;
+
+        let ipv4_addr = addrs.find(|addr| matches!(addr, SocketAddr::V4(_)));
+
+        ipv4_addr.ok_or_else(|| {
+            error!("Fail to find an IPv4 address for {host}");
+            Error::FailToResolveAddress { addr: str_addr }
+        })
+    }
 }
 
 fn get_display_id<'a>(displays: &'a Vec<Display>, config: &VideoSessionConfig) -> &'a Display {
@@ -89,11 +114,9 @@ struct StartStreamResult {
 }
 
 struct Handler {
-    connect_config: ConnectConfig,
+    conn_params: ConnectionParams,
     streaming_config: StreamingSessionConfig,
     player_config: PlayerConfig,
-    tls_config: tls::Config,
-    streamer_addr: SocketAddr,
     http_client: HttpClient,
     event_manager: Arc<Mutex<EventManager>>,
     sender: Sender<Message>,
@@ -116,17 +139,13 @@ impl Handler {
         event_manager: Arc<Mutex<EventManager>>,
         sender: Sender<Message>,
     ) -> Result<Self> {
-        let tls_config = tls::load_tls_config(&connect_config.tls_root_cert)?;
-        let streamer_addr = resolve_streamer_host(&connect_config.host, connect_config.port)?;
-
-        let http_client = HttpClient::new(&connect_config.tls_host, &streamer_addr, &tls_config)?;
+        let conn_params = ConnectionParams::new(connect_config)?;
+        let http_client = HttpClient::new(conn_params.clone())?;
 
         Ok(Self {
-            connect_config,
+            conn_params,
             streaming_config,
             player_config,
-            tls_config,
-            streamer_addr,
             http_client,
             event_manager,
             sender,
@@ -147,24 +166,13 @@ impl Handler {
 
     async fn start(&mut self) -> Result<Vec<Display>> {
         // Start Kymux
-        let kymux = kymux_backend::start_kymux(
-            &self.streamer_addr,
-            &self.connect_config.tls_host,
-            &self.tls_config,
-            &self.http_client,
-        )
-        .await?;
+        let kymux = kymux_backend::start_kymux(&self.conn_params, &self.http_client).await?;
 
         self.kymux = Some(kymux);
 
         // Connect to websocket
-        let host_events = HostEventReceiver::new(
-            self.streamer_addr,
-            self.tls_config.clone(),
-            self.connect_config.tls_host.clone(),
-            self.create_message_proxy(),
-        )
-        .await?;
+        let host_events =
+            HostEventReceiver::new(&self.conn_params, self.create_message_proxy()).await?;
 
         self.host_events = Some(host_events);
 
@@ -248,7 +256,7 @@ impl Handler {
             }
             StreamingProtocol::Rtp => {
                 rtp_backend::start(
-                    &self.streamer_addr,
+                    &self.conn_params,
                     &self.http_client,
                     &self.displays,
                     &self.player_config,

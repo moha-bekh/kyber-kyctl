@@ -7,9 +7,9 @@ use libkynput_rs::Pipeline;
 
 use crate::error::{Error, Result};
 use crate::http::HttpClient;
-use crate::{input_service, player, tls};
+use crate::{input_service, player};
 use crate::{
-    Display, InputSessionConfig, MessageProxy, PlayerConfig, StartStreamResult,
+    ConnectionParams, Display, InputSessionConfig, MessageProxy, PlayerConfig, StartStreamResult,
     StreamingSessionConfig,
 };
 
@@ -21,28 +21,26 @@ pub struct KymuxConfig {
 }
 
 pub(crate) async fn start_kymux(
-    addr: &SocketAddr,
-    streamer_tls_host: &str,
-    tls_config: &tls::Config,
+    conn_params: &ConnectionParams,
     client: &HttpClient,
 ) -> Result<kymux::Connection> {
     // Request remote Kymux start
-    let start_response = host_service::start_kymux(client, addr.port()).await?;
+    let start_response = host_service::start_kymux(client, conn_params.port).await?;
 
     // Start Kymux connection
     let mut certs_store = rustls::RootCertStore::empty();
     certs_store
-        .add(&rustls::Certificate(tls_config.root_certificate.clone()))
+        .add(&rustls::Certificate(
+            conn_params.tls_config.root_certificate.clone(),
+        ))
         .map_err(|err| {
             warn!("Failed to crate RootCertStore: {err:?}");
             Error::Rejected
         })?;
 
-    let kymux_config = kymux::ClientConfig::new(
-        SocketAddr::new(addr.ip(), start_response.port),
-        certs_store,
-        streamer_tls_host,
-    );
+    let addr = SocketAddr::new(conn_params.addr.ip(), start_response.port);
+
+    let kymux_config = kymux::ClientConfig::new(addr, certs_store, &conn_params.host.clone());
 
     let kymux = kymux::Connection::connect(kymux_config)
         .await

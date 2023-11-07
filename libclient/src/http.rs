@@ -1,7 +1,4 @@
-use std::net::SocketAddr;
-
-use crate::tls;
-use crate::Result;
+use crate::{ConnectionParams, Result};
 
 pub(crate) struct HttpClient {
     base_url: String,
@@ -9,17 +6,23 @@ pub(crate) struct HttpClient {
 }
 
 impl HttpClient {
-    pub(crate) fn new(tls_host: &str, addr: &SocketAddr, tls_config: &tls::Config) -> Result<Self> {
+    pub(crate) fn new(conn_params: ConnectionParams) -> Result<Self> {
+        let host = format!(
+            "{tls_host}:{port}",
+            tls_host = conn_params.tls_host,
+            port = conn_params.port
+        );
+        let base_url = format!("https://{host}");
+
         // Load TLS certificate
-        let certificate = reqwest::Certificate::from_der(&tls_config.root_certificate)?;
+        let certificate = reqwest::Certificate::from_der(&conn_params.tls_config.root_certificate)?;
 
         // Create client
         let client = reqwest::ClientBuilder::new()
-            .resolve(tls_host, *addr)
+            .resolve(&conn_params.tls_host, conn_params.addr)
             .add_root_certificate(certificate)
             .build()?;
 
-        let base_url = format!("https://{tls_host}:{port}", port = addr.port());
         Ok(Self { base_url, client })
     }
 

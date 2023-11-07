@@ -1,4 +1,3 @@
-use std::net::SocketAddr;
 use std::sync::Arc;
 
 use async_tungstenite::{
@@ -11,8 +10,7 @@ use log::{error, info, warn};
 use serde::Deserialize;
 use tokio::{net::TcpStream, sync::oneshot, task};
 
-use crate::tls;
-use crate::{Display, Error, MessageProxy, Result};
+use crate::{ConnectionParams, Display, Error, MessageProxy, Result};
 
 #[derive(Debug, Deserialize)]
 enum HostEvent {
@@ -26,12 +24,16 @@ pub(crate) struct HostEventReceiver {
 
 impl HostEventReceiver {
     pub(crate) async fn new(
-        streamer_addr: SocketAddr,
-        tls_config: tls::Config,
-        streamer_tls_host: String,
+        conn_params: &ConnectionParams,
         msg_proxy: MessageProxy,
     ) -> Result<Self> {
-        let stream = Self::connect(streamer_addr, tls_config, streamer_tls_host).await?;
+        let url = format!(
+            "wss://{host}:{port}/ws",
+            host = conn_params.host,
+            port = conn_params.port
+        );
+
+        let stream = Self::connect(url, conn_params).await?;
 
         let (stop_tx, stop_rx) = oneshot::channel();
 
@@ -52,15 +54,16 @@ impl HostEventReceiver {
     }
 
     async fn connect(
-        streamer_addr: SocketAddr,
-        tls_config: tls::Config,
-        streamer_tls_host: String,
+        url: String,
+        conn_params: &ConnectionParams,
     ) -> Result<WebSocketStream<ClientStream<TcpStream>>> {
-        let stream = TcpStream::connect(streamer_addr).await?;
+        let stream = TcpStream::connect(conn_params.addr).await?;
 
         let mut certs_store = rustls::RootCertStore::empty();
         certs_store
-            .add(&rustls::Certificate(tls_config.root_certificate))
+            .add(&rustls::Certificate(
+                conn_params.tls_config.root_certificate.clone(),
+            ))
             .map_err(|err| {
                 warn!("Failed to crate RootCertStore: {err:?}");
                 Error::Rejected
@@ -73,9 +76,7 @@ impl HostEventReceiver {
                 .with_no_client_auth(),
         );
 
-        let ws_url = format!("wss://{streamer_tls_host}/ws");
-
-        let (stream, _) = client_async_tls_with_connector(ws_url, stream, Some(config.into()))
+        let (stream, _) = client_async_tls_with_connector(url, stream, Some(config.into()))
             .await
             .map_err(|err| {
                 warn!("Failed to open websocket: {err:?}");

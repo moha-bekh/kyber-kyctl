@@ -2,7 +2,6 @@ pub mod host_service;
 
 use std::env;
 use std::fs;
-use std::net::SocketAddr;
 
 use log::debug;
 
@@ -11,8 +10,8 @@ use libkynput_rs::Pipeline;
 use crate::http::HttpClient;
 use crate::{get_display_id, input_service, player};
 use crate::{
-    Display, Error, InputSessionConfig, MessageProxy, PlayerConfig, Result, StartStreamResult,
-    StreamingSessionConfig, VideoSessionConfig,
+    ConnectionParams, Display, Error, InputSessionConfig, MessageProxy, PlayerConfig, Result,
+    StartStreamResult, StreamingSessionConfig, VideoSessionConfig,
 };
 
 const RTP_VIDEO_PORT: u16 = 30000;
@@ -138,15 +137,13 @@ fn start_input(
 }
 
 pub(crate) async fn start(
-    addr: &SocketAddr,
+    conn_params: &ConnectionParams,
     client: &HttpClient,
     displays: &Vec<Display>,
     player_config: &PlayerConfig,
     streaming_config: &StreamingSessionConfig,
     msg_proxy: MessageProxy,
 ) -> Result<StartStreamResult> {
-    let streamer_ip = addr.ip().to_string();
-
     // Prepare video config
     let local_ip = host_service::hello(client).await?;
 
@@ -196,7 +193,7 @@ pub(crate) async fn start(
 
     // Start Inputs
     let (input_service, input_pipeline) = if let Some(config) = streaming_config.input.as_ref() {
-        start_input(&streamer_ip, config, msg_proxy)?
+        start_input(&conn_params.addr.ip().to_string(), config, msg_proxy)?
     } else {
         (None, None)
     };
