@@ -1,38 +1,87 @@
 pub mod host_service;
-pub mod player;
 
+use std::env;
+use std::fs;
 use std::net::SocketAddr;
+
+use log::debug;
 
 use libkynput_rs::Pipeline;
 
 use crate::http::HttpClient;
-use crate::{get_display_id, input_service};
+use crate::{get_display_id, input_service, player};
 use crate::{
-    Display, InputSessionConfig, MessageProxy, PlayerConfig, Result, StartStreamResult,
-    StreamingSessionConfig, VideoSessionConfig, WindowHandle,
+    Display, Error, InputSessionConfig, MessageProxy, PlayerConfig, Result, StartStreamResult,
+    StreamingSessionConfig, VideoSessionConfig,
 };
 
-pub use player::Player;
-
 const RTP_VIDEO_PORT: u16 = 30000;
+
+fn create_video_sdp_file(streamer: &str, video_port: u16, sdp_param: &str) -> Result<String> {
+    let sdp_path = env::temp_dir().join("video.sdp");
+
+    let sdp = format!(
+        "v=0\n\
+        o=- 0 0 IN IP4 {streamer_ip}\n\
+        s=No Name\n\
+        c=IN IP4 {streamer_ip}\n\
+        t=0 0\n\
+        a=tool:libavformat 58.45.100\n\
+        m=video {video_port} RTP/AVP 96\n\
+        a=rtpmap:96 H264/90000\n\
+        {sdp_param}\n",
+        streamer_ip = streamer,
+        video_port = video_port,
+        sdp_param = sdp_param,
+    );
+
+    debug!("Write video SDP to {:?}", sdp_path);
+    fs::write(&sdp_path, sdp)?;
+
+    Ok(format!(
+        "file:///{}",
+        sdp_path.to_str().ok_or(Error::InvalidUnicodeStr)?
+    ))
+}
+
+fn create_audio_sdp_file(streamer: &str, audio_port: u16) -> Result<String> {
+    let sdp_path = env::temp_dir().join("audio.sdp");
+
+    let sdp = format!(
+        "v=0\n\
+        o=- 0 0 IN IP4 {streamer_ip}\n\
+        s=No Name\n\
+        c=IN IP4 {streamer_ip}\n\
+        t=0 0\n\
+        a=tool:libavformat 59.16.100\n\
+        m=audio {audio_port} RTP/AVP 97\n\
+        b=AS:128\n\
+        a=rtpmap:97 opus/48000/2\n\
+        a=fmtp:97 sprop-stereo=1\n",
+        streamer_ip = streamer,
+        audio_port = audio_port,
+    );
+
+    debug!("Write audio SDP to {:?}", sdp_path);
+    fs::write(&sdp_path, sdp)?;
+
+    Ok(format!(
+        "file:///{}",
+        sdp_path.to_str().ok_or(Error::InvalidUnicodeStr)?
+    ))
+}
 
 // RTP seems to use multiple port for a session. Fix a large offset to get
 // a safe port.
 const RTP_AUDIO_PORT: u16 = RTP_VIDEO_PORT + 10;
 
-struct VideoConfig {
+struct HostVideoConfig {
     display_id: u32,
     yuv444: bool,
-
-    window_handle: WindowHandle,
-
-    ip: String,
     port: u16,
-    sdp_param: String,
 }
 
-struct AudioConfig {
-    ip: String,
+struct HostAudioConfig {
     port: u16,
 }
 
@@ -42,27 +91,34 @@ async fn create_video_config(
     ip: &str,
     config: &Option<VideoSessionConfig>,
     player_config: &PlayerConfig,
-) -> Result<Option<VideoConfig>> {
+) -> Result<(Option<HostVideoConfig>, Option<player::VideoConfig>)> {
     let Some(config) = config.as_ref() else {
-        return Ok(None);
+        return Ok((None, None));
     };
 
     let Some(window_handle) = player_config.window_handle else {
-        return Ok(None);
+        return Ok((None, None));
     };
 
+    // Create Host config
     let display_id = get_display_id(displays, config).id;
 
-    let sdp_param = host_service::generate_sdp(client, config.yuv444, display_id).await?;
-
-    Ok(Some(VideoConfig {
+    let host_videoconfig = HostVideoConfig {
         display_id,
         yuv444: config.yuv444,
-        ip: ip.into(),
         port: RTP_VIDEO_PORT,
+    };
+
+    // Create vlc config
+    let sdp_param = host_service::generate_sdp(client, config.yuv444, display_id).await?;
+    let sdp_path = create_video_sdp_file(ip, RTP_VIDEO_PORT, &sdp_param)?;
+
+    let vlc_videoconfig = player::VideoConfig {
+        uri: sdp_path,
         window_handle,
-        sdp_param,
-    }))
+    };
+
+    Ok((Some(host_videoconfig), Some(vlc_videoconfig)))
 }
 
 fn start_input(
@@ -94,7 +150,7 @@ pub(crate) async fn start(
     // Prepare video config
     let local_ip = host_service::hello(client).await?;
 
-    let video_config = create_video_config(
+    let (host_videoconfig, vlc_videoconfig) = create_video_config(
         client,
         displays,
         &local_ip,
@@ -104,13 +160,17 @@ pub(crate) async fn start(
     .await?;
 
     // Prepare audio config
-    let audio_config = if streaming_config.audio {
-        Some(AudioConfig {
-            ip: local_ip.clone(),
+    let (host_audioconfig, vlc_audioconfig) = if streaming_config.audio {
+        let host_config = HostAudioConfig {
             port: RTP_AUDIO_PORT,
-        })
+        };
+
+        let uri = create_audio_sdp_file(&local_ip, RTP_AUDIO_PORT)?;
+        let vlc_config = player::AudioConfig { uri };
+
+        (Some(host_config), Some(vlc_config))
     } else {
-        None
+        (None, None)
     };
 
     // Start stream
@@ -118,18 +178,18 @@ pub(crate) async fn start(
         client,
         &local_ip,
         streaming_config.bitrate,
-        &video_config,
-        &audio_config,
+        &host_videoconfig,
+        &host_audioconfig,
         streaming_config.input.is_some(),
     )
     .await?;
 
     // Start Video/Audio playback
-    let player = if video_config.is_some() || streaming_config.audio {
-        let mut player = Player::new(msg_proxy.clone())?;
-        player.play(video_config, audio_config)?;
+    let player = if vlc_videoconfig.is_some() || vlc_audioconfig.is_some() {
+        let mut player = player::Player::new(msg_proxy.clone())?;
+        player.play(vlc_videoconfig, vlc_audioconfig)?;
 
-        Some(crate::Player::Rtp(player))
+        Some(player)
     } else {
         None
     };

@@ -7,25 +7,13 @@ use libkynput_rs::Pipeline;
 
 use crate::error::{Error, Result};
 use crate::http::HttpClient;
-use crate::{input_service, tls};
+use crate::{input_service, player, tls};
 use crate::{
     Display, InputSessionConfig, MessageProxy, PlayerConfig, StartStreamResult,
-    StreamingSessionConfig, WindowHandle,
+    StreamingSessionConfig,
 };
 
 pub(crate) mod host_service;
-pub(crate) mod player;
-
-pub(crate) use player::Player;
-
-struct VideoConfig {
-    pub(self) window_handle: WindowHandle,
-    pub(self) uri: String,
-}
-
-struct AudioConfig {
-    pub(self) uri: String,
-}
 
 #[derive(Clone, Debug, Serialize)]
 pub struct KymuxConfig {
@@ -72,7 +60,7 @@ fn create_video_config(
     kymux: &kymux::Connection,
     player_config: &PlayerConfig,
     endpoint: &Option<u16>,
-) -> Result<Option<VideoConfig>> {
+) -> Result<Option<player::VideoConfig>> {
     let config = match (player_config.window_handle, endpoint) {
         (Some(window_handle), Some(endpoint)) => {
             let uri = kymux.get_uri_for_endpoint(*endpoint).map_err(|err| {
@@ -80,7 +68,7 @@ fn create_video_config(
                 Error::Kymux(err)
             })?;
 
-            Some(VideoConfig { window_handle, uri })
+            Some(player::VideoConfig { window_handle, uri })
         }
         (None, None) => None,
         _ => {
@@ -96,7 +84,7 @@ fn create_audio_config(
     kymux: &kymux::Connection,
     enabled: bool,
     endpoint: &Option<u16>,
-) -> Result<Option<AudioConfig>> {
+) -> Result<Option<player::AudioConfig>> {
     let config = match (enabled, endpoint) {
         (true, Some(endpoint)) => {
             let uri = kymux.get_uri_for_endpoint(*endpoint).map_err(|err| {
@@ -104,7 +92,7 @@ fn create_audio_config(
                 Error::Kymux(err)
             })?;
 
-            Some(AudioConfig { uri })
+            Some(player::AudioConfig { uri })
         }
         (false, None) => None,
         _ => {
@@ -172,7 +160,7 @@ pub(crate) async fn start(
         let mut player = player::Player::new(msg_proxy.clone())?;
         player.play(video_config, audio_config)?;
 
-        Some(crate::Player::Kymux(player))
+        Some(player)
     } else {
         None
     };

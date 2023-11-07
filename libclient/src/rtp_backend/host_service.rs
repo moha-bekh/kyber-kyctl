@@ -6,7 +6,7 @@ use serde_json::json;
 use crate::error::{Error, Result};
 use crate::http::HttpClient;
 
-use super::{AudioConfig, VideoConfig};
+use super::{HostAudioConfig, HostVideoConfig};
 
 #[derive(Debug, Serialize)]
 struct StartRequestVideo {
@@ -88,8 +88,8 @@ pub(super) async fn start_stream(
     client: &HttpClient,
     local_ip: &str,
     bitrate: u32,
-    video: &Option<VideoConfig>,
-    audio: &Option<AudioConfig>,
+    video: &Option<HostVideoConfig>,
+    audio: &Option<HostAudioConfig>,
     inputs: bool,
 ) -> Result<()> {
     let url = format!("{base_url}/rtp/start", base_url = client.base_url());

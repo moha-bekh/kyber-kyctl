@@ -1,10 +1,44 @@
+use std::borrow::Cow;
+
 use log::{error, info, warn};
 
 use crate::error::{Error, PlayerError, Result};
-use crate::utils;
-use crate::MessageProxy;
+use crate::{Message, MessageProxy, WindowHandle};
 
-use super::{AudioConfig, VideoConfig};
+pub(crate) fn plug_event_manager_to_player(
+    mp: &vlc::MediaPlayer,
+    message_proxy: MessageProxy,
+) -> Result<()> {
+    // Register to libvlc's event manager
+    let event_manager = mp.event_manager();
+
+    let cb = move |event, _| {
+        let msg = match event {
+            vlc::Event::MediaPlayerPlaying => Some(Message::PlayerStarted),
+            vlc::Event::MediaPlayerStopped => Some(Message::PlayerStopped),
+            _ => None,
+        };
+
+        if let Some(msg) = msg {
+            message_proxy.send(msg).unwrap();
+        }
+    };
+
+    event_manager
+        .attach(vlc::EventType::MediaPlayerPlaying, cb)
+        .map_err(|_| PlayerError::EvtRegisterFailed)?;
+
+    Ok(())
+}
+
+pub(crate) struct VideoConfig {
+    pub(crate) window_handle: WindowHandle,
+    pub(crate) uri: String,
+}
+
+pub(crate) struct AudioConfig {
+    pub(crate) uri: String,
+}
 
 pub(crate) struct Player {
     instance: vlc::Instance,
@@ -25,6 +59,7 @@ impl Player {
         ];
 
         if std::env::var("KYBER_SOFTWARE_DECODE").is_ok() {
+            info!("Enable software decoding");
             options.append(&mut vec!["--no-hw-dec"]);
         }
 
@@ -32,7 +67,16 @@ impl Player {
             vlc::Instance::with_args(Some(options.iter().map(|&s| s.to_string()).collect()))
                 .ok_or(PlayerError::InstanceCreateFailed)?;
 
-        utils::plug_vlc_logger(&instance);
+        instance.set_log(|level: vlc::LogLevel, _log_ctx: vlc::Log, msg: Cow<str>| {
+            let level = match level {
+                vlc::LogLevel::Debug => log::Level::Debug,
+                vlc::LogLevel::Notice => log::Level::Info,
+                vlc::LogLevel::Warning => log::Level::Warn,
+                vlc::LogLevel::Error => log::Level::Error,
+            };
+
+            log::log!(target: "vlc", level, "{msg}");
+        });
 
         Ok(Self {
             instance,
@@ -50,8 +94,25 @@ impl Player {
             vlc::MediaPlayer::new(&self.instance).ok_or(PlayerError::MediaPlayerCreateFailed)?;
         mp.set_media(&media);
 
-        utils::attach_window_to_player(&mp, config.window_handle)?;
-        utils::plug_event_manager_to_player(&mp, self.message_proxy.clone())?;
+        match config.window_handle {
+            #[cfg(target_os = "linux")]
+            WindowHandle::Xlib(handle) => {
+                info!("Xlib");
+                mp.set_xwindow(handle as u32);
+            }
+            #[cfg(target_os = "macos")]
+            WindowHandle::AppKit(handle) => {
+                info!("macos ({})", handle);
+                mp.set_nsobject(handle as _);
+            }
+            #[cfg(target_os = "windows")]
+            WindowHandle::Win32(handle) => {
+                info!("Windows");
+                mp.set_hwnd(handle as _);
+            }
+        }
+
+        plug_event_manager_to_player(&mp, self.message_proxy.clone())?;
 
         // Play
         mp.play().or(Err(PlayerError::PlayFailed))?;
@@ -71,7 +132,7 @@ impl Player {
             vlc::MediaPlayer::new(&self.instance).ok_or(PlayerError::MediaPlayerCreateFailed)?;
         mp.set_media(&media);
 
-        utils::plug_event_manager_to_player(&mp, self.message_proxy.clone())?;
+        plug_event_manager_to_player(&mp, self.message_proxy.clone())?;
 
         // Play
         mp.play().or(Err(PlayerError::PlayFailed))?;
@@ -81,7 +142,7 @@ impl Player {
         Ok(())
     }
 
-    pub(super) fn play(
+    pub(crate) fn play(
         &mut self,
         video_config: Option<VideoConfig>,
         audio_config: Option<AudioConfig>,
@@ -135,7 +196,7 @@ impl Player {
         Ok(())
     }
 
-    pub async fn stop_async(&mut self) -> Result<()> {
+    pub(crate) async fn stop_async(&mut self) -> Result<()> {
         if let Some(audio_mediaplayer) = self.audio_mediaplayer.as_mut() {
             info!("Stop audio player");
             let ret = Self::mdp_stop_async(audio_mediaplayer).await;

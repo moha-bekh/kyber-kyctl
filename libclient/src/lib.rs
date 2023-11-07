@@ -6,9 +6,9 @@ mod host_service;
 pub(crate) mod http;
 pub mod input_service;
 mod kymux_backend;
+mod player;
 mod rtp_backend;
 mod tls;
-mod utils;
 pub mod window_handle;
 
 #[cfg(any(cargo_c, feature = "capi"))]
@@ -34,11 +34,6 @@ use kymux_backend::KymuxConfig;
 use window_handle::WindowHandle;
 
 pub(crate) const STREAMER_PORT: u16 = 8080;
-
-enum Player {
-    Rtp(rtp_backend::Player),
-    Kymux(kymux_backend::Player),
-}
 
 #[derive(Clone)]
 pub struct MessageProxy {
@@ -88,7 +83,7 @@ fn get_display_id<'a>(displays: &'a Vec<Display>, config: &VideoSessionConfig) -
 }
 
 struct StartStreamResult {
-    player: Option<Player>,
+    player: Option<player::Player>,
     input_pipeline: Option<Pipeline>,
     input_service: Option<input_service::Client>,
 }
@@ -105,7 +100,7 @@ struct Handler {
 
     kymux: Option<kymux::Connection>,
     host_events: Option<HostEventReceiver>,
-    player: Option<Player>,
+    player: Option<player::Player>,
 
     input_service: Option<input_service::Client>,
     input_pipeline: Option<Pipeline>,
@@ -180,18 +175,10 @@ impl Handler {
     async fn stop(&mut self) -> Result<()> {
         info!("Stop requested");
 
-        match self.player.take() {
-            Some(Player::Kymux(mut player)) => {
-                info!("Stop player");
-                player.stop_async().await?;
-                info!("Player stopped");
-            }
-            Some(Player::Rtp(mut player)) => {
-                info!("Stop player");
-                player.stop_async().await?;
-                info!("Player stopped");
-            }
-            None => {}
+        if let Some(mut player) = self.player.take() {
+            info!("Stop player");
+            player.stop_async().await?;
+            info!("Player stopped");
         }
 
         if let Some(input_service) = self.input_service.as_mut() {
