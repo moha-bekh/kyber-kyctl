@@ -176,6 +176,36 @@ fn to_cstr(s: &str) -> CString {
     CString::new(s.to_owned()).expect("Error: Unexpected null byte")
 }
 
+pub struct PlayerConfig {
+    ptr: *mut sys::libclient_PlayerConfig,
+}
+
+impl PlayerConfig {
+    pub fn default(window_handle: Option<WindowHandle>) -> Result<Self> {
+        let window_handle = if let Some(window_handle) = window_handle {
+            window_handle.ptr
+        } else {
+            std::ptr::null_mut()
+        };
+
+        unsafe {
+            let mut ptr: *mut _ = std::mem::zeroed();
+            let ret = sys::libclient_player_config_default(window_handle, &mut ptr);
+            if ret == 0 {
+                Ok(Self { ptr })
+            } else {
+                Err(Error::Generic)
+            }
+        }
+    }
+}
+
+impl Drop for PlayerConfig {
+    fn drop(&mut self) {
+        unsafe { sys::libclient_player_config_unref(self.ptr) }
+    }
+}
+
 pub struct VideoSessionConfig {
     ptr: *mut sys::libclient_VideoSessionConfig,
 }

@@ -363,6 +363,11 @@ pub struct ConnectConfig {
 }
 
 #[derive(Clone, Debug)]
+pub struct PlayerConfig {
+    pub window_handle: Option<WindowHandle>,
+}
+
+#[derive(Clone, Debug)]
 pub struct VideoSessionConfig {
     pub display_index: usize,
     pub window_handle: WindowHandle,

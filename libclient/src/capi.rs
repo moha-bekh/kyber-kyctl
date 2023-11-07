@@ -34,6 +34,11 @@ pub struct libclient_StreamingSessionConfig {
 }
 
 #[allow(non_camel_case_types)]
+pub struct libclient_PlayerConfig {
+    config: crate::PlayerConfig,
+}
+
+#[allow(non_camel_case_types)]
 pub struct libclient_VideoSessionConfig {
     config: crate::VideoSessionConfig,
 }
@@ -248,8 +253,32 @@ pub unsafe extern "C" fn libclient_streaming_protocol_unref(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn libclient_video_session_config_default(
+pub unsafe extern "C" fn libclient_player_config_unref(cfg: *mut libclient_PlayerConfig) {
+    if !cfg.is_null() {
+        let _ = Box::from_raw(cfg);
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_player_config_default(
     window_handle: *mut libclient_WindowHandle,
+    out_config: *mut *mut libclient_PlayerConfig,
+) -> c_int {
+    let window_handle = if !window_handle.is_null() {
+        let window_handle = Box::from_raw(window_handle);
+        Some(window_handle.handle)
+    } else {
+        None
+    };
+
+    let config = crate::PlayerConfig { window_handle };
+
+    *out_config = Box::into_raw(Box::new(libclient_PlayerConfig { config }));
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_video_session_config_default(
     display_index: usize,
     out_config: *mut *mut libclient_VideoSessionConfig,
 ) -> c_int {
