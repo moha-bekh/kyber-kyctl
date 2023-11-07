@@ -157,7 +157,7 @@ pub(crate) async fn start(
         create_audio_config(kymux, streaming_config.audio, &start_resp.audio_endpoint)?;
 
     let player = if video_config.is_some() || audio_config.is_some() {
-        let mut player = player::Player::new(msg_proxy.clone())?;
+        let mut player = player::Player::new(player_config.software_decode, msg_proxy.clone())?;
         player.play(video_config, audio_config)?;
 
         Some(player)

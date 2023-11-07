@@ -48,7 +48,7 @@ pub(crate) struct Player {
 }
 
 impl Player {
-    pub(crate) fn new(message_proxy: MessageProxy) -> Result<Self> {
+    pub(crate) fn new(software_decode: bool, message_proxy: MessageProxy) -> Result<Self> {
         let mut options = vec![
             "--0latency",
             "--low-delay",
@@ -58,7 +58,7 @@ impl Player {
             "--no-osd",
         ];
 
-        if std::env::var("KYBER_SOFTWARE_DECODE").is_ok() {
+        if software_decode || std::env::var("KYBER_SOFTWARE_DECODE").is_ok() {
             info!("Enable software decoding");
             options.append(&mut vec!["--no-hw-dec"]);
         }

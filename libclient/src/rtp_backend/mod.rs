@@ -186,7 +186,7 @@ pub(crate) async fn start(
 
     // Start Video/Audio playback
     let player = if vlc_videoconfig.is_some() || vlc_audioconfig.is_some() {
-        let mut player = player::Player::new(msg_proxy.clone())?;
+        let mut player = player::Player::new(player_config.software_decode, msg_proxy.clone())?;
         player.play(vlc_videoconfig, vlc_audioconfig)?;
 
         Some(player)
