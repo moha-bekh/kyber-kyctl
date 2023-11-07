@@ -324,17 +324,17 @@ pub struct ConnectConfig {
 }
 
 impl ConnectConfig {
-    pub fn default(ip: &str, tls_host: &str, tls_cert: &str) -> Result<Self> {
+    pub fn default(host: &str, tls_host: &str, tls_root_cert: &str) -> Result<Self> {
+        let chost = to_cstr(host);
         let ctlshost = to_cstr(tls_host);
-        let cip = to_cstr(ip);
-        let ctls_cert = to_cstr(tls_cert);
+        let ctls_root_cert = to_cstr(tls_root_cert);
 
         unsafe {
             let mut ptr: *mut _ = std::mem::zeroed();
             let ret = sys::libclient_connect_config_default(
-                cip.as_ptr(),
+                chost.as_ptr(),
                 ctlshost.as_ptr(),
-                ctls_cert.as_ptr(),
+                ctls_root_cert.as_ptr(),
                 &mut ptr,
             );
             if ret == 0 {

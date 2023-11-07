@@ -116,8 +116,8 @@ impl Handler {
         event_manager: Arc<Mutex<EventManager>>,
         sender: Sender<Message>,
     ) -> Result<Self> {
-        let tls_config = tls::load_tls_certificate(&connect_config.tls_cert)?;
-        let streamer_addr = resolve_streamer_host(&connect_config.ip, connect_config.port)?;
+        let tls_config = tls::load_tls_certificate(&connect_config.tls_root_cert)?;
+        let streamer_addr = resolve_streamer_host(&connect_config.host, connect_config.port)?;
 
         let http_client = HttpClient::new(&connect_config.tls_host, &streamer_addr, &tls_config)?;
 
@@ -348,10 +348,10 @@ pub enum VideoCodec {
 
 #[derive(Clone, Debug)]
 pub struct ConnectConfig {
-    pub ip: String,
+    pub host: String,
     pub port: u16,
     pub tls_host: String,
-    pub tls_cert: String,
+    pub tls_root_cert: String,
 }
 
 #[derive(Clone, Debug)]

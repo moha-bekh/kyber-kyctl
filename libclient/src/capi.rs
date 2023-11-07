@@ -179,13 +179,13 @@ pub unsafe extern "C" fn libclient_windowshandle_from_hwnd(
 
 #[no_mangle]
 pub unsafe extern "C" fn libclient_connect_config_default(
-    ip: *const c_char,
+    host: *const c_char,
     tls_host: *const c_char,
-    tls_cert: *const c_char,
+    tls_root_cert: *const c_char,
     out_config: *mut *mut libclient_ConnectConfig,
 ) -> c_int {
-    let Ok(ip) = CStr::from_ptr(ip).to_str() else {
-        warn!("Fail to convert client IP");
+    let Ok(host) = CStr::from_ptr(host).to_str() else {
+        warn!("Fail to convert client Host");
         return -1;
     };
 
@@ -194,16 +194,16 @@ pub unsafe extern "C" fn libclient_connect_config_default(
         return -1;
     };
 
-    let Ok(tls_cert) = CStr::from_ptr(tls_cert).to_str() else {
-        warn!("Fail to convert client TLS cert");
+    let Ok(tls_root_cert) = CStr::from_ptr(tls_root_cert).to_str() else {
+        warn!("Fail to convert Root TLS certificate");
         return -1;
     };
 
     let config = crate::ConnectConfig {
-        tls_host: tls_host.into(),
-        ip: ip.into(),
+        host: host.into(),
         port: crate::STREAMER_PORT,
-        tls_cert: tls_cert.into(),
+        tls_host: tls_host.into(),
+        tls_root_cert: tls_root_cert.into(),
     };
 
     *out_config = Box::into_raw(Box::new(libclient_ConnectConfig { config }));
