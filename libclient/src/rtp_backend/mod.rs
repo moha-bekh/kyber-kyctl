@@ -8,8 +8,8 @@ use libkynput_rs::Pipeline;
 use crate::http::HttpClient;
 use crate::{get_display_id, input_service};
 use crate::{
-    Display, InputSessionConfig, MessageProxy, Result, StartStreamResult, StreamingSessionConfig,
-    VideoSessionConfig, WindowHandle,
+    Display, InputSessionConfig, MessageProxy, PlayerConfig, Result, StartStreamResult,
+    StreamingSessionConfig, VideoSessionConfig, WindowHandle,
 };
 
 pub use player::Player;
@@ -41,8 +41,13 @@ async fn create_video_config(
     displays: &Vec<Display>,
     ip: &str,
     config: &Option<VideoSessionConfig>,
+    player_config: &PlayerConfig,
 ) -> Result<Option<VideoConfig>> {
     let Some(config) = config.as_ref() else {
+        return Ok(None);
+    };
+
+    let Some(window_handle) = player_config.window_handle else {
         return Ok(None);
     };
 
@@ -55,7 +60,7 @@ async fn create_video_config(
         yuv444: config.yuv444,
         ip: ip.into(),
         port: RTP_VIDEO_PORT,
-        window_handle: config.window_handle,
+        window_handle,
         sdp_param,
     }))
 }
@@ -80,6 +85,7 @@ pub(crate) async fn start(
     addr: &SocketAddr,
     client: &HttpClient,
     displays: &Vec<Display>,
+    player_config: &PlayerConfig,
     streaming_config: &StreamingSessionConfig,
     msg_proxy: MessageProxy,
 ) -> Result<StartStreamResult> {
@@ -88,8 +94,14 @@ pub(crate) async fn start(
     // Prepare video config
     let local_ip = host_service::hello(client).await?;
 
-    let video_config =
-        create_video_config(client, displays, &local_ip, &streaming_config.video).await?;
+    let video_config = create_video_config(
+        client,
+        displays,
+        &local_ip,
+        &streaming_config.video,
+        player_config,
+    )
+    .await?;
 
     // Prepare audio config
     let audio_config = if streaming_config.audio {

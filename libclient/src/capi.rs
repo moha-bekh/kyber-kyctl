@@ -282,11 +282,8 @@ pub unsafe extern "C" fn libclient_video_session_config_default(
     display_index: usize,
     out_config: *mut *mut libclient_VideoSessionConfig,
 ) -> c_int {
-    let window_handle = Box::from_raw(window_handle);
-
     let config = crate::VideoSessionConfig {
         display_index,
-        window_handle: window_handle.handle,
         codec: VideoCodec::H264,
         yuv444: false,
     };
@@ -413,11 +410,17 @@ pub struct libclient_Client {
 pub unsafe extern "C" fn libclient_client_new(
     connect_config: *mut libclient_ConnectConfig,
     session_config: *mut libclient_StreamingSessionConfig,
+    player_config: *mut libclient_PlayerConfig,
 ) -> *mut libclient_Client {
     let connect_config = Box::from_raw(connect_config);
     let session_config = Box::from_raw(session_config);
+    let player_config = Box::from_raw(player_config);
 
-    let client = crate::Client::new(connect_config.config, session_config.config);
+    let client = crate::Client::new(
+        connect_config.config,
+        session_config.config,
+        player_config.config,
+    );
     if let Ok(client) = client {
         Box::into_raw(Box::new(libclient_Client {
             client: Arc::new(client),

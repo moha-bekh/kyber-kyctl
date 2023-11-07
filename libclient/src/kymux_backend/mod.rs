@@ -9,8 +9,8 @@ use crate::error::{Error, Result};
 use crate::http::HttpClient;
 use crate::{input_service, tls};
 use crate::{
-    Display, InputSessionConfig, MessageProxy, StartStreamResult, StreamingSessionConfig,
-    VideoSessionConfig, WindowHandle,
+    Display, InputSessionConfig, MessageProxy, PlayerConfig, StartStreamResult,
+    StreamingSessionConfig, WindowHandle,
 };
 
 pub(crate) mod host_service;
@@ -70,20 +70,17 @@ pub(crate) async fn start_kymux(
 
 fn create_video_config(
     kymux: &kymux::Connection,
-    config: &Option<VideoSessionConfig>,
+    player_config: &PlayerConfig,
     endpoint: &Option<u16>,
 ) -> Result<Option<VideoConfig>> {
-    let config = match (config.as_ref(), endpoint) {
-        (Some(config), Some(endpoint)) => {
+    let config = match (player_config.window_handle, endpoint) {
+        (Some(window_handle), Some(endpoint)) => {
             let uri = kymux.get_uri_for_endpoint(*endpoint).map_err(|err| {
                 error!("Fail to get URI for Video endpoint {endpoint}");
                 Error::Kymux(err)
             })?;
 
-            Some(VideoConfig {
-                window_handle: config.window_handle,
-                uri,
-            })
+            Some(VideoConfig { window_handle, uri })
         }
         (None, None) => None,
         _ => {
@@ -147,6 +144,7 @@ fn start_input(
 pub(crate) async fn start(
     client: &HttpClient,
     displays: &Vec<Display>,
+    player_config: &PlayerConfig,
     streaming_config: &StreamingSessionConfig,
     kymux_config: KymuxConfig,
     kymux: &mut kymux::Connection,
@@ -165,8 +163,7 @@ pub(crate) async fn start(
     .await?;
 
     // Play Video and Audio
-    let video_config =
-        create_video_config(kymux, &streaming_config.video, &start_resp.video_endpoint)?;
+    let video_config = create_video_config(kymux, player_config, &start_resp.video_endpoint)?;
 
     let audio_config =
         create_audio_config(kymux, streaming_config.audio, &start_resp.audio_endpoint)?;

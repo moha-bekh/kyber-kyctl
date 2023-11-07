@@ -211,14 +211,10 @@ pub struct VideoSessionConfig {
 }
 
 impl VideoSessionConfig {
-    pub fn default(window_handle: &WindowHandle, display_index: usize) -> Result<Self> {
+    pub fn default(display_index: usize) -> Result<Self> {
         unsafe {
             let mut ptr: *mut _ = std::mem::zeroed();
-            let ret = sys::libclient_video_session_config_default(
-                window_handle.ptr,
-                display_index,
-                &mut ptr,
-            );
+            let ret = sys::libclient_video_session_config_default(display_index, &mut ptr);
             if ret == 0 {
                 Ok(Self { ptr })
             } else {
@@ -364,8 +360,11 @@ impl Client {
     pub fn new(
         connect_config: &ConnectConfig,
         session_config: &StreamingSessionConfig,
+        player_config: &PlayerConfig,
     ) -> Result<Self> {
-        let ptr = unsafe { sys::libclient_client_new(connect_config.ptr, session_config.ptr) };
+        let ptr = unsafe {
+            sys::libclient_client_new(connect_config.ptr, session_config.ptr, player_config.ptr)
+        };
         if !ptr.is_null() {
             Ok(Self { ptr })
         } else {

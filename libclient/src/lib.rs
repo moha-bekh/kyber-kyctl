@@ -96,6 +96,7 @@ struct StartStreamResult {
 struct Handler {
     connect_config: ConnectConfig,
     streaming_config: StreamingSessionConfig,
+    player_config: PlayerConfig,
     tls_config: tls::Config,
     streamer_addr: SocketAddr,
     http_client: HttpClient,
@@ -116,6 +117,7 @@ impl Handler {
     fn new(
         connect_config: ConnectConfig,
         streaming_config: StreamingSessionConfig,
+        player_config: PlayerConfig,
         event_manager: Arc<Mutex<EventManager>>,
         sender: Sender<Message>,
     ) -> Result<Self> {
@@ -127,6 +129,7 @@ impl Handler {
         Ok(Self {
             connect_config,
             streaming_config,
+            player_config,
             tls_config,
             streamer_addr,
             http_client,
@@ -248,6 +251,7 @@ impl Handler {
                 kymux_backend::start(
                     &self.http_client,
                     &self.displays,
+                    &self.player_config,
                     &self.streaming_config,
                     kymux_config.clone(),
                     kymux,
@@ -260,6 +264,7 @@ impl Handler {
                     &self.streamer_addr,
                     &self.http_client,
                     &self.displays,
+                    &self.player_config,
                     &self.streaming_config,
                     msg_proxy,
                 )
@@ -370,7 +375,6 @@ pub struct PlayerConfig {
 #[derive(Clone, Debug)]
 pub struct VideoSessionConfig {
     pub display_index: usize,
-    pub window_handle: WindowHandle,
     pub codec: VideoCodec,
     pub yuv444: bool,
 }
@@ -398,6 +402,7 @@ impl Client {
     pub fn new(
         connect_config: ConnectConfig,
         streaming_config: StreamingSessionConfig,
+        player_config: PlayerConfig,
     ) -> Result<Self> {
         let event_manager = Arc::new(Mutex::new(EventManager::new()));
 
@@ -408,6 +413,7 @@ impl Client {
         let mut handler = Handler::new(
             connect_config,
             streaming_config,
+            player_config,
             event_manager_handler,
             sender_handler,
         )?;
