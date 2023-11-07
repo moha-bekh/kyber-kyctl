@@ -271,7 +271,10 @@ pub unsafe extern "C" fn libclient_player_config_default(
         None
     };
 
-    let config = crate::PlayerConfig { window_handle };
+    let config = crate::PlayerConfig {
+        window_handle,
+        software_decode: false,
+    };
 
     *out_config = Box::into_raw(Box::new(libclient_PlayerConfig { config }));
     0
@@ -290,6 +293,14 @@ pub unsafe extern "C" fn libclient_video_session_config_default(
 
     *out_config = Box::into_raw(Box::new(libclient_VideoSessionConfig { config }));
     0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_player_config_set_software_decode(
+    config: *mut libclient_PlayerConfig,
+    software_decode: bool,
+) {
+    (*config).config.software_decode = software_decode;
 }
 
 #[no_mangle]

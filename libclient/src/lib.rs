@@ -357,6 +357,7 @@ pub struct ConnectConfig {
 #[derive(Clone, Debug)]
 pub struct PlayerConfig {
     pub window_handle: Option<WindowHandle>,
+    pub software_decode: bool,
 }
 
 #[derive(Clone, Debug)]

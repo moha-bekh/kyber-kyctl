@@ -198,6 +198,10 @@ impl PlayerConfig {
             }
         }
     }
+
+    pub fn set_software_decode(&self, software_decode: bool) {
+        unsafe { sys::libclient_player_config_set_software_decode(self.ptr, software_decode) }
+    }
 }
 
 impl Drop for PlayerConfig {
