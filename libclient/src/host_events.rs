@@ -60,7 +60,7 @@ impl HostEventReceiver {
 
         let mut certs_store = rustls::RootCertStore::empty();
         certs_store
-            .add(&rustls::Certificate(tls_config.certificate))
+            .add(&rustls::Certificate(tls_config.root_certificate))
             .map_err(|err| {
                 warn!("Failed to crate RootCertStore: {err:?}");
                 Error::Rejected

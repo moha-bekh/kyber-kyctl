@@ -11,7 +11,7 @@ pub(crate) struct HttpClient {
 impl HttpClient {
     pub(crate) fn new(tls_host: &str, addr: &SocketAddr, tls_config: &tls::Config) -> Result<Self> {
         // Load TLS certificate
-        let certificate = reqwest::Certificate::from_der(&tls_config.certificate)?;
+        let certificate = reqwest::Certificate::from_der(&tls_config.root_certificate)?;
 
         // Create client
         let client = reqwest::ClientBuilder::new()

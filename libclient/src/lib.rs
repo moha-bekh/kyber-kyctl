@@ -116,7 +116,7 @@ impl Handler {
         event_manager: Arc<Mutex<EventManager>>,
         sender: Sender<Message>,
     ) -> Result<Self> {
-        let tls_config = tls::load_tls_certificate(&connect_config.tls_root_cert)?;
+        let tls_config = tls::load_tls_config(&connect_config.tls_root_cert)?;
         let streamer_addr = resolve_streamer_host(&connect_config.host, connect_config.port)?;
 
         let http_client = HttpClient::new(&connect_config.tls_host, &streamer_addr, &tls_config)?;

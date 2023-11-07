@@ -32,7 +32,7 @@ pub(crate) async fn start_kymux(
     // Start Kymux connection
     let mut certs_store = rustls::RootCertStore::empty();
     certs_store
-        .add(&rustls::Certificate(tls_config.certificate.clone()))
+        .add(&rustls::Certificate(tls_config.root_certificate.clone()))
         .map_err(|err| {
             warn!("Failed to crate RootCertStore: {err:?}");
             Error::Rejected
