@@ -1,5 +1,7 @@
 use crate::{ConnectionParams, Result};
 
+use crate::platform::http as platform_http;
+
 pub(crate) struct HttpClient {
     base_url: String,
     client: reqwest::Client,
@@ -7,21 +9,10 @@ pub(crate) struct HttpClient {
 
 impl HttpClient {
     pub(crate) fn new(conn_params: ConnectionParams) -> Result<Self> {
-        let host = format!(
-            "{tls_host}:{port}",
-            tls_host = conn_params.tls_host,
-            port = conn_params.port
-        );
+        let host = platform_http::create_host(&conn_params);
         let base_url = format!("https://{host}");
 
-        // Load TLS certificate
-        let certificate = reqwest::Certificate::from_der(&conn_params.tls_config.root_certificate)?;
-
-        // Create client
-        let client = reqwest::ClientBuilder::new()
-            .resolve(&conn_params.tls_host, conn_params.addr)
-            .add_root_certificate(certificate)
-            .build()?;
+        let client = platform_http::create_reqwest(conn_params)?;
 
         Ok(Self { base_url, client })
     }
