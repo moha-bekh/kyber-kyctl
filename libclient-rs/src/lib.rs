@@ -16,6 +16,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 pub type Display = sys::libclient_Display;
 
+#[cfg(feature = "kymux")]
 #[derive(Clone, Copy, Debug)]
 pub enum KymuxVideoProtocol {
     Reliable,
@@ -23,6 +24,7 @@ pub enum KymuxVideoProtocol {
     UnreliableFec,
 }
 
+#[cfg(feature = "kymux")]
 impl KymuxVideoProtocol {
     fn to_u32(self) -> u32 {
         match self {
@@ -43,6 +45,7 @@ impl KymuxVideoProtocol {
 pub enum StreamingProtocol {
     #[cfg(feature = "rtp")]
     Rtp,
+    #[cfg(feature = "kymux")]
     Kymux(KymuxVideoProtocol),
 }
 
@@ -276,6 +279,7 @@ impl StreamingSessionConfig {
         let streaming_protocol = match protocol {
             #[cfg(feature = "rtp")]
             StreamingProtocol::Rtp => unsafe { sys::libclient_streaming_protocol_rtp() },
+            #[cfg(feature = "kymux")]
             StreamingProtocol::Kymux(video_protocol) => unsafe {
                 sys::libclient_streaming_protocol_kymux(video_protocol.to_u32())
             },

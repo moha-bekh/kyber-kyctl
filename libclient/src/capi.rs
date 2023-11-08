@@ -55,6 +55,7 @@ fn result_to_c_int<T>(result: crate::Result<T>) -> c_int {
     }
 }
 
+#[cfg(feature = "kymux")]
 #[derive(Clone, Copy)]
 #[repr(C)]
 pub enum libclient_KymuxVideoProtocol {
@@ -63,6 +64,7 @@ pub enum libclient_KymuxVideoProtocol {
     UnreliableFec,
 }
 
+#[cfg(feature = "kymux")]
 impl From<libclient_KymuxVideoProtocol> for kymux::VideoProtocol {
     fn from(value: libclient_KymuxVideoProtocol) -> Self {
         match value {
@@ -233,6 +235,7 @@ pub unsafe extern "C" fn libclient_streaming_protocol_rtp() -> *mut libclient_St
     Box::into_raw(Box::new(libclient_StreamingProtocol { protocol }))
 }
 
+#[cfg(feature = "kymux")]
 #[no_mangle]
 pub unsafe extern "C" fn libclient_streaming_protocol_kymux(
     video_protocol: libclient_KymuxVideoProtocol,

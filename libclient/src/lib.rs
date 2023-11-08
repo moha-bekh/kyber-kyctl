@@ -5,13 +5,15 @@ mod host_events;
 mod host_service;
 pub(crate) mod http;
 pub mod input_service;
-mod kymux_backend;
 mod player;
 mod tls;
 pub mod window_handle;
 
 #[cfg(any(cargo_c, feature = "capi"))]
 pub mod capi;
+
+#[cfg(feature = "kymux")]
+mod kymux_backend;
 
 #[cfg(feature = "rtp")]
 mod rtp_backend;
@@ -33,7 +35,6 @@ use enums::{Display, Event, Message};
 use event_manager::EventManager;
 use host_events::HostEventReceiver;
 use http::HttpClient;
-use kymux_backend::KymuxConfig;
 use window_handle::WindowHandle;
 
 pub(crate) const STREAMER_PORT: u16 = 8080;
@@ -212,6 +213,7 @@ impl Handler {
         let msg_proxy = self.create_message_proxy();
 
         match &self.streaming_config.protocol {
+            #[cfg(feature = "kymux")]
             StreamingProtocol::Kymux(kymux_config) => {
                 let backend = Box::new(
                     kymux_backend::KymuxBackend::new(
@@ -316,7 +318,8 @@ impl Handler {
 pub enum StreamingProtocol {
     #[cfg(feature = "rtp")]
     Rtp,
-    Kymux(KymuxConfig),
+    #[cfg(feature = "kymux")]
+    Kymux(kymux_backend::KymuxConfig),
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]

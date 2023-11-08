@@ -13,8 +13,12 @@ pub enum PlayerError {
 #[derive(Debug)]
 pub enum Error {
     IO(std::io::Error),
-    InvalidAddress { addr: String },
-    FailToResolveAddress { addr: String },
+    InvalidAddress {
+        addr: String,
+    },
+    FailToResolveAddress {
+        addr: String,
+    },
     InvalidUnicodeStr,
     ChannelSend,
     Rejected,
@@ -23,6 +27,7 @@ pub enum Error {
     NoClient,
     NoInputService,
     Input(libkynput_rs::Error),
+    #[cfg(feature = "kymux")]
     Kymux(kymux::Error),
     KymuxNotStarted,
     TaskJoin(tokio::task::JoinError),

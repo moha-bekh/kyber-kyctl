@@ -140,14 +140,14 @@ case "$ACTION" in
             -p libclient \
             --release \
             --prefix=$OUT_DIR \
-            --features=rtp
+            --features=kymux,rtp
 
         cargo build \
-            --features=rtp
+            --features=kymux,rtp
     ;;
     "clippy")
         cargo clippy \
-        --features capi,rtp \
+        --features capi,kymux,rtp \
         -- -D warnings -A clippy::missing_safety_doc
     ;;
 esac

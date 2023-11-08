@@ -11,5 +11,6 @@ libclient-sys = { path = "libclient-sys" }
 libkynput-rs = "0.1.0"
 
 [features]
-default = ["rtp"]
+default = ["kymux","rtp"]
+kymux = []
 rtp = []
