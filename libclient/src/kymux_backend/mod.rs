@@ -3,14 +3,12 @@ use std::net::SocketAddr;
 use log::{error, info, warn};
 use serde::Serialize;
 
-use libkynput_rs::Pipeline;
-
 use crate::error::{Error, Result};
 use crate::http::HttpClient;
 use crate::{input_service, player};
 use crate::{
-    ConnectionParams, Display, InputSessionConfig, MessageProxy, PlayerConfig, StartStreamResult,
-    StreamingSessionConfig,
+    ConnectionParams, Display, InputService, InputSessionConfig, MessageProxy, PlayerConfig,
+    StartStreamResult, StreamingSessionConfig,
 };
 
 pub(crate) mod host_service;
@@ -107,7 +105,7 @@ fn start_input(
     config: &InputSessionConfig,
     endpoint: u16,
     msg_proxy: MessageProxy,
-) -> Result<(Option<input_service::Client>, Option<Pipeline>)> {
+) -> Result<Option<InputService>> {
     let input_uri = kymux.get_uri_for_endpoint(endpoint).map_err(|err| {
         error!("Fail to get URI for input endpoint {endpoint}");
         Error::Kymux(err)
@@ -118,13 +116,16 @@ fn start_input(
     let create_stream_cb =
         |target, msg_sink| libkynput_rs::kymux::new_stream(target, msg_sink, &input_uri);
 
-    let input_service = input_service::Client::new(
+    let client = input_service::Client::new(
         msg_proxy,
         config.pipeline.get_input_sink(),
         create_stream_cb,
     )?;
 
-    Ok((Some(input_service), Some(config.pipeline.clone())))
+    Ok(Some(InputService {
+        client,
+        pipeline: config.pipeline.clone(),
+    }))
 }
 
 pub(crate) async fn start(
@@ -164,12 +165,9 @@ pub(crate) async fn start(
     };
 
     // Start input
-    let (input_service, input_pipeline) = match (
-        streaming_config.input.as_ref(),
-        start_resp.input_endpoint,
-    ) {
+    let input_service = match (streaming_config.input.as_ref(), start_resp.input_endpoint) {
         (Some(config), Some(endpoint)) => start_input(kymux, config, endpoint, msg_proxy.clone())?,
-        (None, None) => (None, None),
+        (None, None) => None,
         _ => {
             error!("Invalid Input config. Should either get a config and an endpoint, or none of them.");
             return Err(Error::InvalidState);
@@ -179,6 +177,5 @@ pub(crate) async fn start(
     Ok(StartStreamResult {
         player,
         input_service,
-        input_pipeline,
     })
 }

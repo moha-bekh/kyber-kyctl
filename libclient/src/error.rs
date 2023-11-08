@@ -21,7 +21,6 @@ pub enum Error {
     ThreadPanicked,
     NoPipeline,
     NoClient,
-    NoInputPipeline,
     NoInputService,
     Input(libkynput_rs::Error),
     Kymux(kymux::Error),

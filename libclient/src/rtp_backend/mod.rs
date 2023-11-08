@@ -5,13 +5,11 @@ use std::fs;
 
 use log::debug;
 
-use libkynput_rs::Pipeline;
-
 use crate::http::HttpClient;
 use crate::{get_display_id, input_service, player};
 use crate::{
-    ConnectionParams, Display, Error, InputSessionConfig, MessageProxy, PlayerConfig, Result,
-    StartStreamResult, StreamingSessionConfig, VideoSessionConfig,
+    ConnectionParams, Display, Error, InputService, InputSessionConfig, MessageProxy, PlayerConfig,
+    Result, StartStreamResult, StreamingSessionConfig, VideoSessionConfig,
 };
 
 const RTP_VIDEO_PORT: u16 = 30000;
@@ -124,16 +122,19 @@ fn start_input(
     streamer_ip: &str,
     config: &InputSessionConfig,
     msg_proxy: MessageProxy,
-) -> Result<(Option<input_service::Client>, Option<Pipeline>)> {
+) -> Result<Option<InputService>> {
     let create_stream_cb = |_target, msg_sink| libkynput_rs::tcp::new_client(streamer_ip, msg_sink);
 
-    let input_service = input_service::Client::new(
+    let client = input_service::Client::new(
         msg_proxy,
         config.pipeline.get_input_sink(),
         create_stream_cb,
     )?;
 
-    Ok((Some(input_service), Some(config.pipeline.clone())))
+    Ok(Some(InputService {
+        client,
+        pipeline: config.pipeline.clone(),
+    }))
 }
 
 pub(crate) async fn start(
@@ -192,15 +193,14 @@ pub(crate) async fn start(
     };
 
     // Start Inputs
-    let (input_service, input_pipeline) = if let Some(config) = streaming_config.input.as_ref() {
+    let input_service = if let Some(config) = streaming_config.input.as_ref() {
         start_input(&conn_params.addr.ip().to_string(), config, msg_proxy)?
     } else {
-        (None, None)
+        None
     };
 
     Ok(StartStreamResult {
         player,
         input_service,
-        input_pipeline,
     })
 }

@@ -109,8 +109,12 @@ fn get_display_id<'a>(displays: &'a Vec<Display>, config: &VideoSessionConfig) -
 
 struct StartStreamResult {
     player: Option<player::Player>,
-    input_pipeline: Option<Pipeline>,
-    input_service: Option<input_service::Client>,
+    input_service: Option<InputService>,
+}
+
+struct InputService {
+    client: input_service::Client,
+    pipeline: Pipeline,
 }
 
 struct Handler {
@@ -125,8 +129,7 @@ struct Handler {
     host_events: Option<HostEventReceiver>,
     player: Option<player::Player>,
 
-    input_service: Option<input_service::Client>,
-    input_pipeline: Option<Pipeline>,
+    input_service: Option<InputService>,
 
     displays: Vec<Display>,
 }
@@ -153,7 +156,6 @@ impl Handler {
             host_events: None,
             player: None,
             input_service: None,
-            input_pipeline: None,
             displays: vec![],
         })
     }
@@ -189,9 +191,9 @@ impl Handler {
             info!("Player stopped");
         }
 
-        if let Some(input_service) = self.input_service.as_mut() {
+        if let Some(mut input_service) = self.input_service.take() {
             info!("Stop input service");
-            input_service.stop().await?;
+            input_service.client.stop().await?;
             info!("Input service stopped");
         }
 
@@ -268,7 +270,6 @@ impl Handler {
         };
 
         self.player = result.player;
-        self.input_pipeline = result.input_pipeline;
         self.input_service = result.input_service;
 
         Ok(())
@@ -309,19 +310,20 @@ impl Handler {
             Message::InputServiceConnected => {
                 info!("Input service connected");
 
-                let input_pipeline = self.input_pipeline.as_mut().ok_or(Error::NoInputPipeline)?;
                 let input_service = self.input_service.as_mut().ok_or(Error::NoInputService)?;
 
-                input_pipeline.plug_network(&input_service.get_tx_consumer())?;
-                input_pipeline.start()?;
+                input_service
+                    .pipeline
+                    .plug_network(&input_service.client.get_tx_consumer())?;
+                input_service.pipeline.start()?;
 
                 Ok(())
             }
             Message::InputServiceDisconnected => {
                 info!("Input service disconnected");
 
-                let input_pipeline = self.input_pipeline.as_mut().ok_or(Error::NoInputPipeline)?;
-                input_pipeline.stop()?;
+                let input_service = self.input_service.as_mut().ok_or(Error::NoInputService)?;
+                input_service.pipeline.stop()?;
 
                 self.input_service = None;
 
