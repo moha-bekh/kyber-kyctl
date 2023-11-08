@@ -5,6 +5,7 @@ use serde_json::json;
 
 use crate::error::{Error, Result};
 use crate::http::HttpClient;
+use crate::CursorFormat;
 
 use super::{HostAudioConfig, HostVideoConfig};
 
@@ -21,12 +22,17 @@ struct StartRequestAudio {
 }
 
 #[derive(Debug, Serialize)]
+pub(crate) struct StartRequestInput {
+    pub(crate) cursor_format: CursorFormat,
+}
+
+#[derive(Debug, Serialize)]
 struct StartRequest {
     ip: String,
     bitrate: u32,
     video: Option<StartRequestVideo>,
     audio: Option<StartRequestAudio>,
-    inputs: bool,
+    inputs: Option<StartRequestInput>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -90,7 +96,7 @@ pub(super) async fn start_stream(
     bitrate: u32,
     video: &Option<HostVideoConfig>,
     audio: &Option<HostAudioConfig>,
-    inputs: bool,
+    inputs: Option<CursorFormat>,
 ) -> Result<()> {
     let url = format!("{base_url}/rtp/start", base_url = client.base_url());
 
@@ -103,6 +109,8 @@ pub(super) async fn start_stream(
     let audio = audio
         .as_ref()
         .map(|audio| StartRequestAudio { port: audio.port });
+
+    let inputs = inputs.map(|cursor_format| StartRequestInput { cursor_format });
 
     let body = StartRequest {
         ip: local_ip.into(),

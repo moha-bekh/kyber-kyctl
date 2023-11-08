@@ -186,13 +186,19 @@ impl RtpBackend {
         };
 
         // Start stream
+        let cursor_format = if let Some(input_config) = streaming_config.input.as_ref() {
+            input_service::get_cursor_format(&input_config.pipeline)
+        } else {
+            None
+        };
+
         host_service::start_stream(
             client,
             &local_ip,
             streaming_config.bitrate,
             &host_videoconfig,
             &host_audioconfig,
-            streaming_config.input.is_some(),
+            cursor_format,
         )
         .await?;
 
