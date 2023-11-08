@@ -2,11 +2,13 @@ use std::net::{SocketAddr, ToSocketAddrs};
 
 use log::error;
 
+mod host_events;
 pub(crate) mod http;
 pub(crate) mod player;
 pub(crate) mod tls;
 pub(crate) mod window_handle;
 
+pub(crate) use host_events::{WsClient, WsClientBuilder};
 pub(crate) use window_handle::WindowHandle;
 
 use crate::{Error, Result};

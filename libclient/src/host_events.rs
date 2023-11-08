@@ -1,25 +1,65 @@
-use std::sync::Arc;
-
-use async_tungstenite::{
-    tokio::{client_async_tls_with_connector, ClientStream},
-    tungstenite::Message as tungstenite_Message,
-    WebSocketStream,
-};
-use futures::StreamExt;
-use log::{error, info, warn};
+use async_trait::async_trait;
+use log::{error, warn};
 use serde::Deserialize;
-use tokio::{net::TcpStream, sync::oneshot, task};
 
-use crate::{ConnectionParams, Display, Error, MessageProxy, Result};
+use crate::platform;
+use crate::{ConnectionParams, Display, Message, MessageProxy, Result};
+
+#[cfg_attr(target_family = "wasm", async_trait(?Send))]
+#[cfg_attr(not(target_family = "wasm"), async_trait)]
+pub(crate) trait WsClient {
+    async fn stop(self) -> Result<()>;
+}
+
+#[async_trait]
+pub(crate) trait WsClientBuilder {
+    type Type: WsClient;
+
+    async fn new(
+        url: String,
+        conn_params: &ConnectionParams,
+        event_sink: HostEventSink,
+    ) -> Result<Self::Type>;
+}
 
 #[derive(Debug, Deserialize)]
 enum HostEvent {
     DisplayList { displays: Vec<Display> },
 }
 
+pub(crate) struct HostEventSink {
+    msg_proxy: MessageProxy,
+}
+
+impl HostEventSink {
+    fn new(msg_proxy: MessageProxy) -> Self {
+        Self { msg_proxy }
+    }
+
+    fn convert_event(event: &str) -> Option<Message> {
+        match serde_json::from_str(event) {
+            Ok(HostEvent::DisplayList { displays }) => {
+                Some(Message::DisplayListUpdated { displays })
+            }
+            Err(err) => {
+                error!("Fail to parse {event}: {err:?}");
+                None
+            }
+        }
+    }
+
+    pub(crate) async fn push(&self, event: &str) {
+        if let Some(event) = Self::convert_event(event) {
+            let ret = self.msg_proxy.send_async(event).await;
+            if let Err(err) = ret {
+                warn!("Fail to send HostEvent: {err:?}");
+            }
+        };
+    }
+}
+
 pub(crate) struct HostEventReceiver {
-    handle: task::JoinHandle<()>,
-    stop_tx: oneshot::Sender<()>,
+    client: platform::WsClient,
 }
 
 impl HostEventReceiver {
@@ -27,101 +67,20 @@ impl HostEventReceiver {
         conn_params: &ConnectionParams,
         msg_proxy: MessageProxy,
     ) -> Result<Self> {
+        let event_sink = HostEventSink::new(msg_proxy);
+
         let url = format!(
             "wss://{host}:{port}/ws",
             host = conn_params.host,
             port = conn_params.port
         );
 
-        let stream = Self::connect(url, conn_params).await?;
+        let client = platform::WsClientBuilder::new(url, conn_params, event_sink).await?;
 
-        let (stop_tx, stop_rx) = oneshot::channel();
-
-        let handle = task::spawn(Self::task_entry(stream, msg_proxy, stop_rx));
-
-        Ok(Self { handle, stop_tx })
+        Ok(Self { client })
     }
 
     pub(crate) async fn stop(self) -> Result<()> {
-        let ret = self.stop_tx.send(());
-        if ret.is_err() {
-            warn!("HostEvent task stop send request failed");
-        }
-
-        self.handle.await?;
-
-        Ok(())
-    }
-
-    async fn connect(
-        url: String,
-        conn_params: &ConnectionParams,
-    ) -> Result<WebSocketStream<ClientStream<TcpStream>>> {
-        let stream = TcpStream::connect(conn_params.addr).await?;
-
-        let mut certs_store = rustls::RootCertStore::empty();
-        certs_store
-            .add(&rustls::Certificate(
-                conn_params.tls_config.root_certificate.clone(),
-            ))
-            .map_err(|err| {
-                warn!("Failed to crate RootCertStore: {err:?}");
-                Error::Rejected
-            })?;
-
-        let config = Arc::new(
-            rustls::ClientConfig::builder()
-                .with_safe_defaults()
-                .with_root_certificates(certs_store)
-                .with_no_client_auth(),
-        );
-
-        let (stream, _) = client_async_tls_with_connector(url, stream, Some(config.into()))
-            .await
-            .map_err(|err| {
-                warn!("Failed to open websocket: {err:?}");
-                Error::Rejected
-            })?;
-
-        Ok(stream)
-    }
-
-    async fn task_entry(
-        stream: WebSocketStream<ClientStream<TcpStream>>,
-        msg_proxy: MessageProxy,
-        stop_rx: oneshot::Receiver<()>,
-    ) {
-        tokio::select! {
-            _ = stop_rx => {
-            }
-            _ = Self::process_stream(stream, msg_proxy) => {}
-        }
-    }
-
-    async fn process_stream(
-        mut stream: WebSocketStream<ClientStream<TcpStream>>,
-        msg_proxy: MessageProxy,
-    ) {
-        while let Some(msg) = stream.next().await {
-            let Ok(tungstenite_Message::Text(msg)) = msg else {
-                continue;
-            };
-
-            match serde_json::from_str(&msg) {
-                Ok(HostEvent::DisplayList { displays }) => {
-                    info!("Got Display update: {displays:?}");
-
-                    let ret = msg_proxy
-                        .send_async(crate::Message::DisplayListUpdated { displays })
-                        .await;
-                    if let Err(err) = ret {
-                        warn!("Fail to send DisplayListUpdated: {err:?}");
-                    }
-                }
-                Err(err) => {
-                    error!("Fail to parse {msg}: {err:?}");
-                }
-            }
-        }
+        self.client.stop().await
     }
 }
