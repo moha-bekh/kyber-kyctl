@@ -4,7 +4,6 @@ pub mod event_manager;
 mod host_events;
 mod host_service;
 pub(crate) mod http;
-pub mod input_service;
 
 #[cfg_attr(feature = "desktop", path = "./platform/desktop/mod.rs")]
 mod platform;
@@ -27,15 +26,13 @@ use serde::Serialize;
 use tokio::runtime;
 use tokio::sync::mpsc::{self, Sender};
 
-use libkynput_rs::Pipeline;
-
 use crate::error::{Error, Result};
 use enums::{Display, Event, Message};
 use event_manager::EventManager;
 use host_events::HostEventReceiver;
 use http::HttpClient;
-pub(crate) use platform::ConnectionParams;
 pub use platform::{ConnectConfig, PlayerConfig};
+pub(crate) use platform::{ConnectionParams, InputPipeline};
 
 pub(crate) const STREAMER_PORT: u16 = 8080;
 
@@ -303,7 +300,7 @@ pub struct VideoSessionConfig {
 
 #[derive(Clone, Debug)]
 pub struct InputSessionConfig {
-    pub pipeline: Pipeline,
+    pub pipeline: InputPipeline,
 }
 
 #[derive(Clone, Debug)]

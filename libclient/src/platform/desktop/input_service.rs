@@ -5,21 +5,20 @@ use libkynput_rs::{
     NetworkStreamObserver, Pipeline,
 };
 
-use super::{Message, MessageProxy};
 use crate::error::Result;
-use crate::CursorFormat;
+use crate::{CursorFormat, Message, MessageProxy};
 
-struct MsgSink {
+pub(crate) struct InputMsgSink {
     message_proxy: MessageProxy,
 }
 
-impl MsgSink {
-    fn new(message_proxy: MessageProxy) -> Self {
+impl InputMsgSink {
+    pub(crate) fn new(message_proxy: MessageProxy) -> Self {
         Self { message_proxy }
     }
 }
 
-impl NetworkStreamObserver for MsgSink {
+impl NetworkStreamObserver for InputMsgSink {
     fn on_message(&self, msg: NetworkStreamMsg) {
         let service_msg = match msg {
             NetworkStreamMsg::Serving => None,
@@ -33,13 +32,13 @@ impl NetworkStreamObserver for MsgSink {
     }
 }
 
-pub struct Client {
+pub(crate) struct InputClient {
     _message_proxy: MessageProxy,
     stream: NetworkStream,
 }
 
-impl Client {
-    pub fn new<F>(
+impl InputClient {
+    pub(crate) fn new<F>(
         message_proxy: MessageProxy,
         rx_consumer: Consumer,
         stream_factory: F,
@@ -47,7 +46,7 @@ impl Client {
     where
         F: FnOnce(InputTarget, Box<dyn NetworkStreamObserver>) -> NetworkStream,
     {
-        let msg_sink = Box::new(MsgSink::new(message_proxy.clone()));
+        let msg_sink = Box::new(InputMsgSink::new(message_proxy.clone()));
         let stream = stream_factory(InputTarget::Client, msg_sink);
         stream.plug_consumer(&rx_consumer)?;
         info!("run_client");
@@ -69,6 +68,9 @@ impl Client {
         Ok(())
     }
 }
+
+pub(crate) type InputError = libkynput_rs::Error;
+pub(crate) type InputPipeline = libkynput_rs::Pipeline;
 
 pub(crate) fn get_cursor_format(pipeline: &Pipeline) -> Option<CursorFormat> {
     let Some(InputTypeMetadata::Cursor { format }) =

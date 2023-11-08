@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use crate::platform;
+
 #[derive(Debug)]
 pub enum PlayerError {
     InstanceCreateFailed,
@@ -26,7 +28,7 @@ pub enum Error {
     NoPipeline,
     NoClient,
     NoInputService,
-    Input(libkynput_rs::Error),
+    Input(platform::InputError),
     #[cfg(feature = "kymux")]
     Kymux(kymux::Error),
     KymuxNotStarted,
@@ -73,8 +75,8 @@ impl<T> From<std::sync::PoisonError<T>> for Error {
     }
 }
 
-impl From<libkynput_rs::Error> for Error {
-    fn from(err: libkynput_rs::Error) -> Error {
+impl From<platform::InputError> for Error {
+    fn from(err: platform::InputError) -> Error {
         Error::Input(err)
     }
 }

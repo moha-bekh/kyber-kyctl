@@ -6,11 +6,10 @@ use std::fs;
 use async_trait::async_trait;
 use log::{debug, info};
 
-use libkynput_rs::Pipeline;
-
+use crate::get_display_id;
 use crate::http::HttpClient;
 use crate::platform::player;
-use crate::{get_display_id, input_service};
+use crate::platform::{get_cursor_format, InputClient, InputPipeline};
 use crate::{
     BackendDriver, ConnectionParams, Display, Error, InputSessionConfig, MessageProxy,
     PlayerConfig, Result, StreamingSessionConfig, VideoSessionConfig,
@@ -87,8 +86,8 @@ struct HostAudioConfig {
 }
 
 struct InputService {
-    client: input_service::Client,
-    pipeline: Pipeline,
+    client: InputClient,
+    pipeline: InputPipeline,
 }
 
 pub(crate) struct RtpBackend {
@@ -139,7 +138,7 @@ fn start_input(
 ) -> Result<Option<InputService>> {
     let create_stream_cb = |_target, msg_sink| libkynput_rs::tcp::new_client(streamer_ip, msg_sink);
 
-    let client = input_service::Client::new(
+    let client = InputClient::new(
         msg_proxy,
         config.pipeline.get_input_sink(),
         create_stream_cb,
@@ -188,7 +187,7 @@ impl RtpBackend {
 
         // Start stream
         let cursor_format = if let Some(input_config) = streaming_config.input.as_ref() {
-            input_service::get_cursor_format(&input_config.pipeline)
+            get_cursor_format(&input_config.pipeline)
         } else {
             None
         };

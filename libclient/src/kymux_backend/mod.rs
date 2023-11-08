@@ -4,12 +4,10 @@ use async_trait::async_trait;
 use log::{error, info, warn};
 use serde::Serialize;
 
-use libkynput_rs::Pipeline;
-
 use crate::error::{Error, Result};
 use crate::http::HttpClient;
-use crate::input_service;
 use crate::platform::player;
+use crate::platform::{get_cursor_format, InputClient, InputPipeline};
 use crate::{
     BackendDriver, ConnectionParams, Display, InputSessionConfig, MessageProxy, PlayerConfig,
     StreamingSessionConfig,
@@ -120,7 +118,7 @@ fn start_input(
     let create_stream_cb =
         |target, msg_sink| libkynput_rs::kymux::new_stream(target, msg_sink, &input_uri);
 
-    let client = input_service::Client::new(
+    let client = InputClient::new(
         msg_proxy,
         config.pipeline.get_input_sink(),
         create_stream_cb,
@@ -133,8 +131,8 @@ fn start_input(
 }
 
 struct InputService {
-    client: input_service::Client,
-    pipeline: Pipeline,
+    client: InputClient,
+    pipeline: InputPipeline,
 }
 
 pub(crate) struct KymuxBackend {
@@ -156,7 +154,7 @@ impl KymuxBackend {
         let kymux = start_kymux(conn_params, http_client).await?;
 
         let cursor_format = if let Some(input_config) = streaming_config.input.as_ref() {
-            input_service::get_cursor_format(&input_config.pipeline)
+            get_cursor_format(&input_config.pipeline)
         } else {
             None
         };
