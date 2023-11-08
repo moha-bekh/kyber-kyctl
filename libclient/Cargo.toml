@@ -25,5 +25,6 @@ vlc-rs = "0.3.0"
 [features]
 capi = []
 default = []
+desktop = []
 kymux = ["dep:kymux"]
 rtp = []

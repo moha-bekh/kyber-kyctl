@@ -9,6 +9,9 @@ mod player;
 mod tls;
 pub mod window_handle;
 
+#[cfg_attr(feature = "desktop", path = "./platform/desktop/mod.rs")]
+mod platform;
+
 #[cfg(any(cargo_c, feature = "capi"))]
 pub mod capi;
 

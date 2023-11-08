@@ -144,16 +144,16 @@ case "$ACTION" in
             --prefix=$OUT_DIR \
             --target x86_64-pc-windows-gnu \
             --dlltool x86_64-w64-mingw32-dlltool \
-            --features=kymux,rtp
+            --features=desktop,kymux,rtp
 
         cargo build \
             --target x86_64-pc-windows-gnu \
-            --features=kymux,rtp
+            --features=desktop,kymux,rtp
     ;;
     "clippy")
         cargo clippy \
             --target x86_64-pc-windows-gnu \
-            --features capi,kymux,rtp \
+            --features capi,desktop,kymux,rtp \
             -- -D warnings -A clippy::missing_safety_doc
     ;;
 esac

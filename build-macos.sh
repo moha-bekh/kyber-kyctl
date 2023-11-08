@@ -177,17 +177,17 @@ case "$ACTION" in
             --target $CARGO_TARGET \
             --release \
             --prefix=$OUT_DIR \
-            --features=kymux,rtp
+            --features=desktop,kymux,rtp
 
         cargo build \
             --target $CARGO_TARGET  \
             --release \
-            --features=kymux,rtp
+            --features=desktop,kymux,rtp
     ;;
     "clippy")
         cargo clippy \
             --target $CARGO_TARGET \
-            --features capi,kymux,rtp \
+            --features capi,desktop,kymux,rtp \
             -- -D warnings -A clippy::missing_safety_doc
     ;;
     "test")
