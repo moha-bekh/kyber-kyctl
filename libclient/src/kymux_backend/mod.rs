@@ -4,12 +4,14 @@ use async_trait::async_trait;
 use log::{error, info, warn};
 use serde::Serialize;
 
+use libkynput_rs::Pipeline;
+
 use crate::error::{Error, Result};
 use crate::http::HttpClient;
 use crate::{input_service, player};
 use crate::{
-    BackendDriver, ConnectionParams, Display, InputService, InputSessionConfig, MessageProxy,
-    PlayerConfig, StreamingSessionConfig,
+    BackendDriver, ConnectionParams, Display, InputSessionConfig, MessageProxy, PlayerConfig,
+    StreamingSessionConfig,
 };
 
 pub(crate) mod host_service;
@@ -127,6 +129,11 @@ fn start_input(
         client,
         pipeline: config.pipeline.clone(),
     }))
+}
+
+struct InputService {
+    client: input_service::Client,
+    pipeline: Pipeline,
 }
 
 pub(crate) struct KymuxBackend {

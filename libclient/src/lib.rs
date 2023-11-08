@@ -117,11 +117,6 @@ fn get_display_id<'a>(displays: &'a Vec<Display>, config: &VideoSessionConfig) -
     }
 }
 
-struct InputService {
-    client: input_service::Client,
-    pipeline: Pipeline,
-}
-
 struct Handler {
     conn_params: ConnectionParams,
     streaming_config: StreamingSessionConfig,
