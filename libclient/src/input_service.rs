@@ -1,9 +1,13 @@
 use log::info;
 
-use libkynput_rs::{Consumer, InputTarget, NetworkStream, NetworkStreamMsg, NetworkStreamObserver};
+use libkynput_rs::{
+    Consumer, InputTarget, InputType, InputTypeMetadata, NetworkStream, NetworkStreamMsg,
+    NetworkStreamObserver, Pipeline,
+};
 
 use super::{Message, MessageProxy};
 use crate::error::Result;
+use crate::CursorFormat;
 
 struct MsgSink {
     message_proxy: MessageProxy,
@@ -63,5 +67,17 @@ impl Client {
         self.stream.stop()?;
 
         Ok(())
+    }
+}
+
+pub(crate) fn get_cursor_format(pipeline: &Pipeline) -> Option<CursorFormat> {
+    let Some(InputTypeMetadata::Cursor { format }) =
+        pipeline.query_type_metadata(InputType::Cursor)
+    else {
+        return None;
+    };
+
+    match format {
+        libkynput_rs::CursorFormat::Raw => Some(CursorFormat::Raw),
     }
 }
