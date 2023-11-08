@@ -117,11 +117,6 @@ fn get_display_id<'a>(displays: &'a Vec<Display>, config: &VideoSessionConfig) -
     }
 }
 
-struct StartStreamResult {
-    player: Option<player::Player>,
-    input_service: Option<InputService>,
-}
-
 struct InputService {
     client: input_service::Client,
     pipeline: Pipeline,
@@ -135,13 +130,11 @@ struct Handler {
     event_manager: Arc<Mutex<EventManager>>,
     sender: Sender<Message>,
 
-    kymux: Option<kymux::Connection>,
     host_events: Option<HostEventReceiver>,
-    player: Option<player::Player>,
-
-    input_service: Option<InputService>,
 
     displays: Vec<Display>,
+
+    backend: Option<Box<dyn BackendDriver + Send>>,
 }
 
 impl Handler {
@@ -162,11 +155,9 @@ impl Handler {
             http_client,
             event_manager,
             sender,
-            kymux: None,
             host_events: None,
-            player: None,
-            input_service: None,
             displays: vec![],
+            backend: None,
         })
     }
 
@@ -190,16 +181,8 @@ impl Handler {
     async fn stop(&mut self) -> Result<()> {
         info!("Stop requested");
 
-        if let Some(mut player) = self.player.take() {
-            info!("Stop player");
-            player.stop_async().await?;
-            info!("Player stopped");
-        }
-
-        if let Some(mut input_service) = self.input_service.take() {
-            info!("Stop input service");
-            input_service.client.stop().await?;
-            info!("Input service stopped");
+        if let Some(mut backend) = self.backend.take() {
+            backend.stop().await?;
         }
 
         info!("Request to stop streaming services");
@@ -225,59 +208,45 @@ impl Handler {
             }
         }
 
-        if let Some(mut kymux) = self.kymux.take() {
-            let ret = kymux.stop().await;
-            match ret {
-                Ok(_) => {
-                    info!("Kymux stopped");
-                }
-                Err(err) => {
-                    warn!("Failed to stop kymux: {err:?}");
-                }
-            }
-        }
-
         Ok(())
     }
 
     async fn start_streaming_session(&mut self) -> Result<()> {
         let msg_proxy = self.create_message_proxy();
 
-        let result = match &self.streaming_config.protocol {
+        match &self.streaming_config.protocol {
             StreamingProtocol::Kymux(kymux_config) => {
-                let mut kymux =
-                    kymux_backend::start_kymux(&self.conn_params, &self.http_client).await?;
+                let backend = Box::new(
+                    kymux_backend::KymuxBackend::new(
+                        &self.conn_params,
+                        &self.http_client,
+                        &self.displays,
+                        &self.player_config,
+                        &self.streaming_config,
+                        kymux_config.clone(),
+                        msg_proxy,
+                    )
+                    .await?,
+                );
 
-                let result = kymux_backend::start(
-                    &self.http_client,
-                    &self.displays,
-                    &self.player_config,
-                    &self.streaming_config,
-                    kymux_config.clone(),
-                    &mut kymux,
-                    msg_proxy,
-                )
-                .await?;
-
-                self.kymux = Some(kymux);
-
-                result
+                self.backend = Some(backend);
             }
             StreamingProtocol::Rtp => {
-                rtp_backend::start(
-                    &self.conn_params,
-                    &self.http_client,
-                    &self.displays,
-                    &self.player_config,
-                    &self.streaming_config,
-                    msg_proxy,
-                )
-                .await?
+                let backend = Box::new(
+                    rtp_backend::RtpBackend::new(
+                        &self.conn_params,
+                        &self.http_client,
+                        &self.displays,
+                        &self.player_config,
+                        &self.streaming_config,
+                        msg_proxy,
+                    )
+                    .await?,
+                );
+
+                self.backend = Some(backend);
             }
         };
-
-        self.player = result.player;
-        self.input_service = result.input_service;
 
         Ok(())
     }
@@ -317,22 +286,18 @@ impl Handler {
             Message::InputServiceConnected => {
                 info!("Input service connected");
 
-                let input_service = self.input_service.as_mut().ok_or(Error::NoInputService)?;
-
-                input_service
-                    .pipeline
-                    .plug_network(&input_service.client.get_tx_consumer())?;
-                input_service.pipeline.start()?;
+                if let Some(backend) = self.backend.as_mut() {
+                    backend.input_service_connected().await?;
+                }
 
                 Ok(())
             }
             Message::InputServiceDisconnected => {
                 info!("Input service disconnected");
 
-                let input_service = self.input_service.as_mut().ok_or(Error::NoInputService)?;
-                input_service.pipeline.stop()?;
-
-                self.input_service = None;
+                if let Some(backend) = self.backend.as_mut() {
+                    backend.input_service_disconnected().await?;
+                }
 
                 Ok(())
             }

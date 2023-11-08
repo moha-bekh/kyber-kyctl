@@ -3,13 +3,16 @@ pub mod host_service;
 use std::env;
 use std::fs;
 
-use log::debug;
+use async_trait::async_trait;
+use log::{debug, info};
+
+use libkynput_rs::Pipeline;
 
 use crate::http::HttpClient;
 use crate::{get_display_id, input_service, player};
 use crate::{
-    ConnectionParams, Display, Error, InputService, InputSessionConfig, MessageProxy, PlayerConfig,
-    Result, StartStreamResult, StreamingSessionConfig, VideoSessionConfig,
+    BackendDriver, ConnectionParams, Display, Error, InputSessionConfig, MessageProxy,
+    PlayerConfig, Result, StreamingSessionConfig, VideoSessionConfig,
 };
 
 const RTP_VIDEO_PORT: u16 = 30000;
@@ -82,6 +85,16 @@ struct HostAudioConfig {
     port: u16,
 }
 
+struct InputService {
+    client: input_service::Client,
+    pipeline: Pipeline,
+}
+
+pub(crate) struct RtpBackend {
+    player: Option<player::Player>,
+    input_service: Option<InputService>,
+}
+
 async fn create_video_config(
     client: &HttpClient,
     displays: &Vec<Display>,
@@ -137,70 +150,111 @@ fn start_input(
     }))
 }
 
-pub(crate) async fn start(
-    conn_params: &ConnectionParams,
-    client: &HttpClient,
-    displays: &Vec<Display>,
-    player_config: &PlayerConfig,
-    streaming_config: &StreamingSessionConfig,
-    msg_proxy: MessageProxy,
-) -> Result<StartStreamResult> {
-    // Prepare video config
-    let local_ip = host_service::hello(client).await?;
+impl RtpBackend {
+    pub(crate) async fn new(
+        conn_params: &ConnectionParams,
+        client: &HttpClient,
+        displays: &Vec<Display>,
+        player_config: &PlayerConfig,
+        streaming_config: &StreamingSessionConfig,
+        msg_proxy: MessageProxy,
+    ) -> Result<Self> {
+        // Prepare video config
+        let local_ip = host_service::hello(client).await?;
 
-    let (host_videoconfig, vlc_videoconfig) = create_video_config(
-        client,
-        displays,
-        &local_ip,
-        &streaming_config.video,
-        player_config,
-    )
-    .await?;
+        let (host_videoconfig, vlc_videoconfig) = create_video_config(
+            client,
+            displays,
+            &local_ip,
+            &streaming_config.video,
+            player_config,
+        )
+        .await?;
 
-    // Prepare audio config
-    let (host_audioconfig, vlc_audioconfig) = if streaming_config.audio {
-        let host_config = HostAudioConfig {
-            port: RTP_AUDIO_PORT,
+        // Prepare audio config
+        let (host_audioconfig, vlc_audioconfig) = if streaming_config.audio {
+            let host_config = HostAudioConfig {
+                port: RTP_AUDIO_PORT,
+            };
+
+            let uri = create_audio_sdp_file(&local_ip, RTP_AUDIO_PORT)?;
+            let vlc_config = player::AudioConfig { uri };
+
+            (Some(host_config), Some(vlc_config))
+        } else {
+            (None, None)
         };
 
-        let uri = create_audio_sdp_file(&local_ip, RTP_AUDIO_PORT)?;
-        let vlc_config = player::AudioConfig { uri };
+        // Start stream
+        host_service::start_stream(
+            client,
+            &local_ip,
+            streaming_config.bitrate,
+            &host_videoconfig,
+            &host_audioconfig,
+            streaming_config.input.is_some(),
+        )
+        .await?;
 
-        (Some(host_config), Some(vlc_config))
-    } else {
-        (None, None)
-    };
+        // Start Video/Audio playback
+        let player = if vlc_videoconfig.is_some() || vlc_audioconfig.is_some() {
+            let mut player = player::Player::new(player_config.software_decode, msg_proxy.clone())?;
+            player.play(vlc_videoconfig, vlc_audioconfig)?;
 
-    // Start stream
-    host_service::start_stream(
-        client,
-        &local_ip,
-        streaming_config.bitrate,
-        &host_videoconfig,
-        &host_audioconfig,
-        streaming_config.input.is_some(),
-    )
-    .await?;
+            Some(player)
+        } else {
+            None
+        };
 
-    // Start Video/Audio playback
-    let player = if vlc_videoconfig.is_some() || vlc_audioconfig.is_some() {
-        let mut player = player::Player::new(player_config.software_decode, msg_proxy.clone())?;
-        player.play(vlc_videoconfig, vlc_audioconfig)?;
+        // Start Inputs
+        let input_service = if let Some(config) = streaming_config.input.as_ref() {
+            start_input(&conn_params.addr.ip().to_string(), config, msg_proxy)?
+        } else {
+            None
+        };
 
-        Some(player)
-    } else {
-        None
-    };
+        Ok(Self {
+            player,
+            input_service,
+        })
+    }
+}
 
-    // Start Inputs
-    let input_service = if let Some(config) = streaming_config.input.as_ref() {
-        start_input(&conn_params.addr.ip().to_string(), config, msg_proxy)?
-    } else {
-        None
-    };
+#[async_trait]
+impl BackendDriver for RtpBackend {
+    async fn input_service_connected(&mut self) -> Result<()> {
+        let input_service = self.input_service.as_mut().ok_or(Error::NoInputService)?;
 
-    Ok(StartStreamResult {
-        player,
-        input_service,
-    })
+        input_service
+            .pipeline
+            .plug_network(&input_service.client.get_tx_consumer())?;
+        input_service.pipeline.start()?;
+
+        Ok(())
+    }
+
+    async fn input_service_disconnected(&mut self) -> Result<()> {
+        let input_service = self.input_service.as_mut().ok_or(Error::NoInputService)?;
+        input_service.pipeline.stop()?;
+
+        self.input_service = None;
+
+        Ok(())
+    }
+
+    async fn stop(&mut self) -> Result<()> {
+        if let Some(mut player) = self.player.take() {
+            info!("Stop player");
+            player.stop_async().await?;
+            info!("Player stopped");
+        }
+
+        if let Some(mut input_service) = self.input_service.take() {
+            info!("Stop input service");
+            input_service.client.stop().await?;
+            info!("Input service stopped");
+        }
+
+        Ok(())
+    }
 }

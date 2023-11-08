@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 
+use async_trait::async_trait;
 use log::{error, info, warn};
 use serde::Serialize;
 
@@ -7,8 +8,8 @@ use crate::error::{Error, Result};
 use crate::http::HttpClient;
 use crate::{input_service, player};
 use crate::{
-    ConnectionParams, Display, InputService, InputSessionConfig, MessageProxy, PlayerConfig,
-    StartStreamResult, StreamingSessionConfig,
+    BackendDriver, ConnectionParams, Display, InputService, InputSessionConfig, MessageProxy,
+    PlayerConfig, StreamingSessionConfig,
 };
 
 pub(crate) mod host_service;
@@ -18,7 +19,7 @@ pub struct KymuxConfig {
     pub video_protocol: Option<kymux::VideoProtocol>,
 }
 
-pub(crate) async fn start_kymux(
+async fn start_kymux(
     conn_params: &ConnectionParams,
     client: &HttpClient,
 ) -> Result<kymux::Connection> {
@@ -128,54 +129,114 @@ fn start_input(
     }))
 }
 
-pub(crate) async fn start(
-    client: &HttpClient,
-    displays: &Vec<Display>,
-    player_config: &PlayerConfig,
-    streaming_config: &StreamingSessionConfig,
-    kymux_config: KymuxConfig,
-    kymux: &mut kymux::Connection,
-    msg_proxy: MessageProxy,
-) -> Result<StartStreamResult> {
-    // Start stream
-    let start_resp = host_service::start_stream(
-        client,
-        displays,
-        streaming_config.bitrate,
-        kymux_config,
-        &streaming_config.video,
-        streaming_config.audio,
-        streaming_config.input.is_some(),
-    )
-    .await?;
+pub(crate) struct KymuxBackend {
+    kymux: kymux::Connection,
+    player: Option<player::Player>,
+    input_service: Option<InputService>,
+}
 
-    // Play Video and Audio
-    let video_config = create_video_config(kymux, player_config, &start_resp.video_endpoint)?;
+impl KymuxBackend {
+    pub(crate) async fn new(
+        conn_params: &ConnectionParams,
+        http_client: &HttpClient,
+        displays: &Vec<Display>,
+        player_config: &PlayerConfig,
+        streaming_config: &StreamingSessionConfig,
+        kymux_config: KymuxConfig,
+        msg_proxy: MessageProxy,
+    ) -> Result<Self> {
+        let kymux = start_kymux(conn_params, http_client).await?;
 
-    let audio_config =
-        create_audio_config(kymux, streaming_config.audio, &start_resp.audio_endpoint)?;
+        // Start stream
+        let start_resp = host_service::start_stream(
+            http_client,
+            displays,
+            streaming_config.bitrate,
+            kymux_config,
+            &streaming_config.video,
+            streaming_config.audio,
+            streaming_config.input.is_some(),
+        )
+        .await?;
 
-    let player = if video_config.is_some() || audio_config.is_some() {
-        let mut player = player::Player::new(player_config.software_decode, msg_proxy.clone())?;
-        player.play(video_config, audio_config)?;
+        // Play Video and Audio
+        let video_config = create_video_config(&kymux, player_config, &start_resp.video_endpoint)?;
 
-        Some(player)
-    } else {
-        None
-    };
+        let audio_config =
+            create_audio_config(&kymux, streaming_config.audio, &start_resp.audio_endpoint)?;
 
-    // Start input
-    let input_service = match (streaming_config.input.as_ref(), start_resp.input_endpoint) {
-        (Some(config), Some(endpoint)) => start_input(kymux, config, endpoint, msg_proxy.clone())?,
-        (None, None) => None,
-        _ => {
-            error!("Invalid Input config. Should either get a config and an endpoint, or none of them.");
-            return Err(Error::InvalidState);
+        let player = if video_config.is_some() || audio_config.is_some() {
+            let mut player = player::Player::new(player_config.software_decode, msg_proxy.clone())?;
+            player.play(video_config, audio_config)?;
+
+            Some(player)
+        } else {
+            None
+        };
+
+        // Start input
+        let input_service = match (streaming_config.input.as_ref(), start_resp.input_endpoint) {
+            (Some(config), Some(endpoint)) => {
+                start_input(&kymux, config, endpoint, msg_proxy.clone())?
+            }
+            (None, None) => None,
+            _ => {
+                error!("Invalid Input config. Should either get a config and an endpoint, or none of them.");
+                return Err(Error::InvalidState);
+            }
+        };
+
+        Ok(Self {
+            kymux,
+            player,
+            input_service,
+        })
+    }
+}
+
+#[async_trait]
+impl BackendDriver for KymuxBackend {
+    async fn input_service_connected(&mut self) -> Result<()> {
+        let input_service = self.input_service.as_mut().ok_or(Error::NoInputService)?;
+
+        input_service
+            .pipeline
+            .plug_network(&input_service.client.get_tx_consumer())?;
+        input_service.pipeline.start()?;
+
+        Ok(())
+    }
+
+    async fn input_service_disconnected(&mut self) -> Result<()> {
+        let input_service = self.input_service.as_mut().ok_or(Error::NoInputService)?;
+
+        input_service.pipeline.stop()?;
+
+        self.input_service = None;
+
+        Ok(())
+    }
+
+    async fn stop(&mut self) -> Result<()> {
+        if let Some(mut player) = self.player.take() {
+            player.stop_async().await?;
         }
-    };
 
-    Ok(StartStreamResult {
-        player,
-        input_service,
-    })
+        if let Some(input_service) = self.input_service.take() {
+            info!("Stop input service");
+            input_service.pipeline.stop()?;
+        }
+
+        let ret = self.kymux.stop().await;
+        match ret {
+            Ok(_) => {
+                info!("Kymux stopped");
+            }
+            Err(err) => {
+                warn!("Failed to stop kymux: {err:?}");
+            }
+        }
+
+        Ok(())
+    }
 }
