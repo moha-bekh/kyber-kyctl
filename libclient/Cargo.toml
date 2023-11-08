@@ -5,26 +5,36 @@ edition = "2021"
 
 [dependencies]
 async-trait = "0.1.68"
-async-tungstenite = { version = "0.23.0", features = ["tokio-rustls-native-certs", "tokio-runtime"] }
+async-tungstenite = { version = "0.23.0", features = ["tokio-rustls-native-certs", "tokio-runtime"], optional = true }
 futures = "0.3.26"
 libc = "0.2.107"
 log = {version = "0.4.14", features = ["std"] }
-raw-window-handle = "0.5.0"
-reqwest = { version = "0.11.22", default-features = false, features = ["json", "rustls-tls"] }
-rustls = { version = "0.21.8", features = ["quic"] }
-rustls-pemfile = "1.0.3"
+raw-window-handle = { version = "0.5.0", optional = true }
+reqwest = { version = "0.11.22", default-features = false, features = ["json"] }
+rustls = { version = "0.21.8", features = ["quic"], optional = true }
+rustls-pemfile = { version = "1.0.3", optional = true }
 serde = {version = "1.0.130", features = ["derive"] }
 serde_json = "1.0.70"
-tokio = { version = "1.33.0", features = ["macros", "rt-multi-thread", "sync"] }
+tokio = { version = "1.33.0", features = ["macros", "sync"] }
 
 kymux = { version = "0.1.0", optional = true }
-libkynput-rs = "0.1.0"
-libkynput-sys = "0.1.0"
-vlc-rs = "0.3.0"
+libkynput-rs = { version = "0.1.0", optional = true }
+libkynput-sys = { version = "0.1.0", optional = true }
+vlc-rs = { version = "0.3.0", optional = true }
 
 [features]
 capi = []
 default = []
-desktop = []
+desktop = [
+    "dep:async-tungstenite",
+    "dep:raw-window-handle",
+    "dep:libkynput-rs",
+    "dep:libkynput-sys",
+    "dep:rustls",
+    "dep:rustls-pemfile",
+    "reqwest/rustls-tls",
+    "tokio/rt-multi-thread",
+    "dep:vlc-rs",
+]
 kymux = ["dep:kymux"]
 rtp = []
