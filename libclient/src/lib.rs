@@ -167,11 +167,6 @@ impl Handler {
     }
 
     async fn start(&mut self) -> Result<Vec<Display>> {
-        // Start Kymux
-        let kymux = kymux_backend::start_kymux(&self.conn_params, &self.http_client).await?;
-
-        self.kymux = Some(kymux);
-
         // Connect to websocket
         let host_events =
             HostEventReceiver::new(&self.conn_params, self.create_message_proxy()).await?;
@@ -240,21 +235,23 @@ impl Handler {
 
         let result = match &self.streaming_config.protocol {
             StreamingProtocol::Kymux(kymux_config) => {
-                let Some(kymux) = self.kymux.as_mut() else {
-                    error!("Got start Kymux session, but kymux isn't started");
-                    return Err(Error::KymuxNotStarted);
-                };
+                let mut kymux =
+                    kymux_backend::start_kymux(&self.conn_params, &self.http_client).await?;
 
-                kymux_backend::start(
+                let result = kymux_backend::start(
                     &self.http_client,
                     &self.displays,
                     &self.player_config,
                     &self.streaming_config,
                     kymux_config.clone(),
-                    kymux,
+                    &mut kymux,
                     msg_proxy,
                 )
-                .await?
+                .await?;
+
+                self.kymux = Some(kymux);
+
+                result
             }
             StreamingProtocol::Rtp => {
                 rtp_backend::start(
