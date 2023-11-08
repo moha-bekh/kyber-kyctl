@@ -18,6 +18,7 @@ use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
+use async_trait::async_trait;
 use log::{error, info, warn};
 use serde::Serialize;
 use tokio::runtime;
@@ -50,6 +51,15 @@ impl MessageProxy {
         self.sender.send(msg).await?;
         Ok(())
     }
+}
+
+#[async_trait]
+trait BackendDriver {
+    async fn input_service_connected(&mut self) -> Result<()>;
+
+    async fn input_service_disconnected(&mut self) -> Result<()>;
+
+    async fn stop(&mut self) -> Result<()>;
 }
 
 #[derive(Clone, Debug)]
