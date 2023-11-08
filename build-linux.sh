@@ -136,11 +136,19 @@ export LD_LIBRARY_PATH=$OUT_DIR/lib:$OUT_DIR/lib/x86_64-linux-gnu
 # Build
 case "$ACTION" in
     "build")
-        cargo cinstall -p libclient --release --prefix=$OUT_DIR
-        cargo build
+        cargo cinstall \
+            -p libclient \
+            --release \
+            --prefix=$OUT_DIR \
+            --features=rtp
+
+        cargo build \
+            --features=rtp
     ;;
     "clippy")
-        cargo clippy --features capi -- -D warnings -A clippy::missing_safety_doc
+        cargo clippy \
+        --features capi,rtp \
+        -- -D warnings -A clippy::missing_safety_doc
     ;;
 esac
 

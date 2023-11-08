@@ -41,6 +41,7 @@ impl KymuxVideoProtocol {
 
 #[derive(Clone, Copy, Debug)]
 pub enum StreamingProtocol {
+    #[cfg(feature = "rtp")]
     Rtp,
     Kymux(KymuxVideoProtocol),
 }
@@ -273,6 +274,7 @@ pub struct StreamingSessionConfig {
 impl StreamingSessionConfig {
     pub fn default(protocol: StreamingProtocol) -> Result<Self> {
         let streaming_protocol = match protocol {
+            #[cfg(feature = "rtp")]
             StreamingProtocol::Rtp => unsafe { sys::libclient_streaming_protocol_rtp() },
             StreamingProtocol::Kymux(video_protocol) => unsafe {
                 sys::libclient_streaming_protocol_kymux(video_protocol.to_u32())

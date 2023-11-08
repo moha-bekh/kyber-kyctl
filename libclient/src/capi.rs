@@ -225,6 +225,7 @@ pub unsafe extern "C" fn libclient_connect_config_unref(cfg: *mut libclient_Conn
     }
 }
 
+#[cfg(feature = "rtp")]
 #[no_mangle]
 pub unsafe extern "C" fn libclient_streaming_protocol_rtp() -> *mut libclient_StreamingProtocol {
     let protocol = crate::StreamingProtocol::Rtp;

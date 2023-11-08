@@ -176,16 +176,19 @@ case "$ACTION" in
         cargo cinstall -p libclient \
             --target $CARGO_TARGET \
             --release \
-            --prefix=$OUT_DIR
+            --prefix=$OUT_DIR \
+            --features=rtp
 
         cargo build \
             --target $CARGO_TARGET  \
-            --release
+            --release \
+            --features=rtp
     ;;
     "clippy")
         cargo clippy \
             --target $CARGO_TARGET \
-            --features capi -- -D warnings -A clippy::missing_safety_doc
+            --features capi,rtp \
+            -- -D warnings -A clippy::missing_safety_doc
     ;;
     "test")
         cargo test

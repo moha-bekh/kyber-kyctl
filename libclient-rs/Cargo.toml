@@ -9,3 +9,7 @@ log = "0.4.14"
 
 libclient-sys = { path = "libclient-sys" }
 libkynput-rs = "0.1.0"
+
+[features]
+default = ["rtp"]
+rtp = []

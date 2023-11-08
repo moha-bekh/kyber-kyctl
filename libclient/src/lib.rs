@@ -7,12 +7,14 @@ pub(crate) mod http;
 pub mod input_service;
 mod kymux_backend;
 mod player;
-mod rtp_backend;
 mod tls;
 pub mod window_handle;
 
 #[cfg(any(cargo_c, feature = "capi"))]
 pub mod capi;
+
+#[cfg(feature = "rtp")]
+mod rtp_backend;
 
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::{Arc, Mutex};
@@ -226,6 +228,7 @@ impl Handler {
 
                 self.backend = Some(backend);
             }
+            #[cfg(feature = "rtp")]
             StreamingProtocol::Rtp => {
                 let backend = Box::new(
                     rtp_backend::RtpBackend::new(
@@ -311,6 +314,7 @@ impl Handler {
 
 #[derive(Clone, Debug)]
 pub enum StreamingProtocol {
+    #[cfg(feature = "rtp")]
     Rtp,
     Kymux(KymuxConfig),
 }

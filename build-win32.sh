@@ -143,12 +143,18 @@ case "$ACTION" in
             --release \
             --prefix=$OUT_DIR \
             --target x86_64-pc-windows-gnu \
-            --dlltool x86_64-w64-mingw32-dlltool
+            --dlltool x86_64-w64-mingw32-dlltool \
+            --features=rtp
 
-        cargo build --target x86_64-pc-windows-gnu
+        cargo build \
+            --target x86_64-pc-windows-gnu \
+            --features=rtp
     ;;
     "clippy")
-        cargo clippy --target x86_64-pc-windows-gnu --features capi -- -D warnings -A clippy::missing_safety_doc
+        cargo clippy \
+            --target x86_64-pc-windows-gnu \
+            --features capi,rtp \
+            -- -D warnings -A clippy::missing_safety_doc
     ;;
 esac
 

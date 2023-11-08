@@ -25,3 +25,4 @@ vlc-rs = "0.3.0"
 [features]
 capi = []
 default = []
+rtp = []
