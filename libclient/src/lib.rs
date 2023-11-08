@@ -328,6 +328,11 @@ pub enum VideoCodec {
     AV1,
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub enum CursorFormat {
+    Raw,
+}
+
 #[derive(Clone, Debug)]
 pub struct ConnectConfig {
     pub host: String,
