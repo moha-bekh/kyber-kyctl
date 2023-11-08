@@ -3,7 +3,8 @@ use std::borrow::Cow;
 use log::{error, info, warn};
 
 use crate::error::{Error, PlayerError, Result};
-use crate::{Message, MessageProxy, WindowHandle};
+use crate::platform::WindowHandle;
+use crate::{Message, MessageProxy};
 
 pub(crate) fn plug_event_manager_to_player(
     mp: &vlc::MediaPlayer,

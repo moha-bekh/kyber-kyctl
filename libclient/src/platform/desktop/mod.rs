@@ -2,6 +2,7 @@ use std::net::{SocketAddr, ToSocketAddrs};
 
 use log::error;
 
+pub(crate) mod player;
 pub(crate) mod tls;
 pub(crate) mod window_handle;
 

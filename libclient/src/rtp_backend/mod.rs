@@ -9,7 +9,8 @@ use log::{debug, info};
 use libkynput_rs::Pipeline;
 
 use crate::http::HttpClient;
-use crate::{get_display_id, input_service, player};
+use crate::platform::player;
+use crate::{get_display_id, input_service};
 use crate::{
     BackendDriver, ConnectionParams, Display, Error, InputSessionConfig, MessageProxy,
     PlayerConfig, Result, StreamingSessionConfig, VideoSessionConfig,

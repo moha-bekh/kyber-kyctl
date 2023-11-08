@@ -8,7 +8,8 @@ use libkynput_rs::Pipeline;
 
 use crate::error::{Error, Result};
 use crate::http::HttpClient;
-use crate::{input_service, player};
+use crate::input_service;
+use crate::platform::player;
 use crate::{
     BackendDriver, ConnectionParams, Display, InputSessionConfig, MessageProxy, PlayerConfig,
     StreamingSessionConfig,
