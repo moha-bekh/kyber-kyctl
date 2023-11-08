@@ -4,7 +4,7 @@ use serde_json::json;
 use crate::error::Result;
 use crate::get_display_id;
 use crate::http::HttpClient;
-use crate::{Display, VideoCodec, VideoSessionConfig};
+use crate::{CursorFormat, Display, VideoCodec, VideoSessionConfig};
 
 use super::KymuxConfig;
 
@@ -41,6 +41,11 @@ struct StartRequestVideo {
 }
 
 #[derive(Debug, Serialize)]
+struct StartRequestInput {
+    cursor_format: CursorFormat,
+}
+
+#[derive(Debug, Serialize)]
 struct StartRequest {
     // Global bitrate for the whole Quic connection. Unit: bits/sec
     bitrate: u32,
@@ -48,7 +53,7 @@ struct StartRequest {
     kymux_config: KymuxConfig,
     video: Option<StartRequestVideo>,
     audio: bool,
-    inputs: bool,
+    inputs: Option<StartRequestInput>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -65,7 +70,7 @@ pub(crate) async fn start_stream(
     kymux_config: KymuxConfig,
     video: &Option<VideoSessionConfig>,
     audio: bool,
-    inputs: bool,
+    inputs: Option<CursorFormat>,
 ) -> Result<StartResponse> {
     let url = format!(
         "{base_url}/kymux/start_session",
@@ -77,6 +82,8 @@ pub(crate) async fn start_stream(
         codec: video.codec,
         yuv444: video.yuv444,
     });
+
+    let inputs = inputs.map(|cursor_format| StartRequestInput { cursor_format });
 
     let body = StartRequest {
         bitrate,

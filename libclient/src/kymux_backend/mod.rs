@@ -147,6 +147,12 @@ impl KymuxBackend {
     ) -> Result<Self> {
         let kymux = start_kymux(conn_params, http_client).await?;
 
+        let cursor_format = if let Some(input_config) = streaming_config.input.as_ref() {
+            input_service::get_cursor_format(&input_config.pipeline)
+        } else {
+            None
+        };
+
         // Start stream
         let start_resp = host_service::start_stream(
             http_client,
@@ -155,7 +161,7 @@ impl KymuxBackend {
             kymux_config,
             &streaming_config.video,
             streaming_config.audio,
-            streaming_config.input.is_some(),
+            cursor_format,
         )
         .await?;
 
