@@ -331,6 +331,7 @@ pub enum VideoCodec {
 #[derive(Clone, Debug, Serialize)]
 pub enum CursorFormat {
     Raw,
+    Png,
 }
 
 #[derive(Clone, Debug)]

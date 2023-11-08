@@ -79,5 +79,6 @@ pub(crate) fn get_cursor_format(pipeline: &Pipeline) -> Option<CursorFormat> {
 
     match format {
         libkynput_rs::CursorFormat::Raw => Some(CursorFormat::Raw),
+        libkynput_rs::CursorFormat::Png => Some(CursorFormat::Png),
     }
 }
