@@ -6,7 +6,6 @@ mod host_service;
 pub(crate) mod http;
 pub mod input_service;
 mod player;
-pub mod window_handle;
 
 #[cfg_attr(feature = "desktop", path = "./platform/desktop/mod.rs")]
 mod platform;
@@ -38,7 +37,7 @@ use event_manager::EventManager;
 use host_events::HostEventReceiver;
 use http::HttpClient;
 use platform::tls;
-use window_handle::WindowHandle;
+use platform::WindowHandle;
 
 pub(crate) const STREAMER_PORT: u16 = 8080;
 

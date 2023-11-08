@@ -15,7 +15,7 @@ pub type Display = super::Display;
 
 #[allow(non_camel_case_types)]
 pub struct libclient_WindowHandle {
-    handle: crate::window_handle::WindowHandle,
+    handle: crate::platform::WindowHandle,
 }
 
 #[allow(non_camel_case_types)]
@@ -155,7 +155,7 @@ pub unsafe extern "C" fn libclient_windowshandle_from_x11(
     handle: u64,
 ) -> *mut libclient_WindowHandle {
     Box::into_raw(Box::new(libclient_WindowHandle {
-        handle: crate::window_handle::WindowHandle::Xlib(handle),
+        handle: crate::platform::WindowHandle::Xlib(handle),
     }))
 }
 
@@ -165,7 +165,7 @@ pub unsafe extern "C" fn libclient_windowshandle_from_ns_view(
     handle: u64,
 ) -> *mut libclient_WindowHandle {
     Box::into_raw(Box::new(libclient_WindowHandle {
-        handle: crate::window_handle::WindowHandle::AppKit(handle),
+        handle: crate::platform::WindowHandle::AppKit(handle),
     }))
 }
 
@@ -175,7 +175,7 @@ pub unsafe extern "C" fn libclient_windowshandle_from_hwnd(
     hwnd: u64,
 ) -> *mut libclient_WindowHandle {
     Box::into_raw(Box::new(libclient_WindowHandle {
-        handle: crate::window_handle::WindowHandle::Win32(hwnd),
+        handle: crate::platform::WindowHandle::Win32(hwnd),
     }))
 }
 
