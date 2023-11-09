@@ -50,7 +50,8 @@ impl MessageProxy {
     }
 }
 
-#[async_trait]
+#[cfg_attr(target_family = "wasm", async_trait(?Send))]
+#[cfg_attr(not(target_family = "wasm"), async_trait)]
 trait BackendDriver {
     async fn input_service_connected(&mut self) -> Result<()>;
 
@@ -84,6 +85,9 @@ struct Handler {
 
     displays: Vec<Display>,
 
+    #[cfg(target_arch = "wasm32")]
+    backend: Option<Box<dyn BackendDriver>>,
+    #[cfg(not(target_arch = "wasm32"))]
     backend: Option<Box<dyn BackendDriver + Send>>,
 }
 
