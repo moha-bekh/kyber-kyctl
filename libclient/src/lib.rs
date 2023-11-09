@@ -18,12 +18,10 @@ mod kymux_backend;
 mod rtp_backend;
 
 use std::sync::{Arc, Mutex};
-use std::thread;
 
 use async_trait::async_trait;
 use log::{info, warn};
 use serde::Serialize;
-use tokio::runtime;
 use tokio::sync::mpsc::{self, Sender};
 
 use crate::error::{Error, Result};
@@ -325,11 +323,11 @@ impl Client {
     ) -> Result<Self> {
         let event_manager = Arc::new(Mutex::new(EventManager::new()));
 
-        let (sender, mut receiver) = mpsc::channel(32);
+        let (sender, receiver) = mpsc::channel(32);
         let event_manager_handler = event_manager.clone();
         let sender_handler = sender.clone();
 
-        let mut handler = Handler::new(
+        let handler = Handler::new(
             connect_config,
             streaming_config,
             player_config,
@@ -337,37 +335,42 @@ impl Client {
             sender_handler,
         )?;
 
-        thread::spawn(move || {
-            let rt = runtime::Builder::new_multi_thread()
-                .worker_threads(1)
-                .thread_name("EventLoop")
-                .enable_io()
-                .enable_time()
-                .build()
-                .unwrap();
+        #[cfg(feature = "desktop")]
+        {
+            std::thread::spawn(move || {
+                let rt = tokio::runtime::Builder::new_multi_thread()
+                    .worker_threads(1)
+                    .thread_name("EventLoop")
+                    .enable_io()
+                    .enable_time()
+                    .build()
+                    .unwrap();
 
-            rt.block_on(async move {
-                loop {
-                    let msg = receiver.recv().await;
-                    if let Some(msg) = msg.as_ref() {
-                        let ret = handler.handle_message(msg).await;
-                        if let Err(err) = ret {
-                            warn!(
-                                "Processing of message {:?} failed with error {:?}",
-                                msg, err
-                            );
-                        }
-                    } else {
-                        break;
-                    }
-                }
+                rt.block_on(Self::mainloop(receiver, handler));
             });
-        });
+        }
 
         Ok(Self {
             event_manager,
             sender,
         })
+    }
+
+    async fn mainloop(mut receiver: mpsc::Receiver<Message>, mut handler: Handler) {
+        loop {
+            let msg = receiver.recv().await;
+            if let Some(msg) = msg.as_ref() {
+                let ret = handler.handle_message(msg).await;
+                if let Err(err) = ret {
+                    warn!(
+                        "Processing of message {:?} failed with error {:?}",
+                        msg, err
+                    );
+                }
+            } else {
+                break;
+            }
+        }
     }
 
     pub fn start(&self) -> Result<()> {

@@ -32,6 +32,7 @@ pub enum Error {
     #[cfg(feature = "kymux")]
     Kymux(kymux::Error),
     KymuxNotStarted,
+    #[cfg(feature = "desktop")]
     TaskJoin(tokio::task::JoinError),
     FileNotFound(PathBuf),
     TlsInvalidFile,
@@ -81,6 +82,7 @@ impl From<platform::InputError> for Error {
     }
 }
 
+#[cfg(feature = "desktop")]
 impl From<tokio::task::JoinError> for Error {
     fn from(err: tokio::task::JoinError) -> Error {
         Error::TaskJoin(err)
