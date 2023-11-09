@@ -286,7 +286,7 @@ pub enum StreamingProtocol {
     Kymux(kymux_backend::KymuxConfig),
 }
 
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Serialize, PartialEq)]
 #[repr(C)]
 pub enum VideoCodec {
     H264,
