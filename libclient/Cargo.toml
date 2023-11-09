@@ -51,6 +51,22 @@ desktop = [
     "tokio/rt-multi-thread",
     "dep:vlc-rs",
 ]
+js-player = [
+    "web-sys/DedicatedWorkerGlobalScope",
+    "web-sys/EncodedVideoChunk",
+    "web-sys/EncodedVideoChunkInit",
+    "web-sys/EncodedVideoChunkType",
+    "web-sys/HardwareAcceleration",
+    "web-sys/OffscreenCanvas",
+    "web-sys/OffscreenCanvasRenderingContext2d",
+    "web-sys/VideoDecoder",
+    "web-sys/VideoDecoderConfig",
+    "web-sys/VideoDecoderInit",
+    "web-sys/VideoFrame",
+    "web-sys/Worker",
+    "web-sys/WorkerOptions",
+    "web-sys/WorkerType",
+]
 kymux = ["dep:kymux"]
 rtp = []
 web = [

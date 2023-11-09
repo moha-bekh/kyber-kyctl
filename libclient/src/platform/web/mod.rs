@@ -2,6 +2,8 @@ pub(crate) mod dom;
 mod host_events;
 pub(crate) mod http;
 mod input_service;
+
+#[cfg(feature = "js-player")]
 pub(crate) mod player;
 pub(crate) mod reflect;
 mod websocket;

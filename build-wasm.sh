@@ -98,20 +98,29 @@ fi
 # Build
 case "$ACTION" in
     "build")
+        export RUSTFLAGS=--cfg=web_sys_unstable_apis
+
         cargo build \
             --target wasm32-unknown-unknown \
             -p libclient \
             --release \
-            --features=web
+            --features=js-player,web
     ;;
     "clippy")
+        export RUSTFLAGS=--cfg=web_sys_unstable_apis
+
         cargo clippy \
             --target wasm32-unknown-unknown \
             -p libclient \
             --release \
-            --features=web
+            --features=js-player,web
     ;;
     "package-js")
         JS_SRC_DIR=$BASE_DIR/libclient/js
+        cp \
+            $JS_SRC_DIR/video_demuxer_worker.js \
+            $JS_SRC_DIR/video_renderer_worker.js \
+             \
+        $JS_OUT_DIR
     ;;
 esac

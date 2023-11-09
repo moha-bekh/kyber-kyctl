@@ -21,13 +21,31 @@ pub enum Message {
     InputServiceConnected,
     InputServiceDisconnected,
 
-    DisplayListUpdated { displays: Vec<Display> },
+    DisplayListUpdated {
+        displays: Vec<Display>,
+    },
+
+    #[cfg(feature = "web")]
+    CanvasResized {
+        width: i32,
+        height: i32,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Event {
-    Started { displays: Vec<Display> },
+    Started {
+        displays: Vec<Display>,
+    },
     Stopped,
 
-    DisplayListUpdated { displays: Vec<Display> },
+    DisplayListUpdated {
+        displays: Vec<Display>,
+    },
+
+    #[cfg(feature = "web")]
+    CanvasResized {
+        width: i32,
+        height: i32,
+    },
 }
