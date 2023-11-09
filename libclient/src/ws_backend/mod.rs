@@ -1,0 +1,196 @@
+mod audio;
+mod host_service;
+mod input;
+mod video;
+
+use std::rc::Rc;
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use log::info;
+
+use libkynput::bufferproxy::BufferProxy;
+use libkynput::{InputNetworkStream, InputPipeline};
+
+use audio::AudioWsSocketHandler;
+use input::InputWebSocketHandler;
+use video::VideoWsSocketHandler;
+
+use crate::platform::get_cursor_format;
+use crate::platform::player::{get_video_decoder_config, AudioPlayer, VideoPlayer};
+use crate::platform::InputMsgSink;
+
+use crate::http::HttpClient;
+use crate::PlayerConfig;
+use crate::{
+    BackendDriver, ConnectionParams, Display, MessageProxy, StreamingSessionConfig,
+    VideoSessionConfig,
+};
+use crate::{Error, Result};
+
+struct VideoService {
+    _ws: Rc<VideoWsSocketHandler>,
+    _player: Rc<VideoPlayer>,
+}
+
+struct AudioService {
+    _ws: Rc<AudioWsSocketHandler>,
+    _player: Rc<AudioPlayer>,
+}
+
+struct InputService {
+    _websocket: Rc<InputWebSocketHandler>,
+    proxy: Arc<BufferProxy>,
+    pipeline: Arc<libkynput::InputPipeline>,
+}
+
+pub(crate) struct WsBackend {
+    _video_service: Option<VideoService>,
+    _audio_service: Option<AudioService>,
+    input_service: Option<InputService>,
+}
+
+impl WsBackend {
+    pub(crate) async fn new(
+        _conn_params: &ConnectionParams,
+        http_client: &HttpClient,
+        displays: &Vec<Display>,
+        player_config: &PlayerConfig,
+        streaming_config: &StreamingSessionConfig,
+        msg_proxy: MessageProxy,
+    ) -> Result<Self> {
+        info!("Start websocket session");
+
+        // Start VideoWebsocket service
+        let cursor_format = if let Some(input_config) = streaming_config.input.as_ref() {
+            get_cursor_format(&input_config.pipeline)
+        } else {
+            None
+        };
+
+        host_service::start_stream(http_client, displays, streaming_config, cursor_format).await?;
+
+        // Start video service
+        let video_service = if let Some(video_config) = &streaming_config.video {
+            let video_service = Self::create_video_service(
+                http_client,
+                player_config,
+                video_config,
+                msg_proxy.clone(),
+            )
+            .await?;
+
+            Some(video_service)
+        } else {
+            None
+        };
+
+        // Start audio service
+        let audio_service = if streaming_config.audio {
+            let audio_service = Self::create_audio_service(http_client).await?;
+
+            Some(audio_service)
+        } else {
+            None
+        };
+
+        // Start input service
+        let input_service = if let Some(input_config) = streaming_config.input.as_ref() {
+            let input_service =
+                Self::create_input_service(http_client, input_config.pipeline.clone(), msg_proxy)?;
+
+            Some(input_service)
+        } else {
+            None
+        };
+
+        Ok(Self {
+            _video_service: video_service,
+            _audio_service: audio_service,
+            input_service,
+        })
+    }
+
+    async fn create_video_service(
+        http_client: &HttpClient,
+        player_config: &PlayerConfig,
+        video_config: &VideoSessionConfig,
+        msg_proxy: MessageProxy,
+    ) -> Result<VideoService> {
+        let video_decoder_config = get_video_decoder_config(player_config, video_config).await?;
+
+        let player = Rc::new(VideoPlayer::new(
+            &player_config.canvas,
+            msg_proxy.clone(),
+            video_decoder_config,
+        )?);
+
+        let url = format!("wss://{host}/websocket/video", host = http_client.host());
+        let ws = VideoWsSocketHandler::new(&url, player.clone())?;
+
+        Ok(VideoService {
+            _ws: ws,
+            _player: player,
+        })
+    }
+
+    async fn create_audio_service(http_client: &HttpClient) -> Result<AudioService> {
+        let player = Rc::new(AudioPlayer::new().await?);
+
+        let url = format!("wss://{host}/websocket/audio", host = http_client.host());
+        let ws = AudioWsSocketHandler::new(&url, player.clone())?;
+
+        Ok(AudioService {
+            _ws: ws,
+            _player: player,
+        })
+    }
+
+    fn create_input_service(
+        http_client: &HttpClient,
+        input_pipeline: Arc<InputPipeline>,
+        msg_proxy: MessageProxy,
+    ) -> Result<InputService> {
+        // Create and configure libkynput network proxy
+        let mut input_proxy = BufferProxy::new();
+        let (libkynput_tx, libkynput_rx) = input_proxy.split()?;
+        let input_proxy = Arc::new(input_proxy);
+
+        input_proxy.plug_consumer(input_pipeline.get_input_sink())?;
+        input_proxy.run()?;
+
+        // Spawn websocket
+        let msg_sink = Arc::new(InputMsgSink::new(msg_proxy.clone()));
+        let inputs_url = format!("wss://{host}/websocket/inputs", host = http_client.host());
+        let input_websocket =
+            InputWebSocketHandler::new(&inputs_url, libkynput_tx, libkynput_rx, msg_sink)?;
+
+        Ok(InputService {
+            _websocket: input_websocket,
+            proxy: input_proxy,
+            pipeline: input_pipeline,
+        })
+    }
+}
+
+#[async_trait(?Send)]
+impl BackendDriver for WsBackend {
+    async fn stop(&mut self) -> Result<()> {
+        Ok(())
+    }
+
+    async fn input_service_connected(&mut self) -> Result<()> {
+        let input_service = self.input_service.as_mut().ok_or(Error::NoInputService)?;
+
+        input_service
+            .pipeline
+            .plug_network(input_service.proxy.clone())?;
+        input_service.pipeline.start()?;
+
+        Ok(())
+    }
+
+    async fn input_service_disconnected(&mut self) -> Result<()> {
+        Ok(())
+    }
+}

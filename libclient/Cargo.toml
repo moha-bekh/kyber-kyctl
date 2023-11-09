@@ -85,3 +85,4 @@ web = [
     "dep:wasm-bindgen-futures",
     "dep:web-sys",
 ]
+websocket = ["js-player"]

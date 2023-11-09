@@ -104,7 +104,7 @@ case "$ACTION" in
             --target wasm32-unknown-unknown \
             -p libclient \
             --release \
-            --features=js-player,web
+            --features=web,websocket
     ;;
     "clippy")
         export RUSTFLAGS=--cfg=web_sys_unstable_apis
@@ -113,7 +113,7 @@ case "$ACTION" in
             --target wasm32-unknown-unknown \
             -p libclient \
             --release \
-            --features=js-player,web
+            --features=web,websocket
     ;;
     "package-js")
         JS_SRC_DIR=$BASE_DIR/libclient/js

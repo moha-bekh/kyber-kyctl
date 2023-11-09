@@ -18,6 +18,9 @@ mod kymux_backend;
 #[cfg(feature = "rtp")]
 mod rtp_backend;
 
+#[cfg(feature = "websocket")]
+mod ws_backend;
+
 use async_trait::async_trait;
 use log::{info, warn};
 use serde::Serialize;
@@ -171,6 +174,22 @@ impl Handler {
         let msg_proxy = self.create_message_proxy();
 
         match &self.streaming_config.protocol {
+            #[cfg(feature = "websocket")]
+            StreamingProtocol::Websocket => {
+                let backend = Box::new(
+                    ws_backend::WsBackend::new(
+                        &self.conn_params,
+                        &self.http_client,
+                        &self.displays,
+                        &self.player_config,
+                        &self.streaming_config,
+                        msg_proxy,
+                    )
+                    .await?,
+                );
+
+                self.backend = Some(backend);
+            }
             #[cfg(feature = "kymux")]
             StreamingProtocol::Kymux(kymux_config) => {
                 let backend = Box::new(
@@ -204,8 +223,6 @@ impl Handler {
 
                 self.backend = Some(backend);
             }
-            #[allow(unreachable_patterns)]
-            _ => todo!(),
         };
 
         Ok(())
@@ -293,6 +310,8 @@ pub enum StreamingProtocol {
     Rtp,
     #[cfg(feature = "kymux")]
     Kymux(kymux_backend::KymuxConfig),
+    #[cfg(feature = "websocket")]
+    Websocket,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq)]
