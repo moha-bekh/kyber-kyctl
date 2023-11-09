@@ -13,7 +13,10 @@ pub struct ConnectConfig {
 }
 
 #[derive(Clone, Debug)]
-pub struct PlayerConfig {}
+pub struct PlayerConfig {
+    pub canvas: String,
+    pub software_decode: bool,
+}
 
 #[derive(Clone)]
 pub(crate) struct ConnectionParams {
