@@ -52,7 +52,16 @@ desktop = [
     "dep:vlc-rs",
 ]
 js-player = [
+    "web-sys/AudioData",
+    "web-sys/AudioDataCopyToOptions",
+    "web-sys/AudioDecoder",
+    "web-sys/AudioDecoderInit",
+    "web-sys/AudioDecoderConfig",
+    "web-sys/AudioSampleFormat",
     "web-sys/DedicatedWorkerGlobalScope",
+    "web-sys/EncodedAudioChunk",
+    "web-sys/EncodedAudioChunkInit",
+    "web-sys/EncodedAudioChunkType",
     "web-sys/EncodedVideoChunk",
     "web-sys/EncodedVideoChunkInit",
     "web-sys/EncodedVideoChunkType",

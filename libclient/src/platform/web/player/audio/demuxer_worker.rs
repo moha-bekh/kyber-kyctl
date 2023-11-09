@@ -1,0 +1,185 @@
+use log::{error, info, warn};
+
+use tokio::sync::mpsc;
+use wasm_bindgen::prelude::*;
+use wasm_bindgen_futures::spawn_local;
+
+use crate::platform::player::packet::buffer_to_packet;
+use crate::platform::player::packet::{CodecPacket, Packet};
+use crate::platform::reflect::{self, get_string};
+
+use super::decoder::{AudioDecoder, AudioDecoderCallbacks};
+use super::RingBuffer;
+
+#[wasm_bindgen]
+pub struct AudioDemuxerWorkerCtx {
+    tx: mpsc::Sender<js_sys::ArrayBuffer>,
+    rx: Option<mpsc::Receiver<js_sys::ArrayBuffer>>,
+}
+
+#[wasm_bindgen]
+impl AudioDemuxerWorkerCtx {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        let (tx, rx) = mpsc::channel(32);
+
+        Self { tx, rx: Some(rx) }
+    }
+
+    pub async fn on_message(
+        &mut self,
+        event: web_sys::MessageEvent,
+    ) -> std::result::Result<(), JsValue> {
+        let msg = &event.data().dyn_into::<js_sys::Object>()?;
+        let msg_type = get_string(msg, "type")?;
+
+        match msg_type.as_str() {
+            DemuxerWorker::TYPE_START => {
+                let sab = js_sys::Reflect::get(msg, &"sab".into())?
+                    .dyn_into::<js_sys::SharedArrayBuffer>()?;
+
+                let Some(rx) = self.rx.take() else {
+                    warn!("AudioDemuxerWorker has already received Start message");
+                    return Err(JsError::new("Start message already received").into());
+                };
+
+                spawn_local(async move {
+                    let ret = Self::demux_process_loop(rx, sab).await;
+                    if let Err(err) = ret {
+                        error!("Audio demux loop ended with error {err:?}");
+                    }
+                });
+            }
+            DemuxerWorker::TYPE_FRAME => {
+                let frame = js_sys::Reflect::get(msg, &"frame".into())?
+                    .dyn_into::<js_sys::ArrayBuffer>()?;
+
+                let ret = self.tx.blocking_send(frame);
+                if let Err(err) = ret {
+                    warn!("Failed to forward AudioFrame to demuxer task: {err:?}");
+                }
+            }
+            _ => {
+                return Err(JsValue::from(format!(
+                    "Unexpected message type: {msg_type}"
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn demux_process_loop(
+        mut rx: mpsc::Receiver<js_sys::ArrayBuffer>,
+        sab: js_sys::SharedArrayBuffer,
+    ) -> Result<(), JsValue> {
+        let ringbuffer = RingBuffer::from(sab);
+
+        let mut audio_decoder: Option<AudioDecoder> = None;
+
+        let mut cbs = Some(AudioDecoderCallbacks {
+            output: Box::new(move |frame: web_sys::AudioData| {
+                let Some(format) = frame.format() else {
+                    error!("AudioData has no format");
+                    return Ok(());
+                };
+
+                let expected_format = super::FORMAT;
+                let expected_channels = super::CHANNELS;
+
+                if format != expected_format {
+                    error!("Unexpected format {format:?}. Wanted: '{expected_format:?}'");
+                    return Ok(());
+                }
+
+                if frame.number_of_channels() != expected_channels {
+                    error!(
+                        "Unexpected channels {channels}. Wanted: '{expected_channels}'",
+                        channels = frame.number_of_channels()
+                    );
+                    return Ok(());
+                }
+
+                ringbuffer.write(frame)?;
+
+                Ok(())
+            }),
+            error: Box::new(move |error| {
+                info!("audio decoding error: {error:?}");
+                Ok(())
+            }),
+        });
+
+        while let Some(buffer) = rx.recv().await {
+            match buffer_to_packet(buffer)? {
+                Packet::Media(packet) => {
+                    assert!(audio_decoder.is_some());
+                    if let Some(audio_decoder) = &mut audio_decoder {
+                        let ret = audio_decoder.send_packet(packet);
+                        if let Err(err) = ret {
+                            error!("Audio send_packet() failed: {err:?}");
+                        }
+                    } else {
+                        error!("Audio decoder not set");
+                        return Err(JsError::new("Audio decoder not set").into());
+                    }
+                }
+                Packet::Codec(CodecPacket { rotation: _ }) => {
+                    if audio_decoder.is_none() {
+                        info!("Audio codec packet");
+
+                        let Some(cbs) = cbs.take() else {
+                            error!("Callbacks already consumed");
+                            return Err(JsError::new("Callbacks already consumed").into());
+                        };
+
+                        audio_decoder = Some(AudioDecoder::new(cbs)?);
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+pub struct DemuxerWorker {
+    worker: web_sys::Worker,
+}
+
+impl DemuxerWorker {
+    const TYPE_START: &str = "start";
+    const TYPE_FRAME: &str = "frame";
+
+    pub fn new() -> Result<DemuxerWorker, JsValue> {
+        let worker = web_sys::Worker::new_with_options(
+            "./audio_demuxer_worker.js",
+            web_sys::WorkerOptions::new().type_(web_sys::WorkerType::Module),
+        )?;
+
+        Ok(Self { worker })
+    }
+
+    pub fn start(&self, sab: js_sys::SharedArrayBuffer) -> Result<(), JsValue> {
+        let msg = js_sys::Object::new();
+        reflect::set(&msg, "type", Self::TYPE_START.into())?;
+        reflect::set(&msg, "sab", sab.into())?;
+
+        self.worker.post_message(&msg)?;
+
+        Ok(())
+    }
+
+    pub fn send_frame(&self, frame: js_sys::ArrayBuffer) -> Result<(), JsValue> {
+        let msg = js_sys::Object::new();
+        reflect::set(&msg, "type", Self::TYPE_FRAME.into())?;
+        reflect::set_ref(&msg, "frame", &frame)?;
+
+        let transfer = js_sys::Array::of1(&frame);
+
+        self.worker
+            .post_message_with_transfer(&msg, &transfer.into())?;
+
+        Ok(())
+    }
+}
