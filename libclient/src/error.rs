@@ -38,6 +38,9 @@ pub enum Error {
     TlsInvalidFile,
     InvalidState,
 
+    #[cfg(feature = "web")]
+    JsError(wasm_bindgen::JsValue),
+
     // Player errors
     Player(PlayerError),
     // Host service errors
@@ -86,6 +89,13 @@ impl From<platform::InputError> for Error {
 impl From<tokio::task::JoinError> for Error {
     fn from(err: tokio::task::JoinError) -> Error {
         Error::TaskJoin(err)
+    }
+}
+
+#[cfg(feature = "web")]
+impl From<wasm_bindgen::JsValue> for Error {
+    fn from(err: wasm_bindgen::JsValue) -> Error {
+        Error::JsError(err)
     }
 }
 

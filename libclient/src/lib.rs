@@ -6,6 +6,7 @@ mod host_service;
 pub(crate) mod http;
 
 #[cfg_attr(feature = "desktop", path = "./platform/desktop/mod.rs")]
+#[cfg_attr(feature = "web", path = "./platform/web/mod.rs")]
 mod platform;
 
 #[cfg(any(cargo_c, feature = "capi"))]
@@ -199,6 +200,8 @@ impl Handler {
 
                 self.backend = Some(backend);
             }
+            #[allow(unreachable_patterns)]
+            _ => todo!(),
         };
 
         Ok(())
@@ -304,12 +307,12 @@ pub struct VideoSessionConfig {
     pub yuv444: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct InputSessionConfig {
     pub pipeline: InputPipeline,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct StreamingSessionConfig {
     pub protocol: StreamingProtocol,
     pub bitrate: u32,
@@ -356,6 +359,11 @@ impl Client {
 
                 rt.block_on(Self::mainloop(receiver, handler));
             });
+        }
+
+        #[cfg(feature = "web")]
+        {
+            wasm_bindgen_futures::spawn_local(Self::mainloop(receiver, handler));
         }
 
         Ok(Self {

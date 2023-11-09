@@ -116,6 +116,9 @@ if [ "$BUILD_KYBER_DEPS" = true ]; then
     echo '[patch.crates-io]' > .cargo/config.toml
     echo 'kymux = { path = "kymux/kymux" }' >> .cargo/config.toml
     echo 'kymux_client = { path = "kymux/kymux_client" }' >> .cargo/config.toml
+    echo 'keycode = { path = "libkynput/external/keycode/keycode" }' >> .cargo/config.toml
+    echo 'keycode_macro = { path = "libkynput/external/keycode/keycode_macro" }' >> .cargo/config.toml
+    echo 'libkynput = { path = "libkynput/libkynput" }' >> .cargo/config.toml
     echo 'libkynput-rs = { path = "libkynput/libkynput-rs" }' >> .cargo/config.toml
     echo 'libkynput-sys = { path = "libkynput/libkynput-rs/libkynput-sys" }' >> .cargo/config.toml
     echo 'libkypc = { path = "libkypc" }' >> .cargo/config.toml
