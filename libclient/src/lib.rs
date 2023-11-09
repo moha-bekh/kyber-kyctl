@@ -18,8 +18,6 @@ mod kymux_backend;
 #[cfg(feature = "rtp")]
 mod rtp_backend;
 
-use std::sync::{Arc, Mutex};
-
 use async_trait::async_trait;
 use log::{info, warn};
 use serde::Serialize;
@@ -79,7 +77,7 @@ struct Handler {
     streaming_config: StreamingSessionConfig,
     player_config: PlayerConfig,
     http_client: HttpClient,
-    event_manager: Arc<Mutex<EventManager>>,
+    event_manager: EventManager,
     sender: Sender<Message>,
 
     host_events: Option<HostEventReceiver>,
@@ -94,7 +92,7 @@ impl Handler {
         connect_config: ConnectConfig,
         streaming_config: StreamingSessionConfig,
         player_config: PlayerConfig,
-        event_manager: Arc<Mutex<EventManager>>,
+        event_manager: EventManager,
         sender: Sender<Message>,
     ) -> Result<Self> {
         let conn_params = ConnectionParams::new(connect_config)?;
@@ -222,8 +220,7 @@ impl Handler {
                 // Start streaming session
                 self.start_streaming_session().await?;
 
-                let mut event_manager = self.event_manager.lock()?;
-                event_manager.send_event(Event::Started {
+                self.event_manager.send_event(Event::Started {
                     displays: self.displays.clone(),
                 });
 
@@ -232,8 +229,7 @@ impl Handler {
             Message::Stop => {
                 let ret = self.stop().await;
 
-                let mut event_manager = self.event_manager.lock()?;
-                event_manager.send_event(Event::Stopped);
+                self.event_manager.send_event(Event::Stopped);
 
                 ret
             }
@@ -266,9 +262,7 @@ impl Handler {
             Message::DisplayListUpdated { displays } => {
                 info!("Display list updated: {displays:?}");
 
-                let mut event_manager = self.event_manager.lock()?;
-
-                event_manager.send_event(Event::DisplayListUpdated {
+                self.event_manager.send_event(Event::DisplayListUpdated {
                     displays: displays.clone(),
                 });
 
@@ -322,7 +316,7 @@ pub struct StreamingSessionConfig {
 }
 
 pub struct Client {
-    event_manager: Arc<Mutex<EventManager>>,
+    event_manager: EventManager,
     sender: Sender<Message>,
 }
 
@@ -332,7 +326,7 @@ impl Client {
         streaming_config: StreamingSessionConfig,
         player_config: PlayerConfig,
     ) -> Result<Self> {
-        let event_manager = Arc::new(Mutex::new(EventManager::new()));
+        let event_manager = EventManager::new();
 
         let (sender, receiver) = mpsc::channel(32);
         let event_manager_handler = event_manager.clone();
@@ -399,7 +393,7 @@ impl Client {
         Ok(())
     }
 
-    pub fn get_event_manager(&self) -> Arc<Mutex<EventManager>> {
+    pub fn get_event_manager(&self) -> EventManager {
         self.event_manager.clone()
     }
 }

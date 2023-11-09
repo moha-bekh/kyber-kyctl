@@ -558,11 +558,10 @@ pub unsafe extern "C" fn libclient_client_set_event_handler(
     client: *mut libclient_Client,
     handler: libclient_EventHandler,
 ) -> c_int {
-    if let Ok(mut event_manager) = (*client).client.event_manager.lock() {
-        event_manager.add_event_sink(Box::new(handler));
-        0
-    } else {
-        warn!("Fail to get EventManager");
-        -1
-    }
+    (*client)
+        .client
+        .event_manager
+        .add_event_sink(Box::new(handler));
+
+    0
 }
