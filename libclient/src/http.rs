@@ -5,6 +5,7 @@ use crate::platform::http as platform_http;
 pub(crate) struct HttpClient {
     base_url: String,
     client: reqwest::Client,
+    host: String,
 }
 
 impl HttpClient {
@@ -14,7 +15,11 @@ impl HttpClient {
 
         let client = platform_http::create_reqwest(conn_params)?;
 
-        Ok(Self { base_url, client })
+        Ok(Self {
+            base_url,
+            client,
+            host,
+        })
     }
 
     pub(crate) fn client(&self) -> &reqwest::Client {
@@ -23,5 +28,10 @@ impl HttpClient {
 
     pub(crate) fn base_url(&self) -> &str {
         &self.base_url
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn host(&self) -> &str {
+        &self.host
     }
 }
