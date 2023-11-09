@@ -255,6 +255,8 @@ impl Handler {
                 Ok(())
             }
             Message::DisplayListUpdated { displays } => {
+                info!("Display list updated: {displays:?}");
+
                 let mut event_manager = self.event_manager.lock()?;
 
                 event_manager.send_event(Event::DisplayListUpdated {
