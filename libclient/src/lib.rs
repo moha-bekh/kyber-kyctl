@@ -402,4 +402,11 @@ impl Client {
     pub fn get_event_manager(&self) -> EventManager {
         self.event_manager.clone()
     }
+
+    #[cfg(feature = "js-player")]
+    pub async fn supported_video_codecs(
+        force_software: bool,
+    ) -> Vec<platform::player::VideoDecoderConfig> {
+        platform::player::supported_video_codecs(force_software).await
+    }
 }
