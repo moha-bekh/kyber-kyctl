@@ -207,6 +207,12 @@ impl Handler {
     async fn handle_message(&mut self, msg: &Message) -> Result<()> {
         match msg {
             Message::Start => {
+                // Kick the previously connected user
+                let ret = host_service::stop_stream(&self.http_client).await;
+                if let Err(err) = ret {
+                    info!("Stop stream result: {err:?}");
+                }
+
                 // Connect to Kymux, Websocket, and enumerate displays
                 self.displays = self.start().await?;
 
