@@ -48,6 +48,7 @@ impl HostEventSink {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) async fn push(&self, event: &str) {
         if let Some(event) = Self::convert_event(event) {
             let ret = self.msg_proxy.send_async(event).await;
@@ -55,6 +56,16 @@ impl HostEventSink {
                 warn!("Fail to send HostEvent: {err:?}");
             }
         };
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn blocking_push(&self, event: &str) {
+        if let Some(event) = Self::convert_event(event) {
+            let ret = self.msg_proxy.send(event);
+            if let Err(err) = ret {
+                warn!("Fail to send HostEvent: {err:?}");
+            }
+        }
     }
 }
 
