@@ -24,8 +24,10 @@ use serde::Serialize;
 use tokio::sync::mpsc::{self, Sender};
 
 use crate::error::{Error, Result};
-use enums::{Display, Event, Message};
+use enums::Message;
+pub use enums::{Display, Event};
 use event_manager::EventManager;
+pub use event_manager::EventSink;
 use host_events::HostEventReceiver;
 use http::HttpClient;
 pub use platform::{ConnectConfig, PlayerConfig};
