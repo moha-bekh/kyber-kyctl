@@ -40,6 +40,16 @@ pub enum Error {
 
     #[cfg(feature = "web")]
     JsError(wasm_bindgen::JsValue),
+    #[cfg(feature = "web")]
+    JsElementNotFound {
+        name: String,
+    },
+    #[cfg(feature = "web")]
+    JsCastFailed {
+        to: String,
+    },
+    #[cfg(feature = "web")]
+    JsDomInvalid,
 
     // Player errors
     Player(PlayerError),

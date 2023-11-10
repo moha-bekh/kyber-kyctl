@@ -1,3 +1,4 @@
+pub(crate) mod dom;
 mod host_events;
 pub(crate) mod http;
 mod input_service;
