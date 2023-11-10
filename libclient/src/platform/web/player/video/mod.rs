@@ -1,6 +1,6 @@
-use log::warn;
+use log::{error, warn};
 
-use crate::VideoCodec;
+use crate::{Error, PlayerConfig, Result, VideoCodec, VideoSessionConfig};
 
 mod cell_buf;
 mod decoder;
@@ -78,4 +78,34 @@ pub(crate) async fn supported_video_codecs(force_software: bool) -> Vec<VideoDec
     }
 
     configs
+}
+
+pub(crate) async fn get_video_decoder_config(
+    player_config: &PlayerConfig,
+    video_config: &VideoSessionConfig,
+) -> Result<VideoDecoderConfig> {
+    let supported_video_codecs = supported_video_codecs(player_config.software_decode).await;
+
+    let supported_video_codecs: Vec<_> = supported_video_codecs
+        .into_iter()
+        .filter(|config| config.codec == video_config.codec && config.yuv444 == video_config.yuv444)
+        .collect();
+
+    if supported_video_codecs.len() > 1 {
+        let video_decoder_config = supported_video_codecs.into_iter().find(|config| {
+            config.hardware_acceleration == web_sys::HardwareAcceleration::PreferHardware
+        });
+
+        match video_decoder_config {
+            Some(video_decoder_config) => Ok(video_decoder_config),
+            None => {
+                error!(
+                    "Expected to find a configuration with hardware configuration, but got none"
+                );
+                Err(Error::NoValidVideoDecoderConfig)
+            }
+        }
+    } else {
+        Ok(supported_video_codecs[0].clone())
+    }
 }

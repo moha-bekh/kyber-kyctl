@@ -2,7 +2,7 @@ mod packet;
 mod video;
 
 pub(crate) use video::player::VideoPlayer;
-pub(crate) use video::{supported_video_codecs, VideoDecoderConfig};
+pub(crate) use video::{get_video_decoder_config, supported_video_codecs, VideoDecoderConfig};
 
 use crate::Result;
 

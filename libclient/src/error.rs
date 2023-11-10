@@ -50,6 +50,8 @@ pub enum Error {
     },
     #[cfg(feature = "web")]
     JsDomInvalid,
+    #[cfg(feature = "web")]
+    NoValidVideoDecoderConfig,
 
     // Player errors
     Player(PlayerError),
