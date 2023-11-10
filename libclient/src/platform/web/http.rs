@@ -8,7 +8,7 @@ pub(crate) fn create_host(conn_params: &ConnectionParams) -> String {
     )
 }
 
-pub(crate) fn create_reqwest(conn_params: ConnectionParams) -> Result<reqwest::Client> {
+pub(crate) fn create_reqwest(_conn_params: ConnectionParams) -> Result<reqwest::Client> {
     let client = reqwest::ClientBuilder::new().build()?;
 
     Ok(client)

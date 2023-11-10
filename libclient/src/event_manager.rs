@@ -1,5 +1,3 @@
-use log::warn;
-
 use super::enums::Event;
 
 pub trait EventSink {
@@ -36,7 +34,7 @@ impl EventManager {
     pub fn add_event_sink(&self, sink: BoxedEventSink) {
         #[cfg(not(target_arch = "wasm32"))]
         let Ok(mut inner) = self.inner.lock() else {
-            warn!("Failed to lock EventManager::inner");
+            log::warn!("Failed to lock EventManager::inner");
             return;
         };
 
@@ -49,7 +47,7 @@ impl EventManager {
     pub fn send_event(&self, event: Event) {
         #[cfg(not(target_arch = "wasm32"))]
         let Ok(inner) = self.inner.lock() else {
-            warn!("Failed to lock EventManager::inner");
+            log::warn!("Failed to lock EventManager::inner");
             return;
         };
 
