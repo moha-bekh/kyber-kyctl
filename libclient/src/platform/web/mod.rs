@@ -2,6 +2,7 @@ pub(crate) mod dom;
 mod host_events;
 pub(crate) mod http;
 mod input_service;
+pub(crate) mod reflect;
 
 use crate::Result;
 pub(crate) use host_events::{WsClient, WsClientBuilder};
