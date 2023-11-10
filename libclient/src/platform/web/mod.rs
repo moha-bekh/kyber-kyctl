@@ -3,10 +3,12 @@ mod host_events;
 pub(crate) mod http;
 mod input_service;
 pub(crate) mod reflect;
+mod websocket;
 
 use crate::Result;
 pub(crate) use host_events::{WsClient, WsClientBuilder};
 pub(crate) use input_service::{get_cursor_format, InputError, InputMsgSink, InputPipeline};
+pub(crate) use websocket::{WebSocket, WebSocketHandler};
 
 #[derive(Clone, Debug)]
 pub struct ConnectConfig {
