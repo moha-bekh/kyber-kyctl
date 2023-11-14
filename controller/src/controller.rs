@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use log::info;
+use log::{info, warn};
 
 use avservice_types::Display;
 use libkypc::process::ProcessFactory;
@@ -19,7 +19,11 @@ pub(crate) async fn stop_kymux(
 ) -> Result<()> {
     if let Some(listener) = listener {
         info!("Stop running Kymux Listener");
-        listener.stop().await?;
+
+        let ret = listener.stop().await;
+        if let Err(err) = ret {
+            warn!("Kymux Listener stop raised an error: {err:?}");
+        }
     };
 
     if let Some(mut connection) = connection {
