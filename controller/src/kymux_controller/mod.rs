@@ -67,8 +67,8 @@ impl KymuxListener {
         listener: kymux::ConnectionListener,
         ctrl: web::Data<Mutex<Controller>>,
     ) -> Result<()> {
-        let connecting = listener.accept().await?;
-        let connection = connecting.complete_connection().await?;
+        info!("Waiting for Kymux connection");
+        let connection = listener.accept().await?;
 
         let mut ctrl = ctrl.lock().await;
         ctrl.kymux = Some(connection);
@@ -98,22 +98,19 @@ async fn start_kymux(ctrl: web::Data<Mutex<Controller>>, public_port: u16) -> Re
     let certificate = rustls::Certificate(tls_config.certificate.clone());
     let private_key = rustls::PrivateKey(tls_config.private_key.clone());
 
-    let mut certs_store = rustls::RootCertStore::empty();
-    certs_store.add(&certificate).map_err(|err| {
-        warn!("Failed to crate RootCertStore: {err:?}");
-        Error::TlsInvalidCertificate { source: err }
-    })?;
-
     // Start connection listener.
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), LISTENING_PORT);
 
     info!("kymux: Listening to {addr}");
-    let config = kymux::ServerConfig::new(addr, vec![certificate.clone()], private_key);
-
-    let listener = kymux::ConnectionListener::new(config).await?;
+    let config = kymux::ServerConfig::Quic {
+        addr,
+        certificate,
+        private_key,
+    };
 
     // Start Listen task
-    let listener = KymuxListener::new(listener, ctrl.clone()).await?;
+    let conn_listener = kymux::ConnectionListener::new(config).await?;
+    let listener = KymuxListener::new(conn_listener, ctrl.clone()).await?;
 
     let mut ctrl = ctrl.lock().await;
     ctrl.kymux_listener = Some(listener);
@@ -191,12 +188,11 @@ async fn start_session(
             .video_protocol
             .unwrap_or(kymux::VideoProtocol::Reliable);
 
-        let video_endpoint = kymux
-            .register_endpoint(None, kymux::StreamType::Video(video_protocol))
+        let (video_endpoint, video_uri) = kymux
+            .register_video_endpoint_with_ipc_forward(None, video_protocol)
             .await?;
 
         info!("Start Video avservice. Protocol: {video_protocol:?}, Endpoint: {video_endpoint:X}");
-        let video_uri = kymux.get_uri_for_endpoint(video_endpoint)?;
 
         let avservice_video = start_video(
             &ctrl.process_factory,
@@ -215,13 +211,10 @@ async fn start_session(
 
     // Audio server
     let (audio_endpoint, avservice_audio) = if request.audio {
-        let audio_endpoint = kymux
-            .register_endpoint(None, kymux::StreamType::Audio)
-            .await?;
+        let (audio_endpoint, audio_uri) =
+            kymux.register_audio_endpoint_with_ipc_forward(None).await?;
 
         info!("Start Audio avservice. Endpoint: {audio_endpoint:X}");
-
-        let audio_uri = kymux.get_uri_for_endpoint(audio_endpoint)?;
 
         let avservice_audio = start_audio(&ctrl.process_factory, audio_uri).await?;
         (Some(audio_endpoint), Some(avservice_audio))
@@ -232,12 +225,9 @@ async fn start_session(
 
     // Input server
     let (input_endpoint, inputservice) = if let Some(inputs_request) = request.inputs {
-        let input_endpoint = kymux
-            .register_endpoint(None, kymux::StreamType::Input)
-            .await?;
+        let (input_endpoint, uri) = kymux.register_input_endpoint_with_ipc_forward(None).await?;
 
         info!("Start Inputservice. Endpoint: {input_endpoint:X}");
-        let uri = kymux.get_uri_for_endpoint(input_endpoint)?;
 
         let host_config = inputservice_types::HostConfig {
             display_list: ctrl.displays.convert(),

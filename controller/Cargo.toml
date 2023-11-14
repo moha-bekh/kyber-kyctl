@@ -20,7 +20,7 @@ tokio = { version = "1.33.0", features = ["fs", "process", "sync", "time"] }
 
 avservice-types = "0.1"
 inputservice-types = "0.1"
-kymux = "0.1"
+kymux = { version = "0.1", features = ["backend-quinn", "ipc", "tokio-rt"] }
 libkypc = "0.1"
 
 [features]

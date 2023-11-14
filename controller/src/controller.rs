@@ -26,7 +26,7 @@ pub(crate) async fn stop_kymux(
         }
     };
 
-    if let Some(mut connection) = connection {
+    if let Some(connection) = connection {
         info!("Stop running Kymux Connection");
         connection.stop().await?;
     };

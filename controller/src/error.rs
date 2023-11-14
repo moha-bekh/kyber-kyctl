@@ -33,8 +33,6 @@ pub enum Error {
     FileNotFound { path: PathBuf },
     #[error("Invalid TLS file")]
     TlsInvalidFile,
-    #[error("Invalid TLS certificate: {source:?}")]
-    TlsInvalidCertificate { source: rustls::Error },
     #[error("rustls error: {source:?}")]
     RustlsError {
         #[from]

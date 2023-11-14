@@ -105,6 +105,7 @@ if [ "$BUILD_KYBER_DEPS" = true ]; then
     echo 'kycom = { path = "kymux/kyproto/kycom" }' >> .cargo/config.toml
     echo 'kynet = { path = "kymux/kyproto/kynet" }' >> .cargo/config.toml
     echo 'kyproto = { path = "kymux/kyproto/kyproto" }' >> .cargo/config.toml
+    echo 'ls-qpack-sys = { path = "kymux/kyproto/external/ls-qpack-rs/ls-qpack-sys" }' >> .cargo/config.toml
     echo 'libkypc = { path = "libkypc" }' >> .cargo/config.toml
 fi
 
