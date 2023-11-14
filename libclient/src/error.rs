@@ -97,6 +97,13 @@ impl From<platform::InputError> for Error {
     }
 }
 
+#[cfg(feature = "kymux")]
+impl From<kymux::Error> for Error {
+    fn from(err: kymux::Error) -> Error {
+        Error::Kymux(err)
+    }
+}
+
 #[cfg(feature = "desktop")]
 impl From<tokio::task::JoinError> for Error {
     fn from(err: tokio::task::JoinError) -> Error {

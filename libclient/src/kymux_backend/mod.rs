@@ -28,8 +28,8 @@ async fn start_kymux(
     let start_response = host_service::start_kymux(client, conn_params.port).await?;
 
     // Start Kymux connection
-    let mut certs_store = rustls::RootCertStore::empty();
-    certs_store
+    let mut roots = rustls::RootCertStore::empty();
+    roots
         .add(&rustls::Certificate(
             conn_params.tls_config.root_certificate.clone(),
         ))
@@ -40,7 +40,11 @@ async fn start_kymux(
 
     let addr = SocketAddr::new(conn_params.addr.ip(), start_response.port);
 
-    let kymux_config = kymux::ClientConfig::new(addr, certs_store, &conn_params.host.clone());
+    let kymux_config = kymux::ClientConfig::Quic {
+        addr,
+        roots,
+        server_name: conn_params.host.clone(),
+    };
 
     let kymux = kymux::Connection::connect(kymux_config)
         .await
@@ -56,19 +60,21 @@ async fn start_kymux(
 
 fn create_video_config(
     kymux: &kymux::Connection,
+    kymux_config: &KymuxConfig,
     player_config: &PlayerConfig,
     endpoint: &Option<u16>,
 ) -> Result<Option<player::VideoConfig>> {
-    let config = match (player_config.window_handle, endpoint) {
-        (Some(window_handle), Some(endpoint)) => {
-            let uri = kymux.get_uri_for_endpoint(*endpoint).map_err(|err| {
-                error!("Fail to get URI for Video endpoint {endpoint}");
-                Error::Kymux(err)
-            })?;
+    let config = match (
+        player_config.window_handle,
+        endpoint,
+        kymux_config.video_protocol,
+    ) {
+        (Some(window_handle), Some(endpoint), Some(video_protocol)) => {
+            let uri = kymux.connect_video_endpoint_with_ipc_forward(*endpoint, video_protocol)?;
 
             Some(player::VideoConfig { window_handle, uri })
         }
-        (None, None) => None,
+        (None, None, None) => None,
         _ => {
             error!("Invalid Video config. Should either get a config and an endpoint, or none of them.");
             return Err(Error::InvalidState);
@@ -85,10 +91,7 @@ fn create_audio_config(
 ) -> Result<Option<player::AudioConfig>> {
     let config = match (enabled, endpoint) {
         (true, Some(endpoint)) => {
-            let uri = kymux.get_uri_for_endpoint(*endpoint).map_err(|err| {
-                error!("Fail to get URI for audio endpoint {endpoint}");
-                Error::Kymux(err)
-            })?;
+            let uri = kymux.connect_audio_endpoint_with_ipc_forward(*endpoint)?;
 
             Some(player::AudioConfig { uri })
         }
@@ -108,10 +111,7 @@ fn start_input(
     endpoint: u16,
     msg_proxy: MessageProxy,
 ) -> Result<Option<InputService>> {
-    let input_uri = kymux.get_uri_for_endpoint(endpoint).map_err(|err| {
-        error!("Fail to get URI for input endpoint {endpoint}");
-        Error::Kymux(err)
-    })?;
+    let input_uri = kymux.connect_input_endpoint_with_ipc_forward(endpoint)?;
 
     info!("Start input. URI: {input_uri}");
 
@@ -164,7 +164,7 @@ impl KymuxBackend {
             http_client,
             displays,
             streaming_config.bitrate,
-            kymux_config,
+            kymux_config.clone(),
             &streaming_config.video,
             streaming_config.audio,
             cursor_format,
@@ -172,7 +172,12 @@ impl KymuxBackend {
         .await?;
 
         // Play Video and Audio
-        let video_config = create_video_config(&kymux, player_config, &start_resp.video_endpoint)?;
+        let video_config = create_video_config(
+            &kymux,
+            &kymux_config,
+            player_config,
+            &start_resp.video_endpoint,
+        )?;
 
         let audio_config =
             create_audio_config(&kymux, streaming_config.audio, &start_resp.audio_endpoint)?;

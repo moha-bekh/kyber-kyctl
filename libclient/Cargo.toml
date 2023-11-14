@@ -48,6 +48,9 @@ desktop = [
     "dep:rustls",
     "dep:rustls-pemfile",
     "dep:vlc-rs",
+    "kymux?/backend-quinn",
+    "kymux?/ipc",
+    "kymux?/tokio-rt",
     "reqwest/rustls-tls",
     "tokio/rt-multi-thread",
 ]
