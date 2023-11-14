@@ -26,9 +26,9 @@ pub(crate) async fn start_mux(
     // Assume that the public port used for UDP is the same than the port for TCP.
     let ret = super::start_kymux(ctrl.clone(), request.public_streamer_port).await;
     match ret {
-        Ok(port) => {
-            info!("Kymux started. Listening on {port}");
-            HttpResponse::Ok().json(StartKymuxResponse { port })
+        Ok(ret) => {
+            info!("Kymux started. Listening on {port}", port = ret.port);
+            HttpResponse::Ok().json(ret)
         }
         Err(err) => {
             info!("Kymux start rejected: {:?}", err);

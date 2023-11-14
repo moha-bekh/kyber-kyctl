@@ -77,7 +77,10 @@ impl KymuxListener {
     }
 }
 
-async fn start_kymux(ctrl: web::Data<Mutex<Controller>>, public_port: u16) -> Result<u16> {
+async fn start_kymux(
+    ctrl: web::Data<Mutex<Controller>>,
+    public_port: u16,
+) -> Result<requests::StartKymuxResponse> {
     // Drop existing kymux instances
     {
         let mut ctrl = ctrl.lock().await;
@@ -115,7 +118,7 @@ async fn start_kymux(ctrl: web::Data<Mutex<Controller>>, public_port: u16) -> Re
     let mut ctrl = ctrl.lock().await;
     ctrl.kymux_listener = Some(listener);
 
-    Ok(public_port)
+    Ok(requests::StartKymuxResponse { port: public_port })
 }
 
 async fn start_video(
