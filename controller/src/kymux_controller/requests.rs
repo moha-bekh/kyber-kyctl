@@ -8,9 +8,15 @@ use inputservice_types::CursorFormat;
 
 use crate::controller::{self, Controller};
 
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+pub(crate) enum KymuxTransportBackend {
+    Quic,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct StartKymux {
     pub(crate) public_streamer_port: u16,
+    pub(crate) backend: KymuxTransportBackend,
 }
 
 #[derive(Debug, Serialize)]
@@ -24,7 +30,7 @@ pub(crate) async fn start_mux(
     request: web::Json<StartKymux>,
 ) -> HttpResponse {
     // Assume that the public port used for UDP is the same than the port for TCP.
-    let ret = super::start_kymux(ctrl.clone(), request.public_streamer_port).await;
+    let ret = super::start_kymux(ctrl.clone(), request.backend, request.public_streamer_port).await;
     match ret {
         Ok(ret) => {
             info!("Kymux started. Listening on {port}", port = ret.port);

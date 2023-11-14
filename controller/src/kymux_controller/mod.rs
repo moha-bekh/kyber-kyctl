@@ -19,6 +19,8 @@ use crate::Controller;
 
 use crate::LISTENING_PORT;
 
+use requests::KymuxTransportBackend;
+
 pub(crate) struct KymuxListener {
     stop_tx: oneshot::Sender<()>,
     join_handle: JoinHandle<()>,
@@ -79,6 +81,7 @@ impl KymuxListener {
 
 async fn start_kymux(
     ctrl: web::Data<Mutex<Controller>>,
+    backend: KymuxTransportBackend,
     public_port: u16,
 ) -> Result<requests::StartKymuxResponse> {
     // Drop existing kymux instances
@@ -98,21 +101,26 @@ async fn start_kymux(
         ctrl.tls_config.clone()
     };
 
-    let certificate = rustls::Certificate(tls_config.certificate.clone());
-    let private_key = rustls::PrivateKey(tls_config.private_key.clone());
-
-    // Start connection listener.
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), LISTENING_PORT);
 
-    info!("kymux: Listening to {addr}");
-    let config = kymux::ServerConfig::Quic {
-        addr,
-        certificate,
-        private_key,
+    // Start Listen task
+    let conn_listener = match backend {
+        KymuxTransportBackend::Quic => {
+            info!("Start Quic listener");
+
+            let certificate = rustls::Certificate(tls_config.certificate.clone());
+            let private_key = rustls::PrivateKey(tls_config.private_key.clone());
+
+            let config = kymux::ServerConfig::Quic {
+                addr,
+                certificate,
+                private_key,
+            };
+            kymux::ConnectionListener::new(config).await?
+        }
     };
 
     // Start Listen task
-    let conn_listener = kymux::ConnectionListener::new(config).await?;
     let listener = KymuxListener::new(conn_listener, ctrl.clone()).await?;
 
     let mut ctrl = ctrl.lock().await;
