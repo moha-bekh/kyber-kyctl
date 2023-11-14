@@ -1,4 +1,5 @@
 #[cfg_attr(feature = "desktop", path = "./desktop.rs")]
+#[cfg_attr(feature = "web", path = "./web.rs")]
 mod platform;
 
 use async_trait::async_trait;
@@ -18,6 +19,8 @@ pub(crate) mod host_service;
 pub enum KymuxTransportBackend {
     #[cfg(feature = "desktop")]
     Quic,
+    #[cfg(feature = "web")]
+    Webtransport,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -40,6 +43,17 @@ async fn start_kymux(
         KymuxTransportBackend::Quic => {
             info!("Connect using Quic backend");
             platform::connect_quinn(conn_params, start_response.port).await?
+        }
+        #[cfg(feature = "web")]
+        KymuxTransportBackend::Webtransport => {
+            info!("Connect using Webtransport backend");
+
+            let Some(certificate_hash) = start_response.certificate_hash else {
+                error!("No certificate hash returned");
+                return Err(Error::Rejected);
+            };
+
+            platform::connect_webtransport(client.base_url().into(), certificate_hash).await?
         }
     };
 

@@ -8,9 +8,18 @@ use crate::{CursorFormat, Display, VideoCodec, VideoSessionConfig};
 
 use super::{KymuxConfig, KymuxTransportBackend};
 
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+pub(crate) struct StartKymuxCertificateHash {
+    pub(crate) algorithm: String,
+    pub(crate) hash: String,
+}
+
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub(crate) struct StartKymuxResponse {
     pub(crate) port: u16,
+    pub(crate) certificate_hash: Option<StartKymuxCertificateHash>,
 }
 
 pub(crate) async fn start_kymux(

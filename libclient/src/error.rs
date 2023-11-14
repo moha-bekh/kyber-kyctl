@@ -32,6 +32,14 @@ pub enum Error {
     #[cfg(feature = "kymux")]
     Kymux(kymux::Error),
     KymuxNotStarted,
+    #[cfg(feature = "kymux")]
+    KymuxReadyFailed {
+        reason: String,
+    },
+    #[cfg(feature = "kymux")]
+    KymuxSendFailed {
+        reason: String,
+    },
     #[cfg(feature = "desktop")]
     TaskJoin(tokio::task::JoinError),
     FileNotFound(PathBuf),
