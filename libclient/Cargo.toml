@@ -47,9 +47,9 @@ desktop = [
     "dep:libkynput-sys",
     "dep:rustls",
     "dep:rustls-pemfile",
+    "dep:vlc-rs",
     "reqwest/rustls-tls",
     "tokio/rt-multi-thread",
-    "dep:vlc-rs",
 ]
 js-player = [
     "web-sys/AudioData",
