@@ -115,7 +115,8 @@ impl KymuxBackend {
     }
 }
 
-#[async_trait]
+#[cfg_attr(target_family = "wasm", async_trait(?Send))]
+#[cfg_attr(not(target_family = "wasm"), async_trait)]
 impl BackendDriver for KymuxBackend {
     async fn input_service_connected(&mut self) -> Result<()> {
         self.inner.input_service_connected().await
