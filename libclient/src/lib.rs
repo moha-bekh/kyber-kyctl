@@ -305,12 +305,18 @@ impl Handler {
     }
 }
 
+#[cfg(feature = "kymux")]
+pub use kymux_backend::{KymuxConfig, KymuxTransportBackend};
+
+#[cfg(feature = "kymux")]
+pub use kymux::VideoProtocol;
+
 #[derive(Clone, Debug)]
 pub enum StreamingProtocol {
     #[cfg(feature = "rtp")]
     Rtp,
     #[cfg(feature = "kymux")]
-    Kymux(kymux_backend::KymuxConfig),
+    Kymux(KymuxConfig),
     #[cfg(feature = "websocket")]
     Websocket,
 }
