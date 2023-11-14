@@ -2,6 +2,7 @@ pub(crate) mod requests;
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
+use std::time::Duration;
 
 use actix_web::web;
 use log::{info, warn};
@@ -77,6 +78,17 @@ impl KymuxListener {
 }
 
 async fn start_kymux(ctrl: web::Data<Mutex<Controller>>, public_port: u16) -> Result<u16> {
+    // Drop existing kymux instances
+    {
+        let mut ctrl = ctrl.lock().await;
+
+        crate::controller::stop_kymux(ctrl.kymux_listener.take(), ctrl.kymux.take()).await?;
+
+        // HACK: Kymux doesn't release its UDP Socket on stop. It is done after
+        // some time in background tasks.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
     // Load TLS config
     let tls_config = {
         let ctrl = ctrl.lock().await;
