@@ -27,6 +27,18 @@ pub struct KymuxConfig {
     pub video_protocol: Option<kymux::VideoProtocol>,
 }
 
+struct Player(player::Player);
+
+impl Player {
+    async fn stop(mut self) -> Result<()> {
+        info!("Stop player");
+        self.0.stop_async().await?;
+        info!("Player stopped");
+
+        Ok(())
+    }
+}
+
 async fn start_kymux(
     conn_params: &ConnectionParams,
     client: &HttpClient,
@@ -113,6 +125,31 @@ fn create_audio_config(
     Ok(config)
 }
 
+async fn create_player(
+    kymux: &mut kymux::Connection,
+    kymux_config: &KymuxConfig,
+    player_config: &PlayerConfig,
+    streaming_config: &StreamingSessionConfig,
+    video_endpoint: &Option<u16>,
+    audio_endpoint: &Option<u16>,
+    msg_proxy: MessageProxy,
+) -> Result<Option<Player>> {
+    let video_config = create_video_config(kymux, kymux_config, player_config, video_endpoint)?;
+
+    let audio_config = create_audio_config(kymux, streaming_config.audio, audio_endpoint)?;
+
+    let player = if video_config.is_some() || audio_config.is_some() {
+        let mut player = player::Player::new(player_config.software_decode, msg_proxy.clone())?;
+        player.play(video_config, audio_config)?;
+
+        Some(Player(player))
+    } else {
+        None
+    };
+
+    Ok(player)
+}
+
 fn start_input(
     kymux: &kymux::Connection,
     config: &InputSessionConfig,
@@ -145,7 +182,7 @@ struct InputService {
 
 pub(crate) struct KymuxBackend {
     kymux: kymux::Connection,
-    player: Option<player::Player>,
+    player: Option<Player>,
     input_service: Option<InputService>,
 }
 
@@ -159,7 +196,7 @@ impl KymuxBackend {
         kymux_config: KymuxConfig,
         msg_proxy: MessageProxy,
     ) -> Result<Self> {
-        let kymux = start_kymux(conn_params, http_client, kymux_config.backend).await?;
+        let mut kymux = start_kymux(conn_params, http_client, kymux_config.backend).await?;
 
         let cursor_format = if let Some(input_config) = streaming_config.input.as_ref() {
             get_cursor_format(&input_config.pipeline)
@@ -180,24 +217,16 @@ impl KymuxBackend {
         .await?;
 
         // Play Video and Audio
-        let video_config = create_video_config(
-            &kymux,
+        let player = create_player(
+            &mut kymux,
             &kymux_config,
             player_config,
+            streaming_config,
             &start_resp.video_endpoint,
-        )?;
-
-        let audio_config =
-            create_audio_config(&kymux, streaming_config.audio, &start_resp.audio_endpoint)?;
-
-        let player = if video_config.is_some() || audio_config.is_some() {
-            let mut player = player::Player::new(player_config.software_decode, msg_proxy.clone())?;
-            player.play(video_config, audio_config)?;
-
-            Some(player)
-        } else {
-            None
-        };
+            &start_resp.audio_endpoint,
+            msg_proxy.clone(),
+        )
+        .await?;
 
         // Start input
         let input_service = match (streaming_config.input.as_ref(), start_resp.input_endpoint) {
@@ -244,7 +273,7 @@ impl BackendDriver for KymuxBackend {
 
     async fn stop(&mut self) -> Result<()> {
         if let Some(mut player) = self.player.take() {
-            player.stop_async().await?;
+            player.0.stop_async().await?;
         }
 
         if let Some(input_service) = self.input_service.take() {
