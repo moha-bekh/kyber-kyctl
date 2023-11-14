@@ -1,4 +1,5 @@
 pub(crate) mod requests;
+mod webtransport;
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
@@ -19,7 +20,7 @@ use crate::Controller;
 
 use crate::LISTENING_PORT;
 
-use requests::KymuxTransportBackend;
+use requests::{KymuxTransportBackend, StartKymuxCertificateHash};
 
 pub(crate) struct KymuxListener {
     stop_tx: oneshot::Sender<()>,
@@ -104,7 +105,7 @@ async fn start_kymux(
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), LISTENING_PORT);
 
     // Start Listen task
-    let conn_listener = match backend {
+    let (conn_listener, certificate_hash) = match backend {
         KymuxTransportBackend::Quic => {
             info!("Start Quic listener");
 
@@ -116,7 +117,28 @@ async fn start_kymux(
                 certificate,
                 private_key,
             };
-            kymux::ConnectionListener::new(config).await?
+            let listener = kymux::ConnectionListener::new(config).await?;
+            (listener, None)
+        }
+        KymuxTransportBackend::Webtransport => {
+            info!("Start webtransport listener");
+
+            let cert = webtransport::gen_webtransport_cert()?;
+
+            let server_config = kymux::ServerConfig::Wtransport {
+                addr,
+                certificate: cert.cert_der,
+                private_key: cert.key_der,
+            };
+            let listener = kymux::ConnectionListener::new(server_config).await?;
+
+            (
+                listener,
+                Some(StartKymuxCertificateHash {
+                    algorithm: "sha-256".into(),
+                    hash: cert.cert_digest,
+                }),
+            )
         }
     };
 
@@ -126,7 +148,10 @@ async fn start_kymux(
     let mut ctrl = ctrl.lock().await;
     ctrl.kymux_listener = Some(listener);
 
-    Ok(requests::StartKymuxResponse { port: public_port })
+    Ok(requests::StartKymuxResponse {
+        port: public_port,
+        certificate_hash,
+    })
 }
 
 async fn start_video(

@@ -11,6 +11,7 @@ use crate::controller::{self, Controller};
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 pub(crate) enum KymuxTransportBackend {
     Quic,
+    Webtransport,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -20,8 +21,15 @@ pub(crate) struct StartKymux {
 }
 
 #[derive(Debug, Serialize)]
+pub(crate) struct StartKymuxCertificateHash {
+    pub(crate) algorithm: String,
+    pub(crate) hash: String,
+}
+
+#[derive(Debug, Serialize)]
 pub(crate) struct StartKymuxResponse {
     pub(crate) port: u16,
+    pub(crate) certificate_hash: Option<StartKymuxCertificateHash>,
 }
 
 #[post("/start_mux")]

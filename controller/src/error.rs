@@ -38,6 +38,13 @@ pub enum Error {
         #[from]
         source: rustls::Error,
     },
+    #[error("rcgen error: {source:?}")]
+    RcGenError {
+        #[from]
+        source: rcgen::RcgenError,
+    },
+    #[error("Operation on date overflow/underflow")]
+    DateOperationOverflow,
     #[error("Actix Web error: {source:?}")]
     ActixError {
         #[from]
