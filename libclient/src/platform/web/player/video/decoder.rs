@@ -87,6 +87,7 @@ impl VideoDecoder {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub async fn flush(&self) -> Result<(), JsValue> {
         let promise = self.video_decoder.flush();
         JsFuture::from(promise).await?;

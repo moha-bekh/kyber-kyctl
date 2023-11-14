@@ -64,6 +64,7 @@ impl AudioDecoder {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub async fn flush(&self) -> Result<(), JsValue> {
         let promise = self.audio_decoder.flush();
         JsFuture::from(promise).await?;
