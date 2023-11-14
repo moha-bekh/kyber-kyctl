@@ -15,17 +15,25 @@ use crate::{
 
 pub(crate) mod host_service;
 
+#[derive(Clone, Copy, Debug, Serialize)]
+pub enum KymuxTransportBackend {
+    #[cfg(feature = "desktop")]
+    Quic,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct KymuxConfig {
+    pub backend: KymuxTransportBackend,
     pub video_protocol: Option<kymux::VideoProtocol>,
 }
 
 async fn start_kymux(
     conn_params: &ConnectionParams,
     client: &HttpClient,
+    backend: KymuxTransportBackend,
 ) -> Result<kymux::Connection> {
     // Request remote Kymux start
-    let start_response = host_service::start_kymux(client, conn_params.port).await?;
+    let start_response = host_service::start_kymux(client, backend, conn_params.port).await?;
 
     // Start Kymux connection
     let mut roots = rustls::RootCertStore::empty();
@@ -151,7 +159,7 @@ impl KymuxBackend {
         kymux_config: KymuxConfig,
         msg_proxy: MessageProxy,
     ) -> Result<Self> {
-        let kymux = start_kymux(conn_params, http_client).await?;
+        let kymux = start_kymux(conn_params, http_client, kymux_config.backend).await?;
 
         let cursor_format = if let Some(input_config) = streaming_config.input.as_ref() {
             get_cursor_format(&input_config.pipeline)

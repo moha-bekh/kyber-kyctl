@@ -242,6 +242,7 @@ pub unsafe extern "C" fn libclient_streaming_protocol_kymux(
 ) -> *mut libclient_StreamingProtocol {
     let protocol = crate::StreamingProtocol::Kymux(crate::kymux_backend::KymuxConfig {
         video_protocol: Some(video_protocol.into()),
+        backend: crate::kymux_backend::KymuxTransportBackend::Quic,
     });
 
     Box::into_raw(Box::new(libclient_StreamingProtocol { protocol }))
