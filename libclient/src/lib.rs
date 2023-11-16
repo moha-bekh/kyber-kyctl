@@ -36,6 +36,7 @@ use http::HttpClient;
 pub use platform::{ConnectConfig, PlayerConfig};
 pub(crate) use platform::{ConnectionParams, InputPipeline};
 
+#[allow(dead_code)]
 pub(crate) const STREAMER_PORT: u16 = 8080;
 
 #[derive(Clone)]
