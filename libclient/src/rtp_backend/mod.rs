@@ -2,6 +2,7 @@ pub mod host_service;
 
 use std::env;
 use std::fs;
+use std::path::PathBuf;
 
 use async_trait::async_trait;
 use log::{debug, info};
@@ -13,8 +14,16 @@ use crate::{BackendDriver, ConnectionParams, Error, MessageProxy, Result, Stream
 
 const RTP_VIDEO_PORT: u16 = 30000;
 
+fn get_tmp_folder() -> PathBuf {
+    if let Ok(path) = env::var("KYBER_CACHEDIR") {
+        PathBuf::from(path)
+    } else {
+        env::temp_dir()
+    }
+}
+
 fn create_video_sdp_file(streamer: &str, video_port: u16, sdp_param: &str) -> Result<String> {
-    let sdp_path = env::temp_dir().join("video.sdp");
+    let sdp_path = get_tmp_folder().join("video.sdp");
 
     let sdp = format!(
         "v=0\n\
@@ -41,7 +50,7 @@ fn create_video_sdp_file(streamer: &str, video_port: u16, sdp_param: &str) -> Re
 }
 
 fn create_audio_sdp_file(streamer: &str, audio_port: u16) -> Result<String> {
-    let sdp_path = env::temp_dir().join("audio.sdp");
+    let sdp_path = get_tmp_folder().join("audio.sdp");
 
     let sdp = format!(
         "v=0\n\
