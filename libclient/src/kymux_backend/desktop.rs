@@ -39,7 +39,7 @@ pub(super) async fn connect_quinn(
     Ok(kymux::Connection::connect(kymux::ClientConfig::Quic {
         addr: SocketAddr::new(conn_params.addr.ip(), port),
         roots,
-        server_name: conn_params.host.clone(),
+        server_name: conn_params.tls_host.clone(),
     })
     .await?)
 }
