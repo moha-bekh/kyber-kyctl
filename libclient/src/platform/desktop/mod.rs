@@ -30,6 +30,7 @@ pub struct PlayerConfig {
 }
 
 #[derive(Clone, Debug)]
+#[allow(unused)]
 pub(crate) struct ConnectionParams {
     pub(crate) host: String,
     pub(crate) port: u16,

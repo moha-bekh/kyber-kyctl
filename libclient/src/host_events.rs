@@ -15,11 +15,7 @@ pub(crate) trait WsClient {
 pub(crate) trait WsClientBuilder {
     type Type: WsClient;
 
-    async fn new(
-        url: String,
-        conn_params: &ConnectionParams,
-        event_sink: HostEventSink,
-    ) -> Result<Self::Type>;
+    async fn new(conn_params: &ConnectionParams, event_sink: HostEventSink) -> Result<Self::Type>;
 }
 
 #[derive(Debug, Deserialize)]
@@ -80,13 +76,7 @@ impl HostEventReceiver {
     ) -> Result<Self> {
         let event_sink = HostEventSink::new(msg_proxy);
 
-        let url = format!(
-            "wss://{host}:{port}/ws",
-            host = conn_params.host,
-            port = conn_params.port
-        );
-
-        let client = platform::WsClientBuilder::new(url, conn_params, event_sink).await?;
+        let client = platform::WsClientBuilder::new(conn_params, event_sink).await?;
 
         Ok(Self { client })
     }

@@ -53,7 +53,13 @@ pub(crate) struct WsClient {
 }
 
 impl WsClient {
-    async fn new(url: String, event_sink: HostEventSink) -> Result<Self> {
+    async fn new(conn_params: &ConnectionParams, event_sink: HostEventSink) -> Result<Self> {
+        let url = format!(
+            "wss://{host}:{port}/ws",
+            host = conn_params.host,
+            port = conn_params.port
+        );
+
         let inner = Inner::new(url, event_sink)?;
 
         Ok(Self { _inner: inner })
@@ -73,11 +79,7 @@ pub(crate) struct WsClientBuilder;
 impl crate::host_events::WsClientBuilder for WsClientBuilder {
     type Type = WsClient;
 
-    async fn new(
-        url: String,
-        _conn_params: &ConnectionParams,
-        event_sink: HostEventSink,
-    ) -> Result<Self::Type> {
-        WsClient::new(url, event_sink).await
+    async fn new(conn_params: &ConnectionParams, event_sink: HostEventSink) -> Result<Self::Type> {
+        WsClient::new(conn_params, event_sink).await
     }
 }

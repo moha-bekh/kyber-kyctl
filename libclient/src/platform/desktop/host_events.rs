@@ -19,11 +19,13 @@ pub(crate) struct WsClient {
 }
 
 impl WsClient {
-    async fn new(
-        url: String,
-        conn_params: &ConnectionParams,
-        event_sink: HostEventSink,
-    ) -> Result<Self> {
+    async fn new(conn_params: &ConnectionParams, event_sink: HostEventSink) -> Result<Self> {
+        let url = format!(
+            "wss://{host}:{port}/ws",
+            host = conn_params.tls_host,
+            port = conn_params.port
+        );
+
         let stream = Self::connect(url, conn_params).await?;
 
         let (stop_tx, stop_rx) = oneshot::channel();
@@ -112,11 +114,7 @@ pub(crate) struct WsClientBuilder;
 impl crate::host_events::WsClientBuilder for WsClientBuilder {
     type Type = WsClient;
 
-    async fn new(
-        url: String,
-        conn_params: &ConnectionParams,
-        event_sink: HostEventSink,
-    ) -> Result<Self::Type> {
-        WsClient::new(url, conn_params, event_sink).await
+    async fn new(conn_params: &ConnectionParams, event_sink: HostEventSink) -> Result<Self::Type> {
+        WsClient::new(conn_params, event_sink).await
     }
 }
