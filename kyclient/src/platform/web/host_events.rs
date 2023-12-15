@@ -29,6 +29,7 @@ use wasm_bindgen::prelude::*;
 use web_sys::{CloseEvent, MessageEvent};
 
 use crate::host_events::{self, HostEventFrame, HostEventSink};
+use crate::platform;
 use crate::platform::{WebSocket, WebSocketHandler};
 use crate::{
     ConnectionParams, ControlPlaneCapabilities, ControlPlaneCloseReason, Error, Message, Result,
@@ -311,11 +312,8 @@ impl WsClient {
         event_sink: HostEventSink,
         auth_token: &str,
     ) -> Result<Self> {
-        let url = format!(
-            "wss://{host}:{port}/ws",
-            host = conn_params.host,
-            port = conn_params.port
-        );
+        let host = platform::http::create_host(conn_params);
+        let url = format!("wss://{host}/ws");
 
         let inner = InnerRef(Inner::new(url, capabilities, event_sink, auth_token).await?);
 

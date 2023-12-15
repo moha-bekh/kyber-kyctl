@@ -31,6 +31,7 @@ use log::{error, info, warn};
 use tokio::{net::TcpStream, sync::oneshot, task};
 
 use crate::host_events::{self, HostEventFrame, HostEventSink};
+use crate::platform;
 use crate::platform::tls::{self, VerifyMode};
 use crate::{
     ConnectionParams, ControlPlaneCapabilities, ControlPlaneCloseReason, Error, Message, Result,
@@ -48,9 +49,8 @@ impl WsClient {
         event_sink: HostEventSink,
         auth_token: &str,
     ) -> Result<Self> {
-        let host = conn_params.tls_host.as_ref().unwrap_or(&conn_params.host);
-        let port = conn_params.port;
-        let url = format!("wss://{host}:{port}/ws");
+        let host = platform::http::create_host(conn_params);
+        let url = format!("wss://{host}/ws");
 
         // Connect with appropriate TLS verification
         let mut stream = if let Some(verify_mode) = &conn_params.verify_mode {
