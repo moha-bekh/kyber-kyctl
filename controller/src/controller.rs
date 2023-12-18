@@ -6,6 +6,7 @@ use avservice_types::Display;
 use libkypc::process::ProcessFactory;
 
 use crate::avservice;
+use crate::config;
 use crate::error::Result;
 use crate::inputservice;
 use crate::kymux_controller::KymuxListener;
@@ -86,6 +87,7 @@ pub struct Controller {
 
     pub(crate) displays: Vec<Display>,
 
+    pub(crate) config: config::Config,
     pub(crate) tls_config: tls::Config,
     pub(crate) kymux_listener: Option<KymuxListener>,
     pub(crate) kymux: Option<kymux::Connection>,
@@ -100,10 +102,15 @@ pub struct Controller {
 }
 
 impl Controller {
-    pub(crate) fn new(process_factory: Arc<ProcessFactory>, tls_config: tls::Config) -> Self {
+    pub(crate) fn new(
+        process_factory: Arc<ProcessFactory>,
+        config: config::Config,
+        tls_config: tls::Config,
+    ) -> Self {
         Self {
             process_factory,
             displays: vec![],
+            config,
             tls_config,
             kymux_listener: None,
             kymux: None,

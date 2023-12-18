@@ -18,8 +18,6 @@ use crate::inputservice;
 use crate::utils::TypeConvert;
 use crate::Controller;
 
-use crate::LISTENING_PORT;
-
 use requests::{KymuxTransportBackend, StartKymuxCertificateHash};
 
 pub(crate) struct KymuxListener {
@@ -97,12 +95,12 @@ async fn start_kymux(
     }
 
     // Load TLS config
-    let tls_config = {
+    let (listening_port, tls_config) = {
         let ctrl = ctrl.lock().await;
-        ctrl.tls_config.clone()
+        (ctrl.config.port(), ctrl.tls_config.clone())
     };
 
-    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), LISTENING_PORT);
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), listening_port);
 
     // Start Listen task
     let (conn_listener, certificate_hash) = match backend {

@@ -8,6 +8,7 @@ use log::{info, warn, LevelFilter};
 use tokio::sync::Mutex;
 
 mod avservice;
+mod config;
 mod controller;
 mod error;
 mod host_events;
@@ -29,7 +30,6 @@ use host_events::{HostEvent, HostEventSender};
 use statemachine::{StateMachine, StateMachineEvent, StateMachineProxy};
 use utils::TypeConvert;
 
-const LISTENING_PORT: u16 = 8080;
 const WEBCLIENT_ROOT: &str = "webclient";
 const STREAMER_CERT: &str = "kybertest_cert.pem";
 const STREAMER_KEY: &str = "kybertest_key.pem";
@@ -153,6 +153,9 @@ async fn main() {
 
     info!("Kyber controller. Revision {}", env!("VERGEN_GIT_DESCRIBE"));
 
+    // Load configuration
+    let config = config::load().unwrap();
+
     // Load TLS config
     //
     // /!\/!\ WARNING /!\/!\
@@ -166,6 +169,7 @@ async fn main() {
 
     let ctrl = web::Data::new(Mutex::new(Controller::new(
         process_factory.clone(),
+        config,
         tls_config,
     )));
 
@@ -184,7 +188,12 @@ async fn main() {
         watchdog
     };
 
-    let bind_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), LISTENING_PORT);
+    let listening_port = {
+        let ctrl = ctrl.lock().await;
+        ctrl.config.port()
+    };
+    info!("HTTP listening on port {listening_port}");
+    let bind_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), listening_port);
 
     // Serve webclient if found
     let webclient_root = webclient::root();

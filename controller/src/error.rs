@@ -64,6 +64,10 @@ pub enum Error {
     WsComponentNotReady { component: String },
     #[error("Websocket got invalid endpoint {endpoint_id:X} from process")]
     WsInvalidEndpoint { endpoint_id: u16 },
+    #[error("Config parse failed")]
+    ConfigParseFail,
+    #[error("Config load failed: {reason:?}")]
+    ConfigLoadFail { reason: toml::de::Error },
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
