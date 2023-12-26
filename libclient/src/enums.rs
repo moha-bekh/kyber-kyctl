@@ -33,11 +33,18 @@ pub enum Message {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StopReason {
+    Requested,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Event {
     Started {
         displays: Vec<Display>,
     },
-    Stopped,
+    Stopped {
+        reason: StopReason,
+    },
 
     DisplayListUpdated {
         displays: Vec<Display>,

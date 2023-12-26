@@ -28,7 +28,7 @@ use tokio::sync::mpsc::{self, Sender};
 
 use crate::error::{Error, Result};
 use enums::Message;
-pub use enums::{Display, Event};
+pub use enums::{Display, Event, StopReason};
 use event_manager::EventManager;
 pub use event_manager::EventSink;
 use host_events::HostEventReceiver;
@@ -270,7 +270,9 @@ impl Handler {
             Message::Stop => {
                 let ret = self.stop().await;
 
-                self.event_manager.send_event(Event::Stopped);
+                self.event_manager.send_event(Event::Stopped {
+                    reason: StopReason::Requested,
+                });
 
                 ret
             }

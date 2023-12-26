@@ -103,9 +103,14 @@ impl WindowHandle {
 }
 
 #[derive(Clone, Debug)]
+pub enum StopReason {
+    Requested,
+}
+
+#[derive(Clone, Debug)]
 pub enum Event {
     Started { displays: Vec<Display> },
-    Stopped,
+    Stopped { reason: StopReason },
     DisplayListUpdated { displays: Vec<Display> },
 }
 
@@ -145,7 +150,27 @@ impl EventSinkData {
                 unsafe { sys::libclient_event_free_displays(cdisplays) };
             }
             sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_STOPPED => {
-                data.sink.on_event(Event::Stopped);
+                let mut c_reason = mem::MaybeUninit::uninit();
+
+                let ret =
+                    unsafe { sys::libclient_event_unpack_stopped(event, c_reason.as_mut_ptr()) };
+                if ret != 0 {
+                    warn!("Fail to unpack EventType::Stopped");
+                    return;
+                }
+
+                let c_reason = c_reason.assume_init();
+                let reason = match c_reason {
+                    sys::libclient_StopReason_LIBCLIENT_STOP_REASON_REQUESTED => {
+                        StopReason::Requested
+                    }
+                    _ => {
+                        warn!("Fail to convert StopReason {c_reason}");
+                        return;
+                    }
+                };
+
+                data.sink.on_event(Event::Stopped { reason });
             }
             sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_DISPLAY_LIST_UPDATED => {
                 let mut cdisplays: *mut Display = std::ptr::null_mut();

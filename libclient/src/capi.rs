@@ -482,11 +482,16 @@ pub enum libclient_EventType {
     DisplayListUpdated,
 }
 
+#[repr(C)]
+pub enum libclient_StopReason {
+    Requested,
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn libclient_event_get_type(event: *const Event) -> libclient_EventType {
     match *event {
         Event::Started { .. } => libclient_EventType::Started,
-        Event::Stopped => libclient_EventType::Stopped,
+        Event::Stopped { .. } => libclient_EventType::Stopped,
         Event::DisplayListUpdated { .. } => libclient_EventType::DisplayListUpdated,
     }
 }
@@ -509,6 +514,22 @@ pub unsafe extern "C" fn libclient_event_unpack_started(
     } else {
         -1
     }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_event_unpack_stopped(
+    event: *const Event,
+    out_reason: *mut libclient_StopReason,
+) -> c_int {
+    let Event::Stopped { reason } = &*event else {
+        return -1;
+    };
+
+    *out_reason = match reason {
+        crate::StopReason::Requested => libclient_StopReason::Requested,
+    };
+
+    0
 }
 
 #[no_mangle]
