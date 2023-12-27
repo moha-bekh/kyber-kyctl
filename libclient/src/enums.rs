@@ -35,6 +35,7 @@ pub enum Message {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StopReason {
     Requested,
+    ConnectionLost,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
