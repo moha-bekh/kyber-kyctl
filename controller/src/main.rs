@@ -175,9 +175,10 @@ async fn main() {
 
     let statemachine = StateMachine::new(ctrl.clone()).unwrap();
 
-    let watchdog = {
+    let (watchdog, listening_port) = {
         let mut ctrl = ctrl.lock().await;
 
+        // Configure watchdog
         let (watchdog, displays) =
             watchdog::Watchdog::new(&process_factory, statemachine.create_proxy())
                 .await
@@ -185,13 +186,9 @@ async fn main() {
 
         ctrl.displays = displays;
 
-        watchdog
+        (watchdog, ctrl.config.port())
     };
 
-    let listening_port = {
-        let ctrl = ctrl.lock().await;
-        ctrl.config.port()
-    };
     info!("HTTP listening on port {listening_port}");
     let bind_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), listening_port);
 
