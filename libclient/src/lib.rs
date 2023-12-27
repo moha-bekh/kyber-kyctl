@@ -153,12 +153,18 @@ impl Handler {
         host_service::enumerate_displays(&self.http_client).await
     }
 
-    async fn stop(&mut self) -> Result<()> {
-        info!("Stop requested");
-
+    async fn stop_backend(&mut self) -> Result<()> {
         if let Some(mut backend) = self.backend.take() {
             backend.stop().await?;
         }
+
+        Ok(())
+    }
+
+    async fn stop(&mut self) -> Result<()> {
+        info!("Stop requested");
+
+        self.stop_backend().await?;
 
         info!("Request to stop streaming services");
         let ret = host_service::stop_stream(&self.http_client).await;
