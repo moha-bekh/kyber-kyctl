@@ -13,6 +13,7 @@ use crate::kymux_controller::KymuxListener;
 use crate::tls;
 use crate::ws;
 use crate::HostEventSender;
+use crate::StateMachineProxy;
 
 pub(crate) async fn stop_kymux(
     listener: Option<KymuxListener>,
@@ -99,6 +100,7 @@ pub struct Controller {
     pub(crate) inputservice: Option<inputservice::Handler>,
 
     pub(crate) host_event_sender: Option<HostEventSender>,
+    pub(crate) state_machine_proxy: Option<StateMachineProxy>,
 }
 
 impl Controller {
@@ -119,6 +121,7 @@ impl Controller {
             avservice_audio: None,
             inputservice: None,
             host_event_sender: Default::default(),
+            state_machine_proxy: None,
         }
     }
 

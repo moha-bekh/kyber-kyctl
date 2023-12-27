@@ -186,6 +186,9 @@ async fn main() {
 
         ctrl.displays = displays;
 
+        // Configure StateMachine listener
+        ctrl.state_machine_proxy = Some(statemachine.create_proxy());
+
         (watchdog, ctrl.config.port())
     };
 
