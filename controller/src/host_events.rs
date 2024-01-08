@@ -23,8 +23,13 @@ pub(crate) enum HostEvent {
     DisplayList { displays: Vec<Display> },
 }
 
+#[derive(Debug, Serialize)]
+enum HostEventFrame {
+    Event { event: HostEvent },
+}
+
 pub(crate) struct HostEventSender {
-    events_tx: mpsc::Sender<HostEvent>,
+    events_tx: mpsc::Sender<HostEventFrame>,
     handle: task::JoinHandle<()>,
     stop_tx: oneshot::Sender<()>,
 }
@@ -63,8 +68,8 @@ impl HostEventSender {
         Ok(())
     }
 
-    pub(crate) async fn send(&self, msg: HostEvent) {
-        let ret = self.events_tx.send(msg).await;
+    pub(crate) async fn send(&self, event: HostEvent) {
+        let ret = self.events_tx.send(HostEventFrame::Event { event }).await;
         if let Err(err) = ret {
             warn!("Failed to send event {err:?}");
         }
@@ -73,7 +78,7 @@ impl HostEventSender {
     async fn task_entry(
         session: actix_ws::Session,
         _msg_stream: actix_ws::MessageStream,
-        events_rx: mpsc::Receiver<HostEvent>,
+        events_rx: mpsc::Receiver<HostEventFrame>,
         stop_rx: oneshot::Receiver<()>,
     ) {
         tokio::select! {
@@ -86,7 +91,7 @@ impl HostEventSender {
     async fn process_events(
         mut session: actix_ws::Session,
         mut _msg_stream: actix_ws::MessageStream,
-        mut events_rx: mpsc::Receiver<HostEvent>,
+        mut events_rx: mpsc::Receiver<HostEventFrame>,
     ) {
         while let Some(msg) = events_rx.recv().await {
             let json = match serde_json::to_string(&msg) {
