@@ -32,6 +32,8 @@ pub(crate) enum HostEvent {
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) enum HostEventFrame {
     Event { event: HostEvent },
+    Ping { id: u64 },
+    Pong { id: u64 },
 }
 
 pub(crate) struct HostEventSink {

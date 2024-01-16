@@ -6,11 +6,11 @@ use async_tungstenite::{
     tungstenite::Message as tungstenite_Message,
     WebSocketStream,
 };
-use futures::StreamExt;
-use log::{error, warn};
+use futures::{SinkExt, StreamExt};
+use log::{error, info, warn};
 use tokio::{net::TcpStream, sync::oneshot, task};
 
-use crate::host_events::{HostEventFrame, HostEventSink};
+use crate::host_events::{self, HostEventFrame, HostEventSink};
 use crate::{ConnectionParams, ControlPlaneCapabilities, Error, Message, Result};
 
 pub(crate) struct WsClient {
@@ -95,17 +95,58 @@ impl WsClient {
         capabilities: ControlPlaneCapabilities,
         event_sink: HostEventSink,
     ) {
-        while let Some(msg) = stream.next().await {
-            let Ok(tungstenite_Message::Text(msg)) = msg else {
-                continue;
-            };
+        let timer_duration = host_events::timeout_duration(&capabilities);
+        info!("Setting timeout duration to {timer_duration:?}");
 
-            match serde_json::from_str(&msg) {
-                Ok(HostEventFrame::Event { event }) => {
-                    event_sink.push(event).await;
+        let timer = tokio::time::sleep(timer_duration);
+        tokio::pin!(timer);
+
+        loop {
+            tokio::select! {
+                biased;
+                msg = stream.next() => {
+                    let msg = match msg {
+                        None => {
+                            break;
+                        },
+                        Some(Err(_)) => {
+                            break;
+                        }
+                        Some(Ok(tungstenite_Message::Text(msg))) => msg,
+                        Some(_) => continue,
+                    };
+
+                    match serde_json::from_str(&msg) {
+                        Ok(HostEventFrame::Ping { id }) => {
+                            let pong = HostEventFrame::Pong { id };
+                            let pong = match serde_json::to_string(&pong) {
+                                Ok(pong) => pong,
+                                Err(err) => {
+                                    warn!("Fail to convert pong to JSON {pong:?}: {err:?}");
+                                    continue;
+                                }
+                            };
+
+                            timer.as_mut().reset(tokio::time::Instant::now() + timer_duration);
+
+                            let ret = stream.send(tungstenite_Message::Text(pong)).await;
+                            if let Err(err) = ret {
+                                warn!("Failed to send Pong: {err:?}");
+                            }
+                        }
+                        Ok(HostEventFrame::Pong { id }) => {
+                            warn!("Unexpected Pong({id})");
+                        }
+                        Ok(HostEventFrame::Event { event }) => {
+                            event_sink.push(event).await;
+                        }
+                        Err(err) => {
+                            error!("Fail to parse {msg}: {err:?}");
+                        }
+                    }
                 }
-                Err(err) => {
-                    error!("Fail to parse {msg}: {err:?}");
+                _ = &mut timer => {
+                    break;
                 }
             }
         }
