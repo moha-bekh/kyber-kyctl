@@ -141,6 +141,7 @@ impl WebSocketHandler for Inner {
         warn!("Control websocket error: {event:?}");
 
         self.clear_timeout()?;
+        self.event_sink.blocking_push_msg(Message::ConnectionLost);
 
         Ok(())
     }

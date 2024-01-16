@@ -110,7 +110,9 @@ impl WsClient {
                             event_sink.push_msg(Message::ConnectionLost).await;
                             break;
                         },
-                        Some(Err(_)) => {
+                        Some(Err(err)) => {
+                            warn!("Control WS receive failed: {err:?}");
+                            event_sink.push_msg(Message::ConnectionLost).await;
                             break;
                         }
                         Some(Ok(tungstenite_Message::Text(msg))) => msg,
