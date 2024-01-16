@@ -15,6 +15,8 @@ pub enum Message {
     Start,
     Stop,
 
+    ConnectionLost,
+
     PlayerStarted,
     PlayerStopped,
 

@@ -282,6 +282,11 @@ impl Handler {
 
                 ret
             }
+            Message::ConnectionLost => {
+                warn!("Connection lost");
+
+                Ok(())
+            }
             Message::PlayerStarted => {
                 info!("Player started");
                 Ok(())
