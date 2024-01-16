@@ -5,7 +5,7 @@ use log::{error, info};
 use wasm_bindgen::prelude::*;
 use web_sys::MessageEvent;
 
-use crate::host_events::HostEventSink;
+use crate::host_events::{HostEventFrame, HostEventSink};
 use crate::platform::{WebSocket, WebSocketHandler};
 use crate::{ConnectionParams, Result};
 
@@ -43,7 +43,7 @@ impl WebSocketHandler for Inner {
 
         let msg: String = msg.into();
         match serde_json::from_str(&msg) {
-            Ok(event) => {
+            Ok(HostEventFrame::Event { event }) => {
                 self.event_sink.blocking_push(event);
             }
             Err(err) => {

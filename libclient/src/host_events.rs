@@ -23,6 +23,11 @@ pub(crate) enum HostEvent {
     DisplayList { displays: Vec<Display> },
 }
 
+#[derive(Debug, Deserialize)]
+pub(crate) enum HostEventFrame {
+    Event { event: HostEvent },
+}
+
 pub(crate) struct HostEventSink {
     msg_proxy: MessageProxy,
 }

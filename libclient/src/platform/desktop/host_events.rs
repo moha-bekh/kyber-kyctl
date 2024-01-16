@@ -10,7 +10,7 @@ use futures::StreamExt;
 use log::{error, warn};
 use tokio::{net::TcpStream, sync::oneshot, task};
 
-use crate::host_events::HostEventSink;
+use crate::host_events::{HostEventFrame, HostEventSink};
 use crate::{ConnectionParams, Error, Result};
 
 pub(crate) struct WsClient {
@@ -90,7 +90,7 @@ impl WsClient {
             };
 
             match serde_json::from_str(&msg) {
-                Ok(event) => {
+                Ok(HostEventFrame::Event { event }) => {
                     event_sink.push(event).await;
                 }
                 Err(err) => {
