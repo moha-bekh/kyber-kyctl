@@ -146,6 +146,7 @@ impl WsClient {
                     }
                 }
                 _ = &mut timer => {
+                    event_sink.push_msg(Message::ConnectionLost).await;
                     break;
                 }
             }

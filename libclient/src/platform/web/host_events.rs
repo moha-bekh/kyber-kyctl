@@ -56,7 +56,9 @@ impl Inner {
 
     fn arm_timeout(self: &Rc<Self>, duration: Duration) -> Result<()> {
         let this = self.clone();
-        let ontimeout_cb = Closure::<dyn FnMut()>::new(move || {});
+        let ontimeout_cb = Closure::<dyn FnMut()>::new(move || {
+            this.event_sink.blocking_push_msg(Message::ConnectionLost);
+        });
 
         let window = dom::window()?;
         let new_timer_id = window.set_timeout_with_callback_and_timeout_and_arguments_0(
