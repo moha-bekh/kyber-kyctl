@@ -13,6 +13,7 @@ pub(crate) enum StateMachineEvent {
     AvService { event: avservice_types::Event },
 }
 
+#[derive(Clone)]
 pub(crate) struct StateMachineProxy {
     events_tx: mpsc::Sender<StateMachineEvent>,
 }
