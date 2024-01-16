@@ -25,6 +25,10 @@ pub enum Error {
     StreamerStopped,
     #[error("Kymux has no connection")]
     KymuxNotConnected,
+    #[error("Kymux accept() timeout")]
+    KymuxAcceptTimeout,
+    #[error("Kymux isn't listening")]
+    KymuxNotListening,
     #[error("Got an unexpected response from AvServer")]
     AvServerUnexpectedResponse,
     #[error("Couldn't get a receiver from AvServer")]

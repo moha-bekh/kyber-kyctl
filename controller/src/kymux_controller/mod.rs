@@ -23,20 +23,20 @@ use requests::{KymuxTransportBackend, StartKymuxCertificateHash};
 pub(crate) struct KymuxListener {
     stop_tx: oneshot::Sender<()>,
     join_handle: JoinHandle<()>,
+
+    connected_rx: oneshot::Receiver<kymux::Connection>,
 }
 
 impl KymuxListener {
-    pub(crate) async fn new(
-        listener: kymux::ConnectionListener,
-        ctrl: web::Data<Mutex<Controller>>,
-    ) -> Result<Self> {
+    pub(crate) async fn new(listener: kymux::ConnectionListener) -> Result<Self> {
         let (stop_tx, stop_rx) = oneshot::channel();
+        let (connected_tx, connected_rx) = oneshot::channel();
 
         let join_handle = task::spawn(async move {
             tokio::select! {
                 _ = stop_rx => {
                 }
-                ret = KymuxListener::run_task(listener, ctrl) => {
+                ret = KymuxListener::run_task(listener, connected_tx) => {
                     if let Err(err) = ret {
                         warn!("KymuxListener task ended with error {err:?}");
                     }
@@ -47,32 +47,58 @@ impl KymuxListener {
         Ok(Self {
             stop_tx,
             join_handle,
+            connected_rx,
         })
     }
 
-    pub(crate) async fn stop(self) -> Result<()> {
-        let ret = self.stop_tx.send(());
+    async fn stop_internal(
+        stop_tx: oneshot::Sender<()>,
+        join_handle: JoinHandle<()>,
+    ) -> Result<()> {
+        let ret = stop_tx.send(());
         if ret.is_err() {
             warn!("KymuxListener already stopped");
         }
 
-        self.join_handle.await.map_err(|err| {
+        join_handle.await.map_err(|err| {
             warn!("KymuxListener panicked: {err:?}");
             Error::ThreadPanicked
-        })?;
+        })
+    }
 
-        Ok(())
+    pub(crate) async fn stop(self) -> Result<()> {
+        Self::stop_internal(self.stop_tx, self.join_handle).await
+    }
+
+    pub(crate) async fn wait_connected(self, timeout: Duration) -> Result<kymux::Connection> {
+        let connection = match tokio::time::timeout(timeout, self.connected_rx).await {
+            Ok(Ok(connection)) => Ok(connection),
+            Ok(Err(_)) => Err(Error::ChannelClosedRx),
+            Err(_) => {
+                warn!("Got not Kymux connection after {timeout:?}");
+                Err(Error::KymuxAcceptTimeout)
+            }
+        };
+
+        let ret = Self::stop_internal(self.stop_tx, self.join_handle).await;
+        if let Err(err) = ret {
+            warn!("Fail to stop KymuxListener: {err:?}");
+        }
+
+        connection
     }
 
     async fn run_task(
         listener: kymux::ConnectionListener,
-        ctrl: web::Data<Mutex<Controller>>,
+        connected_tx: oneshot::Sender<kymux::Connection>,
     ) -> Result<()> {
         info!("Waiting for Kymux connection");
         let connection = listener.accept().await?;
 
-        let mut ctrl = ctrl.lock().await;
-        ctrl.kymux = Some(connection);
+        let ret = connected_tx.send(connection);
+        if ret.is_err() {
+            warn!("Fail to send Kymux connection notification");
+        }
 
         Ok(())
     }
@@ -141,7 +167,7 @@ async fn start_kymux(
     };
 
     // Start Listen task
-    let listener = KymuxListener::new(conn_listener, ctrl.clone()).await?;
+    let listener = KymuxListener::new(conn_listener).await?;
 
     let mut ctrl = ctrl.lock().await;
     ctrl.kymux_listener = Some(listener);
@@ -210,11 +236,24 @@ async fn start_session(
     ctrl: &mut Controller,
     request: requests::StartRequest,
 ) -> Result<StartSessionResponse> {
+    // Complete Kymux connection
+    let Some(kymux_listener) = ctrl.kymux_listener.take() else {
+        warn!("Kymux not listening");
+        return Err(Error::KymuxNotListening);
+    };
+
+    ctrl.kymux = Some(
+        kymux_listener
+            .wait_connected(Duration::from_millis(500))
+            .await?,
+    );
+
     let Some(kymux) = ctrl.kymux.as_mut() else {
         warn!("Kymux not connected");
         return Err(Error::KymuxNotConnected);
     };
 
+    // Start services
     let (video_endpoint, avservice_video) = if let Some(video_request) = request.video {
         // Video Server
         let video_protocol = request
