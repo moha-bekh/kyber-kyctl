@@ -107,6 +107,7 @@ impl WsClient {
                 msg = stream.next() => {
                     let msg = match msg {
                         None => {
+                            event_sink.push_msg(Message::ConnectionLost).await;
                             break;
                         },
                         Some(Err(_)) => {

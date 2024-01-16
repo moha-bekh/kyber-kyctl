@@ -132,6 +132,7 @@ impl WebSocketHandler for Inner {
         warn!("Control websocket closed: {event:?}");
 
         self.clear_timeout()?;
+        self.event_sink.blocking_push_msg(Message::ConnectionLost);
 
         Ok(())
     }
