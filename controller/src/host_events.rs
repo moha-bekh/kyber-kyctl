@@ -1,6 +1,6 @@
 use actix_web::{web, HttpRequest, HttpResponse};
 use log::warn;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::{
     sync::{mpsc, oneshot},
     task,
@@ -8,7 +8,7 @@ use tokio::{
 
 use crate::{Error, Result, StateMachineProxy};
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct Display {
     pub id: u32,
     pub name: String,
@@ -18,12 +18,12 @@ pub(crate) struct Display {
     pub y: i32,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) enum HostEvent {
     DisplayList { displays: Vec<Display> },
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 enum HostEventFrame {
     Event { event: HostEvent },
 }
