@@ -40,15 +40,21 @@ async fn websocket_service(
     req: HttpRequest,
     stream: web::Payload,
 ) -> HttpResponse {
-    let (host_event_sender, http_response) = match HostEventSender::new(req, stream) {
-        Ok((host_event_sender, http_response)) => (host_event_sender, http_response),
-        Err(err) => {
-            warn!("Fail to start websocket: {err:?}");
-            return HttpResponse::Forbidden().finish();
-        }
+    let mut ctrl = ctrl.lock().await;
+
+    let Some(state_machine_proxy) = ctrl.state_machine_proxy.clone() else {
+        warn!("StateMachineProxy not configured");
+        return HttpResponse::Forbidden().finish();
     };
 
-    let mut ctrl = ctrl.lock().await;
+    let (host_event_sender, http_response) =
+        match HostEventSender::new(req, stream, state_machine_proxy) {
+            Ok((host_event_sender, http_response)) => (host_event_sender, http_response),
+            Err(err) => {
+                warn!("Fail to start websocket: {err:?}");
+                return HttpResponse::Forbidden().finish();
+            }
+        };
 
     host_event_sender
         .send(HostEvent::DisplayList {

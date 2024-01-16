@@ -6,7 +6,7 @@ use tokio::{
     task,
 };
 
-use crate::{Error, Result};
+use crate::{Error, Result, StateMachineProxy};
 
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct Display {
@@ -35,14 +35,24 @@ pub(crate) struct HostEventSender {
 }
 
 impl HostEventSender {
-    pub(crate) fn new(req: HttpRequest, stream: web::Payload) -> Result<(Self, HttpResponse)> {
+    pub(crate) fn new(
+        req: HttpRequest,
+        stream: web::Payload,
+        statemachine_proxy: StateMachineProxy,
+    ) -> Result<(Self, HttpResponse)> {
         let (res, session, msg_stream) = actix_ws::handle(&req, stream)?;
 
         let (events_tx, events_rx) = mpsc::channel(32);
-
         let (stop_tx, stop_rx) = oneshot::channel();
 
-        let handle = task::spawn_local(Self::task_entry(session, msg_stream, events_rx, stop_rx));
+        let handle = task::spawn_local(Self::task_entry(
+            session,
+            msg_stream,
+            events_tx.clone(),
+            events_rx,
+            stop_rx,
+            statemachine_proxy,
+        ));
 
         Ok((
             Self {
@@ -78,8 +88,10 @@ impl HostEventSender {
     async fn task_entry(
         session: actix_ws::Session,
         _msg_stream: actix_ws::MessageStream,
+        _events_tx: mpsc::Sender<HostEventFrame>,
         events_rx: mpsc::Receiver<HostEventFrame>,
         stop_rx: oneshot::Receiver<()>,
+        _statemachine_proxy: StateMachineProxy,
     ) {
         tokio::select! {
             _ = stop_rx => {
