@@ -5,12 +5,18 @@ use tokio::{
     task,
 };
 
+use crate::host_events;
 use crate::utils::TypeConvert;
 use crate::{Controller, Error, HostEvent, Result};
 
 #[derive(Debug)]
 pub(crate) enum StateMachineEvent {
-    AvService { event: avservice_types::Event },
+    AvService {
+        event: avservice_types::Event,
+    },
+    HostEvents {
+        notification: host_events::Notification,
+    },
 }
 
 #[derive(Clone)]
@@ -113,6 +119,18 @@ impl StateMachine {
 
                     ctrl.displays = displays;
                 }
+                StateMachineEvent::HostEvents { notification } => match notification {
+                    host_events::Notification::ConnectionLost => {
+                        warn!("Control Websocket disconnected");
+
+                        let mut ctrl = ctrl.lock().await;
+
+                        let ret = ctrl.stop().await;
+                        if let Err(err) = ret {
+                            warn!("Fail to stop Controller: {err:?}");
+                        }
+                    }
+                },
                 _ => {}
             }
         }

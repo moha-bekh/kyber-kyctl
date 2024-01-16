@@ -8,7 +8,7 @@ use tokio::{
     task,
 };
 
-use crate::{Error, Result, StateMachineProxy};
+use crate::{Error, Result, StateMachineEvent, StateMachineProxy};
 
 // Naming taken from man(7) tcp: TCP_KEEPCNT/TCP_KEEPINTVL
 pub(crate) const KEEPINTVL: Duration = Duration::from_secs(20);
@@ -17,6 +17,7 @@ pub(crate) const KEEPCNT: u64 = 3;
 struct PingTask {
     ping_rx: mpsc::Receiver<u64>,
     events_tx: mpsc::Sender<HostEventFrame>,
+    statemachine_proxy: StateMachineProxy,
 }
 
 impl PingTask {
@@ -42,6 +43,9 @@ impl PingTask {
                     // - If true: Notify of disconnection lost
                     // - Else continue to ping
                     if id - last_id_received.unwrap_or(FIRST_ID) >= KEEPCNT {
+                        self.statemachine_proxy.send(StateMachineEvent::HostEvents { notification: Notification::ConnectionLost })
+                        .await;
+
                         break;
                     } else {
                         let msg = HostEventFrame::Ping { id };
@@ -65,6 +69,11 @@ impl PingTask {
             }
         }
     }
+}
+
+#[derive(Debug)]
+pub(crate) enum Notification {
+    ConnectionLost,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -152,20 +161,21 @@ impl HostEventSender {
         events_tx: mpsc::Sender<HostEventFrame>,
         events_rx: mpsc::Receiver<HostEventFrame>,
         stop_rx: oneshot::Receiver<()>,
-        _statemachine_proxy: StateMachineProxy,
+        statemachine_proxy: StateMachineProxy,
     ) {
         let (ping_task_tx, ping_task_rx) = mpsc::channel(32);
 
         let mut ping_task = PingTask {
             ping_rx: ping_task_rx,
             events_tx,
+            statemachine_proxy: statemachine_proxy.clone(),
         };
 
         tokio::select! {
             _ = stop_rx => {
             }
             _ = Self::process_rx_events(msg_stream, ping_task_tx) => {}
-            _ = Self::process_tx_events(session, events_rx) => {}
+            _ = Self::process_tx_events(session, events_rx, statemachine_proxy) => {}
             _ = ping_task.run() => {}
         }
     }
@@ -198,6 +208,7 @@ impl HostEventSender {
     async fn process_tx_events(
         mut session: actix_ws::Session,
         mut events_rx: mpsc::Receiver<HostEventFrame>,
+        statemachine_proxy: StateMachineProxy,
     ) {
         while let Some(msg) = events_rx.recv().await {
             let json = match serde_json::to_string(&msg) {
@@ -211,6 +222,13 @@ impl HostEventSender {
             let ret = session.text(json).await;
             if let Err(err) = ret {
                 warn!("Websocket send failed: {err:?}");
+
+                statemachine_proxy
+                    .send(StateMachineEvent::HostEvents {
+                        notification: Notification::ConnectionLost,
+                    })
+                    .await;
+
                 break;
             }
         }
