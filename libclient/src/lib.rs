@@ -284,8 +284,13 @@ impl Handler {
             }
             Message::ConnectionLost => {
                 warn!("Connection lost");
+                let ret = self.stop_backend().await;
 
-                Ok(())
+                self.event_manager.send_event(Event::Stopped {
+                    reason: StopReason::ConnectionLost,
+                });
+
+                ret
             }
             Message::PlayerStarted => {
                 info!("Player started");
