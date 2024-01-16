@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use async_trait::async_trait;
-use log::info;
+use log::{error, info};
 use wasm_bindgen::prelude::*;
 use web_sys::MessageEvent;
 
@@ -42,7 +42,14 @@ impl WebSocketHandler for Inner {
         };
 
         let msg: String = msg.into();
-        self.event_sink.blocking_push(&msg);
+        match serde_json::from_str(&msg) {
+            Ok(event) => {
+                self.event_sink.blocking_push(event);
+            }
+            Err(err) => {
+                error!("Fail to parse {msg}: {err:?}");
+            }
+        }
 
         Ok(())
     }

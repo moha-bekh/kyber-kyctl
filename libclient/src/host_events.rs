@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use log::{error, warn};
+use log::warn;
 use serde::Deserialize;
 
 use crate::platform;
@@ -19,7 +19,7 @@ pub(crate) trait WsClientBuilder {
 }
 
 #[derive(Debug, Deserialize)]
-enum HostEvent {
+pub(crate) enum HostEvent {
     DisplayList { displays: Vec<Display> },
 }
 
@@ -32,35 +32,41 @@ impl HostEventSink {
         Self { msg_proxy }
     }
 
-    fn convert_event(event: &str) -> Option<Message> {
-        match serde_json::from_str(event) {
-            Ok(HostEvent::DisplayList { displays }) => {
-                Some(Message::DisplayListUpdated { displays })
-            }
-            Err(err) => {
-                error!("Fail to parse {event}: {err:?}");
-                None
-            }
+    fn convert_event(event: HostEvent) -> Message {
+        match event {
+            HostEvent::DisplayList { displays } => Message::DisplayListUpdated { displays },
         }
     }
 
     #[allow(dead_code)]
-    pub(crate) async fn push(&self, event: &str) {
-        if let Some(event) = Self::convert_event(event) {
-            let ret = self.msg_proxy.send_async(event).await;
-            if let Err(err) = ret {
-                warn!("Fail to send HostEvent: {err:?}");
-            }
-        };
+    pub(crate) async fn push_msg(&self, msg: Message) {
+        let ret = self.msg_proxy.send_async(msg).await;
+        if let Err(err) = ret {
+            warn!("Fail to send HostEvent: {err:?}");
+        }
     }
 
     #[allow(dead_code)]
-    pub(crate) fn blocking_push(&self, event: &str) {
-        if let Some(event) = Self::convert_event(event) {
-            let ret = self.msg_proxy.send(event);
-            if let Err(err) = ret {
-                warn!("Fail to send HostEvent: {err:?}");
-            }
+    pub(crate) fn blocking_push_msg(&self, msg: Message) {
+        let ret = self.msg_proxy.send(msg);
+        if let Err(err) = ret {
+            warn!("Fail to send HostEvent: {err:?}");
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) async fn push(&self, event: HostEvent) {
+        let ret = self.msg_proxy.send_async(Self::convert_event(event)).await;
+        if let Err(err) = ret {
+            warn!("Fail to send HostEvent: {err:?}");
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn blocking_push(&self, event: HostEvent) {
+        let ret = self.msg_proxy.send(Self::convert_event(event));
+        if let Err(err) = ret {
+            warn!("Fail to send HostEvent: {err:?}");
         }
     }
 }

@@ -7,7 +7,7 @@ use async_tungstenite::{
     WebSocketStream,
 };
 use futures::StreamExt;
-use log::warn;
+use log::{error, warn};
 use tokio::{net::TcpStream, sync::oneshot, task};
 
 use crate::host_events::HostEventSink;
@@ -89,7 +89,14 @@ impl WsClient {
                 continue;
             };
 
-            event_sink.push(&msg).await;
+            match serde_json::from_str(&msg) {
+                Ok(event) => {
+                    event_sink.push(event).await;
+                }
+                Err(err) => {
+                    error!("Fail to parse {msg}: {err:?}");
+                }
+            }
         }
     }
 }
