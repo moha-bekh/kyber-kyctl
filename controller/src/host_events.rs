@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use actix_web::{web, HttpRequest, HttpResponse};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
@@ -7,6 +9,63 @@ use tokio::{
 };
 
 use crate::{Error, Result, StateMachineProxy};
+
+// Naming taken from man(7) tcp: TCP_KEEPCNT/TCP_KEEPINTVL
+pub(crate) const KEEPINTVL: Duration = Duration::from_secs(20);
+pub(crate) const KEEPCNT: u64 = 3;
+
+struct PingTask {
+    ping_rx: mpsc::Receiver<u64>,
+    events_tx: mpsc::Sender<HostEventFrame>,
+}
+
+impl PingTask {
+    async fn run(&mut self) {
+        let mut interval = tokio::time::interval(KEEPINTVL);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+        const FIRST_ID: u64 = 0;
+
+        let mut last_id_received = None;
+        let mut next_id = FIRST_ID;
+
+        loop {
+            tokio::select! {
+                biased;
+                // Send Ping
+                _ = interval.tick() => {
+                    // Prepare id
+                    let id = next_id;
+                    next_id += 1;
+
+                    // Check if timeout occured
+                    // - If true: Notify of disconnection lost
+                    // - Else continue to ping
+                    if id - last_id_received.unwrap_or(FIRST_ID) >= KEEPCNT {
+                        break;
+                    } else {
+                        let msg = HostEventFrame::Ping { id };
+
+                        let ret = self.events_tx.send(msg).await;
+                        if let Err(err) = ret {
+                            warn!("Failed to Ping({id}): {err:?}");
+                            break;
+                        }
+                    }
+                }
+                // Pong received
+                id = self.ping_rx.recv() => {
+                    let Some(id) = id else {
+                        warn!("Ping Rx channel closed");
+                        break;
+                    };
+
+                    last_id_received = Some(id);
+                }
+            }
+        }
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct Display {
@@ -25,6 +84,8 @@ pub(crate) enum HostEvent {
 
 #[derive(Debug, Deserialize, Serialize)]
 enum HostEventFrame {
+    Ping { id: u64 },
+    Pong { id: u64 },
     Event { event: HostEvent },
 }
 
@@ -88,22 +149,42 @@ impl HostEventSender {
     async fn task_entry(
         session: actix_ws::Session,
         msg_stream: actix_ws::MessageStream,
-        _events_tx: mpsc::Sender<HostEventFrame>,
+        events_tx: mpsc::Sender<HostEventFrame>,
         events_rx: mpsc::Receiver<HostEventFrame>,
         stop_rx: oneshot::Receiver<()>,
         _statemachine_proxy: StateMachineProxy,
     ) {
+        let (ping_task_tx, ping_task_rx) = mpsc::channel(32);
+
+        let mut ping_task = PingTask {
+            ping_rx: ping_task_rx,
+            events_tx,
+        };
+
         tokio::select! {
             _ = stop_rx => {
             }
-            _ = Self::process_rx_events(msg_stream) => {}
+            _ = Self::process_rx_events(msg_stream, ping_task_tx) => {}
             _ = Self::process_tx_events(session, events_rx) => {}
+            _ = ping_task.run() => {}
         }
     }
 
-    async fn process_rx_events(mut stream: actix_ws::MessageStream) {
+    async fn process_rx_events(
+        mut stream: actix_ws::MessageStream,
+        ping_task_tx: mpsc::Sender<u64>,
+    ) {
         while let Some(Ok(actix_ws::Message::Text(msg))) = stream.recv().await {
             match serde_json::from_str(&msg) {
+                Ok(HostEventFrame::Ping { id }) => {
+                    warn!("Unexpected Ping({id})");
+                }
+                Ok(HostEventFrame::Pong { id }) => {
+                    let ret = ping_task_tx.send(id).await;
+                    if ret.is_err() {
+                        warn!("Failed to send ping to Ping task");
+                    }
+                }
                 Ok(HostEventFrame::Event { event }) => {
                     info!("Got event: {event:?}");
                 }
