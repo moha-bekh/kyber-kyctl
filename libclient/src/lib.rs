@@ -23,7 +23,7 @@ mod ws_backend;
 
 use async_trait::async_trait;
 use log::{info, warn};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{self, Sender};
 
 use crate::error::{Error, Result};
@@ -38,6 +38,17 @@ pub(crate) use platform::{ConnectionParams, InputPipeline};
 
 #[allow(dead_code)]
 pub(crate) const STREAMER_PORT: u16 = 8080;
+
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct ControlPlaneCapabilities {
+    pub(crate) keepintvl: u64,
+    pub(crate) keepcnt: u64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct Capabilities {
+    pub(crate) control_plane: ControlPlaneCapabilities,
+}
 
 #[derive(Clone)]
 pub struct MessageProxy {
@@ -232,6 +243,8 @@ impl Handler {
     async fn handle_message(&mut self, msg: &Message) -> Result<()> {
         match msg {
             Message::Start => {
+                let capabilities = host_service::capabilities(&self.http_client).await?;
+
                 // Kick the previously connected user
                 let ret = host_service::stop_stream(&self.http_client).await;
                 if let Err(err) = ret {

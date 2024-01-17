@@ -3,7 +3,15 @@ use reqwest::{self, StatusCode};
 
 use crate::error::{Error, Result};
 use crate::http::HttpClient;
-use crate::Display;
+use crate::{Capabilities, Display};
+
+pub(crate) async fn capabilities(client: &HttpClient) -> Result<Capabilities> {
+    let url = format!("{base_url}/capabilities", base_url = client.base_url());
+
+    let response = client.client().get(&url).send().await?.json::<_>().await?;
+
+    Ok(response)
+}
 
 pub(crate) async fn enumerate_displays(client: &HttpClient) -> Result<Vec<Display>> {
     let url = format!(
