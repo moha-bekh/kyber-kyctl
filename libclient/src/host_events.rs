@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use async_trait::async_trait;
 use log::warn;
 use serde::Deserialize;
@@ -100,4 +102,8 @@ impl HostEventReceiver {
     pub(crate) async fn stop(self) -> Result<()> {
         self.client.stop().await
     }
+}
+
+pub(crate) fn timeout_duration(capabilities: &ControlPlaneCapabilities) -> Duration {
+    Duration::from_secs(capabilities.keepintvl * capabilities.keepcnt)
 }
