@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use actix_web::{get, middleware, post, web, App, HttpRequest, HttpResponse, HttpServer};
 use log::{info, warn, LevelFilter};
+use serde::Serialize;
 use tokio::sync::Mutex;
 
 mod avservice;
@@ -33,6 +34,29 @@ use utils::TypeConvert;
 const WEBCLIENT_ROOT: &str = "webclient";
 const STREAMER_CERT: &str = "kybertest_cert.pem";
 const STREAMER_KEY: &str = "kybertest_key.pem";
+
+#[derive(Debug, Serialize)]
+struct ControlPlaneCapabilities {
+    keepintvl: u64,
+    keepcnt: u64,
+}
+
+#[derive(Debug, Serialize)]
+struct Capabilities {
+    control_plane: ControlPlaneCapabilities,
+}
+
+#[get("/capabilities")]
+async fn capabilities() -> HttpResponse {
+    let ret = Capabilities {
+        control_plane: ControlPlaneCapabilities {
+            keepintvl: host_events::KEEPINTVL.as_secs(),
+            keepcnt: host_events::KEEPCNT,
+        },
+    };
+
+    HttpResponse::Ok().json(ret)
+}
 
 #[get("/ws")]
 async fn websocket_service(
@@ -241,6 +265,7 @@ async fn main() {
                     .service(ws::requests::video)
                     .service(ws::requests::audio),
             )
+            .service(capabilities)
             .service(websocket_service)
             .service(enumerate_displays)
             .service(stop_session);
