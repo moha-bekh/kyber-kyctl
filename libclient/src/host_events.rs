@@ -3,7 +3,7 @@ use log::warn;
 use serde::Deserialize;
 
 use crate::platform;
-use crate::{ConnectionParams, Display, Message, MessageProxy, Result};
+use crate::{ConnectionParams, ControlPlaneCapabilities, Display, Message, MessageProxy, Result};
 
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
@@ -15,7 +15,11 @@ pub(crate) trait WsClient {
 pub(crate) trait WsClientBuilder {
     type Type: WsClient;
 
-    async fn new(conn_params: &ConnectionParams, event_sink: HostEventSink) -> Result<Self::Type>;
+    async fn new(
+        conn_params: &ConnectionParams,
+        capabilities: &ControlPlaneCapabilities,
+        event_sink: HostEventSink,
+    ) -> Result<Self::Type>;
 }
 
 #[derive(Debug, Deserialize)]
@@ -83,11 +87,12 @@ pub(crate) struct HostEventReceiver {
 impl HostEventReceiver {
     pub(crate) async fn new(
         conn_params: &ConnectionParams,
+        capabilities: &ControlPlaneCapabilities,
         msg_proxy: MessageProxy,
     ) -> Result<Self> {
         let event_sink = HostEventSink::new(msg_proxy);
 
-        let client = platform::WsClientBuilder::new(conn_params, event_sink).await?;
+        let client = platform::WsClientBuilder::new(conn_params, capabilities, event_sink).await?;
 
         Ok(Self { client })
     }

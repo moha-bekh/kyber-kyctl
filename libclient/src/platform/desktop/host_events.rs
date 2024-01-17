@@ -11,7 +11,7 @@ use log::{error, warn};
 use tokio::{net::TcpStream, sync::oneshot, task};
 
 use crate::host_events::{HostEventFrame, HostEventSink};
-use crate::{ConnectionParams, Error, Result};
+use crate::{ConnectionParams, ControlPlaneCapabilities, Error, Message, Result};
 
 pub(crate) struct WsClient {
     handle: task::JoinHandle<()>,
@@ -19,7 +19,11 @@ pub(crate) struct WsClient {
 }
 
 impl WsClient {
-    async fn new(conn_params: &ConnectionParams, event_sink: HostEventSink) -> Result<Self> {
+    async fn new(
+        conn_params: &ConnectionParams,
+        capabilities: &ControlPlaneCapabilities,
+        event_sink: HostEventSink,
+    ) -> Result<Self> {
         let url = format!(
             "wss://{host}:{port}/ws",
             host = conn_params.tls_host,
@@ -30,7 +34,12 @@ impl WsClient {
 
         let (stop_tx, stop_rx) = oneshot::channel();
 
-        let handle = task::spawn(Self::task_entry(stream, event_sink, stop_rx));
+        let handle = task::spawn(Self::task_entry(
+            stream,
+            capabilities.clone(),
+            event_sink,
+            stop_rx,
+        ));
 
         Ok(Self { handle, stop_tx })
     }
@@ -70,18 +79,20 @@ impl WsClient {
 
     async fn task_entry(
         stream: WebSocketStream<ClientStream<TcpStream>>,
+        capabilities: ControlPlaneCapabilities,
         event_sink: HostEventSink,
         stop_rx: oneshot::Receiver<()>,
     ) {
         tokio::select! {
             _ = stop_rx => {
             }
-            _ = Self::process_stream(stream, event_sink) => {}
+            _ = Self::process_stream(stream, capabilities, event_sink) => {}
         }
     }
 
     async fn process_stream(
         mut stream: WebSocketStream<ClientStream<TcpStream>>,
+        capabilities: ControlPlaneCapabilities,
         event_sink: HostEventSink,
     ) {
         while let Some(msg) = stream.next().await {
@@ -121,7 +132,11 @@ pub(crate) struct WsClientBuilder;
 impl crate::host_events::WsClientBuilder for WsClientBuilder {
     type Type = WsClient;
 
-    async fn new(conn_params: &ConnectionParams, event_sink: HostEventSink) -> Result<Self::Type> {
-        WsClient::new(conn_params, event_sink).await
+    async fn new(
+        conn_params: &ConnectionParams,
+        capabilities: &ControlPlaneCapabilities,
+        event_sink: HostEventSink,
+    ) -> Result<Self::Type> {
+        WsClient::new(conn_params, capabilities, event_sink).await
     }
 }

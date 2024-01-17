@@ -138,10 +138,14 @@ impl Handler {
         }
     }
 
-    async fn start(&mut self) -> Result<Vec<Display>> {
+    async fn start(&mut self, capabilities: &Capabilities) -> Result<Vec<Display>> {
         // Connect to websocket
-        let host_events =
-            HostEventReceiver::new(&self.conn_params, self.create_message_proxy()).await?;
+        let host_events = HostEventReceiver::new(
+            &self.conn_params,
+            &capabilities.control_plane,
+            self.create_message_proxy(),
+        )
+        .await?;
 
         self.host_events = Some(host_events);
 
@@ -252,7 +256,7 @@ impl Handler {
                 }
 
                 // Connect to Kymux, Websocket, and enumerate displays
-                self.displays = self.start().await?;
+                self.displays = self.start(&capabilities).await?;
 
                 // Start streaming session
                 self.start_streaming_session().await?;

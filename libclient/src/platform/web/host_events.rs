@@ -7,7 +7,7 @@ use web_sys::MessageEvent;
 
 use crate::host_events::{HostEventFrame, HostEventSink};
 use crate::platform::{WebSocket, WebSocketHandler};
-use crate::{ConnectionParams, Result};
+use crate::{ConnectionParams, ControlPlaneCapabilities, Message, Result};
 
 struct Inner {
     _ws: WebSocket,
@@ -15,7 +15,11 @@ struct Inner {
 }
 
 impl Inner {
-    fn new(url: String, event_sink: HostEventSink) -> Result<Rc<Self>> {
+    fn new(
+        url: String,
+        capabilities: &ControlPlaneCapabilities,
+        event_sink: HostEventSink,
+    ) -> Result<Rc<Self>> {
         // Connect
         let ws = WebSocket::new(&url)?;
 
@@ -60,14 +64,18 @@ pub(crate) struct WsClient {
 }
 
 impl WsClient {
-    async fn new(conn_params: &ConnectionParams, event_sink: HostEventSink) -> Result<Self> {
+    async fn new(
+        conn_params: &ConnectionParams,
+        capabilities: &ControlPlaneCapabilities,
+        event_sink: HostEventSink,
+    ) -> Result<Self> {
         let url = format!(
             "wss://{host}:{port}/ws",
             host = conn_params.host,
             port = conn_params.port
         );
 
-        let inner = Inner::new(url, event_sink)?;
+        let inner = Inner::new(url, capabilities, event_sink)?;
 
         Ok(Self { _inner: inner })
     }
@@ -86,7 +94,11 @@ pub(crate) struct WsClientBuilder;
 impl crate::host_events::WsClientBuilder for WsClientBuilder {
     type Type = WsClient;
 
-    async fn new(conn_params: &ConnectionParams, event_sink: HostEventSink) -> Result<Self::Type> {
-        WsClient::new(conn_params, event_sink).await
+    async fn new(
+        conn_params: &ConnectionParams,
+        capabilities: &ControlPlaneCapabilities,
+        event_sink: HostEventSink,
+    ) -> Result<Self::Type> {
+        WsClient::new(conn_params, capabilities, event_sink).await
     }
 }
