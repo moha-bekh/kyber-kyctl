@@ -1,5 +1,5 @@
 use actix_web::{web, HttpRequest, HttpResponse};
-use log::warn;
+use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use tokio::{
     sync::{mpsc, oneshot},
@@ -87,7 +87,7 @@ impl HostEventSender {
 
     async fn task_entry(
         session: actix_ws::Session,
-        _msg_stream: actix_ws::MessageStream,
+        msg_stream: actix_ws::MessageStream,
         _events_tx: mpsc::Sender<HostEventFrame>,
         events_rx: mpsc::Receiver<HostEventFrame>,
         stop_rx: oneshot::Receiver<()>,
@@ -96,13 +96,26 @@ impl HostEventSender {
         tokio::select! {
             _ = stop_rx => {
             }
-            _ = Self::process_events(session, _msg_stream, events_rx) => {}
+            _ = Self::process_rx_events(msg_stream) => {}
+            _ = Self::process_tx_events(session, events_rx) => {}
         }
     }
 
-    async fn process_events(
+    async fn process_rx_events(mut stream: actix_ws::MessageStream) {
+        while let Some(Ok(actix_ws::Message::Text(msg))) = stream.recv().await {
+            match serde_json::from_str(&msg) {
+                Ok(HostEventFrame::Event { event }) => {
+                    info!("Got event: {event:?}");
+                }
+                Err(err) => {
+                    error!("Fail to parse {msg}: {err:?}");
+                }
+            }
+        }
+    }
+
+    async fn process_tx_events(
         mut session: actix_ws::Session,
-        mut _msg_stream: actix_ws::MessageStream,
         mut events_rx: mpsc::Receiver<HostEventFrame>,
     ) {
         while let Some(msg) = events_rx.recv().await {
