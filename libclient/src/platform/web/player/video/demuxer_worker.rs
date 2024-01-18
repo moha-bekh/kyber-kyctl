@@ -53,6 +53,11 @@ impl VideoDemuxerWorkerCtx {
                         Self::demux_process_loop(rx, canvas, codec, hardware_acceleration).await;
                     if let Err(err) = ret {
                         error!("Video demux loop ended with error {err:?}");
+
+                        let ret = Self::forward_error_to_parent("decode_error", err);
+                        if let Err(err) = &ret {
+                            warn!("Failed to forward error to parent: {err:?}");
+                        }
                     }
                 });
             }
@@ -96,7 +101,11 @@ impl VideoDemuxerWorkerCtx {
                 Ok(())
             }),
             error: Box::new(move |error| {
-                error!("video decoding error: {error:?}");
+                let ret = Self::forward_error_to_parent("decode_error", error.into());
+                if let Err(err) = &ret {
+                    warn!("Failed to forward error to parent: {err:?}");
+                }
+
                 Ok(())
             }),
         });
@@ -132,6 +141,17 @@ impl VideoDemuxerWorkerCtx {
                 }
             }
         }
+
+        Ok(())
+    }
+
+    fn forward_error_to_parent(name: &str, error: JsValue) -> Result<(), JsValue> {
+        let js_self = js_sys::eval("self")?.dyn_into::<web_sys::DedicatedWorkerGlobalScope>()?;
+
+        let msg = js_sys::Object::new();
+        reflect::set(&msg, "type", name.into())?;
+        reflect::set(&msg, "error", error)?;
+        js_self.post_message(&msg)?;
 
         Ok(())
     }
@@ -184,6 +204,10 @@ impl DemuxerWorker {
                 if let Err(err) = ret {
                     warn!("Failed to send CanvasResized: {err:?}");
                 }
+            }
+            "decode_error" => {
+                let error = js_sys::Reflect::get(msg, &"error".into())?;
+                warn!("Decode error: {error:?}");
             }
             _ => {
                 warn!("Got unknown message type: {msg_type:?}");
