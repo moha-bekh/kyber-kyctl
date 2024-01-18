@@ -327,6 +327,15 @@ impl Handler {
 
                 Ok(())
             }
+            Message::DecodeError => {
+                let ret = self.stop().await;
+
+                self.event_manager.send_event(Event::Stopped {
+                    reason: StopReason::DecodeError,
+                });
+
+                ret
+            }
             #[cfg(feature = "web")]
             Message::CanvasResized { width, height } => {
                 self.event_manager.send_event(Event::CanvasResized {

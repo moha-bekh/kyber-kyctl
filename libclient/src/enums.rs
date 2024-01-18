@@ -27,6 +27,8 @@ pub enum Message {
         displays: Vec<Display>,
     },
 
+    DecodeError,
+
     #[cfg(feature = "web")]
     CanvasResized {
         width: i32,
