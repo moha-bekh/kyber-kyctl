@@ -223,6 +223,8 @@ impl DemuxerWorker {
                 warn!("Decode error: {error:?}");
 
                 running.store(false, Ordering::Relaxed);
+
+                Self::message_proxy_send(message_proxy, Message::DecodeError);
             }
             _ => {
                 warn!("Got unknown message type: {msg_type:?}");
