@@ -38,6 +38,7 @@ pub enum Message {
 pub enum StopReason {
     Requested,
     ConnectionLost,
+    DecodeError,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

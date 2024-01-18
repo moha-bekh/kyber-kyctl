@@ -486,6 +486,7 @@ pub enum libclient_EventType {
 pub enum libclient_StopReason {
     Requested,
     ConnectionLost,
+    DecodeError,
 }
 
 #[no_mangle]
@@ -529,6 +530,7 @@ pub unsafe extern "C" fn libclient_event_unpack_stopped(
     *out_reason = match reason {
         crate::StopReason::Requested => libclient_StopReason::Requested,
         crate::StopReason::ConnectionLost => libclient_StopReason::ConnectionLost,
+        crate::StopReason::DecodeError => libclient_StopReason::DecodeError,
     };
 
     0

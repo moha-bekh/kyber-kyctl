@@ -106,6 +106,7 @@ impl WindowHandle {
 pub enum StopReason {
     Requested,
     ConnectionLost,
+    DecodeError,
 }
 
 #[derive(Clone, Debug)]
@@ -167,6 +168,9 @@ impl EventSinkData {
                     }
                     sys::libclient_StopReason_LIBCLIENT_STOP_REASON_CONNECTION_LOST => {
                         StopReason::ConnectionLost
+                    }
+                    sys::libclient_StopReason_LIBCLIENT_STOP_REASON_DECODE_ERROR => {
+                        StopReason::DecodeError
                     }
                     _ => {
                         warn!("Fail to convert ConnectionLost {c_reason}");
