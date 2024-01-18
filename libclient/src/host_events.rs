@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use log::warn;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::platform;
 use crate::{ConnectionParams, ControlPlaneCapabilities, Display, Message, MessageProxy, Result};
@@ -24,12 +24,12 @@ pub(crate) trait WsClientBuilder {
     ) -> Result<Self::Type>;
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) enum HostEvent {
     DisplayList { displays: Vec<Display> },
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) enum HostEventFrame {
     Event { event: HostEvent },
 }
