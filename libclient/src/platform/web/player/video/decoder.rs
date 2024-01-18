@@ -27,9 +27,9 @@ impl VideoDecoder {
         let output_closure = Closure::wrap(cbs.output);
         let error_closure = Closure::wrap(cbs.error);
         let output_fn = output_closure.as_ref().unchecked_ref();
-        let error_fn = output_closure.as_ref().unchecked_ref();
+        let error_fn = error_closure.as_ref().unchecked_ref();
         let video_decoder =
-            web_sys::VideoDecoder::new(&web_sys::VideoDecoderInit::new(output_fn, error_fn))?;
+            web_sys::VideoDecoder::new(&web_sys::VideoDecoderInit::new(error_fn, output_fn))?;
 
         Ok(Self {
             _output_closure: output_closure,
