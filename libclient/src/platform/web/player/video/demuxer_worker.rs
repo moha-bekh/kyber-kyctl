@@ -190,6 +190,13 @@ impl DemuxerWorker {
         Ok(Self { worker, running })
     }
 
+    fn message_proxy_send(message_proxy: &MessageProxy, msg: Message) {
+        let ret = message_proxy.send(msg.clone());
+        if let Err(err) = ret {
+            warn!("Failed to send {msg:?}: {err:?}");
+        }
+    }
+
     fn handle_worker_message(
         event: web_sys::MessageEvent,
         message_proxy: &MessageProxy,
@@ -203,13 +210,13 @@ impl DemuxerWorker {
                 let width = get_f64(msg, "width")?;
                 let height = get_f64(msg, "height")?;
 
-                let ret = message_proxy.send(Message::CanvasResized {
-                    width: width as _,
-                    height: height as _,
-                });
-                if let Err(err) = ret {
-                    warn!("Failed to send CanvasResized: {err:?}");
-                }
+                Self::message_proxy_send(
+                    message_proxy,
+                    Message::CanvasResized {
+                        width: width as _,
+                        height: height as _,
+                    },
+                );
             }
             "decode_error" => {
                 let error = js_sys::Reflect::get(msg, &"error".into())?;
