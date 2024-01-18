@@ -1,8 +1,23 @@
-use log::info;
+use log::{error, info};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
 use crate::platform::player::packet::MediaPacket;
+
+#[wasm_bindgen(raw_module = "./video_decoder.js")]
+extern "C" {
+    #[wasm_bindgen(catch)]
+    fn decoder_configure(
+        decoder: &web_sys::VideoDecoder,
+        config: &web_sys::VideoDecoderConfig,
+    ) -> Result<(), JsValue>;
+
+    #[wasm_bindgen(catch)]
+    fn decoder_decode(
+        decoder: &web_sys::VideoDecoder,
+        chunk: &web_sys::EncodedVideoChunk,
+    ) -> Result<(), JsValue>;
+}
 
 pub struct VideoDecoder {
     _output_closure: Closure<dyn FnMut(web_sys::VideoFrame) -> Result<(), JsValue>>,
@@ -57,11 +72,12 @@ impl VideoDecoder {
                 web_sys::HardwareAcceleration::PreferSoftware
             };
 
-            self.video_decoder.configure(
+            decoder_configure(
+                &self.video_decoder,
                 web_sys::VideoDecoderConfig::new(&self.codec)
                     .optimize_for_latency(true)
                     .hardware_acceleration(hardware_acceleration),
-            );
+            )?;
             self.pending_config = Some(packet.data.to_vec());
         } else {
             let header = &packet.header;
@@ -82,7 +98,11 @@ impl VideoDecoder {
             let chunk = web_sys::EncodedVideoChunk::new(&web_sys::EncodedVideoChunkInit::new(
                 &data, timestamp, type_,
             ))?;
-            self.video_decoder.decode(&chunk);
+
+            let ret = decoder_decode(&self.video_decoder, &chunk);
+            if let Err(err) = &ret {
+                error!("decode() error: {err:?}")
+            }
         }
         Ok(())
     }
