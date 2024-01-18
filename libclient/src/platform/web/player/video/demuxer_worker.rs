@@ -1,5 +1,5 @@
 use std::rc::Rc;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use log::{error, info, warn};
 
@@ -159,6 +159,7 @@ impl VideoDemuxerWorkerCtx {
 
 pub struct DemuxerWorker {
     worker: web_sys::Worker,
+    running: Rc<AtomicBool>,
 }
 
 impl DemuxerWorker {
@@ -171,10 +172,14 @@ impl DemuxerWorker {
             web_sys::WorkerOptions::new().type_(web_sys::WorkerType::Module),
         )?;
 
+        let running = Rc::new(AtomicBool::new(true));
+
         // Get messages from worker
+        let running_msg_handler = running.clone();
+
         let worker_message_cb =
             Closure::<dyn FnMut(_)>::new(move |event: web_sys::MessageEvent| {
-                let ret = Self::handle_worker_message(event, &message_proxy);
+                let ret = Self::handle_worker_message(event, &message_proxy, &running_msg_handler);
                 if let Err(err) = ret {
                     warn!("VideoDemuxerWorker failed to process message: {err:?}");
                 }
@@ -182,12 +187,13 @@ impl DemuxerWorker {
         worker.set_onmessage(Some(worker_message_cb.as_ref().unchecked_ref()));
         worker_message_cb.forget();
 
-        Ok(Self { worker })
+        Ok(Self { worker, running })
     }
 
     fn handle_worker_message(
         event: web_sys::MessageEvent,
         message_proxy: &MessageProxy,
+        running: &Rc<AtomicBool>,
     ) -> Result<(), JsValue> {
         let msg = &event.data().dyn_into::<js_sys::Object>()?;
         let msg_type = get_string(msg, "type")?;
@@ -208,6 +214,8 @@ impl DemuxerWorker {
             "decode_error" => {
                 let error = js_sys::Reflect::get(msg, &"error".into())?;
                 warn!("Decode error: {error:?}");
+
+                running.store(false, Ordering::Relaxed);
             }
             _ => {
                 warn!("Got unknown message type: {msg_type:?}");
@@ -251,6 +259,10 @@ impl DemuxerWorker {
     }
 
     pub fn send_frame(&self, frame: js_sys::ArrayBuffer) -> Result<(), JsValue> {
+        if !self.running.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+
         let msg = js_sys::Object::new();
         reflect::set(&msg, "type", Self::TYPE_FRAME.into())?;
         reflect::set_ref(&msg, "frame", &frame)?;
