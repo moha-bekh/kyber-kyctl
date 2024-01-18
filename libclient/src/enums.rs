@@ -10,7 +10,7 @@ pub struct Display {
     pub y: i32,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Message {
     Start,
     Stop,
