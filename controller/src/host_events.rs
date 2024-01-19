@@ -174,7 +174,7 @@ impl HostEventSender {
         tokio::select! {
             _ = stop_rx => {
             }
-            _ = Self::process_rx_events(msg_stream, ping_task_tx) => {}
+            _ = Self::process_rx_events(msg_stream, ping_task_tx, statemachine_proxy.clone()) => {}
             _ = Self::process_tx_events(session, events_rx, statemachine_proxy) => {}
             _ = ping_task.run() => {}
         }
@@ -183,8 +183,24 @@ impl HostEventSender {
     async fn process_rx_events(
         mut stream: actix_ws::MessageStream,
         ping_task_tx: mpsc::Sender<u64>,
+        statemachine_proxy: StateMachineProxy,
     ) {
-        while let Some(Ok(actix_ws::Message::Text(msg))) = stream.recv().await {
+        loop {
+            let msg = match stream.recv().await {
+                Some(Ok(actix_ws::Message::Text(msg))) => msg,
+                Some(Ok(_)) => {
+                    continue;
+                }
+                Some(Err(err)) => {
+                    warn!("recv() failed: {err:?}");
+                    break;
+                }
+                None => {
+                    info!("End of stream");
+                    break;
+                }
+            };
+
             match serde_json::from_str(&msg) {
                 Ok(HostEventFrame::Ping { id }) => {
                     warn!("Unexpected Ping({id})");
@@ -203,6 +219,12 @@ impl HostEventSender {
                 }
             }
         }
+
+        statemachine_proxy
+            .send(StateMachineEvent::HostEvents {
+                notification: Notification::ConnectionLost,
+            })
+            .await;
     }
 
     async fn process_tx_events(
