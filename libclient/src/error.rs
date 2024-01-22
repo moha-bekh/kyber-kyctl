@@ -67,6 +67,7 @@ pub enum Error {
     HttpClient(reqwest::Error),
     StreamStartRejected,
     StreamStopRejected,
+    WsConnectFailed,
 }
 
 impl From<std::io::Error> for Error {

@@ -4,20 +4,28 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use log::{error, info, warn};
+use tokio::sync::oneshot;
 use wasm_bindgen::prelude::*;
-use web_sys::{CloseEvent, ErrorEvent, MessageEvent};
+use web_sys::{CloseEvent, MessageEvent};
 
 use crate::host_events::{self, HostEventFrame, HostEventSink};
 use crate::platform::{WebSocket, WebSocketHandler};
-use crate::{ConnectionParams, ControlPlaneCapabilities, Message, Result};
+use crate::{ConnectionParams, ControlPlaneCapabilities, Error, Message, Result};
 
 use super::dom;
+
+#[derive(Debug)]
+enum ConnectionResult {
+    Ok,
+    Failed,
+}
 
 struct Inner {
     ws: WebSocket,
     timer_duration: Duration,
     event_sink: HostEventSink,
     timer_id: RefCell<Option<i32>>,
+    started_tx: RefCell<Option<oneshot::Sender<ConnectionResult>>>,
 }
 
 impl Inner {
@@ -25,6 +33,7 @@ impl Inner {
         url: String,
         capabilities: &ControlPlaneCapabilities,
         event_sink: HostEventSink,
+        started_tx: oneshot::Sender<ConnectionResult>,
     ) -> Result<Rc<Self>> {
         // Connect
         let ws = WebSocket::new(&url)?;
@@ -37,6 +46,7 @@ impl Inner {
             timer_duration,
             event_sink,
             timer_id: RefCell::new(None),
+            started_tx: RefCell::new(Some(started_tx)),
         });
 
         ws.plug_handler(this.clone())?;
@@ -85,6 +95,16 @@ impl WebSocketHandler for Inner {
     fn on_open(self: &Rc<Self>) -> Result<()> {
         self.arm_timeout(self.timer_duration)?;
 
+        let Some(started_tx) = self.started_tx.borrow_mut().take() else {
+            warn!("started_tx already consumed");
+            return Ok(());
+        };
+
+        let ret = started_tx.send(ConnectionResult::Ok);
+        if ret.is_err() {
+            warn!("Fail to forward error");
+        }
+
         Ok(())
     }
 
@@ -128,18 +148,36 @@ impl WebSocketHandler for Inner {
         Ok(())
     }
 
-    fn on_close(self: &Rc<Self>, event: CloseEvent) -> Result<()> {
-        warn!("Control websocket closed: {event:?}");
-
+    fn on_close(self: &Rc<Self>, _event: CloseEvent) -> Result<()> {
         self.clear_timeout()?;
-        self.event_sink.blocking_push_msg(Message::ConnectionLost);
+
+        if let Some(started_tx) = self.started_tx.borrow_mut().take() {
+            let ret = started_tx.send(ConnectionResult::Failed);
+            if ret.is_err() {
+                warn!("Fail to forward error");
+            }
+        } else {
+            self.event_sink.blocking_push_msg(Message::ConnectionLost);
+        }
 
         Ok(())
     }
 }
 
+/// HACK: Inner requires to be Send on functions that will .await after
+/// calling `Inner::new()`.
+///
+/// Inner contains a web_sys::Websocket that isn't Send. Furthermore, the Rc<>
+/// isn't send too.
+///
+/// Since we are in a browser (single-threaded environment) and we don't want
+/// to send the value to a worker, it is acceptable to force Rc<Inner> to be
+/// Send.
+struct InnerRef(Rc<Inner>);
+unsafe impl Send for InnerRef {}
+
 pub(crate) struct WsClient {
-    _inner: Rc<Inner>,
+    _inner: InnerRef,
 }
 
 impl WsClient {
@@ -154,9 +192,14 @@ impl WsClient {
             port = conn_params.port
         );
 
-        let inner = Inner::new(url, capabilities, event_sink)?;
+        let (connected_tx, connected_rx) = oneshot::channel();
+        let inner = InnerRef(Inner::new(url, capabilities, event_sink, connected_tx)?);
 
-        Ok(Self { _inner: inner })
+        match connected_rx.await {
+            Ok(ConnectionResult::Ok) => Ok(Self { _inner: inner }),
+            Ok(ConnectionResult::Failed) => Err(Error::WsConnectFailed),
+            Err(_) => Err(Error::WsConnectFailed),
+        }
     }
 }
 
