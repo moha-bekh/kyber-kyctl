@@ -5,7 +5,7 @@ use std::sync::Arc;
 use log::{info, warn};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
-use web_sys::{CloseEvent, ErrorEvent, MessageEvent};
+use web_sys::{CloseEvent, MessageEvent};
 
 use libkynput::bufferproxy::{BufferProxyReceiver, BufferProxySender};
 use libkynput::{InputNetworkStreamMsg, InputNetworkStreamObserver};
@@ -77,13 +77,6 @@ impl WebSocketHandler for InputWebSocketHandler {
     }
 
     fn on_close(self: &Rc<Self>, _event: CloseEvent) -> Result<()> {
-        self.msg_sink
-            .on_message(InputNetworkStreamMsg::ClientDisconnected);
-
-        Ok(())
-    }
-
-    fn on_error(self: &Rc<Self>, _event: ErrorEvent) -> Result<()> {
         self.msg_sink
             .on_message(InputNetworkStreamMsg::ClientDisconnected);
 

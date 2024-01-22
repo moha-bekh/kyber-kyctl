@@ -3,7 +3,7 @@ use std::rc::Rc;
 use async_trait::async_trait;
 use log::{error, info};
 use wasm_bindgen::prelude::*;
-use web_sys::{BinaryType, CloseEvent, ErrorEvent, MessageEvent};
+use web_sys::{BinaryType, CloseEvent, MessageEvent};
 
 use crate::Result;
 
@@ -16,10 +16,6 @@ pub(crate) trait WebSocketHandler {
     }
 
     fn on_close(self: &Rc<Self>, _event: CloseEvent) -> Result<()> {
-        Ok(())
-    }
-
-    fn on_error(self: &Rc<Self>, _event: ErrorEvent) -> Result<()> {
         Ok(())
     }
 
@@ -74,26 +70,6 @@ impl WebSocket {
         self.ws
             .set_onclose(Some(onclose_cb.as_ref().unchecked_ref()));
         onclose_cb.forget();
-
-        // onerror
-        let handler_clone = handler.clone();
-        let onerror_cb = Closure::<dyn FnMut(_)>::new(move |event: ErrorEvent| {
-            error!(
-                "Websocket '{}' error. {file}:{line}: {msg}",
-                T::NAME,
-                file = event.filename(),
-                line = event.lineno(),
-                msg = event.message()
-            );
-
-            let ret = handler_clone.on_error(event);
-            if let Err(err) = ret {
-                error!("Websocket {} onerror failed: {err:?}", T::NAME);
-            }
-        });
-        self.ws
-            .set_onerror(Some(onerror_cb.as_ref().unchecked_ref()));
-        onerror_cb.forget();
 
         // onmessage
         let handler_clone = handler.clone();
