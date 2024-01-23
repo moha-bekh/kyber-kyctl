@@ -10,7 +10,9 @@ use web_sys::{CloseEvent, MessageEvent};
 
 use crate::host_events::{self, HostEventFrame, HostEventSink};
 use crate::platform::{WebSocket, WebSocketHandler};
-use crate::{ConnectionParams, ControlPlaneCapabilities, Error, Message, Result};
+use crate::{
+    ConnectionParams, ControlPlaneCapabilities, ControlPlaneCloseReason, Error, Message, Result,
+};
 
 use super::dom;
 
@@ -67,7 +69,10 @@ impl Inner {
     fn arm_timeout(self: &Rc<Self>, duration: Duration) -> Result<()> {
         let this = self.clone();
         let ontimeout_cb = Closure::<dyn FnMut()>::new(move || {
-            this.event_sink.blocking_push_msg(Message::ConnectionLost);
+            this.event_sink
+                .blocking_push_msg(Message::ControlPlaneClosed {
+                    reason: ControlPlaneCloseReason::Timeout,
+                });
         });
 
         let window = dom::window()?;
@@ -148,7 +153,7 @@ impl WebSocketHandler for Inner {
         Ok(())
     }
 
-    fn on_close(self: &Rc<Self>, _event: CloseEvent) -> Result<()> {
+    fn on_close(self: &Rc<Self>, event: CloseEvent) -> Result<()> {
         self.clear_timeout()?;
 
         if let Some(started_tx) = self.started_tx.borrow_mut().take() {
@@ -157,7 +162,14 @@ impl WebSocketHandler for Inner {
                 warn!("Fail to forward error");
             }
         } else {
-            self.event_sink.blocking_push_msg(Message::ConnectionLost);
+            self.event_sink
+                .blocking_push_msg(Message::ControlPlaneClosed {
+                    reason: ControlPlaneCloseReason::Closed {
+                        was_clean: event.was_clean(),
+                        code: Some(event.code()),
+                        reason: Some(event.reason()),
+                    },
+                });
         }
 
         Ok(())

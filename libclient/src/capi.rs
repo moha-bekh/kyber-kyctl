@@ -485,7 +485,9 @@ pub enum libclient_EventType {
 #[repr(C)]
 pub enum libclient_StopReason {
     Requested,
-    ConnectionLost,
+    ControlPlaneClosed,
+    ControlPlaneIoError,
+    ControlPlaneTimeout,
     DecodeError,
 }
 
@@ -529,7 +531,9 @@ pub unsafe extern "C" fn libclient_event_unpack_stopped(
 
     *out_reason = match reason {
         crate::StopReason::Requested => libclient_StopReason::Requested,
-        crate::StopReason::ConnectionLost => libclient_StopReason::ConnectionLost,
+        crate::StopReason::ControlPlaneClosed => libclient_StopReason::ControlPlaneClosed,
+        crate::StopReason::ControlPlaneIoError => libclient_StopReason::ControlPlaneIoError,
+        crate::StopReason::ControlPlaneTimeout => libclient_StopReason::ControlPlaneTimeout,
         crate::StopReason::DecodeError => libclient_StopReason::DecodeError,
     };
 

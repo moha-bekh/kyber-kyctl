@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{self, Sender};
 
 use crate::error::{Error, Result};
-use enums::Message;
+use enums::{ControlPlaneCloseReason, Message};
 pub use enums::{Display, Event, StopReason};
 use event_manager::EventManager;
 pub use event_manager::EventSink;
@@ -282,13 +282,18 @@ impl Handler {
 
                 ret
             }
-            Message::ConnectionLost => {
-                warn!("Connection lost");
+            Message::ControlPlaneClosed { reason } => {
+                warn!("ControlPlaneClosed. Reason: {reason:?}");
+
                 let ret = self.stop_backend().await;
 
-                self.event_manager.send_event(Event::Stopped {
-                    reason: StopReason::ConnectionLost,
-                });
+                let reason = match reason {
+                    ControlPlaneCloseReason::Eof => StopReason::ControlPlaneClosed,
+                    ControlPlaneCloseReason::Closed { .. } => StopReason::ControlPlaneClosed,
+                    ControlPlaneCloseReason::Timeout => StopReason::ControlPlaneTimeout,
+                };
+
+                self.event_manager.send_event(Event::Stopped { reason });
 
                 ret
             }

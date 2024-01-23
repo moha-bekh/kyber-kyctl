@@ -11,11 +11,24 @@ pub struct Display {
 }
 
 #[derive(Clone, Debug)]
+pub enum ControlPlaneCloseReason {
+    Eof,
+    Closed {
+        was_clean: bool,
+        code: Option<u16>,
+        reason: Option<String>,
+    },
+    Timeout,
+}
+
+#[derive(Clone, Debug)]
 pub enum Message {
     Start,
     Stop,
 
-    ConnectionLost,
+    ControlPlaneClosed {
+        reason: ControlPlaneCloseReason,
+    },
 
     PlayerStarted,
     PlayerStopped,
@@ -39,7 +52,9 @@ pub enum Message {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StopReason {
     Requested,
-    ConnectionLost,
+    ControlPlaneClosed,
+    ControlPlaneIoError,
+    ControlPlaneTimeout,
     DecodeError,
 }
 

@@ -105,7 +105,9 @@ impl WindowHandle {
 #[derive(Clone, Debug)]
 pub enum StopReason {
     Requested,
-    ConnectionLost,
+    ControlPlaneClosed,
+    ControlPlaneIoError,
+    ControlPlaneTimeout,
     DecodeError,
 }
 
@@ -166,8 +168,14 @@ impl EventSinkData {
                     sys::libclient_StopReason_LIBCLIENT_STOP_REASON_REQUESTED => {
                         StopReason::Requested
                     }
-                    sys::libclient_StopReason_LIBCLIENT_STOP_REASON_CONNECTION_LOST => {
-                        StopReason::ConnectionLost
+                    sys::libclient_StopReason_LIBCLIENT_STOP_REASON_CONTROL_PLANE_CLOSED => {
+                        StopReason::ControlPlaneClosed
+                    }
+                    sys::libclient_StopReason_LIBCLIENT_STOP_REASON_CONTROL_PLANE_IO_ERROR => {
+                        StopReason::ControlPlaneIoError
+                    }
+                    sys::libclient_StopReason_LIBCLIENT_STOP_REASON_CONTROL_PLANE_TIMEOUT => {
+                        StopReason::ControlPlaneTimeout
                     }
                     sys::libclient_StopReason_LIBCLIENT_STOP_REASON_DECODE_ERROR => {
                         StopReason::DecodeError

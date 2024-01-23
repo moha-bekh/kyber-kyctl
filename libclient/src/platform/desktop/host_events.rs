@@ -11,7 +11,9 @@ use log::{error, info, warn};
 use tokio::{net::TcpStream, sync::oneshot, task};
 
 use crate::host_events::{self, HostEventFrame, HostEventSink};
-use crate::{ConnectionParams, ControlPlaneCapabilities, Error, Message, Result};
+use crate::{
+    ConnectionParams, ControlPlaneCapabilities, ControlPlaneCloseReason, Error, Message, Result,
+};
 
 pub(crate) struct WsClient {
     handle: task::JoinHandle<()>,
@@ -107,18 +109,47 @@ impl WsClient {
                 msg = stream.next() => {
                     let msg = match msg {
                         None => {
-                            event_sink.push_msg(Message::ConnectionLost).await;
+                            event_sink.push_msg(Message::ControlPlaneClosed {
+                                reason: ControlPlaneCloseReason::Eof,
+                            }).await;
+
                             break;
                         },
                         Some(Err(err)) => {
                             warn!("Control WS receive failed: {err:?}");
-                            event_sink.push_msg(Message::ConnectionLost).await;
+
+                            event_sink.push_msg(Message::ControlPlaneClosed {
+                                reason: ControlPlaneCloseReason::Closed {
+                                    was_clean: false,
+                                    code: None,
+                                    reason: None,
+                                },
+                            }).await;
+
                             break;
                         }
                         Some(Ok(tungstenite_Message::Text(msg))) => msg,
                         Some(Ok(tungstenite_Message::Close(close))) => {
                             warn!("Control WS closed: {close:?}");
-                            event_sink.push_msg(Message::ConnectionLost).await;
+
+                            let reason = if let Some(close) = close {
+                                ControlPlaneCloseReason::Closed {
+                                    was_clean: true,
+                                    code: Some(close.code.into()),
+                                    reason: Some(close.reason.into()),
+                                }
+                            } else {
+                                ControlPlaneCloseReason::Closed {
+                                    was_clean: true,
+                                    code: None,
+                                    reason: None,
+                                }
+                            };
+
+                            event_sink.push_msg(Message::ControlPlaneClosed {
+                                reason
+                            }).await;
+
                             break;
                         }
                         Some(_) => continue,
@@ -154,7 +185,10 @@ impl WsClient {
                     }
                 }
                 _ = &mut timer => {
-                    event_sink.push_msg(Message::ConnectionLost).await;
+                    event_sink.push_msg(Message::ControlPlaneClosed {
+                        reason: ControlPlaneCloseReason::Timeout,
+                    }).await;
+
                     break;
                 }
             }
