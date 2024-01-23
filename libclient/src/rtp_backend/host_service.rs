@@ -1,4 +1,4 @@
-use log::info;
+use log::{info, warn};
 use reqwest::{self, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -53,13 +53,15 @@ struct GenerateSdpResponse {
 pub(crate) async fn hello(client: &HttpClient) -> Result<String> {
     let url = format!("{base_url}/rtp/hello", base_url = client.base_url());
 
-    let response = client
-        .client()
-        .get(&url)
-        .send()
-        .await?
-        .json::<StartResponse>()
-        .await?;
+    let response = client.client().get(&url).send().await?;
+    if response.status() != StatusCode::OK {
+        warn!("GET /rtp/hello failed: {}", response.status());
+        return Err(Error::HttpQueryFailed {
+            status: response.status().into(),
+        });
+    }
+
+    let response = response.json::<StartResponse>().await?;
     info!("Hello response: {:?}", response);
 
     Ok(response.ip)
@@ -77,14 +79,15 @@ pub(crate) async fn generate_sdp(
         "display_id": display_id,
     });
 
-    let response = client
-        .client()
-        .post(&url)
-        .json(&body)
-        .send()
-        .await?
-        .json::<GenerateSdpResponse>()
-        .await?;
+    let response = client.client().post(&url).json(&body).send().await?;
+    if response.status() != StatusCode::OK {
+        warn!("POST /rtp/generate_sdp failed: {}", response.status());
+        return Err(Error::HttpQueryFailed {
+            status: response.status().into(),
+        });
+    }
+
+    let response = response.json::<GenerateSdpResponse>().await?;
     info!("Generate SDP response: {:?}", response);
 
     Ok(response.params)
@@ -122,11 +125,12 @@ pub(super) async fn start_stream(
 
     info!("Starting stream with parameters {body:?}");
     let response = client.client().post(&url).json(&body).send().await?;
-    info!("Start response: {:?}", response);
-
-    if response.status() == StatusCode::OK {
-        Ok(())
-    } else {
-        Err(Error::StreamStartRejected)
+    if response.status() != StatusCode::OK {
+        warn!("GET /rtp/start failed: {}", response.status());
+        return Err(Error::HttpQueryFailed {
+            status: response.status().into(),
+        });
     }
+
+    Ok(())
 }

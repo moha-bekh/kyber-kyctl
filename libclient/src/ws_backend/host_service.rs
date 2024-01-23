@@ -1,9 +1,11 @@
+use log::warn;
+use reqwest::StatusCode;
 use serde::Serialize;
 
 use crate::get_display_id;
 use crate::http::HttpClient;
-use crate::Result;
 use crate::{CursorFormat, Display, StreamingSessionConfig, VideoCodec};
+use crate::{Error, Result};
 
 #[derive(Clone, Debug, Serialize)]
 struct StartRequestVideo {
@@ -52,7 +54,13 @@ pub(super) async fn start_stream(
         inputs,
     };
 
-    http_client.client().post(&url).json(&body).send().await?;
+    let response = http_client.client().post(&url).json(&body).send().await?;
+    if response.status() != StatusCode::OK {
+        warn!("POST /websocket/start failed: {}", response.status());
+        return Err(Error::HttpQueryFailed {
+            status: response.status().into(),
+        });
+    }
 
     Ok(())
 }
