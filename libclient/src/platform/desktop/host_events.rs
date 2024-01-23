@@ -116,6 +116,11 @@ impl WsClient {
                             break;
                         }
                         Some(Ok(tungstenite_Message::Text(msg))) => msg,
+                        Some(Ok(tungstenite_Message::Close(close))) => {
+                            warn!("Control WS closed: {close:?}");
+                            event_sink.push_msg(Message::ConnectionLost).await;
+                            break;
+                        }
                         Some(_) => continue,
                     };
 
