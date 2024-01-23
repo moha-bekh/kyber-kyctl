@@ -405,6 +405,18 @@ pub struct StreamingSessionConfig {
     pub input: Option<InputSessionConfig>,
 }
 
+impl std::fmt::Debug for StreamingSessionConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StreamingSessionConfig")
+            .field("protocol", &self.protocol)
+            .field("bitrate", &self.bitrate)
+            .field("video", &self.video)
+            .field("audio", &self.audio)
+            .field("input", &self.input.is_some())
+            .finish()
+    }
+}
+
 pub struct Client {
     event_manager: EventManager,
     sender: Sender<Message>,
