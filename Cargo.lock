@@ -946,6 +946,7 @@ dependencies = [
  "vlc-rs",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+ "wasmtimer",
  "web-sys",
 ]
 

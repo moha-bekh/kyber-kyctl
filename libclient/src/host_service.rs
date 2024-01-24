@@ -1,14 +1,31 @@
+use std::time::Duration;
+
 use log::warn;
 use reqwest::{self, StatusCode};
+
+#[cfg(not(target_family = "wasm"))]
+use tokio::time::timeout;
+#[cfg(target_family = "wasm")]
+use wasmtimer::tokio::timeout;
 
 use crate::error::{Error, Result};
 use crate::http::HttpClient;
 use crate::{Capabilities, Display};
 
 pub(crate) async fn capabilities(client: &HttpClient) -> Result<Capabilities> {
+    const HTTP_TIMEOUT: Duration = Duration::from_secs(5);
+
     let url = format!("{base_url}/capabilities", base_url = client.base_url());
 
-    let response = client.client().get(&url).send().await?;
+    let ret = timeout(HTTP_TIMEOUT, client.client().get(&url).send()).await;
+    let response = match ret {
+        Err(_) => {
+            warn!("GET /capabilities has timed out");
+            return Err(Error::HttpQueryTimeout);
+        }
+        Ok(ret) => ret?,
+    };
+
     if response.status() != StatusCode::OK {
         warn!("GET /capabilities failed: {}", response.status());
         return Err(Error::HttpQueryFailed {

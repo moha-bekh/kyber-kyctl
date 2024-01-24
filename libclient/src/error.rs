@@ -65,6 +65,7 @@ pub enum Error {
     Player(PlayerError),
     // Host service errors
     HttpClient(reqwest::Error),
+    HttpQueryTimeout,
     HttpQueryFailed {
         status: u16,
     },
