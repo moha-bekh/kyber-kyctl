@@ -139,15 +139,18 @@ impl Handler {
     }
 
     async fn start(&mut self) -> Result<()> {
+        info!("Get Host capabilities");
         let capabilities = host_service::capabilities(&self.http_client).await?;
 
         // Kick the previously connected user
+        info!("Stop any existing stream");
         let ret = host_service::stop_stream(&self.http_client).await;
         if let Err(err) = ret {
             info!("Stop stream result: {err:?}");
         }
 
         // Connect to websocket
+        info!("Connect to Control Plane");
         let host_events = HostEventReceiver::new(
             &self.conn_params,
             &capabilities.control_plane,
@@ -158,7 +161,9 @@ impl Handler {
         self.host_events = Some(host_events);
 
         // Enumerate displays
+        info!("Enumerate displays");
         self.displays = host_service::enumerate_displays(&self.http_client).await?;
+        info!("Got displays: {:?}", self.displays);
 
         Ok(())
     }
