@@ -138,7 +138,15 @@ impl Handler {
         }
     }
 
-    async fn start(&mut self, capabilities: &Capabilities) -> Result<Vec<Display>> {
+    async fn start(&mut self) -> Result<()> {
+        let capabilities = host_service::capabilities(&self.http_client).await?;
+
+        // Kick the previously connected user
+        let ret = host_service::stop_stream(&self.http_client).await;
+        if let Err(err) = ret {
+            info!("Stop stream result: {err:?}");
+        }
+
         // Connect to websocket
         let host_events = HostEventReceiver::new(
             &self.conn_params,
@@ -150,7 +158,9 @@ impl Handler {
         self.host_events = Some(host_events);
 
         // Enumerate displays
-        host_service::enumerate_displays(&self.http_client).await
+        self.displays = host_service::enumerate_displays(&self.http_client).await?;
+
+        Ok(())
     }
 
     async fn stop_backend(&mut self) -> Result<()> {
@@ -253,16 +263,8 @@ impl Handler {
     async fn handle_message(&mut self, msg: &Message) -> Result<()> {
         match msg {
             Message::Start => {
-                let capabilities = host_service::capabilities(&self.http_client).await?;
-
-                // Kick the previously connected user
-                let ret = host_service::stop_stream(&self.http_client).await;
-                if let Err(err) = ret {
-                    info!("Stop stream result: {err:?}");
-                }
-
                 // Connect to Kymux, Websocket, and enumerate displays
-                self.displays = self.start(&capabilities).await?;
+                self.start().await?;
 
                 // Start streaming session
                 self.start_streaming_session().await?;
