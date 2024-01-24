@@ -113,9 +113,11 @@ pub enum StopReason {
 
 #[derive(Clone, Debug)]
 pub enum Event {
-    Started { displays: Vec<Display> },
+    ControlPlaneConnected { displays: Vec<Display> },
+    ControlPlaneConnectFailed,
     Stopped { reason: StopReason },
     DisplayListUpdated { displays: Vec<Display> },
+    StreamingStarted,
 }
 
 pub trait EventSink {
@@ -135,12 +137,16 @@ impl EventSinkData {
 
         let event_type = unsafe { sys::libclient_event_get_type(event) };
         match event_type {
-            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_STARTED => {
+            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_CONTROL_PLANE_CONNECTED => {
                 let mut cdisplays: *mut Display = std::ptr::null_mut();
                 let mut len: u32 = 0;
 
                 let ret = unsafe {
-                    sys::libclient_event_unpack_started(event, &mut cdisplays, &mut len as *mut _)
+                    sys::libclient_event_unpack_control_plane_connected(
+                        event,
+                        &mut cdisplays,
+                        &mut len as *mut _,
+                    )
                 };
                 if ret != 0 {
                     warn!("Fail to unpack EventType::Started");
@@ -148,10 +154,13 @@ impl EventSinkData {
                 }
 
                 let displays = unsafe { std::slice::from_raw_parts(cdisplays, len as usize) };
-                data.sink.on_event(Event::Started {
+                data.sink.on_event(Event::ControlPlaneConnected {
                     displays: displays.to_vec(),
                 });
                 unsafe { sys::libclient_event_free_displays(cdisplays) };
+            }
+            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_CONTROL_PLANE_CONNECT_FAILED => {
+                data.sink.on_event(Event::ControlPlaneConnectFailed);
             }
             sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_STOPPED => {
                 let mut c_reason = mem::MaybeUninit::uninit();
@@ -209,6 +218,9 @@ impl EventSinkData {
                     displays: displays.to_vec(),
                 });
                 unsafe { sys::libclient_event_free_displays(cdisplays) };
+            }
+            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_STREAMING_STARTED => {
+                data.sink.on_event(Event::StreamingStarted);
             }
             _ => {
                 error!("Invalid libclient_EventType {}", event_type)
@@ -408,14 +420,8 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(
-        connect_config: &ConnectConfig,
-        session_config: &StreamingSessionConfig,
-        player_config: &PlayerConfig,
-    ) -> Result<Self> {
-        let ptr = unsafe {
-            sys::libclient_client_new(connect_config.ptr, session_config.ptr, player_config.ptr)
-        };
+    pub fn new(connect_config: &ConnectConfig) -> Result<Self> {
+        let ptr = unsafe { sys::libclient_client_new(connect_config.ptr) };
         if !ptr.is_null() {
             Ok(Self { ptr })
         } else {
@@ -423,8 +429,8 @@ impl Client {
         }
     }
 
-    pub fn start(&self) -> Result<()> {
-        let ret = unsafe { sys::libclient_client_start(self.ptr) };
+    pub fn connect(&self) -> Result<()> {
+        let ret = unsafe { sys::libclient_client_connect(self.ptr) };
         if ret == 0 {
             Ok(())
         } else {
@@ -432,8 +438,23 @@ impl Client {
         }
     }
 
-    pub fn stop(&self) -> Result<()> {
-        let ret = unsafe { sys::libclient_client_stop(self.ptr) };
+    pub fn disconnect(&self) -> Result<()> {
+        let ret = unsafe { sys::libclient_client_disconnect(self.ptr) };
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err(Error::Generic)
+        }
+    }
+
+    pub fn start_streaming(
+        &self,
+        session_config: &StreamingSessionConfig,
+        player_config: &PlayerConfig,
+    ) -> Result<()> {
+        let ret = unsafe {
+            sys::libclient_client_start_streaming(self.ptr, session_config.ptr, player_config.ptr)
+        };
         if ret == 0 {
             Ok(())
         } else {

@@ -27,8 +27,8 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{self, Sender};
 
 use crate::error::{Error, Result};
-use enums::{ControlPlaneCloseReason, Message};
-pub use enums::{Display, Event, StopReason};
+use enums::Message;
+pub use enums::{ControlPlaneCloseReason, Display, Event, StopReason};
 use event_manager::EventManager;
 pub use event_manager::EventSink;
 use host_events::HostEventReceiver;
@@ -92,8 +92,6 @@ fn get_display_id<'a>(displays: &'a Vec<Display>, config: &VideoSessionConfig) -
 
 struct Handler {
     conn_params: ConnectionParams,
-    streaming_config: StreamingSessionConfig,
-    player_config: PlayerConfig,
     http_client: HttpClient,
     event_manager: EventManager,
     sender: Sender<Message>,
@@ -111,8 +109,6 @@ struct Handler {
 impl Handler {
     fn new(
         connect_config: ConnectConfig,
-        streaming_config: StreamingSessionConfig,
-        player_config: PlayerConfig,
         event_manager: EventManager,
         sender: Sender<Message>,
     ) -> Result<Self> {
@@ -121,8 +117,6 @@ impl Handler {
 
         Ok(Self {
             conn_params,
-            streaming_config,
-            player_config,
             http_client,
             event_manager,
             sender,
@@ -138,7 +132,7 @@ impl Handler {
         }
     }
 
-    async fn start(&mut self) -> Result<()> {
+    async fn connect(&mut self) -> Result<()> {
         info!("Get Host capabilities");
         let capabilities = host_service::capabilities(&self.http_client).await?;
 
@@ -207,10 +201,14 @@ impl Handler {
         Ok(())
     }
 
-    async fn start_streaming_session(&mut self) -> Result<()> {
+    async fn start_streaming_session(
+        &mut self,
+        streaming_config: &StreamingSessionConfig,
+        player_config: &PlayerConfig,
+    ) -> Result<()> {
         let msg_proxy = self.create_message_proxy();
 
-        match &self.streaming_config.protocol {
+        match &streaming_config.protocol {
             #[cfg(feature = "websocket")]
             StreamingProtocol::Websocket => {
                 let backend = Box::new(
@@ -218,8 +216,8 @@ impl Handler {
                         &self.conn_params,
                         &self.http_client,
                         &self.displays,
-                        &self.player_config,
-                        &self.streaming_config,
+                        player_config,
+                        streaming_config,
                         msg_proxy,
                     )
                     .await?,
@@ -234,8 +232,8 @@ impl Handler {
                         &self.conn_params,
                         &self.http_client,
                         &self.displays,
-                        &self.player_config,
-                        &self.streaming_config,
+                        player_config,
+                        streaming_config,
                         kymux_config.clone(),
                         msg_proxy,
                     )
@@ -251,8 +249,8 @@ impl Handler {
                         &self.conn_params,
                         &self.http_client,
                         &self.displays,
-                        &self.player_config,
-                        &self.streaming_config,
+                        player_config,
+                        streaming_config,
                         msg_proxy,
                     )
                     .await?,
@@ -267,20 +265,19 @@ impl Handler {
 
     async fn handle_message(&mut self, msg: &Message) -> Result<()> {
         match msg {
-            Message::Start => {
-                // Connect to Kymux, Websocket, and enumerate displays
-                self.start().await?;
+            Message::Connect => {
+                let event = match self.connect().await {
+                    Ok(()) => Event::ControlPlaneConnected {
+                        displays: self.displays.clone(),
+                    },
+                    Err(_) => Event::ControlPlaneConnectFailed,
+                };
 
-                // Start streaming session
-                self.start_streaming_session().await?;
-
-                self.event_manager.send_event(Event::Started {
-                    displays: self.displays.clone(),
-                });
+                self.event_manager.send_event(event);
 
                 Ok(())
             }
-            Message::Stop => {
+            Message::Disconnect => {
                 let ret = self.stop().await;
 
                 self.event_manager.send_event(Event::Stopped {
@@ -303,6 +300,17 @@ impl Handler {
                 self.event_manager.send_event(Event::Stopped { reason });
 
                 ret
+            }
+            Message::StartStreamingSession {
+                streaming_config,
+                player_config,
+            } => {
+                self.start_streaming_session(streaming_config, player_config)
+                    .await?;
+
+                self.event_manager.send_event(Event::StreamingStarted);
+
+                Ok(())
             }
             Message::PlayerStarted => {
                 info!("Player started");
@@ -430,24 +438,14 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(
-        connect_config: ConnectConfig,
-        streaming_config: StreamingSessionConfig,
-        player_config: PlayerConfig,
-    ) -> Result<Self> {
+    pub fn new(connect_config: ConnectConfig) -> Result<Self> {
         let event_manager = EventManager::new();
 
         let (sender, receiver) = mpsc::channel(32);
         let event_manager_handler = event_manager.clone();
         let sender_handler = sender.clone();
 
-        let handler = Handler::new(
-            connect_config,
-            streaming_config,
-            player_config,
-            event_manager_handler,
-            sender_handler,
-        )?;
+        let handler = Handler::new(connect_config, event_manager_handler, sender_handler)?;
 
         #[cfg(feature = "desktop")]
         {
@@ -492,13 +490,25 @@ impl Client {
         }
     }
 
-    pub fn start(&self) -> Result<()> {
-        self.sender.blocking_send(Message::Start)?;
+    pub fn connect(&self) -> Result<()> {
+        self.sender.blocking_send(Message::Connect)?;
         Ok(())
     }
 
-    pub fn stop(&self) -> Result<()> {
-        self.sender.blocking_send(Message::Stop)?;
+    pub fn disconnect(&self) -> Result<()> {
+        self.sender.blocking_send(Message::Disconnect)?;
+        Ok(())
+    }
+
+    pub fn start_streaming(
+        &self,
+        streaming_config: StreamingSessionConfig,
+        player_config: PlayerConfig,
+    ) -> Result<()> {
+        self.sender.blocking_send(Message::StartStreamingSession {
+            streaming_config,
+            player_config,
+        })?;
         Ok(())
     }
 

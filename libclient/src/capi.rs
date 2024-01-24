@@ -425,18 +425,10 @@ pub struct libclient_Client {
 #[no_mangle]
 pub unsafe extern "C" fn libclient_client_new(
     connect_config: *mut libclient_ConnectConfig,
-    session_config: *mut libclient_StreamingSessionConfig,
-    player_config: *mut libclient_PlayerConfig,
 ) -> *mut libclient_Client {
     let connect_config = Box::from_raw(connect_config);
-    let session_config = Box::from_raw(session_config);
-    let player_config = Box::from_raw(player_config);
 
-    let client = crate::Client::new(
-        connect_config.config,
-        session_config.config,
-        player_config.config,
-    );
+    let client = crate::Client::new(connect_config.config);
     if let Ok(client) = client {
         Box::into_raw(Box::new(libclient_Client {
             client: Arc::new(client),
@@ -447,14 +439,29 @@ pub unsafe extern "C" fn libclient_client_new(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn libclient_client_start(client: *mut libclient_Client) -> c_int {
-    let ret = (*client).client.start();
+pub unsafe extern "C" fn libclient_client_connect(client: *mut libclient_Client) -> c_int {
+    let ret = (*client).client.connect();
     result_to_c_int(ret)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn libclient_client_stop(client: *mut libclient_Client) -> c_int {
-    let ret = (*client).client.stop();
+pub unsafe extern "C" fn libclient_client_disconnect(client: *mut libclient_Client) -> c_int {
+    let ret = (*client).client.disconnect();
+    result_to_c_int(ret)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_client_start_streaming(
+    client: *mut libclient_Client,
+    session_config: *mut libclient_StreamingSessionConfig,
+    player_config: *mut libclient_PlayerConfig,
+) -> c_int {
+    let session_config = Box::from_raw(session_config);
+    let player_config = Box::from_raw(player_config);
+
+    let ret = (*client)
+        .client
+        .start_streaming(session_config.config, player_config.config);
     result_to_c_int(ret)
 }
 
@@ -477,9 +484,11 @@ pub type Event = super::Event;
 
 #[repr(C)]
 pub enum libclient_EventType {
-    Started,
+    ControlPlaneConnected,
+    ControlPlaneConnectFailed,
     Stopped,
     DisplayListUpdated,
+    StreamingStarted,
 }
 
 #[repr(C)]
@@ -494,19 +503,21 @@ pub enum libclient_StopReason {
 #[no_mangle]
 pub unsafe extern "C" fn libclient_event_get_type(event: *const Event) -> libclient_EventType {
     match *event {
-        Event::Started { .. } => libclient_EventType::Started,
+        Event::ControlPlaneConnected { .. } => libclient_EventType::ControlPlaneConnected,
+        Event::ControlPlaneConnectFailed => libclient_EventType::ControlPlaneConnectFailed,
         Event::Stopped { .. } => libclient_EventType::Stopped,
         Event::DisplayListUpdated { .. } => libclient_EventType::DisplayListUpdated,
+        Event::StreamingStarted => libclient_EventType::StreamingStarted,
     }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn libclient_event_unpack_started(
+pub unsafe extern "C" fn libclient_event_unpack_control_plane_connected(
     event: *const Event,
     out_displays: *mut *mut Display,
     out_len: *mut u32,
 ) -> c_int {
-    if let Event::Started { displays } = &*event {
+    if let Event::ControlPlaneConnected { displays } = &*event {
         let mut displays = Box::new(displays.clone());
 
         *out_displays = displays.as_mut_ptr();

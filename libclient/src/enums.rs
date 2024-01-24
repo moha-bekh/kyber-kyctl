@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::{PlayerConfig, StreamingSessionConfig};
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[repr(C)]
 pub struct Display {
@@ -23,11 +25,16 @@ pub enum ControlPlaneCloseReason {
 
 #[derive(Clone, Debug)]
 pub enum Message {
-    Start,
-    Stop,
+    Connect,
+    Disconnect,
 
     ControlPlaneClosed {
         reason: ControlPlaneCloseReason,
+    },
+
+    StartStreamingSession {
+        streaming_config: StreamingSessionConfig,
+        player_config: PlayerConfig,
     },
 
     PlayerStarted,
@@ -60,17 +67,17 @@ pub enum StopReason {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Event {
-    Started {
+    ControlPlaneConnected {
         displays: Vec<Display>,
     },
+    ControlPlaneConnectFailed,
     Stopped {
         reason: StopReason,
     },
-
     DisplayListUpdated {
         displays: Vec<Display>,
     },
-
+    StreamingStarted,
     #[cfg(feature = "web")]
     CanvasResized {
         width: i32,
