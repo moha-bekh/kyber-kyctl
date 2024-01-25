@@ -150,6 +150,7 @@ impl KymuxServer {
     ) -> Result<()> {
         info!("Waiting for Kymux connection");
         let connection = server.accept().await?;
+        server.reject_new_connections();
 
         let ret = connected_tx.send(connection);
         if ret.is_err() {
