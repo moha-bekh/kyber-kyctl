@@ -61,7 +61,7 @@ struct KymuxServerTaskRx {
 }
 
 pub(crate) struct KymuxServer {
-    _server: Arc<kymux::Server>,
+    server: Arc<kymux::Server>,
     task_rx: Option<KymuxServerTaskRx>,
 }
 
@@ -86,7 +86,7 @@ impl KymuxServer {
         });
 
         Ok(Self {
-            _server: server,
+            server,
             task_rx: Some(KymuxServerTaskRx {
                 stop_tx,
                 join_handle,
@@ -114,6 +114,9 @@ impl KymuxServer {
         if let Some(task_rx) = self.task_rx {
             Self::stop_task_internal(task_rx.stop_tx, task_rx.join_handle).await?;
         }
+
+        self.server.close(0, "Server stopping");
+        self.server.wait_idle().await;
 
         Ok(())
     }
