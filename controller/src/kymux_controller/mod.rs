@@ -20,15 +20,15 @@ use crate::Controller;
 
 use requests::{KymuxTransportBackend, StartKymuxCertificateHash};
 
-pub(crate) struct KymuxListener {
+pub(crate) struct KymuxServer {
     stop_tx: oneshot::Sender<()>,
     join_handle: JoinHandle<()>,
 
     connected_rx: oneshot::Receiver<kymux::Connection>,
 }
 
-impl KymuxListener {
-    pub(crate) async fn new(listener: kymux::ConnectionListener) -> Result<Self> {
+impl KymuxServer {
+    pub(crate) async fn new(server: kymux::Server) -> Result<Self> {
         let (stop_tx, stop_rx) = oneshot::channel();
         let (connected_tx, connected_rx) = oneshot::channel();
 
@@ -36,9 +36,9 @@ impl KymuxListener {
             tokio::select! {
                 _ = stop_rx => {
                 }
-                ret = KymuxListener::run_task(listener, connected_tx) => {
+                ret = Self::run_task(server, connected_tx) => {
                     if let Err(err) = ret {
-                        warn!("KymuxListener task ended with error {err:?}");
+                        warn!("KymuxServer task ended with error {err:?}");
                     }
                 }
             }
@@ -57,11 +57,11 @@ impl KymuxListener {
     ) -> Result<()> {
         let ret = stop_tx.send(());
         if ret.is_err() {
-            warn!("KymuxListener already stopped");
+            warn!("KymuxServer already stopped");
         }
 
         join_handle.await.map_err(|err| {
-            warn!("KymuxListener panicked: {err:?}");
+            warn!("KymuxServer panicked: {err:?}");
             Error::ThreadPanicked
         })
     }
@@ -82,18 +82,18 @@ impl KymuxListener {
 
         let ret = Self::stop_internal(self.stop_tx, self.join_handle).await;
         if let Err(err) = ret {
-            warn!("Fail to stop KymuxListener: {err:?}");
+            warn!("Fail to stop KymuxServer: {err:?}");
         }
 
         connection
     }
 
     async fn run_task(
-        listener: kymux::ConnectionListener,
+        server: kymux::Server,
         connected_tx: oneshot::Sender<kymux::Connection>,
     ) -> Result<()> {
         info!("Waiting for Kymux connection");
-        let connection = listener.accept().await?;
+        let connection = server.accept().await?;
 
         let ret = connected_tx.send(connection);
         if ret.is_err() {
@@ -112,12 +112,8 @@ async fn start_kymux(
     // Drop existing kymux instances
     {
         let mut ctrl = ctrl.lock().await;
-
-        crate::controller::stop_kymux(ctrl.kymux_listener.take(), ctrl.kymux.take()).await?;
-
-        // HACK: Kymux doesn't release its UDP Socket on stop. It is done after
-        // some time in background tasks.
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        crate::controller::stop_kymux(ctrl.kymux_server.take(), ctrl.kymux_connection.take())
+            .await?;
     }
 
     // Load TLS config
@@ -129,7 +125,7 @@ async fn start_kymux(
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), listening_port);
 
     // Start Listen task
-    let (conn_listener, certificate_hash) = match backend {
+    let (server, certificate_hash) = match backend {
         KymuxTransportBackend::Quic => {
             info!("Start Quic listener on address {addr:?}");
 
@@ -141,8 +137,8 @@ async fn start_kymux(
                 certificate,
                 private_key,
             };
-            let listener = kymux::ConnectionListener::new(config).await?;
-            (listener, None)
+            let server = kymux::Server::new(config).await?;
+            (server, None)
         }
         KymuxTransportBackend::Webtransport => {
             info!("Start webtransport listener on address {addr:?}");
@@ -154,10 +150,10 @@ async fn start_kymux(
                 certificate: cert.cert_der,
                 private_key: cert.key_der,
             };
-            let listener = kymux::ConnectionListener::new(server_config).await?;
+            let server = kymux::Server::new(server_config).await?;
 
             (
-                listener,
+                server,
                 Some(StartKymuxCertificateHash {
                     algorithm: "sha-256".into(),
                     hash: cert.cert_digest,
@@ -166,11 +162,11 @@ async fn start_kymux(
         }
     };
 
-    // Start Listen task
-    let listener = KymuxListener::new(conn_listener).await?;
+    // Start Listen task wrapper
+    let server = KymuxServer::new(server).await?;
 
     let mut ctrl = ctrl.lock().await;
-    ctrl.kymux_listener = Some(listener);
+    ctrl.kymux_server = Some(server);
 
     Ok(requests::StartKymuxResponse {
         port: public_port,
@@ -237,18 +233,18 @@ async fn start_session(
     request: requests::StartRequest,
 ) -> Result<StartSessionResponse> {
     // Complete Kymux connection
-    let Some(kymux_listener) = ctrl.kymux_listener.take() else {
+    let Some(kymux_server) = ctrl.kymux_server.take() else {
         warn!("Kymux not listening");
         return Err(Error::KymuxNotListening);
     };
 
-    ctrl.kymux = Some(
-        kymux_listener
+    ctrl.kymux_connection = Some(
+        kymux_server
             .wait_connected(Duration::from_millis(500))
             .await?,
     );
 
-    let Some(kymux) = ctrl.kymux.as_mut() else {
+    let Some(kymux_connection) = ctrl.kymux_connection.as_mut() else {
         warn!("Kymux not connected");
         return Err(Error::KymuxNotConnected);
     };
@@ -261,7 +257,7 @@ async fn start_session(
             .video_protocol
             .unwrap_or(kymux::VideoProtocol::Reliable);
 
-        let (video_endpoint, video_uri) = kymux
+        let (video_endpoint, video_uri) = kymux_connection
             .register_video_endpoint_with_ipc_forward(None, video_protocol)
             .await?;
 
@@ -284,8 +280,9 @@ async fn start_session(
 
     // Audio server
     let (audio_endpoint, avservice_audio) = if request.audio {
-        let (audio_endpoint, audio_uri) =
-            kymux.register_audio_endpoint_with_ipc_forward(None).await?;
+        let (audio_endpoint, audio_uri) = kymux_connection
+            .register_audio_endpoint_with_ipc_forward(None)
+            .await?;
 
         info!("Start Audio avservice. Endpoint: {audio_endpoint:X}");
 
@@ -298,7 +295,9 @@ async fn start_session(
 
     // Input server
     let (input_endpoint, inputservice) = if let Some(inputs_request) = request.inputs {
-        let (input_endpoint, uri) = kymux.register_input_endpoint_with_ipc_forward(None).await?;
+        let (input_endpoint, uri) = kymux_connection
+            .register_input_endpoint_with_ipc_forward(None)
+            .await?;
 
         info!("Start Inputservice. Endpoint: {input_endpoint:X}");
 

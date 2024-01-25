@@ -42,7 +42,7 @@ async fn start_handler(
     let ret = controller::stop_input(ctrl.inputservice.take()).await;
     info!("InputServer stopped. ret={ret:?}");
 
-    let ret = controller::stop_kymux(ctrl.kymux_listener.take(), ctrl.kymux.take()).await;
+    let ret = controller::stop_kymux(ctrl.kymux_server.take(), ctrl.kymux_connection.take()).await;
     info!("Kymux stopped. ret={ret:?}");
 
     let ret = controller::stop_wsrouter(ctrl.ws_router.take()).await;

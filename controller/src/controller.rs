@@ -9,22 +9,22 @@ use crate::avservice;
 use crate::config;
 use crate::error::Result;
 use crate::inputservice;
-use crate::kymux_controller::KymuxListener;
+use crate::kymux_controller::KymuxServer;
 use crate::tls;
 use crate::ws;
 use crate::HostEventSender;
 use crate::StateMachineProxy;
 
 pub(crate) async fn stop_kymux(
-    listener: Option<KymuxListener>,
+    server: Option<KymuxServer>,
     connection: Option<kymux::Connection>,
 ) -> Result<()> {
-    if let Some(listener) = listener {
-        info!("Stop running Kymux Listener");
+    if let Some(server) = server {
+        info!("Stop running Kymux Server");
 
-        let ret = listener.stop().await;
+        let ret = server.stop().await;
         if let Err(err) = ret {
-            warn!("Kymux Listener stop raised an error: {err:?}");
+            warn!("Kymux Server stop raised an error: {err:?}");
         }
     };
 
@@ -90,8 +90,8 @@ pub struct Controller {
 
     pub(crate) config: config::Config,
     pub(crate) tls_config: tls::Config,
-    pub(crate) kymux_listener: Option<KymuxListener>,
-    pub(crate) kymux: Option<kymux::Connection>,
+    pub(crate) kymux_server: Option<KymuxServer>,
+    pub(crate) kymux_connection: Option<kymux::Connection>,
 
     pub(crate) ws_router: Option<Arc<ws::WsRouter>>,
 
@@ -114,8 +114,8 @@ impl Controller {
             displays: vec![],
             config,
             tls_config,
-            kymux_listener: None,
-            kymux: None,
+            kymux_server: None,
+            kymux_connection: None,
             ws_router: None,
             avservice_video: None,
             avservice_audio: None,
@@ -133,7 +133,7 @@ impl Controller {
         stop_input(self.inputservice.take()).await?;
         stop_host_event_sender(self.host_event_sender.take()).await?;
         stop_wsrouter(self.ws_router.take()).await?;
-        stop_kymux(self.kymux_listener.take(), self.kymux.take()).await?;
+        stop_kymux(self.kymux_server.take(), self.kymux_connection.take()).await?;
 
         Ok(())
     }
