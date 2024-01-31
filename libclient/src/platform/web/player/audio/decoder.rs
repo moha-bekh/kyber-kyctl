@@ -92,3 +92,10 @@ impl AudioDecoder {
         Ok(())
     }
 }
+
+impl Drop for AudioDecoder {
+    fn drop(&mut self) {
+        info!("Close audio decoder");
+        self.audio_decoder.close();
+    }
+}
