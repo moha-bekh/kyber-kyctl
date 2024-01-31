@@ -20,9 +20,9 @@ impl AudioDecoder {
         let output_closure = Closure::wrap(cbs.output);
         let error_closure = Closure::wrap(cbs.error);
         let output_fn = output_closure.as_ref().unchecked_ref();
-        let error_fn = output_closure.as_ref().unchecked_ref();
+        let error_fn = error_closure.as_ref().unchecked_ref();
         let audio_decoder =
-            web_sys::AudioDecoder::new(&web_sys::AudioDecoderInit::new(output_fn, error_fn))?;
+            web_sys::AudioDecoder::new(&web_sys::AudioDecoderInit::new(error_fn, output_fn))?;
 
         Ok(Self {
             _output_closure: output_closure,
