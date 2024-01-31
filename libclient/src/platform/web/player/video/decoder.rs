@@ -114,3 +114,10 @@ impl VideoDecoder {
         Ok(())
     }
 }
+
+impl Drop for VideoDecoder {
+    fn drop(&mut self) {
+        info!("Close video decoder");
+        self.video_decoder.close();
+    }
+}
