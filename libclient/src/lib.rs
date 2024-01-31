@@ -356,6 +356,7 @@ impl Handler {
 
                 ret
             }
+            Message::AudioDecodeError => Ok(()),
             #[cfg(feature = "web")]
             Message::CanvasResized { width, height } => {
                 self.event_manager.send_event(Event::CanvasResized {

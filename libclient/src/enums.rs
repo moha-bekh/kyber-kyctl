@@ -48,6 +48,7 @@ pub enum Message {
     },
 
     VideoDecodeError,
+    AudioDecodeError,
 
     #[cfg(feature = "web")]
     CanvasResized {
