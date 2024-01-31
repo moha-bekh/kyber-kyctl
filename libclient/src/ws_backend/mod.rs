@@ -87,7 +87,7 @@ impl WsBackend {
 
         // Start audio service
         let audio_service = if streaming_config.audio {
-            let audio_service = Self::create_audio_service(http_client).await?;
+            let audio_service = Self::create_audio_service(http_client, msg_proxy.clone()).await?;
 
             Some(audio_service)
         } else {
@@ -134,8 +134,11 @@ impl WsBackend {
         })
     }
 
-    async fn create_audio_service(http_client: &HttpClient) -> Result<AudioService> {
-        let player = Rc::new(AudioPlayer::new().await?);
+    async fn create_audio_service(
+        http_client: &HttpClient,
+        msg_proxy: MessageProxy,
+    ) -> Result<AudioService> {
+        let player = Rc::new(AudioPlayer::new(msg_proxy).await?);
 
         let url = format!("wss://{host}/websocket/audio", host = http_client.host());
         let ws = AudioWsSocketHandler::new(&url, player.clone())?;

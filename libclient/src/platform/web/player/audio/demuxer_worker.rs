@@ -7,6 +7,7 @@ use wasm_bindgen_futures::spawn_local;
 use crate::platform::player::packet::buffer_to_packet;
 use crate::platform::player::packet::{CodecPacket, Packet};
 use crate::platform::reflect::{self, get_string};
+use crate::MessageProxy;
 
 use super::decoder::{AudioDecoder, AudioDecoderCallbacks};
 use super::RingBuffer;
@@ -148,13 +149,40 @@ impl DemuxerWorker {
     const TYPE_START: &str = "start";
     const TYPE_FRAME: &str = "frame";
 
-    pub fn new() -> Result<DemuxerWorker, JsValue> {
+    pub fn new(message_proxy: MessageProxy) -> Result<DemuxerWorker, JsValue> {
         let worker = web_sys::Worker::new_with_options(
             "./audio_demuxer_worker.js",
             web_sys::WorkerOptions::new().type_(web_sys::WorkerType::Module),
         )?;
 
+        // Get messages from worker
+        let worker_message_cb =
+            Closure::<dyn FnMut(_)>::new(move |event: web_sys::MessageEvent| {
+                let ret = Self::handle_worker_message(event, &message_proxy);
+                if let Err(err) = ret {
+                    warn!("AudioDemuxerWorker failed to process message: {err:?}");
+                }
+            });
+        worker.set_onmessage(Some(worker_message_cb.as_ref().unchecked_ref()));
+        worker_message_cb.forget();
+
         Ok(Self { worker })
+    }
+
+    fn handle_worker_message(
+        event: web_sys::MessageEvent,
+        _message_proxy: &MessageProxy,
+    ) -> Result<(), JsValue> {
+        let msg = &event.data().dyn_into::<js_sys::Object>()?;
+        let msg_type = get_string(msg, "type")?;
+
+        match msg_type.as_str() {
+            _ => {
+                warn!("Got unknown message type: {msg_type:?}");
+            }
+        }
+
+        Ok(())
     }
 
     pub fn start(&self, sab: js_sys::SharedArrayBuffer) -> Result<(), JsValue> {

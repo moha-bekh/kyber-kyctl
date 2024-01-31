@@ -1,7 +1,7 @@
 use wasm_bindgen::prelude::*;
 
 use crate::platform::player::FrameSink;
-use crate::Result;
+use crate::{MessageProxy, Result};
 
 use super::demuxer_worker::DemuxerWorker;
 use super::RingBuffer;
@@ -29,12 +29,12 @@ pub struct AudioPlayer {
 }
 
 impl AudioPlayer {
-    pub async fn new() -> Result<Self> {
+    pub async fn new(message_proxy: MessageProxy) -> Result<Self> {
         // Create a 100 ms buffer
         const BUFFER_SIZE: u32 = (SAMPLE_RATE / 10) * CHANNELS * SAMPLE_SIZE;
         let sab = RingBuffer::create_shared_array_buffer(BUFFER_SIZE);
 
-        let demuxer = DemuxerWorker::new()?;
+        let demuxer = DemuxerWorker::new(message_proxy)?;
         demuxer.start(sab.clone())?;
 
         let audio_renderer = AudioRenderer::new();

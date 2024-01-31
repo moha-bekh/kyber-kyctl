@@ -164,9 +164,9 @@ async fn create_audioplayer(
     _kymux_config: &KymuxConfig,
     audio_endpoint: u16,
     _player_config: &PlayerConfig,
-    _msg_proxy: MessageProxy,
+    msg_proxy: MessageProxy,
 ) -> Result<Rc<AudioPlayer>> {
-    let audio_player = Rc::new(AudioPlayer::new().await?);
+    let audio_player = Rc::new(AudioPlayer::new(msg_proxy).await?);
 
     let endpoint = kymux.connect_audio_endpoint(audio_endpoint)?;
     let recv = endpoint
