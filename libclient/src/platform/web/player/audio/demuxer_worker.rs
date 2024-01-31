@@ -9,7 +9,7 @@ use wasm_bindgen_futures::spawn_local;
 use crate::platform::player::packet::buffer_to_packet;
 use crate::platform::player::packet::{CodecPacket, Packet};
 use crate::platform::reflect::{self, get_string};
-use crate::MessageProxy;
+use crate::{Message, MessageProxy};
 
 use super::decoder::{AudioDecoder, AudioDecoderCallbacks};
 use super::RingBuffer;
@@ -198,9 +198,16 @@ impl DemuxerWorker {
         Ok(Self { worker, running })
     }
 
+    fn message_proxy_send(message_proxy: &MessageProxy, msg: Message) {
+        let ret = message_proxy.send(msg.clone());
+        if let Err(err) = ret {
+            warn!("Failed to send {msg:?}: {err:?}");
+        }
+    }
+
     fn handle_worker_message(
         event: web_sys::MessageEvent,
-        _message_proxy: &MessageProxy,
+        message_proxy: &MessageProxy,
         running: &Rc<AtomicBool>,
     ) -> Result<(), JsValue> {
         let msg = &event.data().dyn_into::<js_sys::Object>()?;
@@ -212,6 +219,8 @@ impl DemuxerWorker {
                 warn!("Audio decode error: {error:?}");
 
                 running.store(false, Ordering::Relaxed);
+
+                Self::message_proxy_send(message_proxy, Message::AudioDecodeError);
             }
             _ => {
                 warn!("Got unknown message type: {msg_type:?}");
