@@ -115,10 +115,7 @@ impl AudioDemuxerWorkerCtx {
                 Packet::Media(packet) => {
                     assert!(audio_decoder.is_some());
                     if let Some(audio_decoder) = &mut audio_decoder {
-                        let ret = audio_decoder.send_packet(packet);
-                        if let Err(err) = ret {
-                            error!("Audio send_packet() failed: {err:?}");
-                        }
+                        audio_decoder.send_packet(packet)?;
                     } else {
                         error!("Audio decoder not set");
                         return Err(JsError::new("Audio decoder not set").into());
