@@ -347,7 +347,7 @@ impl Handler {
 
                 Ok(())
             }
-            Message::DecodeError => {
+            Message::VideoDecodeError => {
                 let ret = self.stop().await;
 
                 self.event_manager.send_event(Event::Stopped {

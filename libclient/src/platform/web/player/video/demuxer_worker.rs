@@ -224,7 +224,7 @@ impl DemuxerWorker {
 
                 running.store(false, Ordering::Relaxed);
 
-                Self::message_proxy_send(message_proxy, Message::DecodeError);
+                Self::message_proxy_send(message_proxy, Message::VideoDecodeError);
             }
             _ => {
                 warn!("Got unknown message type: {msg_type:?}");
