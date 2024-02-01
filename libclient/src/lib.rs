@@ -26,7 +26,7 @@ use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{self, Sender};
 
-use crate::error::{Error, Result};
+pub use crate::error::{Error, Result};
 use enums::Message;
 pub use enums::{ControlPlaneCloseReason, Display, Event, StopReason};
 use event_manager::EventManager;
