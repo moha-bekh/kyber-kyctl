@@ -24,7 +24,9 @@ pub struct AudioDemuxerWorkerCtx {
 impl AudioDemuxerWorkerCtx {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
-        let (tx, rx) = mpsc::channel(32);
+        // - 1 frame is required to configure the AudioDecoder.
+        // - Assume we get 20 ms audio chunks. Bufferize 100 ms at most.
+        let (tx, rx) = mpsc::channel(5);
 
         Self { tx, rx: Some(rx) }
     }
