@@ -1,7 +1,10 @@
+use std::future::Future;
 use std::rc::Rc;
 use std::sync::Arc;
 
 use log::{error, info, warn};
+use tokio::sync::oneshot;
+use wasm_bindgen_futures::spawn_local;
 
 use kymux::{AVPacket, InputPacket, ProtocolEndpoint, ProtocolRecv, ProtocolSend, VideoProtocol};
 use libkynput::bufferproxy::{BufferProxy, BufferProxyReceiver, BufferProxySender};
@@ -42,6 +45,42 @@ impl Player {
             if let Err(err) = ret {
                 warn!("Audio player stop failed: {err:?}");
             }
+        }
+
+        Ok(())
+    }
+}
+
+pub(super) struct KymuxClosedTask {
+    stop_tx: oneshot::Sender<()>,
+}
+
+impl KymuxClosedTask {
+    pub(super) fn new<F>(task_entry: F) -> Self
+    where
+        F: Future<Output = Result<()>> + 'static,
+    {
+        let (stop_tx, stop_rx) = oneshot::channel();
+
+        spawn_local(async move {
+            tokio::select! {
+                _ = stop_rx => {
+                }
+                ret = task_entry => {
+                    if let Err(err) = ret {
+                        warn!("ClosedTask task ended with error {err:?}");
+                    }
+                }
+            }
+        });
+
+        Self { stop_tx }
+    }
+
+    async fn stop(self) -> Result<()> {
+        let ret = self.stop_tx.send(());
+        if ret.is_err() {
+            warn!("ClosedTask already stopped");
         }
 
         Ok(())
