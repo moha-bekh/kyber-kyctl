@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use log::{error, info, warn};
 
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{self, error::TrySendError};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
@@ -65,9 +65,14 @@ impl VideoDemuxerWorkerCtx {
                 let frame = js_sys::Reflect::get(msg, &"frame".into())?
                     .dyn_into::<js_sys::ArrayBuffer>()?;
 
-                let ret = self.tx.blocking_send(frame);
-                if let Err(err) = ret {
-                    warn!("Failed to forward VideoFrame to demuxer task: {err:?}");
+                match self.tx.try_send(frame) {
+                    Ok(_) => {}
+                    Err(TrySendError::Closed(_)) => {
+                        warn!("Failed to forward VideoFrame to demuxer task: channel closed");
+                    }
+                    Err(TrySendError::Full(_)) => {
+                        warn!("VideoFrame queue full: frame dropped");
+                    }
                 }
             }
             _ => {
