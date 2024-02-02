@@ -380,6 +380,7 @@ pub(super) async fn start_input(
 pub(super) struct Inner {
     pub(super) player: Option<Player>,
     pub(super) input_service: Option<InputService>,
+    pub(super) closed_task: Option<KymuxClosedTask>,
 }
 
 impl Inner {
@@ -399,6 +400,13 @@ impl Inner {
     }
 
     pub(super) async fn stop(&mut self) -> Result<()> {
+        if let Some(closed_task) = self.closed_task.take() {
+            let ret = closed_task.stop().await;
+            if let Err(err) = ret {
+                warn!("Failed to stop KymuxClosedTask: {err:?}");
+            }
+        }
+
         if let Some(player) = self.player.take() {
             player.stop().await?;
         }

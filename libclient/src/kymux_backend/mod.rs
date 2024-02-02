@@ -62,6 +62,16 @@ async fn start_kymux(
     Ok(connection)
 }
 
+async fn kymux_closed_task(
+    connection: Arc<kymux::Connection>,
+    _msg_proxy: MessageProxy,
+) -> Result<()> {
+    let ret = connection.closed().await;
+    info!("Kymux connection closed: {ret:?}");
+
+    Ok(())
+}
+
 pub(crate) struct KymuxBackend {
     kymux: Arc<kymux::Connection>,
     inner: platform::Inner,
@@ -121,12 +131,18 @@ impl KymuxBackend {
             }
         };
 
+        // Monitor connection closed
         #[allow(clippy::arc_with_non_send_sync)]
+        let kymux = Arc::new(kymux);
+        let closed_task =
+            platform::KymuxClosedTask::new(kymux_closed_task(kymux.clone(), msg_proxy.clone()));
+
         Ok(Self {
-            kymux: Arc::new(kymux),
+            kymux,
             inner: platform::Inner {
                 player,
                 input_service,
+                closed_task: Some(closed_task),
             },
         })
     }
