@@ -25,13 +25,15 @@ use requests::{KymuxTransportBackend, StartKymuxCertificateHash};
 pub(crate) struct KymuxBackend {
     pub(crate) server: KymuxServer,
     pub(crate) connection: Option<kymux::Connection>,
+    statemachine_proxy: StateMachineProxy,
 }
 
 impl KymuxBackend {
-    pub(crate) fn new(server: KymuxServer) -> Self {
+    fn new(server: KymuxServer, statemachine_proxy: StateMachineProxy) -> Self {
         Self {
             server,
             connection: None,
+            statemachine_proxy,
         }
     }
 
@@ -55,6 +57,7 @@ async fn start_kymux(
     ctrl: web::Data<Mutex<Controller>>,
     backend: KymuxTransportBackend,
     public_port: u16,
+    statemachine_proxy: StateMachineProxy,
 ) -> Result<requests::StartKymuxResponse> {
     {
         let ctrl = ctrl.lock().await;
@@ -118,7 +121,7 @@ async fn start_kymux(
             return Err(Error::ControlPlaneNotOpened);
         };
 
-        let backend = KymuxBackend::new(server);
+        let backend = KymuxBackend::new(server, statemachine_proxy);
         client_session.data_plane = Some(DataPlaneBackend::Kymux(backend));
     }
 
