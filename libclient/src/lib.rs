@@ -521,9 +521,15 @@ impl Client {
     }
 
     fn send_message(&self, msg: Message) -> Result<()> {
-        self.sender.blocking_send(msg)?;
+        match self.sender.try_send(msg) {
+            Ok(_) => Ok(()),
+            Err(TrySendError::Closed(_)) => Err(Error::ChannelSend),
+            Err(TrySendError::Full(_)) => {
+                warn!("MessageProxy: Channel full: message dropped");
 
-        Ok(())
+                Ok(())
+            }
+        }
     }
 
     pub fn get_event_manager(&self) -> EventManager {
