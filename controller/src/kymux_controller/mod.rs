@@ -22,9 +22,13 @@ use crate::{Controller, DataPlaneBackend, StateMachineProxy};
 
 use requests::{KymuxTransportBackend, StartKymuxCertificateHash};
 
+struct ConnectionWrapper {
+    connection: Arc<kymux::Connection>,
+}
+
 pub(crate) struct KymuxBackend {
     pub(crate) server: KymuxServer,
-    pub(crate) connection: Option<Arc<kymux::Connection>>,
+    connection: Option<ConnectionWrapper>,
     statemachine_proxy: StateMachineProxy,
 }
 
@@ -40,7 +44,7 @@ impl KymuxBackend {
     pub(crate) async fn stop(mut self) -> Result<()> {
         if let Some(connection) = self.connection.take() {
             info!("Stop running Kymux Connection");
-            connection.stop().await?;
+            connection.connection.stop().await?;
         };
 
         info!("Stop running Kymux Server");
@@ -202,12 +206,12 @@ async fn start_session(
         return Err(Error::KymuxNotListening);
     };
 
-    backend.connection = Some(
-        backend
-            .server
-            .wait_connected(Duration::from_millis(500))
-            .await?,
-    );
+    let connection = backend
+        .server
+        .wait_connected(Duration::from_millis(500))
+        .await?;
+
+    backend.connection = Some(ConnectionWrapper { connection });
 
     let Some(connection) = backend.connection.as_mut() else {
         warn!("Kymux not connected");
@@ -223,6 +227,7 @@ async fn start_session(
             .unwrap_or(kymux::VideoProtocol::Reliable);
 
         let (video_endpoint, video_uri) = connection
+            .connection
             .register_video_endpoint_with_ipc_forward(None, video_protocol)
             .await?;
 
@@ -247,6 +252,7 @@ async fn start_session(
     // Audio server
     let (audio_endpoint, avservice_audio) = if request.audio {
         let (audio_endpoint, audio_uri) = connection
+            .connection
             .register_audio_endpoint_with_ipc_forward(None)
             .await?;
 
@@ -267,6 +273,7 @@ async fn start_session(
     // Input server
     let (input_endpoint, inputservice) = if let Some(inputs_request) = request.inputs {
         let (input_endpoint, uri) = connection
+            .connection
             .register_input_endpoint_with_ipc_forward(None)
             .await?;
 
