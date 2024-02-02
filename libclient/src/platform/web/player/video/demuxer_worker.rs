@@ -26,7 +26,9 @@ pub struct VideoDemuxerWorkerCtx {
 impl VideoDemuxerWorkerCtx {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
-        let (tx, rx) = mpsc::channel(32);
+        // - 2 frames are required to configure the VideoDecoder.
+        // - 6 frames is ~100 ms at 60 fps.
+        let (tx, rx) = mpsc::channel(6);
 
         Self { tx, rx: Some(rx) }
     }
