@@ -75,14 +75,17 @@ impl KymuxServer {
         Ok(())
     }
 
-    pub(crate) async fn wait_connected(&mut self, timeout: Duration) -> Result<kymux::Connection> {
+    pub(crate) async fn wait_connected(
+        &mut self,
+        timeout: Duration,
+    ) -> Result<Arc<kymux::Connection>> {
         let Some(task_rx) = self.task_rx.take() else {
             warn!("Kymux not listening");
             return Err(Error::KymuxNotListening);
         };
 
         let connection = match tokio::time::timeout(timeout, task_rx.connected_rx).await {
-            Ok(Ok(connection)) => Ok(connection),
+            Ok(Ok(connection)) => Ok(Arc::new(connection)),
             Ok(Err(_)) => Err(Error::ChannelClosedRx),
             Err(_) => {
                 warn!("Got not Kymux connection after {timeout:?}");

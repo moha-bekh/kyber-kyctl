@@ -24,7 +24,7 @@ use requests::{KymuxTransportBackend, StartKymuxCertificateHash};
 
 pub(crate) struct KymuxBackend {
     pub(crate) server: KymuxServer,
-    pub(crate) connection: Option<kymux::Connection>,
+    pub(crate) connection: Option<Arc<kymux::Connection>>,
     statemachine_proxy: StateMachineProxy,
 }
 
