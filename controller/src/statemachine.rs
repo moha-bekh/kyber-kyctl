@@ -20,6 +20,7 @@ pub(crate) enum StateMachineEvent {
     HostEvents {
         notification: host_events::Notification,
     },
+    KymuxTimeout,
 }
 
 #[derive(Clone)]
@@ -178,6 +179,9 @@ impl StateMachine {
                         }
                     }
                 },
+                StateMachineEvent::KymuxTimeout => {
+                    warn!("Kymux connection timeout");
+                }
                 _ => {}
             }
         }

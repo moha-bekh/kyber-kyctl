@@ -8,7 +8,8 @@ use std::time::Duration;
 
 use actix_web::web;
 use log::{info, warn};
-use tokio::sync::Mutex;
+use tokio::sync::{oneshot, Mutex};
+use tokio::task::{self, JoinHandle};
 
 use libkypc::process::ProcessFactory;
 
@@ -18,12 +19,67 @@ use crate::avservice;
 use crate::error::{Error, Result};
 use crate::inputservice;
 use crate::utils::TypeConvert;
-use crate::{Controller, DataPlaneBackend, StateMachineProxy};
+use crate::{Controller, DataPlaneBackend, StateMachineEvent, StateMachineProxy};
 
 use requests::{KymuxTransportBackend, StartKymuxCertificateHash};
 
+struct ClosedTask {
+    stop_tx: oneshot::Sender<()>,
+    join_handle: JoinHandle<()>,
+}
+
+impl ClosedTask {
+    fn new(connection: Arc<kymux::Connection>, statemachine_proxy: StateMachineProxy) -> Self {
+        let (stop_tx, stop_rx) = oneshot::channel();
+
+        let join_handle = task::spawn(async move {
+            tokio::select! {
+                _ = stop_rx => {
+                }
+                ret = Self::run_task(connection, statemachine_proxy) => {
+                    if let Err(err) = ret {
+                        warn!("ClosedTask task ended with error {err:?}");
+                    }
+                }
+            }
+        });
+
+        Self {
+            stop_tx,
+            join_handle,
+        }
+    }
+
+    async fn stop(self) -> Result<()> {
+        let ret = self.stop_tx.send(());
+        if ret.is_err() {
+            warn!("ClosedTask already stopped");
+        }
+
+        self.join_handle.await.map_err(|err| {
+            warn!("ClosedTask panicked: {err:?}");
+            Error::ThreadPanicked
+        })
+    }
+
+    async fn run_task(
+        connection: Arc<kymux::Connection>,
+        statemachine_proxy: StateMachineProxy,
+    ) -> Result<()> {
+        let ret = connection.closed().await;
+        info!("Kymux connection closed: {ret:?}");
+
+        statemachine_proxy
+            .send(StateMachineEvent::KymuxTimeout)
+            .await;
+
+        Ok(())
+    }
+}
+
 struct ConnectionWrapper {
     connection: Arc<kymux::Connection>,
+    closed_task: ClosedTask,
 }
 
 pub(crate) struct KymuxBackend {
@@ -44,7 +100,16 @@ impl KymuxBackend {
     pub(crate) async fn stop(mut self) -> Result<()> {
         if let Some(connection) = self.connection.take() {
             info!("Stop running Kymux Connection");
-            connection.connection.stop().await?;
+
+            let ret = connection.closed_task.stop().await;
+            if let Err(err) = ret {
+                warn!("Kymux Closed task stop raised an error: {err:?}");
+            }
+
+            let ret = connection.connection.stop().await;
+            if let Err(err) = ret {
+                warn!("Kymux Connection stop raised an error: {err:?}");
+            }
         };
 
         info!("Stop running Kymux Server");
@@ -211,7 +276,12 @@ async fn start_session(
         .wait_connected(Duration::from_millis(500))
         .await?;
 
-    backend.connection = Some(ConnectionWrapper { connection });
+    let closed_task = ClosedTask::new(connection.clone(), backend.statemachine_proxy.clone());
+
+    backend.connection = Some(ConnectionWrapper {
+        connection,
+        closed_task,
+    });
 
     let Some(connection) = backend.connection.as_mut() else {
         warn!("Kymux not connected");
