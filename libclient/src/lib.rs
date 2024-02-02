@@ -24,7 +24,7 @@ mod ws_backend;
 use async_trait::async_trait;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc::{self, Sender};
+use tokio::sync::mpsc::{self, error::TrySendError, Sender};
 
 pub use crate::error::{Error, Result};
 use enums::Message;
@@ -57,8 +57,15 @@ pub struct MessageProxy {
 
 impl MessageProxy {
     pub fn send(&self, msg: Message) -> Result<()> {
-        self.sender.blocking_send(msg)?;
-        Ok(())
+        match self.sender.try_send(msg) {
+            Ok(_) => Ok(()),
+            Err(TrySendError::Closed(_)) => Err(Error::ChannelSend),
+            Err(TrySendError::Full(_)) => {
+                warn!("MessageProxy: Channel full: message dropped");
+
+                Ok(())
+            }
+        }
     }
 
     pub async fn send_async(&self, msg: Message) -> Result<()> {
