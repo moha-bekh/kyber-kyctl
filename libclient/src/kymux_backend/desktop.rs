@@ -1,6 +1,9 @@
+use std::future::Future;
 use std::net::SocketAddr;
 
 use log::{error, info, warn};
+use tokio::sync::oneshot;
+use tokio::task::{self, JoinHandle};
 
 use super::KymuxConfig;
 use crate::platform::player;
@@ -19,6 +22,49 @@ impl Player {
         info!("Player stopped");
 
         Ok(())
+    }
+}
+
+pub(super) struct KymuxClosedTask {
+    stop_tx: oneshot::Sender<()>,
+    join_handle: JoinHandle<()>,
+}
+
+impl KymuxClosedTask {
+    pub(super) fn new<F>(task_entry: F) -> Self
+    where
+        F: Future<Output = Result<()>> + Send + 'static,
+    {
+        let (stop_tx, stop_rx) = oneshot::channel();
+
+        let join_handle = task::spawn(async move {
+            tokio::select! {
+                _ = stop_rx => {
+                }
+                ret = task_entry => {
+                    if let Err(err) = ret {
+                        warn!("ClosedTask task ended with error {err:?}");
+                    }
+                }
+            }
+        });
+
+        Self {
+            stop_tx,
+            join_handle,
+        }
+    }
+
+    async fn stop(self) -> Result<()> {
+        let ret = self.stop_tx.send(());
+        if ret.is_err() {
+            warn!("ClosedTask already stopped");
+        }
+
+        self.join_handle.await.map_err(|err| {
+            warn!("ClosedTask panicked: {err:?}");
+            Error::ThreadPanicked
+        })
     }
 }
 
