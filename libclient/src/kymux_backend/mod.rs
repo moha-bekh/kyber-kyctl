@@ -2,6 +2,8 @@
 #[cfg_attr(feature = "web", path = "./web.rs")]
 mod platform;
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use log::{error, info, warn};
 use serde::Serialize;
@@ -61,7 +63,7 @@ async fn start_kymux(
 }
 
 pub(crate) struct KymuxBackend {
-    kymux: kymux::Connection,
+    kymux: Arc<kymux::Connection>,
     inner: platform::Inner,
 }
 
@@ -119,8 +121,9 @@ impl KymuxBackend {
             }
         };
 
+        #[allow(clippy::arc_with_non_send_sync)]
         Ok(Self {
-            kymux,
+            kymux: Arc::new(kymux),
             inner: platform::Inner {
                 player,
                 input_service,
