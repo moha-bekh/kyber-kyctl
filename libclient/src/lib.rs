@@ -499,12 +499,12 @@ impl Client {
     }
 
     pub fn connect(&self) -> Result<()> {
-        self.sender.blocking_send(Message::Connect)?;
+        self.send_message(Message::Connect)?;
         Ok(())
     }
 
     pub fn disconnect(&self) -> Result<()> {
-        self.sender.blocking_send(Message::Disconnect)?;
+        self.send_message(Message::Disconnect)?;
         Ok(())
     }
 
@@ -513,10 +513,16 @@ impl Client {
         streaming_config: StreamingSessionConfig,
         player_config: PlayerConfig,
     ) -> Result<()> {
-        self.sender.blocking_send(Message::StartStreamingSession {
+        self.send_message(Message::StartStreamingSession {
             streaming_config,
             player_config,
         })?;
+        Ok(())
+    }
+
+    fn send_message(&self, msg: Message) -> Result<()> {
+        self.sender.blocking_send(msg)?;
+
         Ok(())
     }
 
