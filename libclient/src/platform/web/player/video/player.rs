@@ -24,6 +24,12 @@ impl VideoPlayer {
 
         Ok(Self { worker })
     }
+
+    pub async fn stop(&self) -> Result<()> {
+        self.worker.stop().await?;
+
+        Ok(())
+    }
 }
 
 impl FrameSink for VideoPlayer {

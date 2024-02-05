@@ -28,8 +28,12 @@ pub(super) struct Player {
 
 impl Player {
     pub(super) async fn stop(self) -> Result<()> {
-        if let Some(_video_player) = self.video {
+        if let Some(video_player) = self.video {
             info!("Stop video player");
+            let ret = video_player.stop().await;
+            if let Err(err) = ret {
+                warn!("Video player stop failed: {err:?}");
+            }
         }
 
         if let Some(_audio_player) = self.audio {

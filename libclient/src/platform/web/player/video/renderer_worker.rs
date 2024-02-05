@@ -148,6 +148,13 @@ impl RendererWorker {
         Ok(())
     }
 
+    pub async fn stop(&self) -> Result<(), JsValue> {
+        self.worker.terminate();
+        info!("Video renderer worker stopped");
+
+        Ok(())
+    }
+
     pub fn send_frame(&self, frame: web_sys::VideoFrame, rotation: u8) -> Result<(), JsValue> {
         let frame_param: JsValue = frame.into();
 
