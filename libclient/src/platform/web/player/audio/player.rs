@@ -1,3 +1,4 @@
+use log::warn;
 use wasm_bindgen::prelude::*;
 
 use crate::platform::player::FrameSink;
@@ -28,7 +29,7 @@ extern "C" {
 
 pub struct AudioPlayer {
     demuxer: DemuxerWorker,
-    _audio_renderer: AudioRenderer,
+    audio_renderer: AudioRenderer,
 }
 
 impl AudioPlayer {
@@ -45,8 +46,19 @@ impl AudioPlayer {
 
         Ok(Self {
             demuxer,
-            _audio_renderer: audio_renderer,
+            audio_renderer,
         })
+    }
+
+    pub async fn stop(&self) -> Result<()> {
+        self.audio_renderer.stop().await;
+
+        let ret = self.demuxer.stop().await;
+        if let Err(err) = ret {
+            warn!("Failed to stop audio demuxer: {err:?}");
+        }
+
+        Ok(())
     }
 }
 

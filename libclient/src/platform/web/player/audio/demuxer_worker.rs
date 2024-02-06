@@ -1,8 +1,10 @@
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use log::{error, info, warn};
 use tokio::sync::mpsc::{self, error::TrySendError};
+use tokio::sync::oneshot;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 
@@ -59,6 +61,17 @@ impl AudioDemuxerWorkerCtx {
                         }
                     }
                 });
+            }
+            DemuxerWorker::TYPE_STOP => {
+                info!("Audio demuxer stop requested");
+
+                let js_self =
+                    js_sys::eval("self")?.dyn_into::<web_sys::DedicatedWorkerGlobalScope>()?;
+                let msg = js_sys::Object::new();
+                reflect::set(&msg, "type", "stopped".into())?;
+
+                js_self.post_message(&msg)?;
+                js_self.close();
             }
             DemuxerWorker::TYPE_FRAME => {
                 let frame = js_sys::Reflect::get(msg, &"frame".into())?
@@ -175,10 +188,12 @@ impl AudioDemuxerWorkerCtx {
 pub struct DemuxerWorker {
     worker: web_sys::Worker,
     running: Rc<AtomicBool>,
+    stop_tx: Rc<RefCell<Option<oneshot::Sender<()>>>>,
 }
 
 impl DemuxerWorker {
     const TYPE_START: &str = "start";
+    const TYPE_STOP: &str = "stop";
     const TYPE_FRAME: &str = "frame";
 
     pub fn new(message_proxy: MessageProxy) -> Result<DemuxerWorker, JsValue> {
@@ -188,13 +203,20 @@ impl DemuxerWorker {
         )?;
 
         let running = Rc::new(AtomicBool::new(true));
+        let stop_tx = Rc::new(RefCell::new(None));
 
         // Get messages from worker
         let running_msg_handler = running.clone();
+        let worker_cb_stop_tx = stop_tx.clone();
 
         let worker_message_cb =
             Closure::<dyn FnMut(_)>::new(move |event: web_sys::MessageEvent| {
-                let ret = Self::handle_worker_message(event, &message_proxy, &running_msg_handler);
+                let ret = Self::handle_worker_message(
+                    event,
+                    &message_proxy,
+                    &running_msg_handler,
+                    &worker_cb_stop_tx,
+                );
                 if let Err(err) = ret {
                     warn!("AudioDemuxerWorker failed to process message: {err:?}");
                 }
@@ -202,7 +224,11 @@ impl DemuxerWorker {
         worker.set_onmessage(Some(worker_message_cb.as_ref().unchecked_ref()));
         worker_message_cb.forget();
 
-        Ok(Self { worker, running })
+        Ok(Self {
+            worker,
+            running,
+            stop_tx,
+        })
     }
 
     fn message_proxy_send(message_proxy: &MessageProxy, msg: Message) {
@@ -216,6 +242,7 @@ impl DemuxerWorker {
         event: web_sys::MessageEvent,
         message_proxy: &MessageProxy,
         running: &Rc<AtomicBool>,
+        stop_tx: &Rc<RefCell<Option<oneshot::Sender<()>>>>,
     ) -> Result<(), JsValue> {
         let msg = &event.data().dyn_into::<js_sys::Object>()?;
         let msg_type = get_string(msg, "type")?;
@@ -228,6 +255,14 @@ impl DemuxerWorker {
                 running.store(false, Ordering::Relaxed);
 
                 Self::message_proxy_send(message_proxy, Message::AudioDecodeError);
+            }
+            "stopped" => {
+                let Some(stop_tx) = stop_tx.borrow_mut().take() else {
+                    warn!("Renderer worker stop_tx None");
+                    return Ok(());
+                };
+
+                let _ = stop_tx.send(());
             }
             _ => {
                 warn!("Got unknown message type: {msg_type:?}");
@@ -243,6 +278,27 @@ impl DemuxerWorker {
         reflect::set(&msg, "sab", sab.into())?;
 
         self.worker.post_message(&msg)?;
+
+        Ok(())
+    }
+
+    pub async fn stop(&self) -> Result<(), JsValue> {
+        self.running.store(false, Ordering::Relaxed);
+
+        let (stop_tx, stop_rx) = oneshot::channel();
+
+        {
+            let mut self_stop_tx = self.stop_tx.borrow_mut();
+            *self_stop_tx = Some(stop_tx);
+        }
+
+        let msg = js_sys::Object::new();
+        reflect::set(&msg, "type", Self::TYPE_STOP.into())?;
+
+        self.worker.post_message(&msg)?;
+
+        let _ = stop_rx.await;
+        info!("Audio demuxer worker stopped");
 
         Ok(())
     }

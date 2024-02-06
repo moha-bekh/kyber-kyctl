@@ -36,8 +36,12 @@ impl Player {
             }
         }
 
-        if let Some(_audio_player) = self.audio {
+        if let Some(audio_player) = self.audio {
             info!("Stop audio player");
+            let ret = audio_player.stop().await;
+            if let Err(err) = ret {
+                warn!("Audio player stop failed: {err:?}");
+            }
         }
 
         Ok(())
