@@ -41,7 +41,7 @@ pub(crate) async fn start_mux(
     let ret = super::start_kymux(ctrl.clone(), request.backend, request.public_streamer_port).await;
     match ret {
         Ok(ret) => {
-            info!("Kymux started. Listening on {port}", port = ret.port);
+            info!("Kymux started. Public port: {port}", port = ret.port);
             HttpResponse::Ok().json(ret)
         }
         Err(err) => {

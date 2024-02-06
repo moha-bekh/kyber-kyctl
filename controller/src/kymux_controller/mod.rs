@@ -131,7 +131,7 @@ async fn start_kymux(
     // Start Listen task
     let (conn_listener, certificate_hash) = match backend {
         KymuxTransportBackend::Quic => {
-            info!("Start Quic listener");
+            info!("Start Quic listener on address {addr:?}");
 
             let certificate = rustls::Certificate(tls_config.certificate.clone());
             let private_key = rustls::PrivateKey(tls_config.private_key.clone());
@@ -145,7 +145,7 @@ async fn start_kymux(
             (listener, None)
         }
         KymuxTransportBackend::Webtransport => {
-            info!("Start webtransport listener");
+            info!("Start webtransport listener on address {addr:?}");
 
             let cert = webtransport::gen_webtransport_cert()?;
 
