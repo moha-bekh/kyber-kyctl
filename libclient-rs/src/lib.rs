@@ -429,6 +429,15 @@ impl Client {
         }
     }
 
+    pub fn stop(&self) -> Result<()> {
+        let ret = unsafe { sys::libclient_client_stop(self.ptr) };
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err(Error::Generic)
+        }
+    }
+
     pub fn connect(&self) -> Result<()> {
         let ret = unsafe { sys::libclient_client_connect(self.ptr) };
         if ret == 0 {
