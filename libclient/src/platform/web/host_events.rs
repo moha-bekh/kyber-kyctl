@@ -72,12 +72,15 @@ impl Inner {
     }
 
     fn arm_timeout(self: &Rc<Self>, duration: Duration) -> Result<()> {
-        let this = self.clone();
+        let this = Rc::downgrade(self);
+
         let ontimeout_cb = Closure::<dyn FnMut()>::new(move || {
-            this.event_sink
-                .blocking_push_msg(Message::ControlPlaneClosed {
-                    reason: ControlPlaneCloseReason::Timeout,
-                });
+            if let Some(this) = this.upgrade() {
+                this.event_sink
+                    .blocking_push_msg(Message::ControlPlaneClosed {
+                        reason: ControlPlaneCloseReason::Timeout,
+                    });
+            }
         });
 
         let window = dom::window()?;
