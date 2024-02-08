@@ -9,7 +9,7 @@ use crate::platform::{WebSocket, WebSocketHandler};
 use crate::Result;
 
 pub struct VideoWsSocketHandler {
-    _ws: WebSocket,
+    _ws: Rc<WebSocket>,
     player: Rc<VideoPlayer>,
 }
 

@@ -27,11 +27,11 @@ pub(crate) struct WebSocket {
 }
 
 impl WebSocket {
-    pub(crate) fn new(url: &str) -> Result<Self> {
+    pub(crate) fn new(url: &str) -> Result<Rc<Self>> {
         let ws = web_sys::WebSocket::new(url)?;
         ws.set_binary_type(BinaryType::Arraybuffer);
 
-        Ok(Self { ws })
+        Ok(Rc::new(Self { ws }))
     }
 
     pub(crate) fn plug_handler<T>(&self, handler: Rc<T>) -> Result<()>
@@ -84,13 +84,5 @@ impl WebSocket {
         onmessage_cb.forget();
 
         Ok(())
-    }
-}
-
-impl Clone for WebSocket {
-    fn clone(&self) -> Self {
-        Self {
-            ws: self.ws.clone(),
-        }
     }
 }

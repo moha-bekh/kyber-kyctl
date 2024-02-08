@@ -23,7 +23,7 @@ enum ConnectionResult {
 }
 
 struct Inner {
-    ws: WebSocket,
+    ws: Rc<WebSocket>,
     timer_duration: Duration,
     event_sink: HostEventSink,
     timer_id: RefCell<Option<i32>>,

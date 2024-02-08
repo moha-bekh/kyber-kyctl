@@ -14,7 +14,7 @@ use crate::platform::{WebSocket, WebSocketHandler};
 use crate::Result;
 
 pub struct InputWebSocketHandler {
-    ws: WebSocket,
+    ws: Rc<WebSocket>,
     msg_sink: Arc<dyn InputNetworkStreamObserver + Send + Sync>,
     proxy_sender: BufferProxySender,
     proxy_receiver: RefCell<Option<BufferProxyReceiver>>,
