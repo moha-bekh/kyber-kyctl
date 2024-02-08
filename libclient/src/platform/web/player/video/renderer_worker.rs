@@ -1,6 +1,7 @@
 use log::{info, warn};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
+use web_sys::MessageEvent;
 
 use crate::platform::reflect;
 
@@ -105,6 +106,7 @@ impl VideoRendererWorkerCtx {
 
 pub struct RendererWorker {
     worker: web_sys::Worker,
+    _message_closure: Closure<dyn FnMut(MessageEvent)>,
 }
 
 impl RendererWorker {
@@ -128,9 +130,11 @@ impl RendererWorker {
                 }
             });
         worker.set_onmessage(Some(worker_message_cb.as_ref().unchecked_ref()));
-        worker_message_cb.forget();
 
-        Ok(Self { worker })
+        Ok(Self {
+            worker,
+            _message_closure: worker_message_cb,
+        })
     }
 
     pub fn start(&self, canvas: web_sys::OffscreenCanvas) -> Result<(), JsValue> {
