@@ -61,6 +61,13 @@ impl Inner {
         Ok(this)
     }
 
+    fn stop(self: &Rc<Self>) -> Result<()> {
+        self.clear_timeout()?;
+        self.ws.unplug_handler()?;
+
+        Ok(())
+    }
+
     fn clear_timeout(self: &Rc<Self>) -> Result<()> {
         let mut timer = self.timer.borrow_mut();
         if let Some(timer) = timer.take() {
@@ -228,6 +235,11 @@ impl WsClient {
 #[async_trait(?Send)]
 impl crate::host_events::WsClient for WsClient {
     async fn stop(self) -> Result<()> {
+        let ret = self._inner.0.stop();
+        if let Err(err) = ret {
+            warn!("Failed to stop HostEvent::Inner: {err:?}");
+        }
+
         Ok(())
     }
 }
