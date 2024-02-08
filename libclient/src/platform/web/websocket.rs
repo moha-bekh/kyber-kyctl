@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use async_trait::async_trait;
@@ -22,8 +23,15 @@ pub(crate) trait WebSocketHandler {
     fn on_message(self: &Rc<Self>, event: MessageEvent) -> Result<()>;
 }
 
+struct Closures {
+    _open: Closure<dyn FnMut()>,
+    _close: Closure<dyn FnMut(CloseEvent)>,
+    _message: Closure<dyn FnMut(MessageEvent)>,
+}
+
 pub(crate) struct WebSocket {
     pub(crate) ws: web_sys::WebSocket,
+    closures: RefCell<Option<Closures>>,
 }
 
 impl WebSocket {
@@ -31,7 +39,10 @@ impl WebSocket {
         let ws = web_sys::WebSocket::new(url)?;
         ws.set_binary_type(BinaryType::Arraybuffer);
 
-        Ok(Rc::new(Self { ws }))
+        Ok(Rc::new(Self {
+            ws,
+            closures: Default::default(),
+        }))
     }
 
     pub(crate) fn plug_handler<T>(&self, handler: Rc<T>) -> Result<()>
@@ -49,7 +60,6 @@ impl WebSocket {
             }
         });
         self.ws.set_onopen(Some(onopen_cb.as_ref().unchecked_ref()));
-        onopen_cb.forget();
 
         // onclose
         let handler_clone = handler.clone();
@@ -69,7 +79,6 @@ impl WebSocket {
         });
         self.ws
             .set_onclose(Some(onclose_cb.as_ref().unchecked_ref()));
-        onclose_cb.forget();
 
         // onmessage
         let handler_clone = handler.clone();
@@ -81,7 +90,16 @@ impl WebSocket {
         });
         self.ws
             .set_onmessage(Some(onmessage_cb.as_ref().unchecked_ref()));
-        onmessage_cb.forget();
+
+        // Store closures
+        {
+            let mut closures = self.closures.borrow_mut();
+            *closures = Some(Closures {
+                _open: onopen_cb,
+                _close: onclose_cb,
+                _message: onmessage_cb,
+            });
+        }
 
         Ok(())
     }
