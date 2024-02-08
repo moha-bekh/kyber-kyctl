@@ -22,11 +22,16 @@ enum ConnectionResult {
     Failed,
 }
 
+struct Timer {
+    id: i32,
+    _closure: Closure<dyn FnMut()>,
+}
+
 struct Inner {
     ws: Rc<WebSocket>,
     timer_duration: Duration,
     event_sink: HostEventSink,
-    timer_id: RefCell<Option<i32>>,
+    timer: RefCell<Option<Timer>>,
     started_tx: RefCell<Option<oneshot::Sender<ConnectionResult>>>,
 }
 
@@ -47,7 +52,7 @@ impl Inner {
             ws: ws.clone(),
             timer_duration,
             event_sink,
-            timer_id: RefCell::new(None),
+            timer: RefCell::new(None),
             started_tx: RefCell::new(Some(started_tx)),
         });
 
@@ -57,10 +62,10 @@ impl Inner {
     }
 
     fn clear_timeout(self: &Rc<Self>) -> Result<()> {
-        let timer_id = self.timer_id.borrow_mut();
-        if let Some(timer_id) = &*timer_id {
+        let mut timer = self.timer.borrow_mut();
+        if let Some(timer) = timer.take() {
             let window = dom::window()?;
-            window.clear_timeout_with_handle(*timer_id);
+            window.clear_timeout_with_handle(timer.id);
         }
 
         Ok(())
@@ -80,14 +85,16 @@ impl Inner {
             ontimeout_cb.as_ref().unchecked_ref(),
             duration.as_millis() as _,
         )?;
-        ontimeout_cb.forget();
 
-        let mut timer_id = self.timer_id.borrow_mut();
-        if let Some(timer_id) = &*timer_id {
-            window.clear_timeout_with_handle(*timer_id);
+        let mut timer = self.timer.borrow_mut();
+        if let Some(timer) = timer.take() {
+            window.clear_timeout_with_handle(timer.id);
         }
 
-        *timer_id = Some(new_timer_id);
+        *timer = Some(Timer {
+            id: new_timer_id,
+            _closure: ontimeout_cb,
+        });
 
         Ok(())
     }
