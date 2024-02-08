@@ -307,7 +307,7 @@ pub(super) async fn start_input(
     let (libkynput_tx, libkynput_rx) = input_proxy.split()?;
     let input_proxy = Arc::new(input_proxy);
 
-    input_proxy.plug_consumer(config.pipeline.get_input_sink())?;
+    input_proxy.plug_consumer(Arc::downgrade(&config.pipeline.get_input_sink()))?;
     input_proxy.run()?;
 
     let msg_sink = InputMsgSink::new(msg_proxy);

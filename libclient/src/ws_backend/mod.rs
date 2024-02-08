@@ -159,7 +159,7 @@ impl WsBackend {
         let (libkynput_tx, libkynput_rx) = input_proxy.split()?;
         let input_proxy = Arc::new(input_proxy);
 
-        input_proxy.plug_consumer(input_pipeline.get_input_sink())?;
+        input_proxy.plug_consumer(Arc::downgrade(&input_pipeline.get_input_sink()))?;
         input_proxy.run()?;
 
         // Spawn websocket
