@@ -9,7 +9,7 @@ use crate::platform::{WebSocket, WebSocketHandler};
 use crate::Result;
 
 pub struct VideoWsSocketHandler {
-    _ws: Rc<WebSocket>,
+    ws: Rc<WebSocket>,
     player: Rc<VideoPlayer>,
 }
 
@@ -18,13 +18,19 @@ impl VideoWsSocketHandler {
         let ws = WebSocket::new(url)?;
 
         let this = Rc::new(Self {
-            _ws: ws.clone(),
+            ws: ws.clone(),
             player,
         });
 
         ws.plug_handler(this.clone())?;
 
         Ok(this)
+    }
+
+    pub fn stop(&self) -> Result<()> {
+        self.ws.unplug_handler()?;
+
+        Ok(())
     }
 }
 

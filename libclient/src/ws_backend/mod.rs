@@ -29,13 +29,19 @@ use crate::{
 use crate::{Error, Result};
 
 struct VideoService {
-    _ws: Rc<VideoWsSocketHandler>,
+    ws: Rc<VideoWsSocketHandler>,
     player: Rc<VideoPlayer>,
 }
 
 impl VideoService {
     async fn stop(self) {
-        info!("Stop video player");
+        info!("Stop video service");
+
+        let ret = self.ws.stop();
+        if let Err(err) = ret {
+            warn!("Video ws stop failed: {err:?}");
+        }
+
         let ret = self.player.stop().await;
         if let Err(err) = ret {
             warn!("Video player stop failed: {err:?}");
@@ -148,7 +154,7 @@ impl WsBackend {
         let url = format!("wss://{host}/websocket/video", host = http_client.host());
         let ws = VideoWsSocketHandler::new(&url, player.clone())?;
 
-        Ok(VideoService { _ws: ws, player })
+        Ok(VideoService { ws, player })
     }
 
     async fn create_audio_service(
