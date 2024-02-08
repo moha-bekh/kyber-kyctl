@@ -7,7 +7,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use log::info;
+use log::{info, warn};
 
 use libkynput::bufferproxy::BufferProxy;
 use libkynput::{InputNetworkStream, InputPipeline};
@@ -30,12 +30,32 @@ use crate::{Error, Result};
 
 struct VideoService {
     _ws: Rc<VideoWsSocketHandler>,
-    _player: Rc<VideoPlayer>,
+    player: Rc<VideoPlayer>,
+}
+
+impl VideoService {
+    async fn stop(self) {
+        info!("Stop video player");
+        let ret = self.player.stop().await;
+        if let Err(err) = ret {
+            warn!("Video player stop failed: {err:?}");
+        }
+    }
 }
 
 struct AudioService {
     _ws: Rc<AudioWsSocketHandler>,
-    _player: Rc<AudioPlayer>,
+    player: Rc<AudioPlayer>,
+}
+
+impl AudioService {
+    async fn stop(self) {
+        info!("Stop audio player");
+        let ret = self.player.stop().await;
+        if let Err(err) = ret {
+            warn!("Audio player stop failed: {err:?}");
+        }
+    }
 }
 
 struct InputService {
@@ -45,8 +65,8 @@ struct InputService {
 }
 
 pub(crate) struct WsBackend {
-    _video_service: Option<VideoService>,
-    _audio_service: Option<AudioService>,
+    video_service: Option<VideoService>,
+    audio_service: Option<AudioService>,
     input_service: Option<InputService>,
 }
 
@@ -105,8 +125,8 @@ impl WsBackend {
         };
 
         Ok(Self {
-            _video_service: video_service,
-            _audio_service: audio_service,
+            video_service,
+            audio_service,
             input_service,
         })
     }
@@ -128,10 +148,7 @@ impl WsBackend {
         let url = format!("wss://{host}/websocket/video", host = http_client.host());
         let ws = VideoWsSocketHandler::new(&url, player.clone())?;
 
-        Ok(VideoService {
-            _ws: ws,
-            _player: player,
-        })
+        Ok(VideoService { _ws: ws, player })
     }
 
     async fn create_audio_service(
@@ -143,10 +160,7 @@ impl WsBackend {
         let url = format!("wss://{host}/websocket/audio", host = http_client.host());
         let ws = AudioWsSocketHandler::new(&url, player.clone())?;
 
-        Ok(AudioService {
-            _ws: ws,
-            _player: player,
-        })
+        Ok(AudioService { _ws: ws, player })
     }
 
     fn create_input_service(
@@ -179,6 +193,18 @@ impl WsBackend {
 #[async_trait(?Send)]
 impl BackendDriver for WsBackend {
     async fn stop(&mut self) -> Result<()> {
+        if let Some(video_service) = self.video_service.take() {
+            video_service.stop().await;
+        }
+
+        if let Some(audio_service) = self.audio_service.take() {
+            audio_service.stop().await;
+        }
+
+        if let Some(input_service) = self.input_service.take() {
+            input_service.pipeline.stop()?;
+        }
+
         Ok(())
     }
 
