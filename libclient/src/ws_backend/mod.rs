@@ -71,9 +71,24 @@ impl AudioService {
 }
 
 struct InputService {
-    _websocket: Rc<InputWebSocketHandler>,
+    websocket: Rc<InputWebSocketHandler>,
     proxy: Arc<BufferProxy>,
     pipeline: Arc<libkynput::InputPipeline>,
+}
+
+impl InputService {
+    fn stop(self) {
+        info!("Stop input service");
+        let ret = self.websocket.stop();
+        if let Err(err) = ret {
+            warn!("Input ws stop failed: {err:?}");
+        }
+
+        let ret = self.pipeline.stop();
+        if let Err(err) = ret {
+            warn!("InputPipeline stop failed: {err:?}");
+        }
+    }
 }
 
 pub(crate) struct WsBackend {
@@ -195,7 +210,7 @@ impl WsBackend {
             InputWebSocketHandler::new(&inputs_url, libkynput_tx, libkynput_rx, msg_sink)?;
 
         Ok(InputService {
-            _websocket: input_websocket,
+            websocket: input_websocket,
             proxy: input_proxy,
             pipeline: input_pipeline,
         })
@@ -214,7 +229,7 @@ impl BackendDriver for WsBackend {
         }
 
         if let Some(input_service) = self.input_service.take() {
-            input_service.pipeline.stop()?;
+            input_service.stop();
         }
 
         Ok(())

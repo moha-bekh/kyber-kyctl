@@ -42,6 +42,12 @@ impl InputWebSocketHandler {
         Ok(this)
     }
 
+    pub fn stop(&self) -> Result<()> {
+        self.ws.unplug_handler()?;
+
+        Ok(())
+    }
+
     // Tasks
     async fn tx_task(self: Rc<Self>, mut rx: BufferProxyReceiver) -> Result<()> {
         while let Ok(buf) = rx.recv().await {
