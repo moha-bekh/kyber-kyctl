@@ -103,4 +103,15 @@ impl WebSocket {
 
         Ok(())
     }
+
+    pub(crate) fn unplug_handler(&self) -> Result<()> {
+        self.ws.set_onopen(None);
+        self.ws.set_onclose(None);
+        self.ws.set_onmessage(None);
+
+        let mut closures = self.closures.borrow_mut();
+        let _ = closures.take();
+
+        Ok(())
+    }
 }
