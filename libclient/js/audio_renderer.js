@@ -1,24 +1,33 @@
 export class AudioRenderer {
     async init(sampleRate, channelCount, sab) {
-        let audioContext = new AudioContext({
+        this.audioContext = new AudioContext({
             sampleRate: sampleRate,
             latencyHint: "interactive"
         });
-        audioContext.suspend();
+        this.audioContext.suspend();
 
-        console.debug(`Audio renderer requested sampleRate: ${sampleRate}. Got: ${audioContext.sampleRate}`)
+        console.debug(`Audio renderer requested sampleRate: ${sampleRate}. Got: ${this.audioContext.sampleRate}`)
 
-        await audioContext.audioWorklet.addModule("audio_worklet.js");
+        await this.audioContext.audioWorklet.addModule("audio_worklet.js");
 
-        let node = new AudioWorkletNode(audioContext, "AudioRenderer", {
+        this.node = new AudioWorkletNode(this.audioContext, "AudioRenderer", {
             processorOptions: {
                 sab: sab,
             },
             outputChannelCount: [channelCount]
         });
 
-        node.connect(audioContext.destination);
+        this.node.connect(this.audioContext.destination);
 
-        await audioContext.resume();
+        await this.audioContext.resume();
+    }
+
+    async stop() {
+        this.audioContext.suspend();
+        await this.audioContext.close()
+        this.node.disconnect(this.audioContext.destination)
+
+        this.audioContext = null
+        this.node = null
     }
 }

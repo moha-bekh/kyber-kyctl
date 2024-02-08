@@ -21,6 +21,9 @@ extern "C" {
         channel_count: u32,
         sab: js_sys::SharedArrayBuffer,
     );
+
+    #[wasm_bindgen(method)]
+    async fn stop(this: &AudioRenderer);
 }
 
 pub struct AudioPlayer {
