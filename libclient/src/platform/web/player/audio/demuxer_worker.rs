@@ -7,6 +7,7 @@ use tokio::sync::mpsc::{self, error::TrySendError};
 use tokio::sync::oneshot;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
+use web_sys::MessageEvent;
 
 use crate::platform::player::packet::buffer_to_packet;
 use crate::platform::player::packet::{CodecPacket, Packet};
@@ -189,6 +190,7 @@ pub struct DemuxerWorker {
     worker: web_sys::Worker,
     running: Rc<AtomicBool>,
     stop_tx: Rc<RefCell<Option<oneshot::Sender<()>>>>,
+    _message_closure: Closure<dyn FnMut(MessageEvent)>,
 }
 
 impl DemuxerWorker {
@@ -222,12 +224,12 @@ impl DemuxerWorker {
                 }
             });
         worker.set_onmessage(Some(worker_message_cb.as_ref().unchecked_ref()));
-        worker_message_cb.forget();
 
         Ok(Self {
             worker,
             running,
             stop_tx,
+            _message_closure: worker_message_cb,
         })
     }
 
