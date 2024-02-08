@@ -178,8 +178,8 @@ impl Inner {
             player.stop().await?;
         }
 
-        if let Some(_input_service) = self.input_service.take() {
-            info!("Stop input service");
+        if let Some(input_service) = self.input_service.take() {
+            input_service.pipeline.stop()?;
         }
 
         Ok(())
