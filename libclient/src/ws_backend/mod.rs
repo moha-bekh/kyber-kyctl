@@ -50,13 +50,19 @@ impl VideoService {
 }
 
 struct AudioService {
-    _ws: Rc<AudioWsSocketHandler>,
+    ws: Rc<AudioWsSocketHandler>,
     player: Rc<AudioPlayer>,
 }
 
 impl AudioService {
     async fn stop(self) {
-        info!("Stop audio player");
+        info!("Stop audio service");
+
+        let ret = self.ws.stop();
+        if let Err(err) = ret {
+            warn!("Audio ws stop failed: {err:?}");
+        }
+
         let ret = self.player.stop().await;
         if let Err(err) = ret {
             warn!("Audio player stop failed: {err:?}");
@@ -166,7 +172,7 @@ impl WsBackend {
         let url = format!("wss://{host}/websocket/audio", host = http_client.host());
         let ws = AudioWsSocketHandler::new(&url, player.clone())?;
 
-        Ok(AudioService { _ws: ws, player })
+        Ok(AudioService { ws, player })
     }
 
     fn create_input_service(
