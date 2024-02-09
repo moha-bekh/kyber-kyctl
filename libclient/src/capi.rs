@@ -456,12 +456,12 @@ pub unsafe extern "C" fn libclient_client_start_streaming(
     session_config: *mut libclient_StreamingSessionConfig,
     player_config: *mut libclient_PlayerConfig,
 ) -> c_int {
-    let session_config = Box::from_raw(session_config);
-    let player_config = Box::from_raw(player_config);
+    let session_config = (*session_config).config.clone();
+    let player_config = (*player_config).config.clone();
 
     let ret = (*client)
         .client
-        .start_streaming(session_config.config, player_config.config);
+        .start_streaming(session_config, player_config);
     result_to_c_int(ret)
 }
 
