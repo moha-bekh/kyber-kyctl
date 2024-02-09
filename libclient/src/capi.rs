@@ -426,9 +426,9 @@ pub struct libclient_Client {
 pub unsafe extern "C" fn libclient_client_new(
     connect_config: *mut libclient_ConnectConfig,
 ) -> *mut libclient_Client {
-    let connect_config = Box::from_raw(connect_config);
+    let connect_config = (*connect_config).config.clone();
 
-    let client = crate::Client::new(connect_config.config);
+    let client = crate::Client::new(connect_config);
     if let Ok(client) = client {
         Box::into_raw(Box::new(libclient_Client {
             client: Arc::new(client),
