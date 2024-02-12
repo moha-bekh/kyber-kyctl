@@ -98,8 +98,9 @@ impl StateMachine {
                     info!("Got display update: {displays:?}");
                     let mut ctrl = ctrl.lock().await;
 
-                    if let Some(host_event_sender) = ctrl.host_event_sender.as_ref() {
-                        host_event_sender
+                    if let Some(client_session) = ctrl.client_session.as_ref() {
+                        client_session
+                            .host_event_sender
                             .send(HostEvent::DisplayList {
                                 displays: displays.convert(),
                             })

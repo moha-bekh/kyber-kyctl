@@ -25,7 +25,7 @@ mod ws;
 
 use libkypc::process::ProcessFactory;
 
-use controller::Controller;
+use controller::{ClientSession, Controller};
 use error::{Error, Result};
 use host_events::{HostEvent, HostEventSender};
 use statemachine::{StateMachine, StateMachineEvent, StateMachineProxy};
@@ -86,7 +86,7 @@ async fn websocket_service(
         })
         .await;
 
-    ctrl.host_event_sender = Some(host_event_sender);
+    ctrl.client_session = Some(ClientSession::new(host_event_sender));
 
     http_response
 }

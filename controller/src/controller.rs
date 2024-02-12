@@ -44,13 +44,21 @@ pub(crate) async fn stop_wsrouter(ws_router: Option<Arc<ws::WsRouter>>) -> Resul
     Ok(())
 }
 
-pub(crate) async fn stop_host_event_sender(sender: Option<HostEventSender>) -> Result<()> {
-    if let Some(sender) = sender {
-        info!("Stop running HostEventSender");
-        sender.stop().await?;
-    };
+pub(crate) struct ClientSession {
+    pub(crate) host_event_sender: HostEventSender,
+}
 
-    Ok(())
+impl ClientSession {
+    pub(crate) fn new(host_event_sender: HostEventSender) -> Self {
+        Self { host_event_sender }
+    }
+
+    pub(crate) async fn stop(self) -> Result<()> {
+        info!("Stop running HostEventSender");
+        self.host_event_sender.stop().await?;
+
+        Ok(())
+    }
 }
 
 #[derive(Default)]
@@ -112,9 +120,9 @@ pub struct Controller {
 
     pub(crate) ws_router: Option<Arc<ws::WsRouter>>,
 
+    pub(crate) client_session: Option<ClientSession>,
     pub(crate) services: StreamingServices,
 
-    pub(crate) host_event_sender: Option<HostEventSender>,
     pub(crate) state_machine_proxy: Option<StateMachineProxy>,
 }
 
@@ -132,8 +140,8 @@ impl Controller {
             kymux_server: None,
             kymux_connection: None,
             ws_router: None,
+            client_session: None,
             services: Default::default(),
-            host_event_sender: Default::default(),
             state_machine_proxy: None,
         }
     }
@@ -141,12 +149,18 @@ impl Controller {
     pub async fn stop(&mut self) -> Result<()> {
         info!("Stop");
 
+        if let Some(client_session) = self.client_session.take() {
+            let ret = client_session.stop().await;
+            if let Err(err) = ret {
+                warn!("Failed to stop client session: {err:?}");
+            }
+        }
+
         let ret = self.services.stop().await;
         if let Err(err) = ret {
             warn!("Failed to stop streaming services: {err:?}");
         }
 
-        stop_host_event_sender(self.host_event_sender.take()).await?;
         stop_wsrouter(self.ws_router.take()).await?;
         stop_kymux(self.kymux_server.take(), self.kymux_connection.take()).await?;
 
