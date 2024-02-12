@@ -44,7 +44,9 @@ pub(crate) async fn stop_wsrouter(ws_router: Option<Arc<ws::WsRouter>>) -> Resul
     Ok(())
 }
 
-pub(crate) enum DataPlaneBackend {}
+pub(crate) enum DataPlaneBackend {
+    Rtp,
+}
 
 pub(crate) struct ClientSession {
     pub(crate) host_event_sender: HostEventSender,
@@ -61,7 +63,7 @@ impl ClientSession {
 
     pub(crate) async fn stop_dataplane(&mut self) -> Result<()> {
         match self.data_plane.take() {
-            Some(_) => {}
+            Some(DataPlaneBackend::Rtp) => {}
             None => {}
         }
 

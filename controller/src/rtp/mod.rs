@@ -5,9 +5,9 @@ use std::time::Duration;
 use log::{info, warn};
 use tokio::time;
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::utils::TypeConvert;
-use crate::{avservice, inputservice, Controller};
+use crate::{avservice, inputservice, Controller, DataPlaneBackend};
 
 pub async fn generate_video_sdp(
     ctrl: &mut Controller,
@@ -72,6 +72,12 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
     } else {
         warn!("Input server disabled");
     }
+
+    let Some(client_session) = ctrl.client_session.as_mut() else {
+        return Err(Error::ControlPlaneNotOpened);
+    };
+
+    client_session.data_plane = Some(DataPlaneBackend::Rtp);
 
     time::sleep(Duration::from_millis(100)).await;
     Ok(())
