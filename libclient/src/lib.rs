@@ -34,7 +34,7 @@ pub use event_manager::EventSink;
 use host_events::HostEventReceiver;
 use http::HttpClient;
 pub use platform::{ConnectConfig, PlayerConfig};
-pub(crate) use platform::{ConnectionParams, InputPipeline};
+pub(crate) use platform::{ConnectionParams, InputPipeline, MainLoopEngine};
 
 #[allow(dead_code)]
 pub(crate) const STREAMER_PORT: u16 = 8080;
@@ -471,6 +471,8 @@ impl MainLoop {
 pub struct Client {
     event_manager: EventManager,
     sender: Sender<Message>,
+
+    mainloop_engine: MainLoopEngine,
 }
 
 impl Client {
@@ -482,48 +484,15 @@ impl Client {
         let sender_handler = sender.clone();
 
         let handler = Handler::new(connect_config, event_manager_handler, sender_handler)?;
+        let mainloop = MainLoop::new(receiver, handler);
 
-        #[cfg(feature = "desktop")]
-        {
-            std::thread::spawn(move || {
-                let rt = tokio::runtime::Builder::new_multi_thread()
-                    .worker_threads(1)
-                    .thread_name("EventLoop")
-                    .enable_io()
-                    .enable_time()
-                    .build()
-                    .unwrap();
-
-                rt.block_on(Self::mainloop(receiver, handler));
-            });
-        }
-
-        #[cfg(feature = "web")]
-        {
-            wasm_bindgen_futures::spawn_local(Self::mainloop(receiver, handler));
-        }
+        let mainloop_engine = MainLoopEngine::new(mainloop);
 
         Ok(Self {
             event_manager,
             sender,
+            mainloop_engine,
         })
-    }
-
-    async fn mainloop(mut receiver: mpsc::Receiver<Message>, mut handler: Handler) {
-        loop {
-            let msg = receiver.recv().await;
-            if let Some(msg) = msg.as_ref() {
-                let ret = handler.handle_message(msg).await;
-                if let Err(err) = ret {
-                    warn!(
-                        "Processing of message {:?} failed with error {:?}",
-                        msg, err
-                    );
-                }
-            } else {
-                break;
-            }
-        }
     }
 
     pub fn connect(&self) -> Result<()> {
