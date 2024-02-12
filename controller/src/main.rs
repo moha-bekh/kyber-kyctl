@@ -105,11 +105,11 @@ async fn stop_session(ctrl: web::Data<Mutex<Controller>>) -> HttpResponse {
     let ret = ctrl.stop().await;
     match ret {
         Ok(_) => {
-            info!("Stream stopped");
+            info!("Session stopped");
             HttpResponse::Ok().finish()
         }
         Err(err) => {
-            info!("Stream stop rejected: {:?}", err);
+            info!("Session stop rejected: {:?}", err);
             HttpResponse::Forbidden().finish()
         }
     }
