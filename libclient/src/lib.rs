@@ -440,6 +440,34 @@ impl std::fmt::Debug for StreamingSessionConfig {
     }
 }
 
+struct MainLoop {
+    receiver: mpsc::Receiver<Message>,
+    handler: Handler,
+}
+
+impl MainLoop {
+    fn new(receiver: mpsc::Receiver<Message>, handler: Handler) -> Self {
+        Self { receiver, handler }
+    }
+
+    async fn run(mut self) {
+        loop {
+            let msg = self.receiver.recv().await;
+            if let Some(msg) = msg.as_ref() {
+                let ret = self.handler.handle_message(msg).await;
+                if let Err(err) = ret {
+                    warn!(
+                        "Processing of message {:?} failed with error {:?}",
+                        msg, err
+                    );
+                }
+            } else {
+                break;
+            }
+        }
+    }
+}
+
 pub struct Client {
     event_manager: EventManager,
     sender: Sender<Message>,
