@@ -53,34 +53,51 @@ pub(crate) async fn stop_host_event_sender(sender: Option<HostEventSender>) -> R
     Ok(())
 }
 
-pub(crate) async fn stop_avservice(handler: Option<avservice::Handler>) -> Result<()> {
-    let Some(mut handler) = handler else {
-        return Ok(());
-    };
-
-    if !handler.is_running() {
-        return Ok(());
-    }
-
-    info!("Stop running {} AVServer", handler.name());
-    handler.stop().await?;
-
-    Ok(())
+#[derive(Default)]
+pub(crate) struct StreamingServices {
+    pub(crate) video: Option<avservice::Handler>,
+    pub(crate) audio: Option<avservice::Handler>,
+    pub(crate) input: Option<inputservice::Handler>,
 }
 
-pub(crate) async fn stop_input(handler: Option<inputservice::Handler>) -> Result<()> {
-    let Some(mut handler) = handler else {
-        return Ok(());
-    };
+impl StreamingServices {
+    async fn stop_avservice(handler: Option<avservice::Handler>) -> Result<()> {
+        let Some(mut handler) = handler else {
+            return Ok(());
+        };
 
-    if !handler.is_running() {
-        return Ok(());
+        if !handler.is_running() {
+            return Ok(());
+        }
+
+        info!("Stop running {} AVServer", handler.name());
+        handler.stop().await?;
+
+        Ok(())
     }
 
-    info!("Stop running InputServer");
-    handler.stop().await?;
+    async fn stop_input(handler: Option<inputservice::Handler>) -> Result<()> {
+        let Some(mut handler) = handler else {
+            return Ok(());
+        };
 
-    Ok(())
+        if !handler.is_running() {
+            return Ok(());
+        }
+
+        info!("Stop running InputServer");
+        handler.stop().await?;
+
+        Ok(())
+    }
+
+    async fn stop(&mut self) -> Result<()> {
+        Self::stop_avservice(self.video.take()).await?;
+        Self::stop_avservice(self.audio.take()).await?;
+        Self::stop_input(self.input.take()).await?;
+
+        Ok(())
+    }
 }
 
 pub struct Controller {
@@ -95,9 +112,7 @@ pub struct Controller {
 
     pub(crate) ws_router: Option<Arc<ws::WsRouter>>,
 
-    pub(crate) avservice_video: Option<avservice::Handler>,
-    pub(crate) avservice_audio: Option<avservice::Handler>,
-    pub(crate) inputservice: Option<inputservice::Handler>,
+    pub(crate) services: StreamingServices,
 
     pub(crate) host_event_sender: Option<HostEventSender>,
     pub(crate) state_machine_proxy: Option<StateMachineProxy>,
@@ -117,9 +132,7 @@ impl Controller {
             kymux_server: None,
             kymux_connection: None,
             ws_router: None,
-            avservice_video: None,
-            avservice_audio: None,
-            inputservice: None,
+            services: Default::default(),
             host_event_sender: Default::default(),
             state_machine_proxy: None,
         }
@@ -128,9 +141,11 @@ impl Controller {
     pub async fn stop(&mut self) -> Result<()> {
         info!("Stop");
 
-        stop_avservice(self.avservice_video.take()).await?;
-        stop_avservice(self.avservice_audio.take()).await?;
-        stop_input(self.inputservice.take()).await?;
+        let ret = self.services.stop().await;
+        if let Err(err) = ret {
+            warn!("Failed to stop streaming services: {err:?}");
+        }
+
         stop_host_event_sender(self.host_event_sender.take()).await?;
         stop_wsrouter(self.ws_router.take()).await?;
         stop_kymux(self.kymux_server.take(), self.kymux_connection.take()).await?;

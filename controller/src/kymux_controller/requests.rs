@@ -106,9 +106,9 @@ pub(crate) async fn start_session(
         Ok(response) => {
             info!("Stream started");
 
-            ctrl.avservice_video = response.avservice_video;
-            ctrl.avservice_audio = response.avservice_audio;
-            ctrl.inputservice = response.inputservice;
+            ctrl.services.video = response.avservice_video;
+            ctrl.services.audio = response.avservice_audio;
+            ctrl.services.input = response.inputservice;
 
             HttpResponse::Ok().json(StartSessionResponse {
                 video_endpoint: response.video_endpoint,

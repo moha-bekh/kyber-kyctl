@@ -106,7 +106,7 @@ impl StateMachine {
                             .await;
                     };
 
-                    if let Some(inputservice) = ctrl.inputservice.as_mut() {
+                    if let Some(inputservice) = ctrl.services.input.as_mut() {
                         let ret = inputservice
                             .update_host_config(inputservice_types::HostConfig {
                                 display_list: displays.convert(),

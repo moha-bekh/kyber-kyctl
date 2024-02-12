@@ -39,7 +39,7 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
             )
             .await?;
 
-        ctrl.avservice_video = Some(avservice);
+        ctrl.services.video = Some(avservice);
     }
 
     if let Some(config) = request.audio {
@@ -50,7 +50,7 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
             .rtp_start_audio(&ctrl.process_factory, request.ip, config.port)
             .await?;
 
-        ctrl.avservice_audio = Some(avservice_audio);
+        ctrl.services.audio = Some(avservice_audio);
     }
 
     if let Some(inputs_request) = request.inputs {
@@ -68,7 +68,7 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
             .start_tcp(&ctrl.process_factory, host_config, service_config)
             .await?;
 
-        ctrl.inputservice = Some(inputservice);
+        ctrl.services.input = Some(inputservice);
     } else {
         warn!("Input server disabled");
     }

@@ -106,9 +106,9 @@ async fn start_handler(
 
     // Store objects
     ctrl.ws_router = Some(ws_router);
-    ctrl.avservice_video = avservice_video;
-    ctrl.avservice_audio = avservice_audio;
-    ctrl.inputservice = inputservice;
+    ctrl.services.video = avservice_video;
+    ctrl.services.audio = avservice_audio;
+    ctrl.services.input = inputservice;
 
     Ok(())
 }
