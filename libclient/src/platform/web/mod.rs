@@ -2,6 +2,7 @@ pub(crate) mod dom;
 mod host_events;
 pub(crate) mod http;
 mod input_service;
+mod mainloop_engine;
 
 #[cfg(feature = "js-player")]
 pub(crate) mod player;
@@ -11,6 +12,7 @@ mod websocket;
 use crate::Result;
 pub(crate) use host_events::{WsClient, WsClientBuilder};
 pub(crate) use input_service::{get_cursor_format, InputError, InputMsgSink, InputPipeline};
+pub(crate) use mainloop_engine::MainLoopEngine;
 pub(crate) use websocket::{WebSocket, WebSocketHandler};
 
 #[derive(Clone, Debug)]
