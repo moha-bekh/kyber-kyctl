@@ -25,6 +25,8 @@ pub enum Error {
     StreamerStopped,
     #[error("Control plane not opened")]
     ControlPlaneNotOpened,
+    #[error("Data plane already opened")]
+    DataPlaneAlreadyOpened,
     #[error("Kymux has no connection")]
     KymuxNotConnected,
     #[error("Kymux accept() timeout")]

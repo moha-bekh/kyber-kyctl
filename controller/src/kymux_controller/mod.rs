@@ -16,9 +16,42 @@ use crate::avservice;
 use crate::error::{Error, Result};
 use crate::inputservice;
 use crate::utils::TypeConvert;
-use crate::Controller;
+use crate::{Controller, DataPlaneBackend};
 
 use requests::{KymuxTransportBackend, StartKymuxCertificateHash};
+
+pub(crate) struct KymuxBackend {
+    pub(crate) server: KymuxServer,
+    pub(crate) connection: Option<kymux::Connection>,
+}
+
+impl KymuxBackend {
+    pub(crate) fn new(server: KymuxServer) -> Self {
+        Self {
+            server,
+            connection: None,
+        }
+    }
+
+    pub(crate) async fn stop(mut self) -> Result<()> {
+        if let Some(connection) = self.connection.take() {
+            info!("Stop running Kymux Connection");
+            connection.stop().await?;
+        };
+
+        info!("Stop running Kymux Server");
+        let ret = self.server.stop().await;
+        if let Err(err) = ret {
+            warn!("Kymux server stop raised an error: {err:?}");
+        } else {
+            // HACK: Kymux doesn't release its UDP Socket on stop. It is done after
+            // some time in background tasks.
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+
+        Ok(())
+    }
+}
 
 struct KymuxServerTaskRx {
     stop_tx: oneshot::Sender<()>,
@@ -129,11 +162,11 @@ async fn start_kymux(
     backend: KymuxTransportBackend,
     public_port: u16,
 ) -> Result<requests::StartKymuxResponse> {
-    // Drop existing kymux instances
     {
-        let mut ctrl = ctrl.lock().await;
-        crate::controller::stop_kymux(ctrl.kymux_server.take(), ctrl.kymux_connection.take())
-            .await?;
+        let ctrl = ctrl.lock().await;
+        if ctrl.has_data_plane()? {
+            return Err(Error::DataPlaneAlreadyOpened);
+        }
     }
 
     // Load TLS config
@@ -185,8 +218,15 @@ async fn start_kymux(
     // Start Listen task wrapper
     let server = KymuxServer::new(server).await?;
 
-    let mut ctrl = ctrl.lock().await;
-    ctrl.kymux_server = Some(server);
+    {
+        let mut ctrl = ctrl.lock().await;
+        let Some(client_session) = ctrl.client_session.as_mut() else {
+            return Err(Error::ControlPlaneNotOpened);
+        };
+
+        let backend = KymuxBackend::new(server);
+        client_session.data_plane = Some(DataPlaneBackend::Kymux(backend));
+    }
 
     Ok(requests::StartKymuxResponse {
         port: public_port,
@@ -253,18 +293,22 @@ async fn start_session(
     request: requests::StartRequest,
 ) -> Result<StartSessionResponse> {
     // Complete Kymux connection
-    let Some(kymux_server) = ctrl.kymux_server.as_mut() else {
-        warn!("Kymux not listening");
+    let Some(client_session) = ctrl.client_session.as_mut() else {
+        return Err(Error::ControlPlaneNotOpened);
+    };
+
+    let Some(DataPlaneBackend::Kymux(backend)) = client_session.data_plane.as_mut() else {
         return Err(Error::KymuxNotListening);
     };
 
-    ctrl.kymux_connection = Some(
-        kymux_server
+    backend.connection = Some(
+        backend
+            .server
             .wait_connected(Duration::from_millis(500))
             .await?,
     );
 
-    let Some(kymux_connection) = ctrl.kymux_connection.as_mut() else {
+    let Some(connection) = backend.connection.as_mut() else {
         warn!("Kymux not connected");
         return Err(Error::KymuxNotConnected);
     };
@@ -277,7 +321,7 @@ async fn start_session(
             .video_protocol
             .unwrap_or(kymux::VideoProtocol::Reliable);
 
-        let (video_endpoint, video_uri) = kymux_connection
+        let (video_endpoint, video_uri) = connection
             .register_video_endpoint_with_ipc_forward(None, video_protocol)
             .await?;
 
@@ -300,7 +344,7 @@ async fn start_session(
 
     // Audio server
     let (audio_endpoint, avservice_audio) = if request.audio {
-        let (audio_endpoint, audio_uri) = kymux_connection
+        let (audio_endpoint, audio_uri) = connection
             .register_audio_endpoint_with_ipc_forward(None)
             .await?;
 
@@ -315,7 +359,7 @@ async fn start_session(
 
     // Input server
     let (input_endpoint, inputservice) = if let Some(inputs_request) = request.inputs {
-        let (input_endpoint, uri) = kymux_connection
+        let (input_endpoint, uri) = connection
             .register_input_endpoint_with_ipc_forward(None)
             .await?;
 

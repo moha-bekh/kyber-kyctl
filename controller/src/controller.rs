@@ -9,32 +9,11 @@ use crate::avservice;
 use crate::config;
 use crate::error::{Error, Result};
 use crate::inputservice;
-use crate::kymux_controller::KymuxServer;
+use crate::kymux_controller::KymuxBackend;
 use crate::tls;
 use crate::ws;
 use crate::HostEventSender;
 use crate::StateMachineProxy;
-
-pub(crate) async fn stop_kymux(
-    server: Option<KymuxServer>,
-    connection: Option<kymux::Connection>,
-) -> Result<()> {
-    if let Some(server) = server {
-        info!("Stop running Kymux Server");
-
-        let ret = server.stop().await;
-        if let Err(err) = ret {
-            warn!("Kymux Server stop raised an error: {err:?}");
-        }
-    };
-
-    if let Some(connection) = connection {
-        info!("Stop running Kymux Connection");
-        connection.stop().await?;
-    };
-
-    Ok(())
-}
 
 pub(crate) async fn stop_wsrouter(ws_router: Option<Arc<ws::WsRouter>>) -> Result<()> {
     if let Some(ws_router) = ws_router {
@@ -46,6 +25,7 @@ pub(crate) async fn stop_wsrouter(ws_router: Option<Arc<ws::WsRouter>>) -> Resul
 
 pub(crate) enum DataPlaneBackend {
     Rtp,
+    Kymux(KymuxBackend),
 }
 
 pub(crate) struct ClientSession {
@@ -64,6 +44,9 @@ impl ClientSession {
     pub(crate) async fn stop_dataplane(&mut self) -> Result<()> {
         match self.data_plane.take() {
             Some(DataPlaneBackend::Rtp) => {}
+            Some(DataPlaneBackend::Kymux(backend)) => {
+                backend.stop().await?;
+            }
             None => {}
         }
 
@@ -135,8 +118,6 @@ pub struct Controller {
 
     pub(crate) config: config::Config,
     pub(crate) tls_config: tls::Config,
-    pub(crate) kymux_server: Option<KymuxServer>,
-    pub(crate) kymux_connection: Option<kymux::Connection>,
 
     pub(crate) ws_router: Option<Arc<ws::WsRouter>>,
 
@@ -157,8 +138,6 @@ impl Controller {
             displays: vec![],
             config,
             tls_config,
-            kymux_server: None,
-            kymux_connection: None,
             ws_router: None,
             client_session: None,
             services: Default::default(),
@@ -182,7 +161,6 @@ impl Controller {
         }
 
         stop_wsrouter(self.ws_router.take()).await?;
-        stop_kymux(self.kymux_server.take(), self.kymux_connection.take()).await?;
 
         Ok(())
     }
