@@ -11,21 +11,14 @@ use crate::error::{Error, Result};
 use crate::inputservice;
 use crate::kymux_controller::KymuxBackend;
 use crate::tls;
-use crate::ws;
+use crate::ws::WebsocketBackend;
 use crate::HostEventSender;
 use crate::StateMachineProxy;
-
-pub(crate) async fn stop_wsrouter(ws_router: Option<Arc<ws::WsRouter>>) -> Result<()> {
-    if let Some(ws_router) = ws_router {
-        ws_router.stop().await?;
-    }
-
-    Ok(())
-}
 
 pub(crate) enum DataPlaneBackend {
     Rtp,
     Kymux(KymuxBackend),
+    Websocket(WebsocketBackend),
 }
 
 pub(crate) struct ClientSession {
@@ -45,6 +38,9 @@ impl ClientSession {
         match self.data_plane.take() {
             Some(DataPlaneBackend::Rtp) => {}
             Some(DataPlaneBackend::Kymux(backend)) => {
+                backend.stop().await?;
+            }
+            Some(DataPlaneBackend::Websocket(backend)) => {
                 backend.stop().await?;
             }
             None => {}
@@ -119,8 +115,6 @@ pub struct Controller {
     pub(crate) config: config::Config,
     pub(crate) tls_config: tls::Config,
 
-    pub(crate) ws_router: Option<Arc<ws::WsRouter>>,
-
     pub(crate) client_session: Option<ClientSession>,
     pub(crate) services: StreamingServices,
 
@@ -138,7 +132,6 @@ impl Controller {
             displays: vec![],
             config,
             tls_config,
-            ws_router: None,
             client_session: None,
             services: Default::default(),
             state_machine_proxy: None,
@@ -159,8 +152,6 @@ impl Controller {
         if let Err(err) = ret {
             warn!("Failed to stop streaming services: {err:?}");
         }
-
-        stop_wsrouter(self.ws_router.take()).await?;
 
         Ok(())
     }

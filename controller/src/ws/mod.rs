@@ -2,13 +2,14 @@ pub(crate) mod requests;
 pub(crate) mod router;
 
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use actix_web::{web, HttpRequest, HttpResponse};
 use tokio::sync::Mutex;
 
-use crate::controller::Controller;
 use crate::utils::TypeConvert;
 use crate::{avservice, inputservice};
+use crate::{Controller, DataPlaneBackend};
 use crate::{Error, Result};
 
 pub(crate) use router::WsRouter;
@@ -17,6 +18,22 @@ const VIDEO_STREAM_IDX: u16 = 0;
 const AUDIO_STREAM_IDX: u16 = 1;
 const INPUT_STREAM_IDX: u16 = 2;
 const WS_LOCAL_CLIENTS_PORT: u16 = 9090;
+
+pub(crate) struct WebsocketBackend {
+    pub(crate) router: Arc<WsRouter>,
+}
+
+impl WebsocketBackend {
+    pub(crate) fn new(router: Arc<WsRouter>) -> Self {
+        Self { router }
+    }
+
+    pub(crate) async fn stop(self) -> Result<()> {
+        self.router.stop().await?;
+
+        Ok(())
+    }
+}
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 enum Service {
@@ -30,6 +47,9 @@ async fn start_handler(
     request: web::Json<requests::StartRequest>,
 ) -> Result<()> {
     let mut ctrl = ctrl.lock().await;
+    if ctrl.has_data_plane()? {
+        return Err(Error::DataPlaneAlreadyOpened);
+    }
 
     // Start services
     let mut pending_services = HashSet::new();
@@ -105,7 +125,13 @@ async fn start_handler(
     service_listener.wait_all(pending_services).await?;
 
     // Store objects
-    ctrl.ws_router = Some(ws_router);
+    let Some(client_session) = ctrl.client_session.as_mut() else {
+        return Err(Error::ControlPlaneNotOpened);
+    };
+
+    let backend = WebsocketBackend::new(ws_router);
+    client_session.data_plane = Some(DataPlaneBackend::Websocket(backend));
+
     ctrl.services.video = avservice_video;
     ctrl.services.audio = avservice_audio;
     ctrl.services.input = inputservice;
@@ -121,11 +147,18 @@ async fn start_video(
     let (res, session, msg_stream) = actix_ws::handle(&request, stream)?;
     let mut ctrl = ctrl.lock().await;
 
-    let Some(ws_router) = ctrl.ws_router.as_mut() else {
+    let Some(client_session) = ctrl.client_session.as_mut() else {
+        return Err(Error::ControlPlaneNotOpened);
+    };
+
+    let Some(DataPlaneBackend::Websocket(backend)) = client_session.data_plane.as_mut() else {
         return Err(Error::WsNoRouter);
     };
 
-    ws_router.start_video_routing(session, msg_stream).await?;
+    backend
+        .router
+        .start_video_routing(session, msg_stream)
+        .await?;
 
     Ok(res)
 }
@@ -138,11 +171,18 @@ async fn start_audio(
     let (res, session, msg_stream) = actix_ws::handle(&request, stream)?;
     let mut ctrl = ctrl.lock().await;
 
-    let Some(ws_router) = ctrl.ws_router.as_mut() else {
+    let Some(client_session) = ctrl.client_session.as_mut() else {
+        return Err(Error::ControlPlaneNotOpened);
+    };
+
+    let Some(DataPlaneBackend::Websocket(backend)) = client_session.data_plane.as_mut() else {
         return Err(Error::WsNoRouter);
     };
 
-    ws_router.start_audio_routing(session, msg_stream).await?;
+    backend
+        .router
+        .start_audio_routing(session, msg_stream)
+        .await?;
 
     Ok(res)
 }
@@ -155,11 +195,18 @@ async fn start_inputs(
     let (res, session, msg_stream) = actix_ws::handle(&request, stream)?;
     let mut ctrl = ctrl.lock().await;
 
-    let Some(ws_router) = ctrl.ws_router.as_mut() else {
+    let Some(client_session) = ctrl.client_session.as_mut() else {
+        return Err(Error::ControlPlaneNotOpened);
+    };
+
+    let Some(DataPlaneBackend::Websocket(backend)) = client_session.data_plane.as_mut() else {
         return Err(Error::WsNoRouter);
     };
 
-    ws_router.start_input_routing(session, msg_stream).await?;
+    backend
+        .router
+        .start_input_routing(session, msg_stream)
+        .await?;
 
     Ok(res)
 }
