@@ -53,7 +53,7 @@ pub(crate) async fn enumerate_displays(client: &HttpClient) -> Result<Vec<Displa
     Ok(response.json::<_>().await?)
 }
 
-pub(crate) async fn stop_stream(client: &HttpClient) -> Result<()> {
+pub(crate) async fn stop_session(client: &HttpClient) -> Result<()> {
     let url = format!("{base_url}/stop_session", base_url = client.base_url());
 
     let response = client.post(&url).send().await?;

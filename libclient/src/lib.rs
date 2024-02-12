@@ -145,7 +145,7 @@ impl Handler {
 
         // Kick the previously connected user
         info!("Stop any existing stream");
-        let ret = host_service::stop_stream(&self.http_client).await;
+        let ret = host_service::stop_session(&self.http_client).await;
         if let Err(err) = ret {
             info!("Stop stream result: {err:?}");
         }
@@ -182,15 +182,15 @@ impl Handler {
 
         self.stop_backend().await?;
 
-        info!("Request to stop streaming services");
-        let ret = host_service::stop_stream(&self.http_client).await;
+        info!("Request to stop host session");
+        let ret = host_service::stop_session(&self.http_client).await;
         if let Err(err) = ret {
             warn!(
-                "Stop stream rejected by controller ({:?}). Stop client anyway.",
+                "Stop session rejected by controller ({:?}). Stop client anyway.",
                 err
             );
         } else {
-            info!("Host service stopped");
+            info!("Host session stopped");
         }
 
         if let Some(host_events) = self.host_events.take() {
