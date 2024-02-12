@@ -118,6 +118,7 @@ pub enum Event {
     Stopped { reason: StopReason },
     DisplayListUpdated { displays: Vec<Display> },
     StreamingStarted,
+    StreamingStopped,
 }
 
 pub trait EventSink {
@@ -221,6 +222,9 @@ impl EventSinkData {
             }
             sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_STREAMING_STARTED => {
                 data.sink.on_event(Event::StreamingStarted);
+            }
+            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_STREAMING_STOPPED => {
+                data.sink.on_event(Event::StreamingStopped);
             }
             _ => {
                 error!("Invalid libclient_EventType {}", event_type)
@@ -464,6 +468,15 @@ impl Client {
         let ret = unsafe {
             sys::libclient_client_start_streaming(self.ptr, session_config.ptr, player_config.ptr)
         };
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err(Error::Generic)
+        }
+    }
+
+    pub fn stop_streaming(&self) -> Result<()> {
+        let ret = unsafe { sys::libclient_client_stop_streaming(self.ptr) };
         if ret == 0 {
             Ok(())
         } else {
