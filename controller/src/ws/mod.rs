@@ -4,10 +4,9 @@ pub(crate) mod router;
 use std::collections::HashSet;
 
 use actix_web::{web, HttpRequest, HttpResponse};
-use log::info;
 use tokio::sync::Mutex;
 
-use crate::controller::{self, Controller};
+use crate::controller::Controller;
 use crate::utils::TypeConvert;
 use crate::{avservice, inputservice};
 use crate::{Error, Result};
@@ -31,22 +30,6 @@ async fn start_handler(
     request: web::Json<requests::StartRequest>,
 ) -> Result<()> {
     let mut ctrl = ctrl.lock().await;
-
-    // Stop running components
-    let ret = controller::stop_avservice(ctrl.avservice_video.take()).await;
-    info!("Video AvServer stopped. ret={ret:?}");
-
-    let ret = controller::stop_avservice(ctrl.avservice_audio.take()).await;
-    info!("Audio AvServer stopped. ret={ret:?}");
-
-    let ret = controller::stop_input(ctrl.inputservice.take()).await;
-    info!("InputServer stopped. ret={ret:?}");
-
-    let ret = controller::stop_kymux(ctrl.kymux_server.take(), ctrl.kymux_connection.take()).await;
-    info!("Kymux stopped. ret={ret:?}");
-
-    let ret = controller::stop_wsrouter(ctrl.ws_router.take()).await;
-    info!("WsRouter stopped. ret={ret:?}");
 
     // Start services
     let mut pending_services = HashSet::new();

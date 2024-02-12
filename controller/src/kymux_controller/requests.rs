@@ -6,7 +6,7 @@ use tokio::sync::Mutex;
 use avservice_types::VideoCodec;
 use inputservice_types::CursorFormat;
 
-use crate::controller::{self, Controller};
+use crate::controller::Controller;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 pub(crate) enum KymuxTransportBackend {
@@ -99,13 +99,6 @@ pub(crate) async fn start_session(
             return HttpResponse::Forbidden().finish();
         }
     }
-
-    // Stop running components
-    let ret = controller::stop_avservice(ctrl.avservice_video.take()).await;
-    info!("AvServer stopped. ret={ret:?}");
-
-    let ret = controller::stop_input(ctrl.inputservice.take()).await;
-    info!("Inputserver stopped. ret={ret:?}");
 
     // Start session
     let ret = super::start_session(&mut ctrl, request.into_inner()).await;
