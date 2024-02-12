@@ -270,6 +270,23 @@ impl Handler {
         Ok(())
     }
 
+    async fn stop_streaming_session(&mut self) -> Result<()> {
+        self.stop_backend().await?;
+
+        info!("Request to stop streaming");
+        let ret = host_service::stop_streaming(&self.http_client).await;
+        if let Err(err) = ret {
+            warn!(
+                "Stop streaming rejected by controller ({:?}). Stop client anyway.",
+                err
+            );
+        } else {
+            info!("Streaming stopped");
+        }
+
+        Ok(())
+    }
+
     async fn handle_message(&mut self, msg: &Message) -> Result<()> {
         match msg {
             Message::Connect => {
@@ -316,6 +333,13 @@ impl Handler {
                     .await?;
 
                 self.event_manager.send_event(Event::StreamingStarted);
+
+                Ok(())
+            }
+            Message::StopStreamingSession => {
+                self.stop_streaming_session().await?;
+
+                self.event_manager.send_event(Event::StreamingStopped);
 
                 Ok(())
             }
@@ -526,6 +550,11 @@ impl Client {
             streaming_config,
             player_config,
         })?;
+        Ok(())
+    }
+
+    pub fn stop_streaming(&self) -> Result<()> {
+        self.send_message(Message::StopStreamingSession)?;
         Ok(())
     }
 

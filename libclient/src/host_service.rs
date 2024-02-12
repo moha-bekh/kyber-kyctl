@@ -53,6 +53,20 @@ pub(crate) async fn enumerate_displays(client: &HttpClient) -> Result<Vec<Displa
     Ok(response.json::<_>().await?)
 }
 
+pub(crate) async fn stop_streaming(client: &HttpClient) -> Result<()> {
+    let url = format!("{base_url}/stop_streaming", base_url = client.base_url());
+
+    let response = client.post(&url).send().await?;
+    if response.status() != StatusCode::OK {
+        warn!("POST /stop_streaming failed: {}", response.status());
+        return Err(Error::HttpQueryFailed {
+            status: response.status().into(),
+        });
+    }
+
+    Ok(())
+}
+
 pub(crate) async fn stop_session(client: &HttpClient) -> Result<()> {
     let url = format!("{base_url}/stop_session", base_url = client.base_url());
 

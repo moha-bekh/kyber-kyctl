@@ -36,6 +36,7 @@ pub enum Message {
         streaming_config: StreamingSessionConfig,
         player_config: PlayerConfig,
     },
+    StopStreamingSession,
 
     PlayerStarted,
     PlayerStopped,
@@ -79,6 +80,7 @@ pub enum Event {
         displays: Vec<Display>,
     },
     StreamingStarted,
+    StreamingStopped,
     #[cfg(feature = "web")]
     CanvasResized {
         width: i32,

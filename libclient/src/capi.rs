@@ -472,6 +472,12 @@ pub unsafe extern "C" fn libclient_client_start_streaming(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn libclient_client_stop_streaming(client: *mut libclient_Client) -> c_int {
+    let ret = (*client).client.stop_streaming();
+    result_to_c_int(ret)
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn libclient_client_ref(
     client: *mut libclient_Client,
 ) -> *mut libclient_Client {
@@ -495,6 +501,7 @@ pub enum libclient_EventType {
     Stopped,
     DisplayListUpdated,
     StreamingStarted,
+    StreamingStopped,
 }
 
 #[repr(C)]
@@ -514,6 +521,7 @@ pub unsafe extern "C" fn libclient_event_get_type(event: *const Event) -> libcli
         Event::Stopped { .. } => libclient_EventType::Stopped,
         Event::DisplayListUpdated { .. } => libclient_EventType::DisplayListUpdated,
         Event::StreamingStarted => libclient_EventType::StreamingStarted,
+        Event::StreamingStopped => libclient_EventType::StreamingStopped,
     }
 }
 
