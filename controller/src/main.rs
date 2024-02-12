@@ -98,6 +98,23 @@ async fn enumerate_displays(ctrl: web::Data<Mutex<Controller>>) -> HttpResponse 
     HttpResponse::Ok().json(ctrl.displays.clone())
 }
 
+#[post("/stop_streaming")]
+async fn stop_streaming(ctrl: web::Data<Mutex<Controller>>) -> HttpResponse {
+    let mut ctrl = ctrl.lock().await;
+
+    let ret = ctrl.stop_streaming().await;
+    match ret {
+        Ok(_) => {
+            info!("Session stopped");
+            HttpResponse::Ok().finish()
+        }
+        Err(err) => {
+            info!("Session stop rejected: {:?}", err);
+            HttpResponse::Forbidden().finish()
+        }
+    }
+}
+
 #[post("/stop_session")]
 async fn stop_session(ctrl: web::Data<Mutex<Controller>>) -> HttpResponse {
     let mut ctrl = ctrl.lock().await;
@@ -269,6 +286,7 @@ async fn main() {
             .service(capabilities)
             .service(websocket_service)
             .service(enumerate_displays)
+            .service(stop_streaming)
             .service(stop_session);
 
         if let Some(webclient_root) = &webclient_root {

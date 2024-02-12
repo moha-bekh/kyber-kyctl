@@ -138,6 +138,24 @@ impl Controller {
         }
     }
 
+    pub async fn stop_streaming(&mut self) -> Result<()> {
+        info!("Stop streaming");
+
+        if let Some(client_session) = self.client_session.as_mut() {
+            let ret = client_session.stop_dataplane().await;
+            if let Err(err) = ret {
+                warn!("Failed to stop client session: {err:?}");
+            }
+        }
+
+        let ret = self.services.stop().await;
+        if let Err(err) = ret {
+            warn!("Failed to stop streaming services: {err:?}");
+        }
+
+        Ok(())
+    }
+
     pub async fn stop(&mut self) -> Result<()> {
         info!("Stop");
 
