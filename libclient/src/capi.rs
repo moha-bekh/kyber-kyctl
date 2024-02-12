@@ -439,6 +439,12 @@ pub unsafe extern "C" fn libclient_client_new(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn libclient_client_stop(client: *mut libclient_Client) -> c_int {
+    let ret = (*client).client.stop();
+    result_to_c_int(ret)
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn libclient_client_connect(client: *mut libclient_Client) -> c_int {
     let ret = (*client).client.connect();
     result_to_c_int(ret)

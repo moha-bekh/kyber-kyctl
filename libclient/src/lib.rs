@@ -495,6 +495,18 @@ impl Client {
         })
     }
 
+    #[cfg(target_arch = "wasm32")]
+    pub async fn stop(self) -> Result<()> {
+        self.mainloop_engine.stop().await;
+
+        Ok(())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn stop(&self) -> Result<()> {
+        self.mainloop_engine.stop()
+    }
+
     pub fn connect(&self) -> Result<()> {
         self.send_message(Message::Connect)?;
         Ok(())
