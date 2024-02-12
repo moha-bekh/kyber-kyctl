@@ -25,7 +25,7 @@ mod ws;
 
 use libkypc::process::ProcessFactory;
 
-use controller::{ClientSession, Controller};
+use controller::{ClientSession, Controller, DataPlaneBackend};
 use error::{Error, Result};
 use host_events::{HostEvent, HostEventSender};
 use statemachine::{StateMachine, StateMachineEvent, StateMachineProxy};

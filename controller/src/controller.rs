@@ -7,7 +7,7 @@ use libkypc::process::ProcessFactory;
 
 use crate::avservice;
 use crate::config;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::inputservice;
 use crate::kymux_controller::KymuxServer;
 use crate::tls;
@@ -44,16 +44,34 @@ pub(crate) async fn stop_wsrouter(ws_router: Option<Arc<ws::WsRouter>>) -> Resul
     Ok(())
 }
 
+pub(crate) enum DataPlaneBackend {}
+
 pub(crate) struct ClientSession {
     pub(crate) host_event_sender: HostEventSender,
+    pub(crate) data_plane: Option<DataPlaneBackend>,
 }
 
 impl ClientSession {
     pub(crate) fn new(host_event_sender: HostEventSender) -> Self {
-        Self { host_event_sender }
+        Self {
+            host_event_sender,
+            data_plane: None,
+        }
     }
 
-    pub(crate) async fn stop(self) -> Result<()> {
+    pub(crate) async fn stop_dataplane(&mut self) -> Result<()> {
+        match self.data_plane.take() {
+            Some(_) => {}
+            None => {}
+        }
+
+        Ok(())
+    }
+
+    pub(crate) async fn stop(mut self) -> Result<()> {
+        info!("Stop dataplane");
+        self.stop_dataplane().await?;
+
         info!("Stop running HostEventSender");
         self.host_event_sender.stop().await?;
 
@@ -165,6 +183,14 @@ impl Controller {
         stop_kymux(self.kymux_server.take(), self.kymux_connection.take()).await?;
 
         Ok(())
+    }
+
+    pub(crate) fn has_data_plane(&self) -> Result<bool> {
+        let Some(client_session) = self.client_session.as_ref() else {
+            return Err(Error::ControlPlaneNotOpened);
+        };
+
+        Ok(client_session.data_plane.is_some())
     }
 
     pub(crate) fn display_known(&self, display_id: u32) -> bool {
