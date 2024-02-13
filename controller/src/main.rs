@@ -242,6 +242,7 @@ async fn main() {
                 actix_cors::Cors::default()
                     .allowed_methods(vec!["GET", "POST"])
                     .allow_any_origin()
+                    .supports_credentials()
                     .allowed_header(actix_web::http::header::CONTENT_TYPE),
             )
             // Kymux
