@@ -24,11 +24,11 @@ impl HttpClient {
     }
 
     pub(crate) fn get<U: IntoUrl>(&self, url: U) -> reqwest::RequestBuilder {
-        self.client.get(url)
+        platform_http::configure_request(self.client.get(url))
     }
 
     pub(crate) fn post<U: IntoUrl>(&self, url: U) -> reqwest::RequestBuilder {
-        self.client.post(url)
+        platform_http::configure_request(self.client.post(url))
     }
 
     pub(crate) fn base_url(&self) -> &str {

@@ -1,3 +1,5 @@
+use reqwest::RequestBuilder;
+
 use crate::{ConnectionParams, Result};
 
 pub(crate) fn create_host(conn_params: &ConnectionParams) -> String {
@@ -17,4 +19,8 @@ pub(crate) fn create_reqwest(conn_params: ConnectionParams) -> Result<reqwest::C
         .build()?;
 
     Ok(client)
+}
+
+pub(crate) fn configure_request(builder: RequestBuilder) -> RequestBuilder {
+    builder
 }
