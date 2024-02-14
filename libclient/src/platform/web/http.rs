@@ -17,5 +17,5 @@ pub(crate) fn create_reqwest(_conn_params: ConnectionParams) -> Result<reqwest::
 }
 
 pub(crate) fn configure_request(builder: RequestBuilder) -> RequestBuilder {
-    builder
+    builder.fetch_credentials_include()
 }
