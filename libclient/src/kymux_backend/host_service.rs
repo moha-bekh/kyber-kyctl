@@ -36,7 +36,7 @@ pub(crate) async fn start_kymux(
         "backend": backend,
     });
 
-    let response = client.client().post(&url).json(&body).send().await?;
+    let response = client.post(&url).json(&body).send().await?;
     if response.status() != StatusCode::OK {
         warn!("POST /kymux/start_mux failed: {}", response.status());
         return Err(Error::HttpQueryFailed {
@@ -107,7 +107,7 @@ pub(crate) async fn start_stream(
         inputs,
     };
 
-    let response = client.client().post(&url).json(&body).send().await?;
+    let response = client.post(&url).json(&body).send().await?;
     if response.status() != StatusCode::OK {
         warn!("POST /kymux/start_session failed: {}", response.status());
         return Err(Error::HttpQueryFailed {

@@ -1,6 +1,7 @@
-use crate::{ConnectionParams, Result};
+use reqwest::IntoUrl;
 
 use crate::platform::http as platform_http;
+use crate::{ConnectionParams, Result};
 
 pub(crate) struct HttpClient {
     base_url: String,
@@ -22,8 +23,12 @@ impl HttpClient {
         })
     }
 
-    pub(crate) fn client(&self) -> &reqwest::Client {
-        &self.client
+    pub(crate) fn get<U: IntoUrl>(&self, url: U) -> reqwest::RequestBuilder {
+        self.client.get(url)
+    }
+
+    pub(crate) fn post<U: IntoUrl>(&self, url: U) -> reqwest::RequestBuilder {
+        self.client.post(url)
     }
 
     pub(crate) fn base_url(&self) -> &str {

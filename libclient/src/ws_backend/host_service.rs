@@ -54,7 +54,7 @@ pub(super) async fn start_stream(
         inputs,
     };
 
-    let response = http_client.client().post(&url).json(&body).send().await?;
+    let response = http_client.post(&url).json(&body).send().await?;
     if response.status() != StatusCode::OK {
         warn!("POST /websocket/start failed: {}", response.status());
         return Err(Error::HttpQueryFailed {

@@ -17,7 +17,7 @@ pub(crate) async fn capabilities(client: &HttpClient) -> Result<Capabilities> {
 
     let url = format!("{base_url}/capabilities", base_url = client.base_url());
 
-    let ret = timeout(HTTP_TIMEOUT, client.client().get(&url).send()).await;
+    let ret = timeout(HTTP_TIMEOUT, client.get(&url).send()).await;
     let response = match ret {
         Err(_) => {
             warn!("GET /capabilities has timed out");
@@ -42,7 +42,7 @@ pub(crate) async fn enumerate_displays(client: &HttpClient) -> Result<Vec<Displa
         base_url = client.base_url()
     );
 
-    let response = client.client().get(&url).send().await?;
+    let response = client.get(&url).send().await?;
     if response.status() != StatusCode::OK {
         warn!("GET /enumerate_displays failed: {}", response.status());
         return Err(Error::HttpQueryFailed {
@@ -56,7 +56,7 @@ pub(crate) async fn enumerate_displays(client: &HttpClient) -> Result<Vec<Displa
 pub(crate) async fn stop_stream(client: &HttpClient) -> Result<()> {
     let url = format!("{base_url}/stop_session", base_url = client.base_url());
 
-    let response = client.client().post(&url).send().await?;
+    let response = client.post(&url).send().await?;
     if response.status() != StatusCode::OK {
         warn!("POST /stop_session failed: {}", response.status());
         return Err(Error::HttpQueryFailed {
