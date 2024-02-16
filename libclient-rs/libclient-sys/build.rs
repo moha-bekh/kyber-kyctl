@@ -10,7 +10,7 @@ fn main() {
         .use_core()
         // Use libc
         .ctypes_prefix("libc")
-        .parse_callbacks(Box::new(bindgen::CargoCallbacks))
+        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .blocklist_item(r"(\w*libkynput\w*)");
 
     // Set header include paths

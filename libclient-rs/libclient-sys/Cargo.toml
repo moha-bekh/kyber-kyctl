@@ -8,5 +8,5 @@ libc = "0.2"
 libkynput-sys = "0.1.0"
 
 [build-dependencies]
-bindgen = {version = "0.59", optional = false }
+bindgen = {version = "0.69", optional = false }
 pkg-config = "0.3"
