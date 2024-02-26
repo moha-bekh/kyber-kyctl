@@ -10,12 +10,12 @@ pub enum Error {
         source: std::io::Error,
     },
     #[error("kymux error: {source:?}")]
-    KymuxError {
+    Kymux {
         #[from]
         source: kymux::Error,
     },
     #[error("libkypc error: {source:?}")]
-    LibypcError {
+    Libypc {
         #[from]
         source: libkypc::Error,
     },
@@ -38,19 +38,19 @@ pub enum Error {
     #[error("Invalid TLS file")]
     TlsInvalidFile,
     #[error("rustls error: {source:?}")]
-    RustlsError {
+    Rustls {
         #[from]
         source: rustls::Error,
     },
     #[error("rcgen error: {source:?}")]
-    RcGenError {
+    RcGen {
         #[from]
         source: rcgen::RcgenError,
     },
     #[error("Operation on date overflow/underflow")]
     DateOperationOverflow,
     #[error("Actix Web error: {source:?}")]
-    ActixError {
+    Actix {
         #[from]
         source: actix_web::Error,
     },
