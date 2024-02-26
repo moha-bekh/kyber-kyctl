@@ -79,7 +79,7 @@ pub(crate) struct StartResponse {
 
 pub(crate) async fn start_stream(
     client: &HttpClient,
-    displays: &Vec<Display>,
+    displays: &[Display],
     bitrate: u32,
     kymux_config: KymuxConfig,
     video: &Option<VideoSessionConfig>,

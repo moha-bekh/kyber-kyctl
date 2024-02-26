@@ -101,7 +101,7 @@ impl WsBackend {
     pub(crate) async fn new(
         _conn_params: &ConnectionParams,
         http_client: &HttpClient,
-        displays: &Vec<Display>,
+        displays: &[Display],
         player_config: &PlayerConfig,
         streaming_config: &StreamingSessionConfig,
         msg_proxy: MessageProxy,

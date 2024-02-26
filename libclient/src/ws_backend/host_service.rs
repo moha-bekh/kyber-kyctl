@@ -29,7 +29,7 @@ struct StartRequest {
 
 pub(super) async fn start_stream(
     http_client: &HttpClient,
-    displays: &Vec<Display>,
+    displays: &[Display],
     streaming_config: &StreamingSessionConfig,
     cursor_format: Option<CursorFormat>,
 ) -> Result<()> {

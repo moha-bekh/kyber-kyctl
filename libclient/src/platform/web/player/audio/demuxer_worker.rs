@@ -194,9 +194,9 @@ pub struct DemuxerWorker {
 }
 
 impl DemuxerWorker {
-    const TYPE_START: &str = "start";
-    const TYPE_STOP: &str = "stop";
-    const TYPE_FRAME: &str = "frame";
+    const TYPE_START: &'static str = "start";
+    const TYPE_STOP: &'static str = "stop";
+    const TYPE_FRAME: &'static str = "frame";
 
     pub fn new(message_proxy: MessageProxy) -> Result<DemuxerWorker, JsValue> {
         let worker = web_sys::Worker::new_with_options(

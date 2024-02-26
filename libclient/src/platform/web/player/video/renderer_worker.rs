@@ -110,8 +110,8 @@ pub struct RendererWorker {
 }
 
 impl RendererWorker {
-    const TYPE_START: &str = "start";
-    const TYPE_FRAME: &str = "frame";
+    const TYPE_START: &'static str = "start";
+    const TYPE_FRAME: &'static str = "frame";
 
     pub fn new() -> Result<RendererWorker, JsValue> {
         let worker = web_sys::Worker::new_with_options(

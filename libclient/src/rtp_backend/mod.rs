@@ -97,7 +97,7 @@ pub(crate) struct RtpBackend {
 
 async fn create_video_config(
     client: &HttpClient,
-    displays: &Vec<Display>,
+    displays: &[Display],
     ip: &str,
     config: &Option<VideoSessionConfig>,
     player_config: &PlayerConfig,
@@ -154,7 +154,7 @@ impl RtpBackend {
     pub(crate) async fn new(
         conn_params: &ConnectionParams,
         client: &HttpClient,
-        displays: &Vec<Display>,
+        displays: &[Display],
         player_config: &PlayerConfig,
         streaming_config: &StreamingSessionConfig,
         msg_proxy: MessageProxy,

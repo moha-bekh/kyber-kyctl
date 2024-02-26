@@ -84,7 +84,7 @@ trait BackendDriver {
     async fn stop(&mut self) -> Result<()>;
 }
 
-fn get_display_id<'a>(displays: &'a Vec<Display>, config: &VideoSessionConfig) -> &'a Display {
+fn get_display_id<'a>(displays: &'a [Display], config: &VideoSessionConfig) -> &'a Display {
     if config.display_index < displays.len() {
         &displays[config.display_index]
     } else {

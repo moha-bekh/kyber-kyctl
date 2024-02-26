@@ -69,7 +69,7 @@ impl KymuxBackend {
     pub(crate) async fn new(
         conn_params: &ConnectionParams,
         http_client: &HttpClient,
-        displays: &Vec<Display>,
+        displays: &[Display],
         player_config: &PlayerConfig,
         streaming_config: &StreamingSessionConfig,
         kymux_config: KymuxConfig,
