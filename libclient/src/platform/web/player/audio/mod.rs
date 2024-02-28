@@ -2,6 +2,7 @@ mod decoder;
 mod demuxer_worker;
 pub(super) mod player;
 mod ringbuffer;
+mod worklet;
 
 use ringbuffer::RingBuffer;
 

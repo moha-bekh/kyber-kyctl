@@ -29,7 +29,7 @@ libkynput-sys = { version = "0.1.0", optional = true }
 vlc-rs = { version = "0.3.0", optional = true }
 
 [target.'cfg(target_family = "wasm")'.dependencies.web-sys]
-version = "0.3.64"
+version = "0.3.68"
 optional = true
 features = [
     "BinaryType",
@@ -57,12 +57,18 @@ desktop = [
     "tokio/rt-multi-thread",
 ]
 js-player = [
+    "web-sys/AudioContext",
+    "web-sys/AudioContextOptions",
     "web-sys/AudioData",
     "web-sys/AudioDataCopyToOptions",
     "web-sys/AudioDecoder",
     "web-sys/AudioDecoderInit",
     "web-sys/AudioDecoderConfig",
+    "web-sys/AudioDestinationNode",
     "web-sys/AudioSampleFormat",
+    "web-sys/AudioWorklet",
+    "web-sys/AudioWorkletNode",
+    "web-sys/AudioWorkletNodeOptions",
     "web-sys/DedicatedWorkerGlobalScope",
     "web-sys/EncodedAudioChunk",
     "web-sys/EncodedAudioChunkInit",

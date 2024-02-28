@@ -1,35 +1,17 @@
 use log::warn;
-use wasm_bindgen::prelude::*;
+use std::cell::RefCell;
 
 use crate::platform::player::FrameSink;
 use crate::{MessageProxy, Result};
 
 use super::demuxer_worker::DemuxerWorker;
+use super::worklet::AudioWorklet;
 use super::RingBuffer;
 use super::{CHANNELS, SAMPLE_RATE, SAMPLE_SIZE};
 
-#[wasm_bindgen(raw_module = "./audio_renderer.js")]
-extern "C" {
-    type AudioRenderer;
-
-    #[wasm_bindgen(constructor)]
-    fn new() -> AudioRenderer;
-
-    #[wasm_bindgen(method)]
-    async fn init(
-        this: &AudioRenderer,
-        sample_rate: f32,
-        channel_count: u32,
-        sab: js_sys::SharedArrayBuffer,
-    );
-
-    #[wasm_bindgen(method)]
-    async fn stop(this: &AudioRenderer);
-}
-
 pub struct AudioPlayer {
     demuxer: DemuxerWorker,
-    audio_renderer: AudioRenderer,
+    audio_worklet: RefCell<Option<AudioWorklet>>,
 }
 
 impl AudioPlayer {
@@ -41,17 +23,23 @@ impl AudioPlayer {
         let demuxer = DemuxerWorker::new(message_proxy)?;
         demuxer.start(sab.clone())?;
 
-        let audio_renderer = AudioRenderer::new();
-        audio_renderer.init(SAMPLE_RATE as _, CHANNELS, sab).await;
+        let audio_worklet = AudioWorklet::start(sab, SAMPLE_RATE, CHANNELS).await?;
 
         Ok(Self {
             demuxer,
-            audio_renderer,
+            audio_worklet: RefCell::new(Some(audio_worklet)),
         })
     }
 
     pub async fn stop(&self) -> Result<()> {
-        self.audio_renderer.stop().await;
+        if let Some(audio_worklet) = self.audio_worklet.take() {
+            let ret = audio_worklet.stop().await;
+            if let Err(err) = ret {
+                warn!("Failed to stop audio worklet: {err:?}");
+            }
+        } else {
+            warn!("No AudioWorklet to stop");
+        }
 
         let ret = self.demuxer.stop().await;
         if let Err(err) = ret {
