@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::host_events;
 use crate::{PlayerConfig, StreamingSessionConfig};
+use crate::{StreamerPipelineEventType, StreamerPipelineStage, StreamerPipelineType};
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[repr(C)]
@@ -89,5 +90,10 @@ pub enum Event {
     CanvasResized {
         width: i32,
         height: i32,
+    },
+    StreamerPipelineEvent {
+        type_: StreamerPipelineType,
+        stage: StreamerPipelineStage,
+        event: StreamerPipelineEventType,
     },
 }

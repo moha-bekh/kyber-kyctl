@@ -502,6 +502,7 @@ pub enum libclient_EventType {
     DisplayListUpdated,
     StreamingStarted,
     StreamingStopped,
+    StreamerPipelineEvent,
 }
 
 #[repr(C)]
@@ -513,6 +514,24 @@ pub enum libclient_StopReason {
     DecodeError,
 }
 
+#[repr(C)]
+pub enum libclient_StreamerPipelineType {
+    Audio,
+    Video,
+}
+
+#[repr(C)]
+pub enum libclient_StreamerPipelineStage {
+    Initialization,
+    Acquisition,
+    Encoder,
+}
+
+#[repr(C)]
+pub enum libclient_StreamerPipelineEventType {
+    Error,
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn libclient_event_get_type(event: *const Event) -> libclient_EventType {
     match *event {
@@ -522,6 +541,7 @@ pub unsafe extern "C" fn libclient_event_get_type(event: *const Event) -> libcli
         Event::DisplayListUpdated { .. } => libclient_EventType::DisplayListUpdated,
         Event::StreamingStarted => libclient_EventType::StreamingStarted,
         Event::StreamingStopped => libclient_EventType::StreamingStopped,
+        Event::StreamerPipelineEvent { .. } => libclient_EventType::StreamerPipelineEvent,
     }
 }
 
@@ -588,6 +608,46 @@ pub unsafe extern "C" fn libclient_event_unpack_display_list_updated(
 #[no_mangle]
 pub unsafe extern "C" fn libclient_event_free_displays(displays: *mut Display) {
     let _ = Box::from_raw(displays);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_event_unpack_streamer_pipeline_event(
+    event: *const Event,
+    out_type: *mut libclient_StreamerPipelineType,
+    out_stage: *mut libclient_StreamerPipelineStage,
+    out_event: *mut libclient_StreamerPipelineEventType,
+) -> c_int {
+    let Event::StreamerPipelineEvent {
+        type_,
+        stage,
+        event,
+    } = &*event
+    else {
+        return -1;
+    };
+
+    if out_type.is_null() || out_stage.is_null() || out_event.is_null() {
+        return -1;
+    }
+
+    *out_type = match type_ {
+        crate::StreamerPipelineType::Audio => libclient_StreamerPipelineType::Audio,
+        crate::StreamerPipelineType::Video => libclient_StreamerPipelineType::Video,
+    };
+
+    *out_stage = match stage {
+        crate::StreamerPipelineStage::Initialization => {
+            libclient_StreamerPipelineStage::Initialization
+        }
+        crate::StreamerPipelineStage::Acquisition => libclient_StreamerPipelineStage::Acquisition,
+        crate::StreamerPipelineStage::Encoder => libclient_StreamerPipelineStage::Encoder,
+    };
+
+    *out_event = match event {
+        crate::StreamerPipelineEventType::Error => libclient_StreamerPipelineEventType::Error,
+    };
+
+    0
 }
 
 #[repr(C)]
