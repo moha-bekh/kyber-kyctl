@@ -120,6 +120,18 @@ impl StateMachine {
 
                     ctrl.displays = displays;
                 }
+                StateMachineEvent::AvService {
+                    event: avservice_types::Event::PipelineEvent(event),
+                } => {
+                    let ctrl = ctrl.lock().await;
+
+                    if let Some(client_session) = ctrl.client_session.as_ref() {
+                        client_session
+                            .host_event_sender
+                            .send(HostEvent::StreamerPipelineEvent(event.into()))
+                            .await;
+                    };
+                }
                 StateMachineEvent::HostEvents { notification } => match notification {
                     host_events::Notification::ConnectionLost => {
                         warn!("Control Websocket disconnected");

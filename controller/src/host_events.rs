@@ -86,9 +86,72 @@ pub(crate) struct Display {
     pub y: i32,
 }
 
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub enum StreamerPipelineType {
+    Audio,
+    Video,
+}
+
+impl From<avservice_types::PipelineType> for StreamerPipelineType {
+    fn from(t: avservice_types::PipelineType) -> Self {
+        match t {
+            avservice_types::PipelineType::Audio => Self::Audio,
+            avservice_types::PipelineType::Video => Self::Video,
+        }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub enum StreamerPipelineStage {
+    Initialization,
+    Acquisition,
+    Encoder,
+}
+
+impl From<avservice_types::PipelineStage> for StreamerPipelineStage {
+    fn from(t: avservice_types::PipelineStage) -> Self {
+        match t {
+            avservice_types::PipelineStage::Initialization => Self::Initialization,
+            avservice_types::PipelineStage::Acquisition => Self::Acquisition,
+            avservice_types::PipelineStage::Encoder => Self::Encoder,
+        }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub enum StreamerPipelineEventType {
+    Error,
+}
+
+impl From<avservice_types::PipelineEventType> for StreamerPipelineEventType {
+    fn from(event: avservice_types::PipelineEventType) -> Self {
+        match event {
+            avservice_types::PipelineEventType::Error => Self::Error,
+        }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct StreamerPipelineEvent {
+    pub type_: StreamerPipelineType,
+    pub stage: StreamerPipelineStage,
+    pub event: StreamerPipelineEventType,
+}
+
+impl From<avservice_types::PipelineEvent> for StreamerPipelineEvent {
+    fn from(event: avservice_types::PipelineEvent) -> Self {
+        Self {
+            type_: event.type_.into(),
+            stage: event.stage.into(),
+            event: event.event.into(),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) enum HostEvent {
     DisplayList { displays: Vec<Display> },
+    StreamerPipelineEvent(StreamerPipelineEvent),
 }
 
 #[derive(Debug, Deserialize, Serialize)]
