@@ -24,9 +24,35 @@ pub(crate) trait WsClientBuilder {
     ) -> Result<Self::Type>;
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
+pub enum StreamerPipelineType {
+    Audio,
+    Video,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
+pub enum StreamerPipelineStage {
+    Initialization,
+    Acquisition,
+    Encoder,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
+pub enum StreamerPipelineEventType {
+    Error,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct StreamerPipelineEvent {
+    pub type_: StreamerPipelineType,
+    pub stage: StreamerPipelineStage,
+    pub event: StreamerPipelineEventType,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) enum HostEvent {
     DisplayList { displays: Vec<Display> },
+    StreamerPipelineEvent(StreamerPipelineEvent),
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -48,6 +74,7 @@ impl HostEventSink {
     fn convert_event(event: HostEvent) -> Message {
         match event {
             HostEvent::DisplayList { displays } => Message::DisplayListUpdated { displays },
+            HostEvent::StreamerPipelineEvent(event) => Message::StreamerPipelineEvent(event),
         }
     }
 

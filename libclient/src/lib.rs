@@ -32,6 +32,7 @@ pub use enums::{ControlPlaneCloseReason, Display, Event, StopReason};
 use event_manager::EventManager;
 pub use event_manager::EventSink;
 use host_events::HostEventReceiver;
+pub use host_events::{StreamerPipelineEventType, StreamerPipelineStage, StreamerPipelineType};
 use http::HttpClient;
 pub use platform::{ConnectConfig, PlayerConfig};
 pub(crate) use platform::{ConnectionParams, InputPipeline, MainLoopEngine};
@@ -376,6 +377,9 @@ impl Handler {
                     displays: displays.clone(),
                 });
 
+                Ok(())
+            }
+            Message::StreamerPipelineEvent(event) => {
                 Ok(())
             }
             Message::VideoDecodeError => {

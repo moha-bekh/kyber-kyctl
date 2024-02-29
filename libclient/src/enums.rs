@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::host_events;
 use crate::{PlayerConfig, StreamingSessionConfig};
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -48,6 +49,8 @@ pub(crate) enum Message {
     DisplayListUpdated {
         displays: Vec<Display>,
     },
+
+    StreamerPipelineEvent(host_events::StreamerPipelineEvent),
 
     VideoDecodeError,
     AudioDecodeError,
