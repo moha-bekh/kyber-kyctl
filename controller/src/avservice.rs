@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use log::{debug, info, warn};
+use tokio::{sync::oneshot, task};
 
 use avservice_types::{Command, Display, Event, VideoCodec};
 use libkypc::{
@@ -11,13 +12,88 @@ use libkypc::{
 };
 
 use crate::utils;
-use crate::{Error, Result, StateMachineProxy};
+use crate::{Error, Result, StateMachineEvent, StateMachineProxy};
+
+struct ReceiverTask {
+    name: String,
+    handle: task::JoinHandle<()>,
+    stop_tx: oneshot::Sender<()>,
+}
+
+impl ReceiverTask {
+    fn new(
+        name: String,
+        receiver: EventReceiver<Event>,
+        statemachine_proxy: StateMachineProxy,
+    ) -> Self {
+        let (stop_tx, stop_rx) = oneshot::channel();
+
+        let handle = task::spawn(Self::task_entry(receiver, statemachine_proxy, stop_rx));
+
+        Self {
+            name,
+            handle,
+            stop_tx,
+        }
+    }
+
+    async fn stop(self) -> Result<()> {
+        let ret = self.stop_tx.send(());
+        if ret.is_err() {
+            warn!("{} receiver task stop send request failed", self.name);
+        }
+
+        self.handle.await.map_err(|err| {
+            warn!("{} receiver task panicked: {err:?}", self.name);
+            Error::ThreadPanicked
+        })?;
+
+        Ok(())
+    }
+
+    async fn task_entry(
+        receiver: EventReceiver<avservice_types::Event>,
+        statemachine_proxy: StateMachineProxy,
+        stop_rx: oneshot::Receiver<()>,
+    ) {
+        tokio::select! {
+            _ = stop_rx => {
+            }
+            _ = Self::process_receiver(receiver, statemachine_proxy) => {}
+        }
+    }
+
+    async fn process_receiver(
+        mut receiver: EventReceiver<avservice_types::Event>,
+        statemachine_proxy: StateMachineProxy,
+    ) {
+        while let Ok(event) = receiver.recv().await {
+            statemachine_proxy
+                .send(StateMachineEvent::AvService { event })
+                .await;
+        }
+    }
+}
 
 struct Inner {
     child: Process,
     commander: Commander<Command, Event>,
     sender: CommandSender<Command, Event>,
     receiver: Option<EventReceiver<Event>>,
+    receiver_task: Option<ReceiverTask>,
+}
+
+impl Inner {
+    fn start_receiver_task(
+        &mut self,
+        name: String,
+        statemachine_proxy: StateMachineProxy,
+    ) -> Result<()> {
+        let receiver = self.receiver.take().ok_or(Error::AvServerNoReceiver)?;
+        self.receiver_task = Some(ReceiverTask::new(name, receiver, statemachine_proxy));
+
+        Ok(())
+    }
 }
 
 pub(crate) struct Handler {
@@ -65,6 +141,7 @@ impl Handler {
             commander,
             sender,
             receiver: Some(receiver),
+            receiver_task: None,
         })
     }
 
@@ -206,6 +283,10 @@ impl Handler {
     /// Both Stop request and Process join have a timeout to make sure
     /// we aren't stuck forever. If one of them timeout, kill the process.
     async fn stop_inner(name: &str, mut inner: Inner) -> Result<()> {
+        if let Some(receiver_task) = inner.receiver_task.take() {
+            let _ = receiver_task.stop().await;
+        }
+
         const STOP_TIMEOUT: Duration = Duration::from_secs(3);
 
         info!("Send stop request to {name}");
