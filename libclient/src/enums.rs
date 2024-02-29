@@ -24,7 +24,8 @@ pub enum ControlPlaneCloseReason {
 }
 
 #[derive(Clone, Debug)]
-pub enum Message {
+#[allow(dead_code)]
+pub(crate) enum Message {
     Connect,
     Disconnect,
 

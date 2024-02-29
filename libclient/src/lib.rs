@@ -56,7 +56,7 @@ pub struct MessageProxy {
 }
 
 impl MessageProxy {
-    pub fn send(&self, msg: Message) -> Result<()> {
+    pub(crate) fn send(&self, msg: Message) -> Result<()> {
         match self.sender.try_send(msg) {
             Ok(_) => Ok(()),
             Err(TrySendError::Closed(_)) => Err(Error::ChannelSend),
@@ -68,7 +68,7 @@ impl MessageProxy {
         }
     }
 
-    pub async fn send_async(&self, msg: Message) -> Result<()> {
+    pub(crate) async fn send_async(&self, msg: Message) -> Result<()> {
         self.sender.send(msg).await?;
         Ok(())
     }
