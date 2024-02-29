@@ -380,6 +380,12 @@ impl Handler {
                 Ok(())
             }
             Message::StreamerPipelineEvent(event) => {
+                self.event_manager.send_event(Event::StreamerPipelineEvent {
+                    type_: event.type_,
+                    stage: event.stage,
+                    event: event.event,
+                });
+
                 Ok(())
             }
             Message::VideoDecodeError => {
