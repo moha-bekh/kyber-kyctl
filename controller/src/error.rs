@@ -76,6 +76,8 @@ pub enum Error {
     ConfigParseFail,
     #[error("Config load failed: {reason:?}")]
     ConfigLoadFail { reason: toml::de::Error },
+    #[error("No statemachine proxy")]
+    NotStateMachineProxy,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

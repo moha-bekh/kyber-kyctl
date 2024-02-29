@@ -185,4 +185,10 @@ impl Controller {
     pub(crate) fn display_known(&self, display_id: u32) -> bool {
         self.displays.iter().any(|d| d.id == display_id)
     }
+
+    pub(crate) fn state_machine_proxy(&self) -> Result<StateMachineProxy> {
+        self.state_machine_proxy
+            .clone()
+            .ok_or(Error::NotStateMachineProxy)
+    }
 }

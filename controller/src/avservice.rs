@@ -10,8 +10,8 @@ use libkypc::{
     CommandSender, Commander, EventReceiver,
 };
 
-use crate::error::{Error, Result};
 use crate::utils;
+use crate::{Error, Result, StateMachineProxy};
 
 struct Inner {
     child: Process,
@@ -23,15 +23,17 @@ struct Inner {
 pub(crate) struct Handler {
     name: String,
     avserver_path: PathBuf,
+    statemachine_proxy: StateMachineProxy,
     inner: Option<Inner>,
 }
 
 impl Handler {
-    pub(crate) fn new(name: &str) -> Self {
+    pub(crate) fn new(name: &str, statemachine_proxy: StateMachineProxy) -> Self {
         Self {
             name: name.into(),
             avserver_path: utils::get_executable_path("avserver"),
             inner: None,
+            statemachine_proxy,
         }
     }
 
@@ -185,7 +187,6 @@ impl Handler {
     ) -> Result<()> {
         let mut inner = self.spawn_process(process_factory).await?;
         inner.sender.send(start_cmd).await?;
-
 
         self.inner = Some(inner);
 

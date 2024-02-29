@@ -16,7 +16,7 @@ use crate::avservice;
 use crate::error::{Error, Result};
 use crate::inputservice;
 use crate::utils::TypeConvert;
-use crate::{Controller, DataPlaneBackend};
+use crate::{Controller, DataPlaneBackend, StateMachineProxy};
 
 use requests::{KymuxTransportBackend, StartKymuxCertificateHash};
 
@@ -240,13 +240,14 @@ async fn start_kymux(
 
 async fn start_video(
     process_factory: &Arc<ProcessFactory>,
+    statemachine_proxy: StateMachineProxy,
     display_id: u32,
     uri: String,
     bitrate: u32,
     codec: avservice_types::VideoCodec,
     yuv444: bool,
 ) -> Result<avservice::Handler> {
-    let mut handler = avservice::Handler::new("Video");
+    let mut handler = avservice::Handler::new("Video", statemachine_proxy);
 
     handler
         .kymux_start_video(process_factory, display_id, uri, bitrate, codec, yuv444)
@@ -257,9 +258,10 @@ async fn start_video(
 
 async fn start_audio(
     process_factory: &Arc<ProcessFactory>,
+    statemachine_proxy: StateMachineProxy,
     uri: String,
 ) -> Result<avservice::Handler> {
-    let mut handler = avservice::Handler::new("Audio");
+    let mut handler = avservice::Handler::new("Audio", statemachine_proxy);
 
     handler.kymux_start_audio(process_factory, uri).await?;
 
@@ -296,6 +298,8 @@ async fn start_session(
     ctrl: &mut Controller,
     request: requests::StartRequest,
 ) -> Result<StartSessionResponse> {
+    let state_machine_proxy = ctrl.state_machine_proxy()?;
+
     // Complete Kymux connection
     let Some(client_session) = ctrl.client_session.as_mut() else {
         return Err(Error::ControlPlaneNotOpened);
@@ -333,6 +337,7 @@ async fn start_session(
 
         let avservice_video = start_video(
             &ctrl.process_factory,
+            state_machine_proxy.clone(),
             video_request.display_id,
             video_uri,
             request.bitrate,
@@ -354,7 +359,12 @@ async fn start_session(
 
         info!("Start Audio avservice. Endpoint: {audio_endpoint:X}");
 
-        let avservice_audio = start_audio(&ctrl.process_factory, audio_uri).await?;
+        let avservice_audio = start_audio(
+            &ctrl.process_factory,
+            state_machine_proxy.clone(),
+            audio_uri,
+        )
+        .await?;
         (Some(audio_endpoint), Some(avservice_audio))
     } else {
         warn!("Audio disabled");
