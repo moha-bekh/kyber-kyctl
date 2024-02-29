@@ -112,13 +112,42 @@ pub enum StopReason {
 }
 
 #[derive(Clone, Debug)]
+pub enum StreamerPipelineType {
+    Audio,
+    Video,
+}
+
+#[derive(Clone, Debug)]
+pub enum StreamerPipelineStage {
+    Initialization,
+    Acquisition,
+    Encoder,
+}
+
+#[derive(Clone, Debug)]
+pub enum StreamerPipelineEventType {
+    Error,
+}
+
+#[derive(Clone, Debug)]
 pub enum Event {
-    ControlPlaneConnected { displays: Vec<Display> },
+    ControlPlaneConnected {
+        displays: Vec<Display>,
+    },
     ControlPlaneConnectFailed,
-    Stopped { reason: StopReason },
-    DisplayListUpdated { displays: Vec<Display> },
+    Stopped {
+        reason: StopReason,
+    },
+    DisplayListUpdated {
+        displays: Vec<Display>,
+    },
     StreamingStarted,
     StreamingStopped,
+    StreamerPipelineEvent {
+        type_: StreamerPipelineType,
+        stage: StreamerPipelineStage,
+        event: StreamerPipelineEventType,
+    },
 }
 
 pub trait EventSink {
@@ -225,6 +254,72 @@ impl EventSinkData {
             }
             sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_STREAMING_STOPPED => {
                 data.sink.on_event(Event::StreamingStopped);
+            }
+            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_STREAMER_PIPELINE_EVENT => {
+                let mut c_type = mem::MaybeUninit::uninit();
+                let mut c_stage = mem::MaybeUninit::uninit();
+                let mut c_event = mem::MaybeUninit::uninit();
+
+                let ret = unsafe {
+                    sys::libclient_event_unpack_streamer_pipeline_event(
+                        event,
+                        c_type.as_mut_ptr(),
+                        c_stage.as_mut_ptr(),
+                        c_event.as_mut_ptr(),
+                    )
+                };
+                if ret != 0 {
+                    warn!("Fail to unpack EventType::StreamerPipelineEvent");
+                    return;
+                }
+
+                let c_type = c_type.assume_init();
+                let type_ = match c_type {
+                    sys::libclient_StreamerPipelineType_LIBCLIENT_STREAMER_PIPELINE_TYPE_AUDIO => {
+                        StreamerPipelineType::Audio
+                    }
+                    sys::libclient_StreamerPipelineType_LIBCLIENT_STREAMER_PIPELINE_TYPE_VIDEO => {
+                        StreamerPipelineType::Video
+                    }
+                    _ => {
+                        warn!("Fail to convert StreamerPipelineType {c_type}");
+                        return;
+                    }
+                };
+
+                let c_stage = c_stage.assume_init();
+                let stage = match c_stage {
+                    sys::libclient_StreamerPipelineStage_LIBCLIENT_STREAMER_PIPELINE_STAGE_INITIALIZATION => {
+                        StreamerPipelineStage::Initialization
+                    }
+                    sys::libclient_StreamerPipelineStage_LIBCLIENT_STREAMER_PIPELINE_STAGE_ACQUISITION => {
+                        StreamerPipelineStage::Acquisition
+                    }
+                    sys::libclient_StreamerPipelineStage_LIBCLIENT_STREAMER_PIPELINE_STAGE_ENCODER => {
+                        StreamerPipelineStage::Encoder
+                    }
+                    _ => {
+                        warn!("Fail to convert StreamerPipelineStage {c_stage}");
+                        return;
+                    }
+                };
+
+                let c_event = c_event.assume_init();
+                let event = match c_event {
+                    sys::libclient_StreamerPipelineEventType_LIBCLIENT_STREAMER_PIPELINE_EVENT_TYPE_ERROR => {
+                        StreamerPipelineEventType::Error
+                    }
+                    _ => {
+                        warn!("Fail to convert StreamerPipelineEventType {c_event}");
+                        return;
+                    }
+                };
+
+                data.sink.on_event(Event::StreamerPipelineEvent {
+                    type_,
+                    stage,
+                    event,
+                });
             }
             _ => {
                 error!("Invalid libclient_EventType {}", event_type)
