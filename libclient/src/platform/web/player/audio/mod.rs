@@ -1,10 +1,8 @@
 mod decoder;
 mod demuxer_worker;
 pub(super) mod player;
-mod ringbuffer;
+mod regulator;
 mod worklet;
-
-use ringbuffer::RingBuffer;
 
 const CODEC: &str = "opus";
 const FORMAT: web_sys::AudioSampleFormat = web_sys::AudioSampleFormat::F32;

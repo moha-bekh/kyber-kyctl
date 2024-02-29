@@ -1,72 +1,159 @@
-class AudioRenderer extends AudioWorkletProcessor {
+import { JSMutex } from './mutex.js';
+
+const FIELD_MUTEX = 0;
+const FIELD_HEAD = 1;
+const FIELD_TAIL = 2;
+const FIELD_UNDERFLOW = 3;
+const FIELD_RECEIVED = 4;
+const FIELD_PLAYED = 5;
+
+const FIELDS = 6;
+const FIELDS_SIZE = FIELDS * 4;
+
+class AudioPlayerSharedMemory {
+    constructor(sab, sampleSize, capacity) {
+        this.sab = sab;
+
+        this.fields = new Int32Array(sab, 0, FIELDS);
+        this.mutex = new JSMutex(this.fields.subarray(0, 1))
+
+        this.sampleSize = sampleSize;
+        this.allocSize = capacity + 1; // in samples
+
+        // offset is in bytes, but length is in number of items
+        let nbChannels = 2;
+        this.data = new Float32Array(sab, FIELDS_SIZE, this.allocSize * nbChannels);
+    }
+
+    // getXXX() could theoretically be replaced by a getter (get XXX()), but
+    // keep a method to make it explicit that it is not a raw assignment
+
+    getHead() {
+        return Atomics.load(this.fields, FIELD_HEAD);
+    }
+
+    setHead(head) {
+        Atomics.store(this.fields, FIELD_HEAD, head);
+    }
+
+    getTail() {
+        return Atomics.load(this.fields, FIELD_TAIL);
+    }
+
+    setTail(tail) {
+        Atomics.store(this.fields, FIELD_TAIL, tail);
+    }
+
+    addUnderflow(underflow) {
+        return Atomics.add(this.fields, FIELD_UNDERFLOW, underflow);
+    }
+
+    getReceived() {
+        return Atomics.load(this.fields, FIELD_RECEIVED) != 0;
+    }
+
+    setReceived(received) {
+        Atomics.store(this.fields, FIELD_RECEIVED, received ? 1 : 0);
+    }
+
+    getPlayed() {
+        return Atomics.load(this.fields, FIELD_PLAYED) != 0;
+    }
+
+    setPlayed(played) {
+        Atomics.store(this.fields, FIELD_PLAYED, played ? 1 : 0);
+    }
+}
+
+class AudioBuffer {
+    constructor(memory) {
+        this.memory = memory;
+    }
+
+    read(output) {
+        let allocSize = this.memory.allocSize;
+        let nbChannels = output.length;
+        let nbFrames = output[0].length;
+
+        let tail = this.memory.getTail();
+        let head = this.memory.getHead();
+
+        let canRead = (allocSize + head - tail) % allocSize;
+        let samplesCount = Math.min(nbFrames, canRead);
+
+        for (let frameIdx = 0; frameIdx < samplesCount; ++frameIdx) {
+            let idx = ((tail + frameIdx) % allocSize) * nbChannels;
+            for (let channelIdx = 0; channelIdx < nbChannels; ++channelIdx) {
+                output[channelIdx][frameIdx] = this.memory.data[idx + channelIdx];
+            }
+        }
+
+        let newTail = (tail + samplesCount) % allocSize;
+        this.memory.setTail(newTail);
+
+        return samplesCount;
+    }
+
+    canRead() {
+        let allocSize = this.memory.allocSize;
+        let head = this.memory.getHead();
+        let tail = this.memory.getTail();
+        return (allocSize + head - tail) % allocSize;
+    }
+
+    // no need to write from the javascript AudioWorklet
+}
+
+class KyberAudioWorklet extends AudioWorkletProcessor {
     constructor(options) {
         super();
 
-        this.sab = options.processorOptions.sab;
-        this.read_ptr = new Int32Array(this.sab, 0, 1);
-        this.write_ptr = new Int32Array(this.sab, 4, 1);
-
-        this.capacity = (this.sab.byteLength - 8) / 4;
-        this.data = new Float32Array(this.sab, 8, this._capacity);
+        let { sab, sampleRate, sampleSize, capacity, targetBuffering } = options.processorOptions;
+        this.sampleRate = sampleRate;
+        this.targetBuffering = targetBuffering;
+        this.memory = new AudioPlayerSharedMemory(sab, sampleSize, capacity);
+        this.audioBuf = new AudioBuffer(this.memory);
     }
 
-    process(inputs, outputs, parameters) {
+    process(inputs, outputs) {
         const output = outputs[0];
         const nbChannels = output.length;
         const nbFrames = output[0].length;
 
-        let read_ptr = Atomics.load(this.read_ptr, 0);
-        let write_ptr = Atomics.load(this.write_ptr, 0);
-        if (read_ptr == write_ptr) {
-            return true;
-        }
+        this.memory.mutex.lock();
+        try {
 
-        // Get the number of frames to read
-        let max_read_size = (write_ptr + this.capacity - read_ptr) % this.capacity;
-        let frames_to_read = Math.min(max_read_size, nbFrames * nbChannels);
-
-        // Get the ringbuffer parts to read
-        let part_one_size = Math.min(this.capacity - read_ptr, frames_to_read);
-        let part_two_size = frames_to_read - part_one_size;
-
-        // Prepare for reading from the ringbuffer
-        let read_areas = [
-            [read_ptr, part_one_size],
-            [0, part_two_size],
-        ];
-
-        let area_idx = 0;
-        let read_offset, read_remaining;
-
-        [read_offset, read_remaining] = read_areas[area_idx];
-        area_idx++;
-
-        let process = true;
-
-        for (let frameIdx = 0; frameIdx < frames_to_read; frameIdx++) {
-            for (let channel = 0; channel < nbChannels; channel++) {
-                output[channel][frameIdx] = this.data[read_offset];
-
-                read_remaining--;
-                if (read_remaining == 0) {
-                    if (area_idx >= read_areas.length) {
-                        process = false;
-                        break;
-                    } else {
-                        [read_offset, read_remaining] = read_areas[area_idx];
-                        area_idx++;
-                    }
-                } else {
-                    read_offset++;
+            let played = this.memory.getPlayed();
+            if (!played) {
+                let bufferedSamples = this.audioBuf.canRead();
+                // Wait until the buffer is filled up to at least targetBuffering
+                // before playing
+                if (bufferedSamples < this.targetBuffering) {
+                    console.log("[Audio] Inserting initial buffering silence: " + nbFrames + " samples");
+                    // Output buffer is already initialized with zeros
+                    return true;
                 }
             }
-        }
 
-        let new_read_ptr = (read_ptr + frames_to_read) % this.capacity;
-        Atomics.store(this.read_ptr, 0, new_read_ptr);
+            let read = this.audioBuf.read(output);
+
+            if (read < nbFrames) {
+                // The remaining of the output buffer is already initialized with zeros
+                let silence = nbFrames - read;
+                let received = this.memory.getReceived();
+                if (received) {
+                    this.memory.addUnderflow(silence);
+                }
+            }
+
+            this.memory.setPlayed(true);
+
+        } finally {
+            this.memory.mutex.unlock();
+        }
 
         return true;
     }
-};
+}
 
-registerProcessor("AudioRenderer", AudioRenderer);
+registerProcessor("AudioRenderer", KyberAudioWorklet);

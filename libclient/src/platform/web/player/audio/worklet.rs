@@ -1,6 +1,7 @@
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
 
+use crate::platform::player::AudioPlayer;
 use crate::platform::reflect;
 
 pub(crate) struct AudioWorklet {
@@ -9,14 +10,10 @@ pub(crate) struct AudioWorklet {
 }
 
 impl AudioWorklet {
-    pub async fn start(
-        sab: js_sys::SharedArrayBuffer,
-        sample_rate: u32,
-        channel_count: u32,
-    ) -> Result<Self, JsValue> {
+    pub async fn start(sab: js_sys::SharedArrayBuffer) -> Result<Self, JsValue> {
         let ctx = web_sys::AudioContext::new_with_context_options(
             web_sys::AudioContextOptions::new()
-                .sample_rate(sample_rate as f32)
+                .sample_rate(super::SAMPLE_RATE as f32)
                 .latency_hint(&JsValue::from("interactive")),
         )?;
 
@@ -26,12 +23,28 @@ impl AudioWorklet {
         let processor_options = js_sys::Object::new();
         reflect::set(&processor_options, "sab", sab.into())?;
 
+        reflect::set(&processor_options, "sampleRate", super::SAMPLE_RATE.into())?;
+
+        reflect::set(&processor_options, "sampleSize", super::SAMPLE_SIZE.into())?;
+
+        reflect::set(
+            &processor_options,
+            "capacity",
+            AudioPlayer::AUDIO_BUFFER_SAMPLES.into(),
+        )?;
+
+        reflect::set(
+            &processor_options,
+            "targetBuffering",
+            AudioPlayer::AUDIO_TARGET_BUFFERING.into(),
+        )?;
+
         let node = web_sys::AudioWorkletNode::new_with_options(
             &ctx,
             "AudioRenderer",
             web_sys::AudioWorkletNodeOptions::new()
                 .output_channel_count(&JsValue::from(js_sys::Array::of1(&JsValue::from(
-                    channel_count,
+                    super::CHANNELS,
                 ))))
                 .processor_options(Some(&processor_options)),
         )?;

@@ -1,12 +1,12 @@
 use log::warn;
 use std::cell::RefCell;
 
+use crate::platform::player::audio::regulator::shared_memory::SharedMemory;
 use crate::platform::player::FrameSink;
 use crate::{MessageProxy, Result};
 
 use super::demuxer_worker::DemuxerWorker;
 use super::worklet::AudioWorklet;
-use super::RingBuffer;
 use super::{CHANNELS, SAMPLE_RATE, SAMPLE_SIZE};
 
 pub struct AudioPlayer {
@@ -15,15 +15,16 @@ pub struct AudioPlayer {
 }
 
 impl AudioPlayer {
+    pub(crate) const AUDIO_BUFFER_SAMPLES: u32 = 2 * SAMPLE_RATE;
+    pub(crate) const AUDIO_TARGET_BUFFERING: u32 = 50 * 48;
+
     pub async fn new(message_proxy: MessageProxy) -> Result<Self> {
-        // Create a 100 ms buffer
-        const BUFFER_SIZE: u32 = (SAMPLE_RATE / 10) * CHANNELS * SAMPLE_SIZE;
-        let sab = RingBuffer::create_shared_array_buffer(BUFFER_SIZE);
+        let sab = SharedMemory::create_sab(SAMPLE_SIZE * CHANNELS, Self::AUDIO_BUFFER_SAMPLES);
 
         let demuxer = DemuxerWorker::new(message_proxy)?;
         demuxer.start(sab.clone())?;
 
-        let audio_worklet = AudioWorklet::start(sab, SAMPLE_RATE, CHANNELS).await?;
+        let audio_worklet = AudioWorklet::start(sab).await?;
 
         Ok(Self {
             demuxer,

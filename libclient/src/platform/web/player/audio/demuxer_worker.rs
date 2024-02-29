@@ -9,13 +9,14 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::MessageEvent;
 
+use crate::platform::player::audio::regulator::AudioRegulator;
 use crate::platform::player::packet::buffer_to_packet;
 use crate::platform::player::packet::{CodecPacket, Packet};
+use crate::platform::player::AudioPlayer;
 use crate::platform::reflect::{self, get_string};
 use crate::{Message, MessageProxy};
 
 use super::decoder::{AudioDecoder, AudioDecoderCallbacks};
-use super::RingBuffer;
 
 #[wasm_bindgen]
 pub struct AudioDemuxerWorkerCtx {
@@ -102,7 +103,13 @@ impl AudioDemuxerWorkerCtx {
         mut rx: mpsc::Receiver<js_sys::ArrayBuffer>,
         sab: js_sys::SharedArrayBuffer,
     ) -> Result<(), JsValue> {
-        let ringbuffer = RingBuffer::from(sab);
+        let mut regulator = AudioRegulator::new(
+            sab,
+            super::SAMPLE_RATE,
+            super::SAMPLE_SIZE * super::CHANNELS,
+            AudioPlayer::AUDIO_BUFFER_SAMPLES,
+            AudioPlayer::AUDIO_TARGET_BUFFERING,
+        );
 
         let mut audio_decoder: Option<AudioDecoder> = None;
 
@@ -129,7 +136,7 @@ impl AudioDemuxerWorkerCtx {
                     return Ok(());
                 }
 
-                ringbuffer.write(frame)?;
+                regulator.push(frame);
 
                 Ok(())
             }),
