@@ -121,14 +121,6 @@ impl Handler {
         self.name.clone()
     }
 
-    pub(crate) fn get_receiver(&mut self) -> Option<EventReceiver<Event>> {
-        let Some(inner) = self.inner.as_mut() else {
-            return None;
-        };
-
-        inner.receiver.take()
-    }
-
     async fn spawn_process(&self, process_factory: &Arc<ProcessFactory>) -> Result<Inner> {
         debug!("Run AvServer {name}", name = self.name);
 
@@ -156,6 +148,7 @@ impl Handler {
             return Err(Error::DisplayListEmpty);
         };
 
+        inner.start_receiver_task(self.name.clone(), self.statemachine_proxy.clone())?;
         self.inner = Some(inner);
 
         Ok(displays)
