@@ -116,20 +116,17 @@ impl Handler {
         bitrate: u32,
         yuv444: bool,
     ) -> Result<()> {
-        let mut inner = self.spawn_process(process_factory).await?;
-
-        inner
-            .sender
-            .send(Command::RtpStartVideo {
+        self.start_inner(
+            process_factory,
+            Command::RtpStartVideo {
                 display_id,
                 ip,
                 port,
                 bitrate,
                 yuv444,
-            })
-            .await?;
-
-        self.inner = Some(inner);
+            },
+        )
+        .await?;
 
         Ok(())
     }
@@ -140,14 +137,8 @@ impl Handler {
         ip: String,
         port: u16,
     ) -> Result<()> {
-        let mut inner = self.spawn_process(process_factory).await?;
-
-        inner
-            .sender
-            .send(Command::RtpStartAudio { ip, port })
+        self.start_inner(process_factory, Command::RtpStartAudio { ip, port })
             .await?;
-
-        self.inner = Some(inner);
 
         Ok(())
     }
@@ -161,20 +152,17 @@ impl Handler {
         codec: VideoCodec,
         yuv444: bool,
     ) -> Result<()> {
-        let mut inner = self.spawn_process(process_factory).await?;
-
-        inner
-            .sender
-            .send(Command::KymuxStartVideo {
+        self.start_inner(
+            process_factory,
+            Command::KymuxStartVideo {
                 display_id,
                 uri,
                 bitrate,
                 codec,
                 yuv444,
-            })
-            .await?;
-
-        self.inner = Some(inner);
+            },
+        )
+        .await?;
 
         Ok(())
     }
@@ -184,9 +172,20 @@ impl Handler {
         process_factory: &Arc<ProcessFactory>,
         uri: String,
     ) -> Result<()> {
-        let mut inner = self.spawn_process(process_factory).await?;
+        self.start_inner(process_factory, Command::KymuxStartAudio { uri })
+            .await?;
 
-        inner.sender.send(Command::KymuxStartAudio { uri }).await?;
+        Ok(())
+    }
+
+    async fn start_inner(
+        &mut self,
+        process_factory: &Arc<ProcessFactory>,
+        start_cmd: Command,
+    ) -> Result<()> {
+        let mut inner = self.spawn_process(process_factory).await?;
+        inner.sender.send(start_cmd).await?;
+
 
         self.inner = Some(inner);
 
