@@ -258,6 +258,7 @@ impl Handler {
         let mut inner = self.spawn_process(process_factory).await?;
         inner.sender.send(start_cmd).await?;
 
+        inner.start_receiver_task(self.name.clone(), self.statemachine_proxy.clone())?;
         self.inner = Some(inner);
 
         Ok(())
