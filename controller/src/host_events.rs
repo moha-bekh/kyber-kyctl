@@ -88,6 +88,7 @@ pub(crate) struct Display {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum StreamerPipelineType {
+    EnumerateDisplays,
     Audio,
     Video,
 }
@@ -103,6 +104,7 @@ impl From<avservice_types::PipelineType> for StreamerPipelineType {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum StreamerPipelineStage {
+    Process,
     Initialization,
     Acquisition,
     Encoder,
@@ -120,6 +122,7 @@ impl From<avservice_types::PipelineStage> for StreamerPipelineStage {
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum StreamerPipelineEventType {
+    Stopped,
     Error,
 }
 
