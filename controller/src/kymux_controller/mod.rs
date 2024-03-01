@@ -43,10 +43,6 @@ impl KymuxBackend {
         let ret = self.server.stop().await;
         if let Err(err) = ret {
             warn!("Kymux server stop raised an error: {err:?}");
-        } else {
-            // HACK: Kymux doesn't release its UDP Socket on stop. It is done after
-            // some time in background tasks.
-            tokio::time::sleep(Duration::from_millis(100)).await;
         }
 
         Ok(())
