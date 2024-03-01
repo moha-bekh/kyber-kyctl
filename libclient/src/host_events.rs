@@ -26,12 +26,14 @@ pub(crate) trait WsClientBuilder {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub enum StreamerPipelineType {
+    EnumerateDisplays,
     Audio,
     Video,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub enum StreamerPipelineStage {
+    Process,
     Initialization,
     Acquisition,
     Encoder,
@@ -39,6 +41,7 @@ pub enum StreamerPipelineStage {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub enum StreamerPipelineEventType {
+    Stopped,
     Error,
 }
 

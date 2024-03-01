@@ -516,12 +516,14 @@ pub enum libclient_StopReason {
 
 #[repr(C)]
 pub enum libclient_StreamerPipelineType {
+    EnumerateDisplays,
     Audio,
     Video,
 }
 
 #[repr(C)]
 pub enum libclient_StreamerPipelineStage {
+    Process,
     Initialization,
     Acquisition,
     Encoder,
@@ -529,6 +531,7 @@ pub enum libclient_StreamerPipelineStage {
 
 #[repr(C)]
 pub enum libclient_StreamerPipelineEventType {
+    Stopped,
     Error,
 }
 
@@ -631,11 +634,15 @@ pub unsafe extern "C" fn libclient_event_unpack_streamer_pipeline_event(
     }
 
     *out_type = match type_ {
+        crate::StreamerPipelineType::EnumerateDisplays => {
+            libclient_StreamerPipelineType::EnumerateDisplays
+        }
         crate::StreamerPipelineType::Audio => libclient_StreamerPipelineType::Audio,
         crate::StreamerPipelineType::Video => libclient_StreamerPipelineType::Video,
     };
 
     *out_stage = match stage {
+        crate::StreamerPipelineStage::Process => libclient_StreamerPipelineStage::Process,
         crate::StreamerPipelineStage::Initialization => {
             libclient_StreamerPipelineStage::Initialization
         }
@@ -644,6 +651,7 @@ pub unsafe extern "C" fn libclient_event_unpack_streamer_pipeline_event(
     };
 
     *out_event = match event {
+        crate::StreamerPipelineEventType::Stopped => libclient_StreamerPipelineEventType::Stopped,
         crate::StreamerPipelineEventType::Error => libclient_StreamerPipelineEventType::Error,
     };
 
