@@ -137,6 +137,34 @@ impl StateMachine {
                 }
                 StateMachineEvent::AvServiceStopped { type_ } => {
                     info!("AvServer {type_:?} stopped");
+
+                    let ctrl = ctrl.lock().await;
+
+                    if let Some(client_session) = ctrl.client_session.as_ref() {
+                        let type_ = match type_ {
+                            avservice::HandlerType::EnumerateDisplays => {
+                                host_events::StreamerPipelineType::EnumerateDisplays
+                            }
+                            avservice::HandlerType::VideoSdp => return,
+                            avservice::HandlerType::Video => {
+                                host_events::StreamerPipelineType::Video
+                            }
+                            avservice::HandlerType::Audio => {
+                                host_events::StreamerPipelineType::Audio
+                            }
+                        };
+
+                        let event = host_events::StreamerPipelineEvent {
+                            type_,
+                            stage: host_events::StreamerPipelineStage::Process,
+                            event: host_events::StreamerPipelineEventType::Stopped,
+                        };
+
+                        client_session
+                            .host_event_sender
+                            .send(HostEvent::StreamerPipelineEvent(event))
+                            .await;
+                    };
                 }
                 StateMachineEvent::HostEvents { notification } => match notification {
                     host_events::Notification::ConnectionLost => {
