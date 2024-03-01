@@ -108,6 +108,7 @@ pub enum StopReason {
     ControlPlaneClosed,
     ControlPlaneIoError,
     ControlPlaneTimeout,
+    DataPlaneClosed,
     DecodeError,
 }
 
@@ -218,6 +219,9 @@ impl EventSinkData {
                     }
                     sys::libclient_StopReason_LIBCLIENT_STOP_REASON_CONTROL_PLANE_TIMEOUT => {
                         StopReason::ControlPlaneTimeout
+                    }
+                    sys::libclient_StopReason_LIBCLIENT_STOP_REASON_DATA_PLANE_CLOSED => {
+                        StopReason::DataPlaneClosed
                     }
                     sys::libclient_StopReason_LIBCLIENT_STOP_REASON_DECODE_ERROR => {
                         StopReason::DecodeError
