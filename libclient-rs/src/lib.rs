@@ -113,12 +113,14 @@ pub enum StopReason {
 
 #[derive(Clone, Debug)]
 pub enum StreamerPipelineType {
+    EnumerateDisplays,
     Audio,
     Video,
 }
 
 #[derive(Clone, Debug)]
 pub enum StreamerPipelineStage {
+    Process,
     Initialization,
     Acquisition,
     Encoder,
@@ -126,6 +128,7 @@ pub enum StreamerPipelineStage {
 
 #[derive(Clone, Debug)]
 pub enum StreamerPipelineEventType {
+    Stopped,
     Error,
 }
 
@@ -275,6 +278,9 @@ impl EventSinkData {
 
                 let c_type = c_type.assume_init();
                 let type_ = match c_type {
+                    sys::libclient_StreamerPipelineType_LIBCLIENT_STREAMER_PIPELINE_TYPE_ENUMERATE_DISPLAYS => {
+                        StreamerPipelineType::EnumerateDisplays
+                    }
                     sys::libclient_StreamerPipelineType_LIBCLIENT_STREAMER_PIPELINE_TYPE_AUDIO => {
                         StreamerPipelineType::Audio
                     }
@@ -289,6 +295,9 @@ impl EventSinkData {
 
                 let c_stage = c_stage.assume_init();
                 let stage = match c_stage {
+                    sys::libclient_StreamerPipelineStage_LIBCLIENT_STREAMER_PIPELINE_STAGE_PROCESS => {
+                        StreamerPipelineStage::Process
+                    }
                     sys::libclient_StreamerPipelineStage_LIBCLIENT_STREAMER_PIPELINE_STAGE_INITIALIZATION => {
                         StreamerPipelineStage::Initialization
                     }
@@ -306,6 +315,9 @@ impl EventSinkData {
 
                 let c_event = c_event.assume_init();
                 let event = match c_event {
+                    sys::libclient_StreamerPipelineEventType_LIBCLIENT_STREAMER_PIPELINE_EVENT_TYPE_STOPPED => {
+                        StreamerPipelineEventType::Stopped
+                    }
                     sys::libclient_StreamerPipelineEventType_LIBCLIENT_STREAMER_PIPELINE_EVENT_TYPE_ERROR => {
                         StreamerPipelineEventType::Error
                     }
