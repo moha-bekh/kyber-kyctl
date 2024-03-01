@@ -14,7 +14,10 @@ impl Watchdog {
         process_factory: &Arc<ProcessFactory>,
         statemachine_proxy: StateMachineProxy,
     ) -> Result<(Self, Vec<avservice_types::Display>)> {
-        let mut avservice = avservice::Handler::new("DisplayEnum", statemachine_proxy.clone());
+        let mut avservice = avservice::Handler::new(
+            avservice::HandlerType::EnumerateDisplays,
+            statemachine_proxy.clone(),
+        );
 
         let displays = avservice.enumerate_displays(process_factory).await?;
 

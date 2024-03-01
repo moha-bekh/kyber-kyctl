@@ -62,7 +62,8 @@ async fn start_handler(
     let avservice_video = if let Some(video_request) = request.video.as_ref() {
         let uri = format!("kymux://127.0.0.1:{WS_LOCAL_CLIENTS_PORT}/{VIDEO_STREAM_IDX:X}");
 
-        let mut avservice_video = avservice::Handler::new("Video", ctrl.state_machine_proxy()?);
+        let mut avservice_video =
+            avservice::Handler::new(avservice::HandlerType::Video, ctrl.state_machine_proxy()?);
         avservice_video
             .kymux_start_video(
                 &ctrl.process_factory,
@@ -85,7 +86,8 @@ async fn start_handler(
     let avservice_audio = if request.audio {
         let uri = format!("kymux://127.0.0.1:{WS_LOCAL_CLIENTS_PORT}/{AUDIO_STREAM_IDX:X}");
 
-        let mut avservice_audio = avservice::Handler::new("Audio", ctrl.state_machine_proxy()?);
+        let mut avservice_audio =
+            avservice::Handler::new(avservice::HandlerType::Audio, ctrl.state_machine_proxy()?);
         avservice_audio
             .kymux_start_audio(&ctrl.process_factory, uri)
             .await?;

@@ -247,7 +247,7 @@ async fn start_video(
     codec: avservice_types::VideoCodec,
     yuv444: bool,
 ) -> Result<avservice::Handler> {
-    let mut handler = avservice::Handler::new("Video", statemachine_proxy);
+    let mut handler = avservice::Handler::new(avservice::HandlerType::Video, statemachine_proxy);
 
     handler
         .kymux_start_video(process_factory, display_id, uri, bitrate, codec, yuv444)
@@ -261,7 +261,7 @@ async fn start_audio(
     statemachine_proxy: StateMachineProxy,
     uri: String,
 ) -> Result<avservice::Handler> {
-    let mut handler = avservice::Handler::new("Audio", statemachine_proxy);
+    let mut handler = avservice::Handler::new(avservice::HandlerType::Audio, statemachine_proxy);
 
     handler.kymux_start_audio(process_factory, uri).await?;
 

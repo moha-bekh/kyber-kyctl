@@ -15,7 +15,7 @@ pub async fn generate_video_sdp(
 ) -> Result<String> {
     let state_machine_proxy = ctrl.state_machine_proxy()?;
 
-    let avservice = avservice::Handler::new("VideoSDP", state_machine_proxy);
+    let avservice = avservice::Handler::new(avservice::HandlerType::VideoSdp, state_machine_proxy);
     avservice
         .rtp_generate_video_sdp(&ctrl.process_factory, request.display_id, request.yuv444)
         .await
@@ -29,7 +29,8 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
             request.ip, video_request.port
         );
 
-        let mut avservice = avservice::Handler::new("Video", ctrl.state_machine_proxy()?);
+        let mut avservice =
+            avservice::Handler::new(avservice::HandlerType::Video, ctrl.state_machine_proxy()?);
         avservice
             .rtp_start_video(
                 &ctrl.process_factory,
@@ -47,7 +48,8 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
     if let Some(config) = request.audio {
         info!("Start audio. ip: {} - port: {}", request.ip, config.port);
 
-        let mut avservice_audio = avservice::Handler::new("Audio", ctrl.state_machine_proxy()?);
+        let mut avservice_audio =
+            avservice::Handler::new(avservice::HandlerType::Audio, ctrl.state_machine_proxy()?);
         avservice_audio
             .rtp_start_audio(&ctrl.process_factory, request.ip, config.port)
             .await?;

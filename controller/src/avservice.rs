@@ -15,14 +15,14 @@ use crate::utils;
 use crate::{Error, Result, StateMachineEvent, StateMachineProxy};
 
 struct ReceiverTask {
-    name: String,
+    type_: HandlerType,
     handle: task::JoinHandle<()>,
     stop_tx: oneshot::Sender<()>,
 }
 
 impl ReceiverTask {
     fn new(
-        name: String,
+        type_: HandlerType,
         receiver: EventReceiver<Event>,
         statemachine_proxy: StateMachineProxy,
     ) -> Self {
@@ -31,7 +31,7 @@ impl ReceiverTask {
         let handle = task::spawn(Self::task_entry(receiver, statemachine_proxy, stop_rx));
 
         Self {
-            name,
+            type_,
             handle,
             stop_tx,
         }
@@ -40,11 +40,11 @@ impl ReceiverTask {
     async fn stop(self) -> Result<()> {
         let ret = self.stop_tx.send(());
         if ret.is_err() {
-            warn!("{} receiver task stop send request failed", self.name);
+            warn!("{:?} receiver task stop send request failed", self.type_);
         }
 
         self.handle.await.map_err(|err| {
-            warn!("{} receiver task panicked: {err:?}", self.name);
+            warn!("{:?} receiver task panicked: {err:?}", self.type_);
             Error::ThreadPanicked
         })?;
 
@@ -86,27 +86,35 @@ struct Inner {
 impl Inner {
     fn start_receiver_task(
         &mut self,
-        name: String,
+        type_: HandlerType,
         statemachine_proxy: StateMachineProxy,
     ) -> Result<()> {
         let receiver = self.receiver.take().ok_or(Error::AvServerNoReceiver)?;
-        self.receiver_task = Some(ReceiverTask::new(name, receiver, statemachine_proxy));
+        self.receiver_task = Some(ReceiverTask::new(type_, receiver, statemachine_proxy));
 
         Ok(())
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum HandlerType {
+    EnumerateDisplays,
+    VideoSdp,
+    Video,
+    Audio,
+}
+
 pub(crate) struct Handler {
-    name: String,
+    type_: HandlerType,
     avserver_path: PathBuf,
     statemachine_proxy: StateMachineProxy,
     inner: Option<Inner>,
 }
 
 impl Handler {
-    pub(crate) fn new(name: &str, statemachine_proxy: StateMachineProxy) -> Self {
+    pub(crate) fn new(type_: HandlerType, statemachine_proxy: StateMachineProxy) -> Self {
         Self {
-            name: name.into(),
+            type_,
             avserver_path: utils::get_executable_path("avserver"),
             inner: None,
             statemachine_proxy,
@@ -117,12 +125,12 @@ impl Handler {
         self.inner.is_some()
     }
 
-    pub(crate) fn name(&self) -> String {
-        self.name.clone()
+    pub(crate) fn type_(&self) -> HandlerType {
+        self.type_
     }
 
     async fn spawn_process(&self, process_factory: &Arc<ProcessFactory>) -> Result<Inner> {
-        debug!("Run AvServer {name}", name = self.name);
+        debug!("Run AvServer {type_:?}", type_ = self.type_);
 
         let (child, mut commander): (_, Commander<Command, Event>) =
             process_factory.spawn(&self.avserver_path, None).await?;
@@ -148,7 +156,7 @@ impl Handler {
             return Err(Error::DisplayListEmpty);
         };
 
-        inner.start_receiver_task(self.name.clone(), self.statemachine_proxy.clone())?;
+        inner.start_receiver_task(self.type_, self.statemachine_proxy.clone())?;
         self.inner = Some(inner);
 
         Ok(displays)
@@ -169,7 +177,7 @@ impl Handler {
             .await?;
 
         // Stop avserver
-        Self::stop_inner(&self.name, inner).await?;
+        Self::stop_inner(self.type_, inner).await?;
 
         // Unpack results
         let Some(Event::RtpSdpGenerated { sdp }) = evt else {
@@ -258,7 +266,7 @@ impl Handler {
         let mut inner = self.spawn_process(process_factory).await?;
         inner.sender.send(start_cmd).await?;
 
-        inner.start_receiver_task(self.name.clone(), self.statemachine_proxy.clone())?;
+        inner.start_receiver_task(self.type_, self.statemachine_proxy.clone())?;
         self.inner = Some(inner);
 
         Ok(())
@@ -276,14 +284,14 @@ impl Handler {
     ///
     /// Both Stop request and Process join have a timeout to make sure
     /// we aren't stuck forever. If one of them timeout, kill the process.
-    async fn stop_inner(name: &str, mut inner: Inner) -> Result<()> {
+    async fn stop_inner(type_: HandlerType, mut inner: Inner) -> Result<()> {
         if let Some(receiver_task) = inner.receiver_task.take() {
             let _ = receiver_task.stop().await;
         }
 
         const STOP_TIMEOUT: Duration = Duration::from_secs(3);
 
-        info!("Send stop request to {name}");
+        info!("Send stop request to {type_:?}");
         let wait_process = match inner
             .sender
             .send_with_timeout(Command::Stop, STOP_TIMEOUT)
@@ -301,7 +309,7 @@ impl Handler {
             match tokio::time::timeout(STOP_TIMEOUT, inner.child.stop()).await {
                 Ok(_) => false,
                 Err(_) => {
-                    warn!("{name} didn't stop after {STOP_TIMEOUT:?}",);
+                    warn!("{type_:?} didn't stop after {STOP_TIMEOUT:?}",);
                     true
                 }
             }
@@ -315,7 +323,7 @@ impl Handler {
         }
 
         inner.commander.stop().await?;
-        debug!("Commander {name} stopped");
+        debug!("Commander {type_:?} stopped");
 
         Ok(())
     }
@@ -325,9 +333,9 @@ impl Handler {
             return Err(Error::StreamerStopped);
         };
 
-        Self::stop_inner(&self.name, inner).await?;
+        Self::stop_inner(self.type_, inner).await?;
 
-        info!("AvServer {name} exited", name = self.name);
+        info!("AvServer {type_:?} exited", type_ = self.type_);
 
         Ok(())
     }

@@ -77,7 +77,7 @@ impl StreamingServices {
             return Ok(());
         }
 
-        info!("Stop running {} AVServer", handler.name());
+        info!("Stop running {:?} AVServer", handler.type_());
         handler.stop().await?;
 
         Ok(())
