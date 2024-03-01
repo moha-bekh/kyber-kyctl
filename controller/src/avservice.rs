@@ -28,7 +28,12 @@ impl ReceiverTask {
     ) -> Self {
         let (stop_tx, stop_rx) = oneshot::channel();
 
-        let handle = task::spawn(Self::task_entry(receiver, statemachine_proxy, stop_rx));
+        let handle = task::spawn(Self::task_entry(
+            type_,
+            receiver,
+            statemachine_proxy,
+            stop_rx,
+        ));
 
         Self {
             type_,
@@ -52,6 +57,7 @@ impl ReceiverTask {
     }
 
     async fn task_entry(
+        type_: HandlerType,
         receiver: EventReceiver<avservice_types::Event>,
         statemachine_proxy: StateMachineProxy,
         stop_rx: oneshot::Receiver<()>,
@@ -59,11 +65,12 @@ impl ReceiverTask {
         tokio::select! {
             _ = stop_rx => {
             }
-            _ = Self::process_receiver(receiver, statemachine_proxy) => {}
+            _ = Self::process_receiver(type_, receiver, statemachine_proxy) => {}
         }
     }
 
     async fn process_receiver(
+        type_: HandlerType,
         mut receiver: EventReceiver<avservice_types::Event>,
         statemachine_proxy: StateMachineProxy,
     ) {
@@ -72,6 +79,10 @@ impl ReceiverTask {
                 .send(StateMachineEvent::AvService { event })
                 .await;
         }
+
+        statemachine_proxy
+            .send(StateMachineEvent::AvServiceStopped { type_ })
+            .await;
     }
 }
 

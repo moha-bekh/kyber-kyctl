@@ -5,14 +5,17 @@ use tokio::{
     task,
 };
 
-use crate::host_events;
 use crate::utils::TypeConvert;
+use crate::{avservice, host_events};
 use crate::{Controller, Error, HostEvent, Result};
 
 #[derive(Debug)]
 pub(crate) enum StateMachineEvent {
     AvService {
         event: avservice_types::Event,
+    },
+    AvServiceStopped {
+        type_: avservice::HandlerType,
     },
     HostEvents {
         notification: host_events::Notification,
@@ -131,6 +134,9 @@ impl StateMachine {
                             .send(HostEvent::StreamerPipelineEvent(event.into()))
                             .await;
                     };
+                }
+                StateMachineEvent::AvServiceStopped { type_ } => {
+                    info!("AvServer {type_:?} stopped");
                 }
                 StateMachineEvent::HostEvents { notification } => match notification {
                     host_events::Notification::ConnectionLost => {
