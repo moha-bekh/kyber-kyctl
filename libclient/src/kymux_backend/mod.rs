@@ -12,7 +12,8 @@ use crate::error::{Error, Result};
 use crate::http::HttpClient;
 use crate::platform::get_cursor_format;
 use crate::{
-    BackendDriver, ConnectionParams, Display, MessageProxy, PlayerConfig, StreamingSessionConfig,
+    BackendDriver, ConnectionParams, DataPlaneCloseReason, Display, Message, MessageProxy,
+    PlayerConfig, StreamingSessionConfig,
 };
 
 pub(crate) mod host_service;
@@ -64,10 +65,22 @@ async fn start_kymux(
 
 async fn kymux_closed_task(
     connection: Arc<kymux::Connection>,
-    _msg_proxy: MessageProxy,
+    msg_proxy: MessageProxy,
 ) -> Result<()> {
     let ret = connection.closed().await;
     info!("Kymux connection closed: {ret:?}");
+
+    let reason = match ret {
+        Ok(()) => DataPlaneCloseReason::Closed,
+        Err(_) => DataPlaneCloseReason::Error,
+    };
+
+    let ret = msg_proxy
+        .send_async(Message::DataPlaneClosed { reason })
+        .await;
+    if let Err(err) = ret {
+        warn!("Fail to send DataPlaneClosed: {err:?}");
+    }
 
     Ok(())
 }

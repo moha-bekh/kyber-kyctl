@@ -26,6 +26,12 @@ pub enum ControlPlaneCloseReason {
 }
 
 #[derive(Clone, Debug)]
+pub enum DataPlaneCloseReason {
+    Closed,
+    Error,
+}
+
+#[derive(Clone, Debug)]
 #[allow(dead_code)]
 pub(crate) enum Message {
     Connect,
@@ -33,6 +39,10 @@ pub(crate) enum Message {
 
     ControlPlaneClosed {
         reason: ControlPlaneCloseReason,
+    },
+
+    DataPlaneClosed {
+        reason: DataPlaneCloseReason,
     },
 
     StartStreamingSession {
@@ -69,6 +79,7 @@ pub enum StopReason {
     ControlPlaneClosed,
     ControlPlaneIoError,
     ControlPlaneTimeout,
+    DataPlaneClosed,
     DecodeError,
 }
 

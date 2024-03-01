@@ -511,6 +511,7 @@ pub enum libclient_StopReason {
     ControlPlaneClosed,
     ControlPlaneIoError,
     ControlPlaneTimeout,
+    DataPlaneClosed,
     DecodeError,
 }
 
@@ -582,6 +583,7 @@ pub unsafe extern "C" fn libclient_event_unpack_stopped(
         crate::StopReason::ControlPlaneClosed => libclient_StopReason::ControlPlaneClosed,
         crate::StopReason::ControlPlaneIoError => libclient_StopReason::ControlPlaneIoError,
         crate::StopReason::ControlPlaneTimeout => libclient_StopReason::ControlPlaneTimeout,
+        crate::StopReason::DataPlaneClosed => libclient_StopReason::DataPlaneClosed,
         crate::StopReason::DecodeError => libclient_StopReason::DecodeError,
     };
 

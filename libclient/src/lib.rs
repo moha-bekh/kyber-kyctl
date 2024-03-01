@@ -28,7 +28,7 @@ use tokio::sync::mpsc::{self, error::TrySendError, Sender};
 
 pub use crate::error::{Error, Result};
 use enums::Message;
-pub use enums::{ControlPlaneCloseReason, Display, Event, StopReason};
+pub use enums::{ControlPlaneCloseReason, DataPlaneCloseReason, Display, Event, StopReason};
 use event_manager::EventManager;
 pub use event_manager::EventSink;
 use host_events::HostEventReceiver;
@@ -325,6 +325,15 @@ impl Handler {
                 self.event_manager.send_event(Event::Stopped { reason });
 
                 ret
+            }
+            Message::DataPlaneClosed { reason } => {
+                warn!("DataPlaneClosed. Reason: {reason:?}");
+
+                self.event_manager.send_event(Event::Stopped {
+                    reason: StopReason::DataPlaneClosed,
+                });
+
+                Ok(())
             }
             Message::StartStreamingSession {
                 streaming_config,
