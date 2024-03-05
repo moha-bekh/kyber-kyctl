@@ -79,7 +79,6 @@ pub enum StopReason {
     ControlPlaneClosed,
     ControlPlaneIoError,
     ControlPlaneTimeout,
-    DataPlaneClosed,
     DecodeError,
 }
 
