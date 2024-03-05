@@ -139,6 +139,7 @@ pub enum Event {
         displays: Vec<Display>,
     },
     ControlPlaneConnectFailed,
+    DataPlaneClosed,
     Stopped {
         reason: StopReason,
     },
@@ -195,6 +196,9 @@ impl EventSinkData {
             }
             sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_CONTROL_PLANE_CONNECT_FAILED => {
                 data.sink.on_event(Event::ControlPlaneConnectFailed);
+            }
+            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_DATA_PLANE_CLOSED => {
+                data.sink.on_event(Event::DataPlaneClosed);
             }
             sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_STOPPED => {
                 let mut c_reason = mem::MaybeUninit::uninit();

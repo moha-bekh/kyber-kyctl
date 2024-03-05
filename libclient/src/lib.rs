@@ -328,10 +328,7 @@ impl Handler {
             }
             Message::DataPlaneClosed { reason } => {
                 warn!("DataPlaneClosed. Reason: {reason:?}");
-
-                self.event_manager.send_event(Event::Stopped {
-                    reason: StopReason::DataPlaneClosed,
-                });
+                self.event_manager.send_event(Event::DataPlaneClosed);
 
                 Ok(())
             }

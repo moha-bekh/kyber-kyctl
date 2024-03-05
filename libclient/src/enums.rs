@@ -89,6 +89,7 @@ pub enum Event {
         displays: Vec<Display>,
     },
     ControlPlaneConnectFailed,
+    DataPlaneClosed,
     Stopped {
         reason: StopReason,
     },
