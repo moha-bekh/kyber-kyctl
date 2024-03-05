@@ -336,10 +336,23 @@ impl Handler {
                 streaming_config,
                 player_config,
             } => {
-                self.start_streaming_session(streaming_config, player_config)
-                    .await?;
+                let ret = self
+                    .start_streaming_session(streaming_config, player_config)
+                    .await;
+                let (event, stop) = match ret {
+                    Ok(()) => (Event::StreamingStarted, false),
+                    Err(Error::DataPlaneConnectFailed) => (Event::DataPlaneConnectFailed, true),
+                    Err(_) => (Event::StreamingStartFailed, true),
+                };
 
-                self.event_manager.send_event(Event::StreamingStarted);
+                if stop {
+                    let ret = self.stop().await;
+                    if let Err(err) = ret {
+                        warn!("Fail to stop client: {err:?}");
+                    }
+                }
+
+                self.event_manager.send_event(event);
 
                 Ok(())
             }

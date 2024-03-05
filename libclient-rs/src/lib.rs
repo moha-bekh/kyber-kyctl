@@ -138,6 +138,7 @@ pub enum Event {
         displays: Vec<Display>,
     },
     ControlPlaneConnectFailed,
+    DataPlaneConnectFailed,
     DataPlaneClosed,
     Stopped {
         reason: StopReason,
@@ -146,6 +147,7 @@ pub enum Event {
         displays: Vec<Display>,
     },
     StreamingStarted,
+    StreamingStartFailed,
     StreamingStopped,
     StreamerPipelineEvent {
         type_: StreamerPipelineType,
@@ -195,6 +197,9 @@ impl EventSinkData {
             }
             sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_CONTROL_PLANE_CONNECT_FAILED => {
                 data.sink.on_event(Event::ControlPlaneConnectFailed);
+            }
+            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_DATA_PLANE_CONNECT_FAILED => {
+                data.sink.on_event(Event::DataPlaneConnectFailed);
             }
             sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_DATA_PLANE_CLOSED => {
                 data.sink.on_event(Event::DataPlaneClosed);
@@ -258,6 +263,9 @@ impl EventSinkData {
             }
             sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_STREAMING_STARTED => {
                 data.sink.on_event(Event::StreamingStarted);
+            }
+            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_STREAMING_START_FAILED => {
+                data.sink.on_event(Event::StreamingStartFailed);
             }
             sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_STREAMING_STOPPED => {
                 data.sink.on_event(Event::StreamingStopped);

@@ -88,6 +88,7 @@ pub enum Event {
         displays: Vec<Display>,
     },
     ControlPlaneConnectFailed,
+    DataPlaneConnectFailed,
     DataPlaneClosed,
     Stopped {
         reason: StopReason,
@@ -96,6 +97,7 @@ pub enum Event {
         displays: Vec<Display>,
     },
     StreamingStarted,
+    StreamingStartFailed,
     StreamingStopped,
     #[cfg(feature = "web")]
     CanvasResized {

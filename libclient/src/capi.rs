@@ -498,10 +498,12 @@ pub type Event = super::Event;
 pub enum libclient_EventType {
     ControlPlaneConnected,
     ControlPlaneConnectFailed,
+    DataPlaneConnectFailed,
     DataPlaneClosed,
     Stopped,
     DisplayListUpdated,
     StreamingStarted,
+    StreamingStartFailed,
     StreamingStopped,
     StreamerPipelineEvent,
 }
@@ -541,10 +543,12 @@ pub unsafe extern "C" fn libclient_event_get_type(event: *const Event) -> libcli
     match *event {
         Event::ControlPlaneConnected { .. } => libclient_EventType::ControlPlaneConnected,
         Event::ControlPlaneConnectFailed => libclient_EventType::ControlPlaneConnectFailed,
+        Event::DataPlaneConnectFailed => libclient_EventType::DataPlaneConnectFailed,
         Event::DataPlaneClosed => libclient_EventType::DataPlaneClosed,
         Event::Stopped { .. } => libclient_EventType::Stopped,
         Event::DisplayListUpdated { .. } => libclient_EventType::DisplayListUpdated,
         Event::StreamingStarted => libclient_EventType::StreamingStarted,
+        Event::StreamingStartFailed => libclient_EventType::StreamingStartFailed,
         Event::StreamingStopped => libclient_EventType::StreamingStopped,
         Event::StreamerPipelineEvent { .. } => libclient_EventType::StreamerPipelineEvent,
     }
