@@ -70,6 +70,7 @@ pub enum Error {
         status: u16,
     },
     WsConnectFailed,
+    DataPlaneConnectFailed,
 }
 
 impl From<std::io::Error> for Error {

@@ -41,11 +41,11 @@ async fn start_kymux(
     let start_response = host_service::start_kymux(client, backend, conn_params.port).await?;
 
     // Start Kymux connection
-    let connection = match backend {
+    let ret = match backend {
         #[cfg(feature = "desktop")]
         KymuxTransportBackend::Quic => {
             info!("Connect using Quic backend");
-            platform::connect_quinn(conn_params, start_response.port).await?
+            platform::connect_quinn(conn_params, start_response.port).await
         }
         #[cfg(feature = "web")]
         KymuxTransportBackend::Webtransport => {
@@ -56,11 +56,14 @@ async fn start_kymux(
                 return Err(Error::Rejected);
             };
 
-            platform::connect_webtransport(client.base_url().into(), certificate_hash).await?
+            platform::connect_webtransport(client.base_url().into(), certificate_hash).await
         }
     };
 
-    Ok(connection)
+    ret.map_err(|err| {
+        warn!("Failed to connect to DataPlane: {err:?}");
+        Error::DataPlaneConnectFailed
+    })
 }
 
 async fn kymux_closed_task(
