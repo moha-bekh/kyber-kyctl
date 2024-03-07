@@ -30,8 +30,13 @@ impl VideoDemuxerWorkerCtx {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Result<VideoDemuxerWorkerCtx, JsValue> {
         // - 2 frames are required to configure the VideoDecoder.
-        // - 6 frames is ~100 ms at 60 fps.
-        let (tx, rx) = mpsc::channel(6);
+        // - 60 frames is 1s at 60 fps
+        //
+        // On some computers, startup can be slow. This may lead to frames
+        // dropped. Some decoders (especially on macOS) may want to have all
+        // frames. We currently configure the video queue size to a large size
+        // to handle the startup burst.
+        let (tx, rx) = mpsc::channel(60);
         let renderer_worker = Rc::new(RendererWorker::new()?);
 
         Ok(Self {
