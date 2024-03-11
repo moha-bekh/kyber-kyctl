@@ -22,6 +22,7 @@ pub(crate) async fn supported_video_codecs(force_software: bool) -> Vec<VideoDec
         (VideoCodec::H264, false, "avc1.64002a"),
         (VideoCodec::H264, true, "avc1.f4002a"),
         (VideoCodec::HEVC, false, "hev1.1.2.H123.90"),
+        (VideoCodec::HEVC, true, "hev1.4.10.L123.9e.8"),
     ];
 
     let accelerations = if force_software {
