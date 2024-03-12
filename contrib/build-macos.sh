@@ -139,66 +139,6 @@ download_tarball() {
     return 1
 }
 
-build_ffmpeg() {
-    local uri="https://git.ffmpeg.org/ffmpeg.git"
-    local sha1="ec47a3b95f88fc3f820b900038ac439e4eb3fede"
-    local work_dir="$BUILD_DIR/ffmpeg"
-
-    # Get sources
-    if ! [ -e $work_dir ]; then
-        mkdir $work_dir
-    fi
-    spushd $work_dir
-    if ! [ -e ffmpeg ]; then
-        git clone $uri
-    fi
-    spushd ffmpeg
-    git checkout $sha1
-
-    # Build
-    if ! [ -e build ]; then
-        mkdir build
-    fi
-    spushd build
-
-    COMMON_FLAGS="--prefix=$OUT_DIR --disable-shared --disable-sdl2 --disable-libxcb --disable-lzma --disable-xlib"
-
-    if [ $HOST_ARCH != $BUILD_ARCH ]; then
-        case $HOST_ARCH in
-            x86_64)
-                BUILD_FLAGS="-target x86_64-apple-darwin -arch x86_64"
-            ;;
-            arm64)
-                BUILD_FLAGS="-target arm-apple-darwin -arch arm64"
-            ;;
-            *)
-                echo "Unexpected arch $HOST_ARCH"
-                exit 1
-            ;;
-        esac
-
-        ../configure \
-            --enable-cross-compile --target-os=darwin --arch=$HOST_ARCH \
-            --extra-cflags="$BUILD_FLAGS" --extra-ldflags="$BUILD_FLAGS" \
-            $COMMON_FLAGS
-
-    else
-        ../configure \
-            $COMMON_FLAGS
-    fi
-
-    make -j $NJOBS > $out
-    make install > $out
-
-    if [ $HOST_ARCH != $BUILD_ARCH ]; then
-        unset CONFIGURE_EXTRA_FLAGS
-    fi
-
-    spopd
-    spopd
-    spopd
-}
-
 build_libvlc() {
     VLC_SRCDIR="$LIBCLIENT_ROOT/external/vlc"
 
@@ -256,7 +196,7 @@ build_libvlc() {
 --disable-mpcdec --disable-lame --disable-kate --disable-mad --disable-mysofa --disable-projectM
 --disable-schroedinger --disable-shout --disable-sidplay2 --disable-zvbi --disable-srt --disable-ncurses
 --disable-flac --disable-dav1d --disable-libxml2 --disable-gpg-error
---disable-soxr --disable-chromaprint --disable-ffmpeg --disable-breakpad
+--disable-soxr --disable-chromaprint --disable-breakpad
 EOF
 )
         ../bootstrap --build=$VLC_BUILD --host=$VLC_HOST $CONTRIBFLAGS > $out
@@ -381,5 +321,4 @@ export PATH=$OUT_DIR/bin:$PATH
 export PKG_CONFIG_LIBDIR=$OUT_DIR/lib/pkgconfig:$OUT_DIR/lib/${HOST_ARCH}-apple-darwin/pkgconfig
 
 # Build
-build_ffmpeg
 build_libvlc
