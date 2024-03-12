@@ -141,7 +141,7 @@ download_tarball() {
 
 build_ffmpeg() {
     local uri="https://git.ffmpeg.org/ffmpeg.git"
-    local sha256="85a6b7f7b746a7bf71146b1530f19f699c4f0fb4"
+    local sha1="ec47a3b95f88fc3f820b900038ac439e4eb3fede"
     local work_dir="$BUILD_DIR/ffmpeg"
 
     # Get sources
