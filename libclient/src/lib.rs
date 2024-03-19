@@ -325,7 +325,9 @@ impl Handler {
             Message::ControlPlaneClosed { reason } => {
                 warn!("ControlPlaneClosed. Reason: {reason:?}");
 
-                let ret = self.stop_backend().await;
+                let ret_backend = self.stop_backend().await;
+                let ret_hostevents = self.stop_hostevents().await;
+                let ret = ret_backend.and(ret_hostevents);
 
                 let reason = match reason {
                     ControlPlaneCloseReason::Eof => StopReason::ControlPlaneClosed,
