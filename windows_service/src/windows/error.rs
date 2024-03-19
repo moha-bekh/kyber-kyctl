@@ -4,7 +4,7 @@ use windows_sys::{
     core::*,
     Win32::{
         Foundation::*,
-        System::{Diagnostics::Debug::*, Memory::*, SystemServices::*},
+        System::{Diagnostics::Debug::*, SystemServices::*},
     },
 };
 

@@ -14,7 +14,7 @@ windows-service = "0.5.0"
 kidd_client = "0.1.0"
 
 [target.'cfg(target_os = "windows")'.dependencies.windows-sys]
-version = "0.48.0"
+version = "0.52.0"
 features = [
     "Win32_Foundation",
     "Win32_System_Memory",

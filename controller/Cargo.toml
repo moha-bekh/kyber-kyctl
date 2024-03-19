@@ -4,24 +4,24 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-actix-cors = "0.6.4"
-actix-files = "0.6.2"
-actix-web = { version = "4.4.0", features = ["rustls-0_21"] }
+actix-cors = "0.7.0"
+actix-files = "0.6.5"
+actix-web = { version = "4.5.1", features = ["rustls-0_21"] }
 actix-ws = "0.2.5"
-bytes = "1.2.1"
-log = "0.4.14"
+bytes = "1.5.0"
+log = "0.4.21"
 log4rs = "1.2.0"
-rustls = { version = "0.21.8", features = ["quic"] }
-rustls-pemfile = "1.0.3"
-serde = { version = "1.0.130", features = ["derive"] }
-serde_json = "1.0.70"
-thiserror = "1.0.37"
-toml = "0.7.4"
-tokio = { version = "1.33.0", features = ["fs", "process", "sync", "time"] }
+rustls = { version = "0.21.10", features = ["quic"] }
+rustls-pemfile = "1.0.4"
+serde = { version = "1.0.197", features = ["derive"] }
+serde_json = "1.0.114"
+thiserror = "1.0.58"
+toml = "0.8.12"
+tokio = { version = "1.36.0", features = ["fs", "process", "sync", "time"] }
 
-rcgen = "0.11.3"
+rcgen = "0.12.1"
 sha2 = "0.10.8"
-time = "0.3.29"
+time = "0.3.34"
 
 avservice-types = "0.1"
 inputservice-types = "0.1"
@@ -32,4 +32,4 @@ libkypc = "0.1"
 win32-hide-console = []
 
 [build-dependencies]
-vergen = { version = "8.1.1", features = ["build", "git", "gix"] }
+vergen = { version = "8.3.1", features = ["build", "git", "gix"] }

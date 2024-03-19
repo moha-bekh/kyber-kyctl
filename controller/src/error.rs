@@ -49,7 +49,7 @@ pub enum Error {
     #[error("rcgen error: {source:?}")]
     RcGen {
         #[from]
-        source: rcgen::RcgenError,
+        source: rcgen::Error,
     },
     #[error("Operation on date overflow/underflow")]
     DateOperationOverflow,
