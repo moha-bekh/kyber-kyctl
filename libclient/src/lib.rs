@@ -170,6 +170,24 @@ impl Handler {
         Ok(())
     }
 
+    async fn stop_hostevents(&mut self) -> Result<()> {
+        let Some(host_events) = self.host_events.take() else {
+            return Ok(());
+        };
+
+        let ret = host_events.stop().await;
+        match ret {
+            Ok(_) => {
+                info!("HostEventHandler stopped");
+            }
+            Err(err) => {
+                warn!("Failed to stop HostEventHandler: {err:?}");
+            }
+        }
+
+        Ok(())
+    }
+
     async fn stop_backend(&mut self) -> Result<()> {
         if let Some(mut backend) = self.backend.take() {
             backend.stop().await?;
@@ -194,17 +212,7 @@ impl Handler {
             info!("Host session stopped");
         }
 
-        if let Some(host_events) = self.host_events.take() {
-            let ret = host_events.stop().await;
-            match ret {
-                Ok(_) => {
-                    info!("HostEventHandler stopped");
-                }
-                Err(err) => {
-                    warn!("Failed to stop HostEventHandler: {err:?}");
-                }
-            }
-        }
+        self.stop_hostevents().await?;
 
         Ok(())
     }
