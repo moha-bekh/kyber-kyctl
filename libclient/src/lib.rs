@@ -216,6 +216,9 @@ impl Handler {
     ) -> Result<()> {
         let msg_proxy = self.create_message_proxy();
 
+        info!("Start streaming session");
+        streaming_config.print();
+
         match &streaming_config.protocol {
             #[cfg(feature = "websocket")]
             StreamingProtocol::Websocket => {
@@ -479,6 +482,43 @@ pub struct StreamingSessionConfig {
     pub video: Option<VideoSessionConfig>,
     pub audio: bool,
     pub input: Option<InputSessionConfig>,
+}
+
+impl StreamingSessionConfig {
+    fn print(&self) {
+        info!("StreamingSessionConfig");
+
+        match &self.protocol {
+            #[cfg(feature = "rtp")]
+            StreamingProtocol::Rtp => {
+                info!("\tprotocol: RTP");
+            }
+            #[cfg(feature = "kymux")]
+            StreamingProtocol::Kymux(config) => {
+                info!("\tprotocol: Kymux");
+                info!("\t\tbackend: {:?}", config.backend);
+                info!("\t\tvideo_protocol: {:?}", config.video_protocol);
+            }
+            #[cfg(feature = "websocket")]
+            StreamingProtocol::Websocket => {
+                info!("\tprotocol: Websocket");
+            }
+        }
+
+        info!("\tbitrate: {}", self.bitrate);
+
+        if let Some(video) = &self.video {
+            info!("\tvideo: true");
+            info!("\t\tdisplay_index: {}", video.display_index);
+            info!("\t\tcodec: {:?}", video.codec);
+            info!("\t\tyuv444: {}", video.yuv444)
+        } else {
+            info!("\tvideo: false");
+        };
+
+        info!("\taudio: {}", self.audio);
+        info!("\tinput: {}", self.input.is_some());
+    }
 }
 
 impl std::fmt::Debug for StreamingSessionConfig {
