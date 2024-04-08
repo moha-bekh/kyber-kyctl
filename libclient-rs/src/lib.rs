@@ -426,6 +426,10 @@ impl VideoSessionConfig {
     pub fn set_yuv444(&self, yuv444: bool) {
         unsafe { sys::libclient_video_session_config_set_yuv444(self.ptr, yuv444) }
     }
+
+    pub fn set_intra_refresh(&self, intra_refresh: bool) {
+        unsafe { sys::libclient_video_session_config_set_intra_refresh(self.ptr, intra_refresh) }
+    }
 }
 
 impl Drop for VideoSessionConfig {
