@@ -12,6 +12,7 @@ struct StartRequestVideo {
     display_id: u32,
     codec: VideoCodec,
     yuv444: bool,
+    intra_refresh: Option<bool>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -39,6 +40,7 @@ pub(super) async fn start_stream(backend_config: &WsBackendConfig<'_>) -> Result
             display_id: video.display_id,
             codec: video.codec,
             yuv444: video.yuv444,
+            intra_refresh: video.intra_refresh,
         })
     } else {
         None
