@@ -496,7 +496,7 @@ pub struct StreamingSessionConfig {
 }
 
 impl StreamingSessionConfig {
-    fn print(&self) {
+    pub fn print(&self) {
         info!("StreamingSessionConfig");
 
         match &self.protocol {
