@@ -279,6 +279,15 @@ impl DemuxerWorker {
 
                 Self::message_proxy_send(message_proxy, Message::VideoDecodeError);
             }
+            "video_decoder_configured" => {
+                let data =
+                    js_sys::Reflect::get(msg, &"data".into())?.dyn_into::<js_sys::Object>()?;
+
+                let codec = reflect::get_string(&data, "codec")?;
+                let hardware_acceleration = reflect::get_string(&data, "hardware_acceleration")?;
+
+                info!("Video decoder configure. Codec: {codec}, HardwareAcceleration: {hardware_acceleration}");
+            }
             "stopped" => {
                 let Some(stop_tx) = stop_tx.borrow_mut().take() else {
                     warn!("Renderer worker stop_tx None");

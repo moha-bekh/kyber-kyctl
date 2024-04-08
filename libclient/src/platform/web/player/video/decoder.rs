@@ -1,8 +1,10 @@
 use log::{error, info};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
+use web_sys::HardwareAcceleration;
 
 use crate::platform::player::packet::MediaPacket;
+use crate::platform::reflect;
 
 #[wasm_bindgen(raw_module = "./video_decoder.js")]
 extern "C" {
@@ -79,6 +81,8 @@ impl VideoDecoder {
                     .hardware_acceleration(hardware_acceleration),
             )?;
             self.pending_config = Some(packet.data.to_vec());
+
+            Self::notify_configured(&self.codec, hardware_acceleration)?;
         } else {
             let header = &packet.header;
             let type_ = if header.is_key {
@@ -111,6 +115,24 @@ impl VideoDecoder {
     pub async fn flush(&self) -> Result<(), JsValue> {
         let promise = self.video_decoder.flush();
         JsFuture::from(promise).await?;
+        Ok(())
+    }
+
+    fn notify_configured(
+        codec: &str,
+        hardware_acceleration: HardwareAcceleration,
+    ) -> Result<(), JsValue> {
+        let js_self = js_sys::eval("self")?.dyn_into::<web_sys::DedicatedWorkerGlobalScope>()?;
+
+        let data = js_sys::Object::new();
+        reflect::set(&data, "codec", codec.into())?;
+        reflect::set(&data, "hardware_acceleration", hardware_acceleration.into())?;
+
+        let msg = js_sys::Object::new();
+        reflect::set(&msg, "type", "video_decoder_configured".into())?;
+        reflect::set(&msg, "data", data.into())?;
+        js_self.post_message(&msg)?;
+
         Ok(())
     }
 }
