@@ -52,6 +52,7 @@ struct StartRequestVideo {
     display_id: u32,
     codec: VideoCodec,
     yuv444: bool,
+    intra_refresh: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -109,6 +110,7 @@ pub(crate) async fn start_stream(
                     display_id: config.display_id,
                     codec: config.codec,
                     yuv444: config.yuv444,
+                    intra_refresh: config.intra_refresh,
                 })
                 .collect(),
         )
