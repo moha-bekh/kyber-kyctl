@@ -298,6 +298,7 @@ pub unsafe extern "C" fn libclient_video_session_config_default(
         display_id,
         codec: VideoCodec::H264,
         yuv444: false,
+        intra_refresh: None,
         player: (*player).config.clone(),
     };
 
@@ -336,6 +337,14 @@ pub unsafe extern "C" fn libclient_video_session_config_set_codec(
     codec: VideoCodec,
 ) {
     (*config).config.codec = codec;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_video_session_config_set_intra_refresh(
+    config: *mut libclient_VideoSessionConfig,
+    intra_refresh: bool,
+) {
+    (*config).config.intra_refresh = Some(intra_refresh);
 }
 
 #[no_mangle]

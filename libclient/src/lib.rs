@@ -457,6 +457,7 @@ pub struct VideoSessionConfig {
     pub display_id: u32,
     pub codec: VideoCodec,
     pub yuv444: bool,
+    pub intra_refresh: Option<bool>,
     pub player: VideoPlayerConfig,
 }
 
