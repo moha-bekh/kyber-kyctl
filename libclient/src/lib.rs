@@ -226,6 +226,7 @@ impl Handler {
 
         info!("Start streaming session");
         streaming_config.print();
+        player_config.print();
 
         match &streaming_config.protocol {
             #[cfg(feature = "websocket")]

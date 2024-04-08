@@ -9,6 +9,8 @@ pub(crate) mod player;
 pub(crate) mod reflect;
 mod websocket;
 
+use log::info;
+
 use crate::Result;
 pub(crate) use host_events::{WsClient, WsClientBuilder};
 pub(crate) use input_service::{get_cursor_format, InputError, InputMsgSink, InputPipeline};
@@ -25,6 +27,14 @@ pub struct ConnectConfig {
 pub struct PlayerConfig {
     pub canvas: String,
     pub software_decode: bool,
+}
+
+impl PlayerConfig {
+    pub fn print(&self) {
+        info!("PlayerConfig");
+        info!("\tcanvas: {}", self.canvas);
+        info!("\tsoftware_decode: {}", self.software_decode);
+    }
 }
 
 #[derive(Clone)]

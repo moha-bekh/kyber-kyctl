@@ -1,6 +1,6 @@
 use std::net::{SocketAddr, ToSocketAddrs};
 
-use log::error;
+use log::{error, info};
 
 mod host_events;
 pub(crate) mod http;
@@ -29,6 +29,14 @@ pub struct ConnectConfig {
 pub struct PlayerConfig {
     pub window_handle: Option<WindowHandle>,
     pub software_decode: bool,
+}
+
+impl PlayerConfig {
+    pub fn print(&self) {
+        info!("PlayerConfig");
+        info!("\twindow_handle: {:?}", self.window_handle);
+        info!("\tsoftware_decode: {}", self.software_decode);
+    }
 }
 
 #[derive(Clone, Debug)]
