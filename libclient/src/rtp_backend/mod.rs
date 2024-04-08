@@ -75,6 +75,7 @@ struct HostVideoConfig {
     display_id: u32,
     yuv444: bool,
     port: u16,
+    intra_refresh: Option<bool>,
 }
 
 struct HostAudioConfig {
@@ -165,6 +166,7 @@ impl RtpBackend {
             display_id: video_config.display_id,
             yuv444: video_config.yuv444,
             port: RTP_VIDEO_PORT,
+            intra_refresh: video_config.intra_refresh,
         };
 
         // Create vlc config

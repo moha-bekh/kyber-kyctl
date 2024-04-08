@@ -14,6 +14,7 @@ struct StartRequestVideo {
     port: u16,
     display_id: u32,
     yuv444: bool,
+    intra_refresh: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -107,6 +108,7 @@ pub(super) async fn start_stream(
         display_id: video.display_id,
         port: video.port,
         yuv444: video.yuv444,
+        intra_refresh: video.intra_refresh,
     });
 
     let audio = audio
