@@ -21,6 +21,7 @@ pub type Display = sys::libclient_Display;
 pub enum KymuxVideoProtocol {
     Reliable,
     GopStream,
+    Unreliable,
     UnreliableFec,
 }
 
@@ -33,6 +34,9 @@ impl KymuxVideoProtocol {
             }
             Self::GopStream => {
                 sys::libclient_KymuxVideoProtocol_LIBCLIENT_KYMUX_VIDEO_PROTOCOL_GOP_STREAM
+            }
+            Self::Unreliable => {
+                sys::libclient_KymuxVideoProtocol_LIBCLIENT_KYMUX_VIDEO_PROTOCOL_UNRELIABLE
             }
             Self::UnreliableFec => {
                 sys::libclient_KymuxVideoProtocol_LIBCLIENT_KYMUX_VIDEO_PROTOCOL_UNRELIABLE_FEC

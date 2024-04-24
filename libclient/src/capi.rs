@@ -61,6 +61,7 @@ fn result_to_c_int<T>(result: crate::Result<T>) -> c_int {
 pub enum libclient_KymuxVideoProtocol {
     Reliable,
     GopStream,
+    Unreliable,
     UnreliableFec,
 }
 
@@ -70,6 +71,7 @@ impl From<libclient_KymuxVideoProtocol> for kymux::VideoProtocol {
         match value {
             libclient_KymuxVideoProtocol::Reliable => Self::Reliable,
             libclient_KymuxVideoProtocol::GopStream => Self::GopStream,
+            libclient_KymuxVideoProtocol::Unreliable => Self::Unreliable,
             libclient_KymuxVideoProtocol::UnreliableFec => Self::UnreliableFec,
         }
     }
