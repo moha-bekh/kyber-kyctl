@@ -29,8 +29,8 @@ impl AudioWorklet {
 
         reflect::set(
             &processor_options,
-            "capacity",
-            AudioPlayer::AUDIO_BUFFER_SAMPLES.into(),
+            "allocSize",
+            AudioPlayer::AUDIO_BUFFER_ALLOC_SIZE.into(),
         )?;
 
         reflect::set(

@@ -11,14 +11,14 @@ const FIELDS = 6;
 const FIELDS_SIZE = FIELDS * 4;
 
 class AudioPlayerSharedMemory {
-    constructor(sab, sampleSize, capacity) {
+    constructor(sab, allocSize, sampleSize) {
         this.sab = sab;
 
         this.fields = new Int32Array(sab, 0, FIELDS);
         this.mutex = new JSMutex(this.fields.subarray(0, 1))
 
+        this.allocSize = allocSize; // in samples
         this.sampleSize = sampleSize;
-        this.allocSize = capacity + 1; // in samples
 
         // offset is in bytes, but length is in number of items
         let nbChannels = 2;
@@ -108,10 +108,10 @@ class KyberAudioWorklet extends AudioWorkletProcessor {
     constructor(options) {
         super();
 
-        let { sab, sampleRate, sampleSize, capacity, targetBuffering } = options.processorOptions;
+        let { sab, sampleRate, sampleSize, allocSize, targetBuffering } = options.processorOptions;
         this.sampleRate = sampleRate;
         this.targetBuffering = targetBuffering;
-        this.memory = new AudioPlayerSharedMemory(sab, sampleSize, capacity);
+        this.memory = new AudioPlayerSharedMemory(sab, allocSize, sampleSize);
         this.audioBuf = new AudioBuffer(this.memory);
     }
 

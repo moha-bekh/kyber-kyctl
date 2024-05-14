@@ -1,7 +1,6 @@
 mod decoder;
 mod demuxer_worker;
 pub(super) mod player;
-mod regulator;
 mod worklet;
 
 const CODEC: &str = "opus";

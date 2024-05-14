@@ -4,3 +4,6 @@
 [submodule "external/vlc"]
 	path = external/vlc
 	url = ../vlc.git
+[submodule "external/kyaudioreg"]
+	path = external/kyaudioreg
+	url = ../kyaudioreg.git

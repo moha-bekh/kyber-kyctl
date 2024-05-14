@@ -22,6 +22,7 @@ wasm-bindgen = { version = "0.2.84", optional = true }
 wasm-bindgen-futures = { version = "0.4.37", optional = true }
 wasmtimer = { version = "0.2.0", optional = true }
 
+kyaudioreg = { version = "0.1.0", optional = true }
 kymux = { version = "0.1.0", optional = true }
 libkynput = { version = "0.1.0", optional = true }
 libkynput-rs = { version = "0.1.0", optional = true }
@@ -57,6 +58,7 @@ desktop = [
     "tokio/rt-multi-thread",
 ]
 js-player = [
+    "kyaudioreg/js",
     "web-sys/AudioContext",
     "web-sys/AudioContextOptions",
     "web-sys/AudioData",

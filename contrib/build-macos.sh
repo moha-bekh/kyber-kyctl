@@ -42,6 +42,22 @@ get_buildsystem_arch() {
     fi
 }
 
+get_cargo_target()
+{
+    case $1 in
+        x86_64)
+            echo "x86_64-apple-darwin"
+        ;;
+        arm64)
+            echo "aarch64-apple-darwin"
+        ;;
+        *)
+            echo "Unexpected arch $1"
+            exit 1
+        ;;
+    esac
+}
+
 # Workspace directories
 CONTRIB_DIR=$(realpath $(dirname $0))
 LIBCLIENT_ROOT=$CONTRIB_DIR/..
@@ -137,6 +153,18 @@ download_tarball() {
     fi
 
     return 1
+}
+
+build_kyaudioreg() {
+    KYAUDIOREG_SRCDIR="$LIBCLIENT_ROOT/external/kyaudioreg"
+    CARGO_TARGET=$(get_cargo_target "$HOST_ARCH")
+
+    cd "$KYAUDIOREG_SRCDIR"
+    cargo cinstall \
+        --release \
+        --prefix="$OUT_DIR" \
+        --target="$CARGO_TARGET"
+    cd -
 }
 
 build_libvlc() {
@@ -321,4 +349,5 @@ export PATH=$OUT_DIR/bin:$PATH
 export PKG_CONFIG_LIBDIR=$OUT_DIR/lib/pkgconfig:$OUT_DIR/lib/${HOST_ARCH}-apple-darwin/pkgconfig
 
 # Build
+build_kyaudioreg
 build_libvlc

@@ -2,6 +2,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use kyaudioreg::memory::AudioRegulatorSharedMemory;
+use kyaudioreg::AudioRegulatorPush;
 use log::{error, info, warn};
 use tokio::sync::mpsc::{self, error::TrySendError};
 use tokio::sync::oneshot;
@@ -9,7 +11,6 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::MessageEvent;
 
-use crate::platform::player::audio::regulator::AudioRegulator;
 use crate::platform::player::packet::buffer_to_packet;
 use crate::platform::player::packet::{CodecPacket, Packet};
 use crate::platform::player::AudioPlayer;
@@ -103,13 +104,14 @@ impl AudioDemuxerWorkerCtx {
         mut rx: mpsc::Receiver<js_sys::ArrayBuffer>,
         sab: js_sys::SharedArrayBuffer,
     ) -> Result<(), JsValue> {
-        let mut regulator = AudioRegulator::new(
-            sab,
-            super::SAMPLE_RATE,
-            super::SAMPLE_SIZE * super::CHANNELS,
-            AudioPlayer::AUDIO_BUFFER_SAMPLES,
-            AudioPlayer::AUDIO_TARGET_BUFFERING,
-        );
+        let sample_size = super::SAMPLE_SIZE * super::CHANNELS;
+        let sample_rate = super::SAMPLE_RATE;
+        let alloc_size = AudioPlayer::AUDIO_BUFFER_ALLOC_SIZE;
+        let target_buffering = AudioPlayer::AUDIO_TARGET_BUFFERING;
+
+        let memory = AudioRegulatorSharedMemory::js(sab, alloc_size, sample_size);
+
+        let mut reg = AudioRegulatorPush::new(memory, sample_rate, target_buffering);
 
         let mut audio_decoder: Option<AudioDecoder> = None;
 
@@ -136,7 +138,20 @@ impl AudioDemuxerWorkerCtx {
                     return Ok(());
                 }
 
-                regulator.push(frame);
+                let samples = frame.number_of_frames();
+                let sample_size = frame.number_of_channels() * 4;
+                let bytes = samples * sample_size;
+
+                // TODO reuse allocation
+                let mut tmp = vec![0u8; bytes as usize];
+                frame.copy_to_with_u8_array(
+                    &mut tmp,
+                    web_sys::AudioDataCopyToOptions::new(0)
+                        .format(web_sys::AudioSampleFormat::F32)
+                        .frame_count(samples),
+                );
+
+                reg.push(&tmp);
 
                 Ok(())
             }),

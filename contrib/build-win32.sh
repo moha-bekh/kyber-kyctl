@@ -7,6 +7,7 @@ BASE_DIR=$(realpath $(dirname $0))
 # Workspace directories
 WORKSPACE_ROOT=$BASE_DIR/..
 VLC_SRCDIR="$WORKSPACE_ROOT/external/vlc"
+KYAUDIOREG_SRCDIR="$WORKSPACE_ROOT/external/kyaudioreg"
 
 # Build configuration
 NJOBS=$(grep -c ^processor /proc/cpuinfo)
@@ -81,6 +82,15 @@ download_tarball() {
     return 1
 }
 
+build_kyaudioreg() {
+    cd "$KYAUDIOREG_SRCDIR"
+    cargo cinstall --prefix="$OUT_DIR" \
+        --release \
+        --target=x86_64-pc-windows-gnu \
+        --dlltool=x86_64-w64-mingw32-dlltool
+    cd -
+}
+
 build_libvlc() {
     local init_cwd=$(pwd)
 
@@ -153,6 +163,7 @@ export PKG_CONFIG_ALLOW_CROSS=1
 export PKG_CONFIG_LIBDIR=$OUT_DIR/lib/pkgconfig
 
 # Build
+build_kyaudioreg
 build_libvlc
 
 echo "Build completed. Update your PATH"

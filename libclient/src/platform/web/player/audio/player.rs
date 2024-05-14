@@ -1,7 +1,6 @@
 use log::warn;
 use std::cell::RefCell;
 
-use crate::platform::player::audio::regulator::shared_memory::SharedMemory;
 use crate::platform::player::FrameSink;
 use crate::{MessageProxy, Result};
 
@@ -9,17 +8,22 @@ use super::demuxer_worker::DemuxerWorker;
 use super::worklet::AudioWorklet;
 use super::{CHANNELS, SAMPLE_RATE, SAMPLE_SIZE};
 
+use kyaudioreg::memory::AudioRegulatorSharedMemory;
+
 pub struct AudioPlayer {
     demuxer: DemuxerWorker,
     audio_worklet: RefCell<Option<AudioWorklet>>,
 }
 
 impl AudioPlayer {
-    pub(crate) const AUDIO_BUFFER_SAMPLES: u32 = 2 * SAMPLE_RATE;
+    pub(crate) const AUDIO_BUFFER_ALLOC_SIZE: u32 = 2 * SAMPLE_RATE;
     pub(crate) const AUDIO_TARGET_BUFFERING: u32 = 50 * 48;
 
     pub async fn new(message_proxy: MessageProxy) -> Result<Self> {
-        let sab = SharedMemory::create_sab(SAMPLE_SIZE * CHANNELS, Self::AUDIO_BUFFER_SAMPLES);
+        let alloc_size = Self::AUDIO_BUFFER_ALLOC_SIZE;
+        let sample_size = SAMPLE_SIZE * CHANNELS;
+
+        let sab = AudioRegulatorSharedMemory::create_sab(alloc_size, sample_size);
 
         let demuxer = DemuxerWorker::new(message_proxy)?;
         demuxer.start(sab.clone())?;
