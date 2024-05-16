@@ -197,8 +197,7 @@ impl Handler {
     }
 
     async fn stop(&mut self) -> Result<()> {
-        info!("Stop requested");
-
+        info!("Stop backend");
         self.stop_backend().await?;
 
         info!("Request to stop host session");
@@ -315,6 +314,7 @@ impl Handler {
                 Ok(())
             }
             Message::Disconnect => {
+                info!("Disconnect requested by user");
                 let ret = self.stop().await;
 
                 self.event_manager.send_event(Event::Stopped {
