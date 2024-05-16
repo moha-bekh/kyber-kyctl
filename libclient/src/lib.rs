@@ -355,8 +355,14 @@ impl Handler {
                     .await;
                 let (event, stop) = match ret {
                     Ok(()) => (Event::StreamingStarted, false),
-                    Err(Error::DataPlaneConnectFailed) => (Event::DataPlaneConnectFailed, true),
-                    Err(_) => (Event::StreamingStartFailed, true),
+                    Err(Error::DataPlaneConnectFailed) => {
+                        warn!("Dataplane connect failed. Stop client");
+                        (Event::DataPlaneConnectFailed, true)
+                    }
+                    Err(err) => {
+                        warn!("Streaming start failed: {err:?}. Stop client");
+                        (Event::StreamingStartFailed, true)
+                    }
                 };
 
                 if stop {
