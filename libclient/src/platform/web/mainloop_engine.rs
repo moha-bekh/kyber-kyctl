@@ -28,9 +28,11 @@ impl MainLoopEngine {
     ) {
         tokio::select! {
             _ = stop_rx => {
-                info!("Main loop stopped");
+                info!("Main loop stop requested");
             }
-            _ = main_loop.run() => {}
+            _ = main_loop.run() => {
+                info!("Main loop exited");
+            }
         }
 
         let _ = stopped_tx.send(());
