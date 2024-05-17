@@ -150,6 +150,8 @@ pub enum Event {
     DisplayListUpdated {
         displays: Vec<Display>,
     },
+    InputServiceConnected,
+    InputServiceDisconnected,
     StreamingStarted,
     StreamingStartFailed,
     StreamingStopped,
@@ -264,6 +266,12 @@ impl EventSinkData {
                     displays: displays.to_vec(),
                 });
                 unsafe { sys::libclient_event_free_displays(cdisplays) };
+            }
+            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_INPUT_SERVICE_CONNECTED => {
+                data.sink.on_event(Event::InputServiceConnected);
+            }
+            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_INPUT_SERVICE_DISCONNECTED => {
+                data.sink.on_event(Event::InputServiceDisconnected);
             }
             sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_STREAMING_STARTED => {
                 data.sink.on_event(Event::StreamingStarted);

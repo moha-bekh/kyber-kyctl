@@ -398,6 +398,8 @@ impl Handler {
                     backend.input_service_connected().await?;
                 }
 
+                self.event_manager.send_event(Event::InputServiceConnected);
+
                 Ok(())
             }
             Message::InputServiceDisconnected => {
@@ -406,6 +408,9 @@ impl Handler {
                 if let Some(backend) = self.backend.as_mut() {
                     backend.input_service_disconnected().await?;
                 }
+
+                self.event_manager
+                    .send_event(Event::InputServiceDisconnected);
 
                 Ok(())
             }

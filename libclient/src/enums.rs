@@ -96,6 +96,8 @@ pub enum Event {
     DisplayListUpdated {
         displays: Vec<Display>,
     },
+    InputServiceConnected,
+    InputServiceDisconnected,
     StreamingStarted,
     StreamingStartFailed,
     StreamingStopped,
