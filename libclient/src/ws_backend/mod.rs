@@ -107,19 +107,7 @@ impl WsBackend {
 
         // Start services
         let video_service = Self::create_video_service(&backend_config).await?;
-
-        // Start audio service
-        let audio_service = if backend_config.streaming_config.audio {
-            let audio_service = Self::create_audio_service(
-                backend_config.http_client,
-                backend_config.msg_proxy.clone(),
-            )
-            .await?;
-
-            Some(audio_service)
-        } else {
-            None
-        };
+        let audio_service = Self::create_audio_service(&backend_config).await?;
 
         // Start input service
         let input_service =
@@ -167,15 +155,21 @@ impl WsBackend {
     }
 
     async fn create_audio_service(
-        http_client: &HttpClient,
-        msg_proxy: MessageProxy,
-    ) -> Result<AudioService> {
-        let player = Rc::new(AudioPlayer::new(msg_proxy).await?);
+        backend_config: &WsBackendConfig<'_>,
+    ) -> Result<Option<AudioService>> {
+        if !backend_config.streaming_config.audio {
+            return Ok(None);
+        }
 
-        let url = format!("wss://{host}/websocket/audio", host = http_client.host());
+        let player = Rc::new(AudioPlayer::new(backend_config.msg_proxy.clone()).await?);
+
+        let url = format!(
+            "wss://{host}/websocket/audio",
+            host = backend_config.http_client.host()
+        );
         let ws = AudioWsSocketHandler::new(&url, player.clone())?;
 
-        Ok(AudioService { ws, player })
+        Ok(Some(AudioService { ws, player }))
     }
 
     fn create_input_service(
