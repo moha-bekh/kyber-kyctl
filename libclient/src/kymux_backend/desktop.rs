@@ -9,7 +9,7 @@ use super::KymuxConfig;
 use crate::platform::player;
 use crate::platform::{InputClient, InputPipeline};
 use crate::{
-    ConnectionParams, InputSessionConfig, MessageProxy, PlayerConfig, StreamingSessionConfig,
+    ConnectionParams, InputSessionConfig, MessageProxy, StreamingSessionConfig, VideoPlayerConfig,
 };
 use crate::{Error, Result};
 
@@ -93,7 +93,7 @@ pub(super) async fn connect_quinn(
 fn create_video_config(
     kymux: &kymux::Connection,
     kymux_config: &KymuxConfig,
-    player_config: &PlayerConfig,
+    player_config: &VideoPlayerConfig,
     endpoint: &Option<u16>,
 ) -> Result<Option<player::VideoConfig>> {
     let config = match (
@@ -144,7 +144,7 @@ fn create_audio_config(
 pub(super) async fn create_player(
     kymux: &mut kymux::Connection,
     kymux_config: &KymuxConfig,
-    player_config: &PlayerConfig,
+    player_config: &VideoPlayerConfig,
     streaming_config: &StreamingSessionConfig,
     video_endpoint: &Option<u16>,
     audio_endpoint: &Option<u16>,

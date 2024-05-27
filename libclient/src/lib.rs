@@ -34,7 +34,7 @@ pub use event_manager::EventSink;
 use host_events::HostEventReceiver;
 pub use host_events::{StreamerPipelineEventType, StreamerPipelineStage, StreamerPipelineType};
 use http::HttpClient;
-pub use platform::{ConnectConfig, PlayerConfig};
+pub use platform::{ConnectConfig, VideoPlayerConfig};
 pub(crate) use platform::{ConnectionParams, InputPipeline, MainLoopEngine};
 
 #[allow(dead_code)]
@@ -219,7 +219,7 @@ impl Handler {
     async fn start_streaming_session(
         &mut self,
         streaming_config: &StreamingSessionConfig,
-        player_config: &PlayerConfig,
+        player_config: &VideoPlayerConfig,
     ) -> Result<()> {
         let msg_proxy = self.create_message_proxy();
 
@@ -635,7 +635,7 @@ impl Client {
     pub fn start_streaming(
         &self,
         streaming_config: StreamingSessionConfig,
-        player_config: PlayerConfig,
+        player_config: VideoPlayerConfig,
     ) -> Result<()> {
         self.send_message(Message::StartStreamingSession {
             streaming_config,

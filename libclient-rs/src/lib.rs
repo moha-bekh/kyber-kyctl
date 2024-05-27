@@ -368,11 +368,11 @@ fn to_cstr(s: &str) -> CString {
     CString::new(s.to_owned()).expect("Error: Unexpected null byte")
 }
 
-pub struct PlayerConfig {
-    ptr: *mut sys::libclient_PlayerConfig,
+pub struct VideoPlayerConfig {
+    ptr: *mut sys::libclient_VideoPlayerConfig,
 }
 
-impl PlayerConfig {
+impl VideoPlayerConfig {
     pub fn default(window_handle: Option<WindowHandle>) -> Result<Self> {
         let window_handle = if let Some(window_handle) = window_handle {
             window_handle.ptr
@@ -382,7 +382,7 @@ impl PlayerConfig {
 
         unsafe {
             let mut ptr: *mut _ = std::mem::zeroed();
-            let ret = sys::libclient_player_config_default(window_handle, &mut ptr);
+            let ret = sys::libclient_video_player_config_default(window_handle, &mut ptr);
             if ret == 0 {
                 Ok(Self { ptr })
             } else {
@@ -392,13 +392,13 @@ impl PlayerConfig {
     }
 
     pub fn set_software_decode(&self, software_decode: bool) {
-        unsafe { sys::libclient_player_config_set_software_decode(self.ptr, software_decode) }
+        unsafe { sys::libclient_video_player_config_set_software_decode(self.ptr, software_decode) }
     }
 }
 
-impl Drop for PlayerConfig {
+impl Drop for VideoPlayerConfig {
     fn drop(&mut self) {
-        unsafe { sys::libclient_player_config_unref(self.ptr) }
+        unsafe { sys::libclient_video_player_config_unref(self.ptr) }
     }
 }
 
@@ -594,10 +594,14 @@ impl Client {
     pub fn start_streaming(
         &self,
         session_config: &StreamingSessionConfig,
-        player_config: &PlayerConfig,
+        video_player_config: &VideoPlayerConfig,
     ) -> Result<()> {
         let ret = unsafe {
-            sys::libclient_client_start_streaming(self.ptr, session_config.ptr, player_config.ptr)
+            sys::libclient_client_start_streaming(
+                self.ptr,
+                session_config.ptr,
+                video_player_config.ptr,
+            )
         };
         if ret == 0 {
             Ok(())

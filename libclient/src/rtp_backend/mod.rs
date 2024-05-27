@@ -11,8 +11,8 @@ use crate::http::HttpClient;
 use crate::platform::player;
 use crate::platform::{get_cursor_format, InputClient, InputPipeline};
 use crate::{
-    BackendDriver, ConnectionParams, Display, Error, InputSessionConfig, MessageProxy,
-    PlayerConfig, Result, StreamingSessionConfig, VideoSessionConfig,
+    BackendDriver, ConnectionParams, Display, Error, InputSessionConfig, MessageProxy, Result,
+    StreamingSessionConfig, VideoPlayerConfig, VideoSessionConfig,
 };
 
 const RTP_VIDEO_PORT: u16 = 30000;
@@ -100,7 +100,7 @@ async fn create_video_config(
     displays: &[Display],
     ip: &str,
     config: &Option<VideoSessionConfig>,
-    player_config: &PlayerConfig,
+    player_config: &VideoPlayerConfig,
 ) -> Result<(Option<HostVideoConfig>, Option<player::VideoConfig>)> {
     let Some(config) = config.as_ref() else {
         return Ok((None, None));
@@ -156,7 +156,7 @@ impl RtpBackend {
         conn_params: &ConnectionParams,
         client: &HttpClient,
         displays: &[Display],
-        player_config: &PlayerConfig,
+        player_config: &VideoPlayerConfig,
         streaming_config: &StreamingSessionConfig,
         msg_proxy: MessageProxy,
     ) -> Result<Self> {

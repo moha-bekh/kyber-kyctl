@@ -24,14 +24,14 @@ pub struct ConnectConfig {
 }
 
 #[derive(Clone, Debug)]
-pub struct PlayerConfig {
+pub struct VideoPlayerConfig {
     pub canvas: String,
     pub software_decode: bool,
 }
 
-impl PlayerConfig {
+impl VideoPlayerConfig {
     pub fn print(&self) {
-        info!("PlayerConfig");
+        info!("VideoPlayerConfig");
         info!("\tcanvas: {}", self.canvas);
         info!("\tsoftware_decode: {}", self.software_decode);
     }

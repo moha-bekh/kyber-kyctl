@@ -16,7 +16,7 @@ use crate::platform::player::{AudioPlayer, FrameSink, VideoDecoderConfig, VideoP
 use crate::platform::InputMsgSink;
 use crate::{Error, Result};
 use crate::{
-    InputSessionConfig, MessageProxy, PlayerConfig, StreamingSessionConfig, VideoSessionConfig,
+    InputSessionConfig, MessageProxy, StreamingSessionConfig, VideoPlayerConfig, VideoSessionConfig,
 };
 
 pub(super) struct InputService {
@@ -102,7 +102,7 @@ pub(super) async fn connect_webtransport(
 }
 
 async fn create_video_decoder_config(
-    player_config: &PlayerConfig,
+    player_config: &VideoPlayerConfig,
     config: &Option<VideoSessionConfig>,
 ) -> Option<VideoDecoderConfig> {
     let Some(config) = config.as_ref() else {
@@ -183,7 +183,7 @@ async fn create_videoplayer(
     kymux: &kymux::Connection,
     video_endpoint: u16,
     video_protocol: VideoProtocol,
-    player_config: &PlayerConfig,
+    player_config: &VideoPlayerConfig,
     video_config: VideoDecoderConfig,
     msg_proxy: MessageProxy,
 ) -> Result<Rc<VideoPlayer>> {
@@ -210,7 +210,7 @@ async fn create_audioplayer(
     kymux: &kymux::Connection,
     _kymux_config: &KymuxConfig,
     audio_endpoint: u16,
-    _player_config: &PlayerConfig,
+    _player_config: &VideoPlayerConfig,
     msg_proxy: MessageProxy,
 ) -> Result<Rc<AudioPlayer>> {
     let audio_player = Rc::new(AudioPlayer::new(msg_proxy).await?);
@@ -229,7 +229,7 @@ async fn create_audioplayer(
 pub(super) async fn create_player(
     kymux: &mut kymux::Connection,
     kymux_config: &KymuxConfig,
-    player_config: &PlayerConfig,
+    player_config: &VideoPlayerConfig,
     streaming_config: &StreamingSessionConfig,
     video_endpoint: &Option<u16>,
     audio_endpoint: &Option<u16>,

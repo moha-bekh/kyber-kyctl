@@ -34,8 +34,8 @@ pub struct libclient_StreamingSessionConfig {
 }
 
 #[allow(non_camel_case_types)]
-pub struct libclient_PlayerConfig {
-    config: crate::PlayerConfig,
+pub struct libclient_VideoPlayerConfig {
+    config: crate::VideoPlayerConfig,
 }
 
 #[allow(non_camel_case_types)]
@@ -260,16 +260,18 @@ pub unsafe extern "C" fn libclient_streaming_protocol_unref(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn libclient_player_config_unref(cfg: *mut libclient_PlayerConfig) {
+pub unsafe extern "C" fn libclient_video_player_config_unref(
+    cfg: *mut libclient_VideoPlayerConfig,
+) {
     if !cfg.is_null() {
         let _ = Box::from_raw(cfg);
     }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn libclient_player_config_default(
+pub unsafe extern "C" fn libclient_video_player_config_default(
     window_handle: *mut libclient_WindowHandle,
-    out_config: *mut *mut libclient_PlayerConfig,
+    out_config: *mut *mut libclient_VideoPlayerConfig,
 ) -> c_int {
     let window_handle = if !window_handle.is_null() {
         let window_handle = Box::from_raw(window_handle);
@@ -278,12 +280,12 @@ pub unsafe extern "C" fn libclient_player_config_default(
         None
     };
 
-    let config = crate::PlayerConfig {
+    let config = crate::VideoPlayerConfig {
         window_handle,
         software_decode: false,
     };
 
-    *out_config = Box::into_raw(Box::new(libclient_PlayerConfig { config }));
+    *out_config = Box::into_raw(Box::new(libclient_VideoPlayerConfig { config }));
     0
 }
 
@@ -303,8 +305,8 @@ pub unsafe extern "C" fn libclient_video_session_config_default(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn libclient_player_config_set_software_decode(
-    config: *mut libclient_PlayerConfig,
+pub unsafe extern "C" fn libclient_video_player_config_set_software_decode(
+    config: *mut libclient_VideoPlayerConfig,
     software_decode: bool,
 ) {
     (*config).config.software_decode = software_decode;
@@ -462,7 +464,7 @@ pub unsafe extern "C" fn libclient_client_disconnect(client: *mut libclient_Clie
 pub unsafe extern "C" fn libclient_client_start_streaming(
     client: *mut libclient_Client,
     session_config: *mut libclient_StreamingSessionConfig,
-    player_config: *mut libclient_PlayerConfig,
+    player_config: *mut libclient_VideoPlayerConfig,
 ) -> c_int {
     let session_config = (*session_config).config.clone();
     let player_config = (*player_config).config.clone();

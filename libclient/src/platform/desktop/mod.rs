@@ -26,14 +26,14 @@ pub struct ConnectConfig {
 }
 
 #[derive(Clone, Debug)]
-pub struct PlayerConfig {
+pub struct VideoPlayerConfig {
     pub window_handle: Option<WindowHandle>,
     pub software_decode: bool,
 }
 
-impl PlayerConfig {
+impl VideoPlayerConfig {
     pub fn print(&self) {
-        info!("PlayerConfig");
+        info!("VideoPlayerConfig");
         info!("\twindow_handle: {:?}", self.window_handle);
         info!("\tsoftware_decode: {}", self.software_decode);
     }

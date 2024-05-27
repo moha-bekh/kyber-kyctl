@@ -21,7 +21,7 @@ use crate::platform::player::{get_video_decoder_config, AudioPlayer, VideoPlayer
 use crate::platform::InputMsgSink;
 
 use crate::http::HttpClient;
-use crate::PlayerConfig;
+use crate::VideoPlayerConfig;
 use crate::{
     BackendDriver, ConnectionParams, Display, MessageProxy, StreamingSessionConfig,
     VideoSessionConfig,
@@ -102,7 +102,7 @@ impl WsBackend {
         _conn_params: &ConnectionParams,
         http_client: &HttpClient,
         displays: &[Display],
-        player_config: &PlayerConfig,
+        player_config: &VideoPlayerConfig,
         streaming_config: &StreamingSessionConfig,
         msg_proxy: MessageProxy,
     ) -> Result<Self> {
@@ -160,7 +160,7 @@ impl WsBackend {
 
     async fn create_video_service(
         http_client: &HttpClient,
-        player_config: &PlayerConfig,
+        player_config: &VideoPlayerConfig,
         video_config: &VideoSessionConfig,
         msg_proxy: MessageProxy,
     ) -> Result<VideoService> {
