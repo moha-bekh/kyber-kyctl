@@ -27,7 +27,7 @@ pub struct ConnectConfig {
 
 #[derive(Clone, Debug)]
 pub struct VideoPlayerConfig {
-    pub window_handle: Option<WindowHandle>,
+    pub window_handle: WindowHandle,
     pub software_decode: bool,
 }
 

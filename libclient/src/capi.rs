@@ -273,15 +273,14 @@ pub unsafe extern "C" fn libclient_video_player_config_default(
     window_handle: *mut libclient_WindowHandle,
     out_config: *mut *mut libclient_VideoPlayerConfig,
 ) -> c_int {
-    let window_handle = if !window_handle.is_null() {
-        let window_handle = Box::from_raw(window_handle);
-        Some(window_handle.handle)
-    } else {
-        None
-    };
+    if window_handle.is_null() {
+        return -1;
+    }
+
+    let window_handle = Box::from_raw(window_handle);
 
     let config = crate::VideoPlayerConfig {
-        window_handle,
+        window_handle: window_handle.handle,
         software_decode: false,
     };
 

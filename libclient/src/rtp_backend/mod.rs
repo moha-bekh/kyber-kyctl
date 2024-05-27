@@ -103,10 +103,6 @@ async fn create_video_config(
         return Ok((None, None));
     };
 
-    let Some(window_handle) = config.player.window_handle else {
-        return Ok((None, None));
-    };
-
     // Create Host config
     let host_videoconfig = HostVideoConfig {
         display_id: config.display_id,
@@ -121,7 +117,7 @@ async fn create_video_config(
     let vlc_videoconfig = player::VideoConfig {
         software_decode: config.player.software_decode,
         uri: sdp_path,
-        window_handle,
+        window_handle: config.player.window_handle,
     };
 
     Ok((Some(host_videoconfig), Some(vlc_videoconfig)))

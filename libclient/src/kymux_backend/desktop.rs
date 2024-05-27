@@ -98,15 +98,11 @@ fn create_video_config(
 ) -> Result<Option<player::VideoConfig>> {
     let config = match (video_config, endpoint, kymux_config.video_protocol) {
         (Some(video_config), Some(endpoint), Some(video_protocol)) => {
-            let Some(window_handle) = video_config.player.window_handle else {
-                return Ok(None);
-            };
-
             let uri = kymux.connect_video_endpoint_with_ipc_forward(*endpoint, video_protocol)?;
 
             Some(player::VideoConfig {
                 software_decode: video_config.player.software_decode,
-                window_handle,
+                window_handle: video_config.player.window_handle,
                 uri,
             })
         }
