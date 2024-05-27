@@ -129,18 +129,8 @@ impl RtpBackend {
             Self::create_video_config(&backend_config, &local_ip).await?;
 
         // Prepare audio config
-        let (host_audioconfig, vlc_audioconfig) = if backend_config.streaming_config.audio {
-            let host_config = HostAudioConfig {
-                port: RTP_AUDIO_PORT,
-            };
-
-            let uri = create_audio_sdp_file(&local_ip, RTP_AUDIO_PORT)?;
-            let vlc_config = player::AudioConfig { uri };
-
-            (Some(host_config), Some(vlc_config))
-        } else {
-            (None, None)
-        };
+        let (host_audioconfig, vlc_audioconfig) =
+            Self::create_audio_config(&backend_config, &local_ip).await?;
 
         // Start stream
         let cursor_format =
@@ -218,6 +208,24 @@ impl RtpBackend {
         };
 
         Ok((Some(host_videoconfig), Some(vlc_videoconfig)))
+    }
+
+    async fn create_audio_config(
+        backend_config: &RtpBackendConfig<'_>,
+        local_ip: &str,
+    ) -> Result<(Option<HostAudioConfig>, Option<player::AudioConfig>)> {
+        if !backend_config.streaming_config.audio {
+            return Ok((None, None));
+        };
+
+        let host_config = HostAudioConfig {
+            port: RTP_AUDIO_PORT,
+        };
+
+        let uri = create_audio_sdp_file(local_ip, RTP_AUDIO_PORT)?;
+        let vlc_config = player::AudioConfig { uri };
+
+        Ok((Some(host_config), Some(vlc_config)))
     }
 }
 
