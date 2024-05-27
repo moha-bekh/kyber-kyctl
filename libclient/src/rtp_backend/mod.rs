@@ -6,12 +6,11 @@ use std::fs;
 use async_trait::async_trait;
 use log::{debug, info};
 
-use crate::get_display_id;
 use crate::http::HttpClient;
 use crate::platform::player;
 use crate::platform::{get_cursor_format, InputClient, InputPipeline};
 use crate::{
-    BackendDriver, ConnectionParams, Display, Error, InputSessionConfig, MessageProxy, Result,
+    BackendDriver, ConnectionParams, Error, InputSessionConfig, MessageProxy, Result,
     StreamingSessionConfig, VideoPlayerConfig, VideoSessionConfig,
 };
 
@@ -97,7 +96,6 @@ pub(crate) struct RtpBackend {
 
 async fn create_video_config(
     client: &HttpClient,
-    displays: &[Display],
     ip: &str,
     config: &Option<VideoSessionConfig>,
     player_config: &VideoPlayerConfig,
@@ -111,16 +109,14 @@ async fn create_video_config(
     };
 
     // Create Host config
-    let display_id = get_display_id(displays, config).id;
-
     let host_videoconfig = HostVideoConfig {
-        display_id,
+        display_id: config.display_id,
         yuv444: config.yuv444,
         port: RTP_VIDEO_PORT,
     };
 
     // Create vlc config
-    let sdp_param = host_service::generate_sdp(client, config.yuv444, display_id).await?;
+    let sdp_param = host_service::generate_sdp(client, config.yuv444, config.display_id).await?;
     let sdp_path = create_video_sdp_file(ip, RTP_VIDEO_PORT, &sdp_param)?;
 
     let vlc_videoconfig = player::VideoConfig {
@@ -155,7 +151,6 @@ impl RtpBackend {
     pub(crate) async fn new(
         conn_params: &ConnectionParams,
         client: &HttpClient,
-        displays: &[Display],
         player_config: &VideoPlayerConfig,
         streaming_config: &StreamingSessionConfig,
         msg_proxy: MessageProxy,
@@ -163,14 +158,8 @@ impl RtpBackend {
         // Prepare video config
         let local_ip = host_service::hello(client).await?;
 
-        let (host_videoconfig, vlc_videoconfig) = create_video_config(
-            client,
-            displays,
-            &local_ip,
-            &streaming_config.video,
-            player_config,
-        )
-        .await?;
+        let (host_videoconfig, vlc_videoconfig) =
+            create_video_config(client, &local_ip, &streaming_config.video, player_config).await?;
 
         // Prepare audio config
         let (host_audioconfig, vlc_audioconfig) = if streaming_config.audio {

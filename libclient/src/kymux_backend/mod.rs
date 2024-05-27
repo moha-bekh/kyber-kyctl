@@ -12,7 +12,7 @@ use crate::error::{Error, Result};
 use crate::http::HttpClient;
 use crate::platform::get_cursor_format;
 use crate::{
-    BackendDriver, ConnectionParams, DataPlaneCloseReason, Display, Message, MessageProxy,
+    BackendDriver, ConnectionParams, DataPlaneCloseReason, Message, MessageProxy,
     StreamingSessionConfig, VideoPlayerConfig,
 };
 
@@ -97,7 +97,6 @@ impl KymuxBackend {
     pub(crate) async fn new(
         conn_params: &ConnectionParams,
         http_client: &HttpClient,
-        displays: &[Display],
         player_config: &VideoPlayerConfig,
         streaming_config: &StreamingSessionConfig,
         kymux_config: KymuxConfig,
@@ -114,7 +113,6 @@ impl KymuxBackend {
         // Start stream
         let start_resp = host_service::start_stream(
             http_client,
-            displays,
             streaming_config.bitrate,
             kymux_config.clone(),
             &streaming_config.video,

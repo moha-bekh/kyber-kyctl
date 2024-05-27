@@ -85,19 +85,6 @@ trait BackendDriver {
     async fn stop(&mut self) -> Result<()>;
 }
 
-fn get_display_id<'a>(displays: &'a [Display], config: &VideoSessionConfig) -> &'a Display {
-    if config.display_index < displays.len() {
-        &displays[config.display_index]
-    } else {
-        warn!(
-            "Display index {} is out of range, fallback to first screen",
-            config.display_index
-        );
-
-        &displays[0]
-    }
-}
-
 struct Handler {
     conn_params: ConnectionParams,
     http_client: HttpClient,
@@ -234,7 +221,6 @@ impl Handler {
                     ws_backend::WsBackend::new(
                         &self.conn_params,
                         &self.http_client,
-                        &self.displays,
                         player_config,
                         streaming_config,
                         msg_proxy,
@@ -250,7 +236,6 @@ impl Handler {
                     kymux_backend::KymuxBackend::new(
                         &self.conn_params,
                         &self.http_client,
-                        &self.displays,
                         player_config,
                         streaming_config,
                         kymux_config.clone(),
@@ -267,7 +252,6 @@ impl Handler {
                     rtp_backend::RtpBackend::new(
                         &self.conn_params,
                         &self.http_client,
-                        &self.displays,
                         player_config,
                         streaming_config,
                         msg_proxy,
@@ -487,7 +471,7 @@ pub enum CursorFormat {
 
 #[derive(Clone, Debug)]
 pub struct VideoSessionConfig {
-    pub display_index: usize,
+    pub display_id: u32,
     pub codec: VideoCodec,
     pub yuv444: bool,
 }
@@ -531,7 +515,7 @@ impl StreamingSessionConfig {
 
         if let Some(video) = &self.video {
             info!("\tvideo: true");
-            info!("\t\tdisplay_index: {}", video.display_index);
+            info!("\t\tdisplay_id: {}", video.display_id);
             info!("\t\tcodec: {:?}", video.codec);
             info!("\t\tyuv444: {}", video.yuv444)
         } else {

@@ -4,9 +4,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::error::{Error, Result};
-use crate::get_display_id;
 use crate::http::HttpClient;
-use crate::{CursorFormat, Display, VideoCodec, VideoSessionConfig};
+use crate::{CursorFormat, VideoCodec, VideoSessionConfig};
 
 use super::{KymuxConfig, KymuxTransportBackend};
 
@@ -79,7 +78,6 @@ pub(crate) struct StartResponse {
 
 pub(crate) async fn start_stream(
     client: &HttpClient,
-    displays: &[Display],
     bitrate: u32,
     kymux_config: KymuxConfig,
     video: &Option<VideoSessionConfig>,
@@ -92,7 +90,7 @@ pub(crate) async fn start_stream(
     );
 
     let video = video.as_ref().map(|video| StartRequestVideo {
-        display_id: get_display_id(displays, video).id,
+        display_id: video.display_id,
         codec: video.codec,
         yuv444: video.yuv444,
     });

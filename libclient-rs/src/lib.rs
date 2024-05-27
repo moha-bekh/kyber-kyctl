@@ -407,10 +407,10 @@ pub struct VideoSessionConfig {
 }
 
 impl VideoSessionConfig {
-    pub fn default(display_index: usize) -> Result<Self> {
+    pub fn default(display_id: u32) -> Result<Self> {
         unsafe {
             let mut ptr: *mut _ = std::mem::zeroed();
-            let ret = sys::libclient_video_session_config_default(display_index, &mut ptr);
+            let ret = sys::libclient_video_session_config_default(display_id, &mut ptr);
             if ret == 0 {
                 Ok(Self { ptr })
             } else {

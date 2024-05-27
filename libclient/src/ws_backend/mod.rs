@@ -23,8 +23,7 @@ use crate::platform::InputMsgSink;
 use crate::http::HttpClient;
 use crate::VideoPlayerConfig;
 use crate::{
-    BackendDriver, ConnectionParams, Display, MessageProxy, StreamingSessionConfig,
-    VideoSessionConfig,
+    BackendDriver, ConnectionParams, MessageProxy, StreamingSessionConfig, VideoSessionConfig,
 };
 use crate::{Error, Result};
 
@@ -101,7 +100,6 @@ impl WsBackend {
     pub(crate) async fn new(
         _conn_params: &ConnectionParams,
         http_client: &HttpClient,
-        displays: &[Display],
         player_config: &VideoPlayerConfig,
         streaming_config: &StreamingSessionConfig,
         msg_proxy: MessageProxy,
@@ -115,7 +113,7 @@ impl WsBackend {
             None
         };
 
-        host_service::start_stream(http_client, displays, streaming_config, cursor_format).await?;
+        host_service::start_stream(http_client, streaming_config, cursor_format).await?;
 
         // Start video service
         let video_service = if let Some(video_config) = &streaming_config.video {

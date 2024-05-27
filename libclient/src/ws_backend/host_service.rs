@@ -2,9 +2,8 @@ use log::warn;
 use reqwest::StatusCode;
 use serde::Serialize;
 
-use crate::get_display_id;
 use crate::http::HttpClient;
-use crate::{CursorFormat, Display, StreamingSessionConfig, VideoCodec};
+use crate::{CursorFormat, StreamingSessionConfig, VideoCodec};
 use crate::{Error, Result};
 
 #[derive(Clone, Debug, Serialize)]
@@ -29,7 +28,6 @@ struct StartRequest {
 
 pub(super) async fn start_stream(
     http_client: &HttpClient,
-    displays: &[Display],
     streaming_config: &StreamingSessionConfig,
     cursor_format: Option<CursorFormat>,
 ) -> Result<()> {
@@ -40,7 +38,7 @@ pub(super) async fn start_stream(
         .video
         .as_ref()
         .map(|video| StartRequestVideo {
-            display_id: get_display_id(displays, video).id,
+            display_id: video.display_id,
             codec: video.codec,
             yuv444: video.yuv444,
         });

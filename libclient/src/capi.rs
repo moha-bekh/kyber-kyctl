@@ -291,11 +291,11 @@ pub unsafe extern "C" fn libclient_video_player_config_default(
 
 #[no_mangle]
 pub unsafe extern "C" fn libclient_video_session_config_default(
-    display_index: usize,
+    display_id: u32,
     out_config: *mut *mut libclient_VideoSessionConfig,
 ) -> c_int {
     let config = crate::VideoSessionConfig {
-        display_index,
+        display_id,
         codec: VideoCodec::H264,
         yuv444: false,
     };
