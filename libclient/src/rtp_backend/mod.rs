@@ -11,7 +11,7 @@ use crate::platform::player;
 use crate::platform::{get_cursor_format, InputClient, InputPipeline};
 use crate::{
     BackendDriver, ConnectionParams, Error, InputSessionConfig, MessageProxy, Result,
-    StreamingSessionConfig, VideoSessionConfig,
+    StreamingSessionConfig,
 };
 
 const RTP_VIDEO_PORT: u16 = 30000;
@@ -101,35 +101,6 @@ pub(crate) struct RtpBackend {
     input_service: Option<InputService>,
 }
 
-async fn create_video_config(
-    client: &HttpClient,
-    ip: &str,
-    config: &Option<VideoSessionConfig>,
-) -> Result<(Option<HostVideoConfig>, Option<player::VideoConfig>)> {
-    let Some(config) = config.as_ref() else {
-        return Ok((None, None));
-    };
-
-    // Create Host config
-    let host_videoconfig = HostVideoConfig {
-        display_id: config.display_id,
-        yuv444: config.yuv444,
-        port: RTP_VIDEO_PORT,
-    };
-
-    // Create vlc config
-    let sdp_param = host_service::generate_sdp(client, config.yuv444, config.display_id).await?;
-    let sdp_path = create_video_sdp_file(ip, RTP_VIDEO_PORT, &sdp_param)?;
-
-    let vlc_videoconfig = player::VideoConfig {
-        software_decode: config.player.software_decode,
-        uri: sdp_path,
-        window_handle: config.player.window_handle,
-    };
-
-    Ok((Some(host_videoconfig), Some(vlc_videoconfig)))
-}
-
 fn start_input(
     streamer_ip: &str,
     config: &InputSessionConfig,
@@ -154,12 +125,8 @@ impl RtpBackend {
         // Prepare video config
         let local_ip = host_service::hello(backend_config.http_client).await?;
 
-        let (host_videoconfig, vlc_videoconfig) = create_video_config(
-            backend_config.http_client,
-            &local_ip,
-            &backend_config.streaming_config.video,
-        )
-        .await?;
+        let (host_videoconfig, vlc_videoconfig) =
+            Self::create_video_config(&backend_config, &local_ip).await?;
 
         // Prepare audio config
         let (host_audioconfig, vlc_audioconfig) = if backend_config.streaming_config.audio {
@@ -218,6 +185,39 @@ impl RtpBackend {
             player,
             input_service,
         })
+    }
+
+    async fn create_video_config(
+        backend_config: &RtpBackendConfig<'_>,
+        local_ip: &str,
+    ) -> Result<(Option<HostVideoConfig>, Option<player::VideoConfig>)> {
+        let Some(video_config) = backend_config.streaming_config.video.as_ref() else {
+            return Ok((None, None));
+        };
+
+        // Create Host config
+        let host_videoconfig = HostVideoConfig {
+            display_id: video_config.display_id,
+            yuv444: video_config.yuv444,
+            port: RTP_VIDEO_PORT,
+        };
+
+        // Create vlc config
+        let sdp_param = host_service::generate_sdp(
+            backend_config.http_client,
+            video_config.yuv444,
+            video_config.display_id,
+        )
+        .await?;
+        let sdp_path = create_video_sdp_file(local_ip, RTP_VIDEO_PORT, &sdp_param)?;
+
+        let vlc_videoconfig = player::VideoConfig {
+            uri: sdp_path,
+            software_decode: video_config.player.software_decode,
+            window_handle: video_config.player.window_handle,
+        };
+
+        Ok((Some(host_videoconfig), Some(vlc_videoconfig)))
     }
 }
 
