@@ -21,9 +21,7 @@ use crate::platform::player::{get_video_decoder_config, AudioPlayer, VideoPlayer
 use crate::platform::InputMsgSink;
 
 use crate::http::HttpClient;
-use crate::{
-    BackendDriver, ConnectionParams, MessageProxy, StreamingSessionConfig, VideoSessionConfig,
-};
+use crate::{BackendDriver, MessageProxy, StreamingSessionConfig, VideoSessionConfig};
 use crate::{Error, Result};
 
 struct VideoService {
@@ -89,6 +87,12 @@ impl InputService {
     }
 }
 
+pub(crate) struct WsBackendConfig<'a> {
+    pub(crate) http_client: &'a HttpClient,
+    pub(crate) streaming_config: &'a StreamingSessionConfig,
+    pub(crate) msg_proxy: MessageProxy,
+}
+
 pub(crate) struct WsBackend {
     video_service: Option<VideoService>,
     audio_service: Option<AudioService>,
@@ -96,27 +100,32 @@ pub(crate) struct WsBackend {
 }
 
 impl WsBackend {
-    pub(crate) async fn new(
-        _conn_params: &ConnectionParams,
-        http_client: &HttpClient,
-        streaming_config: &StreamingSessionConfig,
-        msg_proxy: MessageProxy,
-    ) -> Result<Self> {
+    pub(crate) async fn new(backend_config: WsBackendConfig<'_>) -> Result<Self> {
         info!("Start websocket session");
 
         // Start VideoWebsocket service
-        let cursor_format = if let Some(input_config) = streaming_config.input.as_ref() {
-            get_cursor_format(&input_config.pipeline)
-        } else {
-            None
-        };
+        let cursor_format =
+            if let Some(input_config) = backend_config.streaming_config.input.as_ref() {
+                get_cursor_format(&input_config.pipeline)
+            } else {
+                None
+            };
 
-        host_service::start_stream(http_client, streaming_config, cursor_format).await?;
+        host_service::start_stream(
+            backend_config.http_client,
+            backend_config.streaming_config,
+            cursor_format,
+        )
+        .await?;
 
         // Start video service
-        let video_service = if let Some(video_config) = &streaming_config.video {
-            let video_service =
-                Self::create_video_service(http_client, video_config, msg_proxy.clone()).await?;
+        let video_service = if let Some(video_config) = &backend_config.streaming_config.video {
+            let video_service = Self::create_video_service(
+                backend_config.http_client,
+                video_config,
+                backend_config.msg_proxy.clone(),
+            )
+            .await?;
 
             Some(video_service)
         } else {
@@ -124,8 +133,12 @@ impl WsBackend {
         };
 
         // Start audio service
-        let audio_service = if streaming_config.audio {
-            let audio_service = Self::create_audio_service(http_client, msg_proxy.clone()).await?;
+        let audio_service = if backend_config.streaming_config.audio {
+            let audio_service = Self::create_audio_service(
+                backend_config.http_client,
+                backend_config.msg_proxy.clone(),
+            )
+            .await?;
 
             Some(audio_service)
         } else {
@@ -133,14 +146,18 @@ impl WsBackend {
         };
 
         // Start input service
-        let input_service = if let Some(input_config) = streaming_config.input.as_ref() {
-            let input_service =
-                Self::create_input_service(http_client, input_config.pipeline.clone(), msg_proxy)?;
+        let input_service =
+            if let Some(input_config) = backend_config.streaming_config.input.as_ref() {
+                let input_service = Self::create_input_service(
+                    backend_config.http_client,
+                    input_config.pipeline.clone(),
+                    backend_config.msg_proxy,
+                )?;
 
-            Some(input_service)
-        } else {
-            None
-        };
+                Some(input_service)
+            } else {
+                None
+            };
 
         Ok(Self {
             video_service,

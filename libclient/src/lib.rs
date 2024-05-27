@@ -215,16 +215,13 @@ impl Handler {
         match &streaming_config.protocol {
             #[cfg(feature = "websocket")]
             StreamingProtocol::Websocket => {
-                let backend = Box::new(
-                    ws_backend::WsBackend::new(
-                        &self.conn_params,
-                        &self.http_client,
-                        streaming_config,
-                        msg_proxy,
-                    )
-                    .await?,
-                );
+                let config = ws_backend::WsBackendConfig {
+                    http_client: &self.http_client,
+                    streaming_config,
+                    msg_proxy,
+                };
 
+                let backend = Box::new(ws_backend::WsBackend::new(config).await?);
                 self.backend = Some(backend);
             }
             #[cfg(feature = "kymux")]
