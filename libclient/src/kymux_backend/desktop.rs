@@ -104,7 +104,11 @@ fn create_video_config(
         (Some(window_handle), Some(endpoint), Some(video_protocol)) => {
             let uri = kymux.connect_video_endpoint_with_ipc_forward(*endpoint, video_protocol)?;
 
-            Some(player::VideoConfig { window_handle, uri })
+            Some(player::VideoConfig {
+                software_decode: player_config.software_decode,
+                window_handle,
+                uri,
+            })
         }
         (None, None, None) => None,
         _ => {
@@ -151,7 +155,7 @@ pub(super) async fn create_player(
     let audio_config = create_audio_config(kymux, streaming_config.audio, audio_endpoint)?;
 
     let player = if video_config.is_some() || audio_config.is_some() {
-        let mut player = player::Player::new(player_config.software_decode, msg_proxy.clone())?;
+        let mut player = player::Player::new(msg_proxy.clone())?;
         player.play(video_config, audio_config)?;
 
         Some(Player(player))

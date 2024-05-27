@@ -33,6 +33,7 @@ pub(crate) fn plug_event_manager_to_player(
 }
 
 pub(crate) struct VideoConfig {
+    pub(crate) software_decode: bool,
     pub(crate) window_handle: WindowHandle,
     pub(crate) uri: String,
 }
@@ -49,8 +50,8 @@ pub(crate) struct Player {
 }
 
 impl Player {
-    pub(crate) fn new(software_decode: bool, message_proxy: MessageProxy) -> Result<Self> {
-        let mut options = vec![
+    pub(crate) fn new(message_proxy: MessageProxy) -> Result<Self> {
+        let options = [
             "--0latency",
             "--low-delay",
             "--network-caching=0",
@@ -58,11 +59,6 @@ impl Player {
             "--no-spu",
             "--no-osd",
         ];
-
-        if software_decode || std::env::var("KYBER_SOFTWARE_DECODE").is_ok() {
-            info!("Enable software decoding");
-            options.append(&mut vec!["--no-hw-dec"]);
-        }
 
         let instance =
             vlc::Instance::with_args(Some(options.iter().map(|&s| s.to_string()).collect()))
@@ -91,6 +87,11 @@ impl Player {
         info!("Play video. URI: {}", config.uri);
 
         let media = vlc::Media::new_location(&config.uri).ok_or(PlayerError::MediaCreateFailed)?;
+        if config.software_decode || std::env::var("KYBER_SOFTWARE_DECODE").is_ok() {
+            info!("Enable software decoding");
+            media.add_option(":no-hw-dec");
+        }
+
         let mp =
             vlc::MediaPlayer::new(&self.instance).ok_or(PlayerError::MediaPlayerCreateFailed)?;
         mp.set_media(&media);

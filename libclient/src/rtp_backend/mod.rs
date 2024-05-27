@@ -124,6 +124,7 @@ async fn create_video_config(
     let sdp_path = create_video_sdp_file(ip, RTP_VIDEO_PORT, &sdp_param)?;
 
     let vlc_videoconfig = player::VideoConfig {
+        software_decode: player_config.software_decode,
         uri: sdp_path,
         window_handle,
     };
@@ -204,7 +205,7 @@ impl RtpBackend {
 
         // Start Video/Audio playback
         let player = if vlc_videoconfig.is_some() || vlc_audioconfig.is_some() {
-            let mut player = player::Player::new(player_config.software_decode, msg_proxy.clone())?;
+            let mut player = player::Player::new(msg_proxy.clone())?;
             player.play(vlc_videoconfig, vlc_audioconfig)?;
 
             Some(player)
