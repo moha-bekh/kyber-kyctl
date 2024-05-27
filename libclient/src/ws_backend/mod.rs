@@ -20,7 +20,7 @@ use crate::platform::player::{get_video_decoder_config, AudioPlayer, VideoPlayer
 use crate::platform::InputMsgSink;
 
 use crate::http::HttpClient;
-use crate::{BackendDriver, MessageProxy, StreamingSessionConfig, VideoSessionConfig};
+use crate::{BackendDriver, MessageProxy, StreamingSessionConfig};
 use crate::{Error, Result};
 
 struct VideoService {
@@ -105,19 +105,8 @@ impl WsBackend {
         // Start Websocket service
         host_service::start_stream(&backend_config).await?;
 
-        // Start video service
-        let video_service = if let Some(video_config) = &backend_config.streaming_config.video {
-            let video_service = Self::create_video_service(
-                backend_config.http_client,
-                video_config,
-                backend_config.msg_proxy.clone(),
-            )
-            .await?;
-
-            Some(video_service)
-        } else {
-            None
-        };
+        // Start services
+        let video_service = Self::create_video_service(&backend_config).await?;
 
         // Start audio service
         let audio_service = if backend_config.streaming_config.audio {
@@ -154,22 +143,27 @@ impl WsBackend {
     }
 
     async fn create_video_service(
-        http_client: &HttpClient,
-        video_config: &VideoSessionConfig,
-        msg_proxy: MessageProxy,
-    ) -> Result<VideoService> {
+        backend_config: &WsBackendConfig<'_>,
+    ) -> Result<Option<VideoService>> {
+        let Some(video_config) = &backend_config.streaming_config.video else {
+            return Ok(None);
+        };
+
         let video_decoder_config = get_video_decoder_config(video_config).await?;
 
         let player = Rc::new(VideoPlayer::new(
             &video_config.player.canvas,
-            msg_proxy.clone(),
+            backend_config.msg_proxy.clone(),
             video_decoder_config,
         )?);
 
-        let url = format!("wss://{host}/websocket/video", host = http_client.host());
+        let url = format!(
+            "wss://{host}/websocket/video",
+            host = backend_config.http_client.host()
+        );
         let ws = VideoWsSocketHandler::new(&url, player.clone())?;
 
-        Ok(VideoService { ws, player })
+        Ok(Some(VideoService { ws, player }))
     }
 
     async fn create_audio_service(
