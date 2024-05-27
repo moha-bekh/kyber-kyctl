@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use log::{info, warn};
 
 use libkynput::bufferproxy::BufferProxy;
-use libkynput::{InputNetworkStream, InputPipeline};
+use libkynput::InputNetworkStream;
 
 use audio::AudioWsSocketHandler;
 use input::InputWebSocketHandler;
@@ -108,20 +108,7 @@ impl WsBackend {
         // Start services
         let video_service = Self::create_video_service(&backend_config).await?;
         let audio_service = Self::create_audio_service(&backend_config).await?;
-
-        // Start input service
-        let input_service =
-            if let Some(input_config) = backend_config.streaming_config.input.as_ref() {
-                let input_service = Self::create_input_service(
-                    backend_config.http_client,
-                    input_config.pipeline.clone(),
-                    backend_config.msg_proxy,
-                )?;
-
-                Some(input_service)
-            } else {
-                None
-            };
+        let input_service = Self::create_input_service(&backend_config)?;
 
         Ok(Self {
             video_service,
@@ -172,30 +159,33 @@ impl WsBackend {
         Ok(Some(AudioService { ws, player }))
     }
 
-    fn create_input_service(
-        http_client: &HttpClient,
-        input_pipeline: Arc<InputPipeline>,
-        msg_proxy: MessageProxy,
-    ) -> Result<InputService> {
+    fn create_input_service(backend_config: &WsBackendConfig<'_>) -> Result<Option<InputService>> {
+        let Some(input_config) = backend_config.streaming_config.input.as_ref() else {
+            return Ok(None);
+        };
+
         // Create and configure libkynput network proxy
         let mut input_proxy = BufferProxy::new();
         let (libkynput_tx, libkynput_rx) = input_proxy.split()?;
         let input_proxy = Arc::new(input_proxy);
 
-        input_proxy.plug_consumer(Arc::downgrade(&input_pipeline.get_input_sink()))?;
+        input_proxy.plug_consumer(Arc::downgrade(&input_config.pipeline.get_input_sink()))?;
         input_proxy.run()?;
 
         // Spawn websocket
-        let msg_sink = Arc::new(InputMsgSink::new(msg_proxy.clone()));
-        let inputs_url = format!("wss://{host}/websocket/inputs", host = http_client.host());
+        let msg_sink = Arc::new(InputMsgSink::new(backend_config.msg_proxy.clone()));
+        let inputs_url = format!(
+            "wss://{host}/websocket/inputs",
+            host = backend_config.http_client.host()
+        );
         let input_websocket =
             InputWebSocketHandler::new(&inputs_url, libkynput_tx, libkynput_rx, msg_sink)?;
 
-        Ok(InputService {
+        Ok(Some(InputService {
             websocket: input_websocket,
             proxy: input_proxy,
-            pipeline: input_pipeline,
-        })
+            pipeline: input_config.pipeline.clone(),
+        }))
     }
 }
 
