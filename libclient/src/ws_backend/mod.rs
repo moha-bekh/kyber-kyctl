@@ -103,7 +103,7 @@ impl WsBackend {
     pub(crate) async fn new(backend_config: WsBackendConfig<'_>) -> Result<Self> {
         info!("Start websocket session");
 
-        // Start VideoWebsocket service
+        // Start Websocket service
         let cursor_format =
             if let Some(input_config) = backend_config.streaming_config.input.as_ref() {
                 get_cursor_format(&input_config.pipeline)
@@ -111,12 +111,7 @@ impl WsBackend {
                 None
             };
 
-        host_service::start_stream(
-            backend_config.http_client,
-            backend_config.streaming_config,
-            cursor_format,
-        )
-        .await?;
+        host_service::start_stream(&backend_config, cursor_format).await?;
 
         // Start video service
         let video_service = if let Some(video_config) = &backend_config.streaming_config.video {

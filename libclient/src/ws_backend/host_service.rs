@@ -2,8 +2,8 @@ use log::warn;
 use reqwest::StatusCode;
 use serde::Serialize;
 
-use crate::http::HttpClient;
-use crate::{CursorFormat, StreamingSessionConfig, VideoCodec};
+use crate::ws_backend::WsBackendConfig;
+use crate::{CursorFormat, VideoCodec};
 use crate::{Error, Result};
 
 #[derive(Clone, Debug, Serialize)]
@@ -27,14 +27,14 @@ struct StartRequest {
 }
 
 pub(super) async fn start_stream(
-    http_client: &HttpClient,
-    streaming_config: &StreamingSessionConfig,
+    backend_config: &WsBackendConfig<'_>,
     cursor_format: Option<CursorFormat>,
 ) -> Result<()> {
-    let base_url = http_client.base_url();
+    let base_url = backend_config.http_client.base_url();
     let url = format!("{base_url}/websocket/start");
 
-    let video = streaming_config
+    let video = backend_config
+        .streaming_config
         .video
         .as_ref()
         .map(|video| StartRequestVideo {
@@ -46,13 +46,18 @@ pub(super) async fn start_stream(
     let inputs = cursor_format.map(|cursor_format| StartRequestInput { cursor_format });
 
     let body = StartRequest {
-        bitrate: streaming_config.bitrate,
+        bitrate: backend_config.streaming_config.bitrate,
         video: video.clone(),
-        audio: streaming_config.audio,
+        audio: backend_config.streaming_config.audio,
         inputs,
     };
 
-    let response = http_client.post(&url).json(&body).send().await?;
+    let response = backend_config
+        .http_client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await?;
     if response.status() != StatusCode::OK {
         warn!("POST /websocket/start failed: {}", response.status());
         return Err(Error::HttpQueryFailed {
