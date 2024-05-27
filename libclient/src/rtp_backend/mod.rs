@@ -9,10 +9,7 @@ use log::{debug, info};
 use crate::http::HttpClient;
 use crate::platform::player;
 use crate::platform::{get_cursor_format, InputClient, InputPipeline};
-use crate::{
-    BackendDriver, ConnectionParams, Error, InputSessionConfig, MessageProxy, Result,
-    StreamingSessionConfig,
-};
+use crate::{BackendDriver, ConnectionParams, Error, MessageProxy, Result, StreamingSessionConfig};
 
 const RTP_VIDEO_PORT: u16 = 30000;
 
@@ -101,25 +98,6 @@ pub(crate) struct RtpBackend {
     input_service: Option<InputService>,
 }
 
-fn start_input(
-    streamer_ip: &str,
-    config: &InputSessionConfig,
-    msg_proxy: MessageProxy,
-) -> Result<Option<InputService>> {
-    let create_stream_cb = |_target, msg_sink| libkynput_rs::tcp::new_client(streamer_ip, msg_sink);
-
-    let client = InputClient::new(
-        msg_proxy,
-        config.pipeline.get_input_sink(),
-        create_stream_cb,
-    )?;
-
-    Ok(Some(InputService {
-        client,
-        pipeline: config.pipeline.clone(),
-    }))
-}
-
 impl RtpBackend {
     pub(crate) async fn new(backend_config: RtpBackendConfig<'_>) -> Result<Self> {
         // Prepare video config
@@ -161,15 +139,7 @@ impl RtpBackend {
         };
 
         // Start Inputs
-        let input_service = if let Some(config) = backend_config.streaming_config.input.as_ref() {
-            start_input(
-                &backend_config.conn_params.addr.ip().to_string(),
-                config,
-                backend_config.msg_proxy,
-            )?
-        } else {
-            None
-        };
+        let input_service = Self::start_input(&backend_config)?;
 
         Ok(Self {
             player,
@@ -226,6 +196,28 @@ impl RtpBackend {
         let vlc_config = player::AudioConfig { uri };
 
         Ok((Some(host_config), Some(vlc_config)))
+    }
+
+    fn start_input(backend_config: &RtpBackendConfig<'_>) -> Result<Option<InputService>> {
+        let Some(config) = backend_config.streaming_config.input.as_ref() else {
+            return Ok(None);
+        };
+
+        let streamer_ip = backend_config.conn_params.addr.ip().to_string();
+
+        let create_stream_cb =
+            |_target, msg_sink| libkynput_rs::tcp::new_client(&streamer_ip, msg_sink);
+
+        let client = InputClient::new(
+            backend_config.msg_proxy.clone(),
+            config.pipeline.get_input_sink(),
+            create_stream_cb,
+        )?;
+
+        Ok(Some(InputService {
+            client,
+            pipeline: config.pipeline.clone(),
+        }))
     }
 }
 
