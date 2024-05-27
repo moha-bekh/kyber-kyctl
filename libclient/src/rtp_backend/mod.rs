@@ -89,6 +89,13 @@ struct InputService {
     pipeline: InputPipeline,
 }
 
+pub(crate) struct RtpBackendConfig<'a> {
+    pub(crate) conn_params: &'a ConnectionParams,
+    pub(crate) http_client: &'a HttpClient,
+    pub(crate) streaming_config: &'a StreamingSessionConfig,
+    pub(crate) msg_proxy: MessageProxy,
+}
+
 pub(crate) struct RtpBackend {
     player: Option<player::Player>,
     input_service: Option<InputService>,
@@ -143,20 +150,19 @@ fn start_input(
 }
 
 impl RtpBackend {
-    pub(crate) async fn new(
-        conn_params: &ConnectionParams,
-        client: &HttpClient,
-        streaming_config: &StreamingSessionConfig,
-        msg_proxy: MessageProxy,
-    ) -> Result<Self> {
+    pub(crate) async fn new(backend_config: RtpBackendConfig<'_>) -> Result<Self> {
         // Prepare video config
-        let local_ip = host_service::hello(client).await?;
+        let local_ip = host_service::hello(backend_config.http_client).await?;
 
-        let (host_videoconfig, vlc_videoconfig) =
-            create_video_config(client, &local_ip, &streaming_config.video).await?;
+        let (host_videoconfig, vlc_videoconfig) = create_video_config(
+            backend_config.http_client,
+            &local_ip,
+            &backend_config.streaming_config.video,
+        )
+        .await?;
 
         // Prepare audio config
-        let (host_audioconfig, vlc_audioconfig) = if streaming_config.audio {
+        let (host_audioconfig, vlc_audioconfig) = if backend_config.streaming_config.audio {
             let host_config = HostAudioConfig {
                 port: RTP_AUDIO_PORT,
             };
@@ -170,16 +176,17 @@ impl RtpBackend {
         };
 
         // Start stream
-        let cursor_format = if let Some(input_config) = streaming_config.input.as_ref() {
-            get_cursor_format(&input_config.pipeline)
-        } else {
-            None
-        };
+        let cursor_format =
+            if let Some(input_config) = backend_config.streaming_config.input.as_ref() {
+                get_cursor_format(&input_config.pipeline)
+            } else {
+                None
+            };
 
         host_service::start_stream(
-            client,
+            backend_config.http_client,
             &local_ip,
-            streaming_config.bitrate,
+            backend_config.streaming_config.bitrate,
             &host_videoconfig,
             &host_audioconfig,
             cursor_format,
@@ -188,7 +195,7 @@ impl RtpBackend {
 
         // Start Video/Audio playback
         let player = if vlc_videoconfig.is_some() || vlc_audioconfig.is_some() {
-            let mut player = player::Player::new(msg_proxy.clone())?;
+            let mut player = player::Player::new(backend_config.msg_proxy.clone())?;
             player.play(vlc_videoconfig, vlc_audioconfig)?;
 
             Some(player)
@@ -197,8 +204,12 @@ impl RtpBackend {
         };
 
         // Start Inputs
-        let input_service = if let Some(config) = streaming_config.input.as_ref() {
-            start_input(&conn_params.addr.ip().to_string(), config, msg_proxy)?
+        let input_service = if let Some(config) = backend_config.streaming_config.input.as_ref() {
+            start_input(
+                &backend_config.conn_params.addr.ip().to_string(),
+                config,
+                backend_config.msg_proxy,
+            )?
         } else {
             None
         };

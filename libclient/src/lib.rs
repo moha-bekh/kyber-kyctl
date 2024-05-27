@@ -244,16 +244,14 @@ impl Handler {
             }
             #[cfg(feature = "rtp")]
             StreamingProtocol::Rtp => {
-                let backend = Box::new(
-                    rtp_backend::RtpBackend::new(
-                        &self.conn_params,
-                        &self.http_client,
-                        streaming_config,
-                        msg_proxy,
-                    )
-                    .await?,
-                );
+                let config = rtp_backend::RtpBackendConfig {
+                    conn_params: &self.conn_params,
+                    http_client: &self.http_client,
+                    streaming_config,
+                    msg_proxy,
+                };
 
+                let backend = Box::new(rtp_backend::RtpBackend::new(config).await?);
                 self.backend = Some(backend);
             }
         };
