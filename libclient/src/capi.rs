@@ -292,12 +292,14 @@ pub unsafe extern "C" fn libclient_video_player_config_default(
 #[no_mangle]
 pub unsafe extern "C" fn libclient_video_session_config_default(
     display_id: u32,
+    player: *mut libclient_VideoPlayerConfig,
     out_config: *mut *mut libclient_VideoSessionConfig,
 ) -> c_int {
     let config = crate::VideoSessionConfig {
         display_id,
         codec: VideoCodec::H264,
         yuv444: false,
+        player: (*player).config.clone(),
     };
 
     *out_config = Box::into_raw(Box::new(libclient_VideoSessionConfig { config }));
@@ -464,14 +466,10 @@ pub unsafe extern "C" fn libclient_client_disconnect(client: *mut libclient_Clie
 pub unsafe extern "C" fn libclient_client_start_streaming(
     client: *mut libclient_Client,
     session_config: *mut libclient_StreamingSessionConfig,
-    player_config: *mut libclient_VideoPlayerConfig,
 ) -> c_int {
     let session_config = (*session_config).config.clone();
-    let player_config = (*player_config).config.clone();
 
-    let ret = (*client)
-        .client
-        .start_streaming(session_config, player_config);
+    let ret = (*client).client.start_streaming(session_config);
     result_to_c_int(ret)
 }
 

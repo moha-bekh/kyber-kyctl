@@ -1,6 +1,6 @@
 use log::{error, warn};
 
-use crate::{Error, Result, VideoCodec, VideoPlayerConfig, VideoSessionConfig};
+use crate::{Error, Result, VideoCodec, VideoSessionConfig};
 
 mod cell_buf;
 mod decoder;
@@ -82,10 +82,9 @@ pub(crate) async fn supported_video_codecs(force_software: bool) -> Vec<VideoDec
 }
 
 pub(crate) async fn get_video_decoder_config(
-    player_config: &VideoPlayerConfig,
     video_config: &VideoSessionConfig,
 ) -> Result<VideoDecoderConfig> {
-    let supported_video_codecs = supported_video_codecs(player_config.software_decode).await;
+    let supported_video_codecs = supported_video_codecs(video_config.player.software_decode).await;
 
     let supported_video_codecs: Vec<_> = supported_video_codecs
         .into_iter()

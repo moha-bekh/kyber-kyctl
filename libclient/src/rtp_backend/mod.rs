@@ -11,7 +11,7 @@ use crate::platform::player;
 use crate::platform::{get_cursor_format, InputClient, InputPipeline};
 use crate::{
     BackendDriver, ConnectionParams, Error, InputSessionConfig, MessageProxy, Result,
-    StreamingSessionConfig, VideoPlayerConfig, VideoSessionConfig,
+    StreamingSessionConfig, VideoSessionConfig,
 };
 
 const RTP_VIDEO_PORT: u16 = 30000;
@@ -98,13 +98,12 @@ async fn create_video_config(
     client: &HttpClient,
     ip: &str,
     config: &Option<VideoSessionConfig>,
-    player_config: &VideoPlayerConfig,
 ) -> Result<(Option<HostVideoConfig>, Option<player::VideoConfig>)> {
     let Some(config) = config.as_ref() else {
         return Ok((None, None));
     };
 
-    let Some(window_handle) = player_config.window_handle else {
+    let Some(window_handle) = config.player.window_handle else {
         return Ok((None, None));
     };
 
@@ -120,7 +119,7 @@ async fn create_video_config(
     let sdp_path = create_video_sdp_file(ip, RTP_VIDEO_PORT, &sdp_param)?;
 
     let vlc_videoconfig = player::VideoConfig {
-        software_decode: player_config.software_decode,
+        software_decode: config.player.software_decode,
         uri: sdp_path,
         window_handle,
     };
@@ -151,7 +150,6 @@ impl RtpBackend {
     pub(crate) async fn new(
         conn_params: &ConnectionParams,
         client: &HttpClient,
-        player_config: &VideoPlayerConfig,
         streaming_config: &StreamingSessionConfig,
         msg_proxy: MessageProxy,
     ) -> Result<Self> {
@@ -159,7 +157,7 @@ impl RtpBackend {
         let local_ip = host_service::hello(client).await?;
 
         let (host_videoconfig, vlc_videoconfig) =
-            create_video_config(client, &local_ip, &streaming_config.video, player_config).await?;
+            create_video_config(client, &local_ip, &streaming_config.video).await?;
 
         // Prepare audio config
         let (host_audioconfig, vlc_audioconfig) = if streaming_config.audio {

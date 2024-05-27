@@ -15,9 +15,7 @@ use crate::kymux_backend::host_service::StartKymuxCertificateHash;
 use crate::platform::player::{AudioPlayer, FrameSink, VideoDecoderConfig, VideoPlayer};
 use crate::platform::InputMsgSink;
 use crate::{Error, Result};
-use crate::{
-    InputSessionConfig, MessageProxy, StreamingSessionConfig, VideoPlayerConfig, VideoSessionConfig,
-};
+use crate::{InputSessionConfig, MessageProxy, StreamingSessionConfig, VideoSessionConfig};
 
 pub(super) struct InputService {
     pub(super) proxy: Arc<BufferProxy>,
@@ -102,7 +100,6 @@ pub(super) async fn connect_webtransport(
 }
 
 async fn create_video_decoder_config(
-    player_config: &VideoPlayerConfig,
     config: &Option<VideoSessionConfig>,
 ) -> Option<VideoDecoderConfig> {
     let Some(config) = config.as_ref() else {
@@ -110,7 +107,7 @@ async fn create_video_decoder_config(
     };
 
     let supported_video_codecs =
-        crate::Client::supported_video_codecs(player_config.software_decode).await;
+        crate::Client::supported_video_codecs(config.player.software_decode).await;
 
     let supported_video_codecs: Vec<_> = supported_video_codecs
         .into_iter()
@@ -183,14 +180,14 @@ async fn create_videoplayer(
     kymux: &kymux::Connection,
     video_endpoint: u16,
     video_protocol: VideoProtocol,
-    player_config: &VideoPlayerConfig,
-    video_config: VideoDecoderConfig,
+    video_session_config: &VideoSessionConfig,
+    video_decoder_config: VideoDecoderConfig,
     msg_proxy: MessageProxy,
 ) -> Result<Rc<VideoPlayer>> {
     let video_player = Rc::new(VideoPlayer::new(
-        &player_config.canvas,
+        &video_session_config.player.canvas,
         msg_proxy.clone(),
-        video_config,
+        video_decoder_config,
     )?);
 
     info!("Start video with protocol {video_protocol:?}");
@@ -208,9 +205,7 @@ async fn create_videoplayer(
 
 async fn create_audioplayer(
     kymux: &kymux::Connection,
-    _kymux_config: &KymuxConfig,
     audio_endpoint: u16,
-    _player_config: &VideoPlayerConfig,
     msg_proxy: MessageProxy,
 ) -> Result<Rc<AudioPlayer>> {
     let audio_player = Rc::new(AudioPlayer::new(msg_proxy).await?);
@@ -229,30 +224,39 @@ async fn create_audioplayer(
 pub(super) async fn create_player(
     kymux: &mut kymux::Connection,
     kymux_config: &KymuxConfig,
-    player_config: &VideoPlayerConfig,
     streaming_config: &StreamingSessionConfig,
     video_endpoint: &Option<u16>,
     audio_endpoint: &Option<u16>,
     msg_proxy: MessageProxy,
 ) -> Result<Option<Player>> {
     // Create Video player
-    let video_config = create_video_decoder_config(player_config, &streaming_config.video).await;
+    let video_decoder_config = create_video_decoder_config(&streaming_config.video).await;
 
-    let video_player = match (video_config, video_endpoint, kymux_config.video_protocol) {
-        (Some(video_config), Some(video_endpoint), Some(video_protocol)) => {
+    let video_player = match (
+        video_decoder_config,
+        &streaming_config.video,
+        video_endpoint,
+        kymux_config.video_protocol,
+    ) {
+        (
+            Some(video_decoder_config),
+            Some(video_session_config),
+            Some(video_endpoint),
+            Some(video_protocol),
+        ) => {
             let video_player = create_videoplayer(
                 kymux,
                 *video_endpoint,
                 video_protocol,
-                player_config,
-                video_config,
+                video_session_config,
+                video_decoder_config,
                 msg_proxy.clone(),
             )
             .await?;
 
             Some(video_player)
         }
-        (None, None, None) => None,
+        (None, None, None, None) => None,
         _ => {
             error!("Invalid Video config. Should either get a config and an endpoint, or none of them.");
             return Err(Error::InvalidState);
@@ -262,14 +266,8 @@ pub(super) async fn create_player(
     // Create Audio player
     let audio_player = match (streaming_config.audio, audio_endpoint) {
         (true, Some(audio_endpoint)) => {
-            let audio_player = create_audioplayer(
-                kymux,
-                kymux_config,
-                *audio_endpoint,
-                player_config,
-                msg_proxy.clone(),
-            )
-            .await?;
+            let audio_player =
+                create_audioplayer(kymux, *audio_endpoint, msg_proxy.clone()).await?;
 
             Some(audio_player)
         }

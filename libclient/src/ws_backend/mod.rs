@@ -21,7 +21,6 @@ use crate::platform::player::{get_video_decoder_config, AudioPlayer, VideoPlayer
 use crate::platform::InputMsgSink;
 
 use crate::http::HttpClient;
-use crate::VideoPlayerConfig;
 use crate::{
     BackendDriver, ConnectionParams, MessageProxy, StreamingSessionConfig, VideoSessionConfig,
 };
@@ -100,7 +99,6 @@ impl WsBackend {
     pub(crate) async fn new(
         _conn_params: &ConnectionParams,
         http_client: &HttpClient,
-        player_config: &VideoPlayerConfig,
         streaming_config: &StreamingSessionConfig,
         msg_proxy: MessageProxy,
     ) -> Result<Self> {
@@ -117,13 +115,8 @@ impl WsBackend {
 
         // Start video service
         let video_service = if let Some(video_config) = &streaming_config.video {
-            let video_service = Self::create_video_service(
-                http_client,
-                player_config,
-                video_config,
-                msg_proxy.clone(),
-            )
-            .await?;
+            let video_service =
+                Self::create_video_service(http_client, video_config, msg_proxy.clone()).await?;
 
             Some(video_service)
         } else {
@@ -158,14 +151,13 @@ impl WsBackend {
 
     async fn create_video_service(
         http_client: &HttpClient,
-        player_config: &VideoPlayerConfig,
         video_config: &VideoSessionConfig,
         msg_proxy: MessageProxy,
     ) -> Result<VideoService> {
-        let video_decoder_config = get_video_decoder_config(player_config, video_config).await?;
+        let video_decoder_config = get_video_decoder_config(video_config).await?;
 
         let player = Rc::new(VideoPlayer::new(
-            &player_config.canvas,
+            &video_config.player.canvas,
             msg_proxy.clone(),
             video_decoder_config,
         )?);

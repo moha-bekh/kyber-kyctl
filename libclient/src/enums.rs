@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::host_events;
-use crate::{StreamerPipelineEventType, StreamerPipelineStage, StreamerPipelineType};
-use crate::{StreamingSessionConfig, VideoPlayerConfig};
+use crate::{
+    StreamerPipelineEventType, StreamerPipelineStage, StreamerPipelineType, StreamingSessionConfig,
+};
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[repr(C)]
@@ -46,8 +47,7 @@ pub(crate) enum Message {
     },
 
     StartStreamingSession {
-        streaming_config: StreamingSessionConfig,
-        player_config: VideoPlayerConfig,
+        config: StreamingSessionConfig,
     },
     StopStreamingSession,
 

@@ -9,7 +9,7 @@ use super::KymuxConfig;
 use crate::platform::player;
 use crate::platform::{InputClient, InputPipeline};
 use crate::{
-    ConnectionParams, InputSessionConfig, MessageProxy, StreamingSessionConfig, VideoPlayerConfig,
+    ConnectionParams, InputSessionConfig, MessageProxy, StreamingSessionConfig, VideoSessionConfig,
 };
 use crate::{Error, Result};
 
@@ -93,19 +93,19 @@ pub(super) async fn connect_quinn(
 fn create_video_config(
     kymux: &kymux::Connection,
     kymux_config: &KymuxConfig,
-    player_config: &VideoPlayerConfig,
+    video_config: &Option<VideoSessionConfig>,
     endpoint: &Option<u16>,
 ) -> Result<Option<player::VideoConfig>> {
-    let config = match (
-        player_config.window_handle,
-        endpoint,
-        kymux_config.video_protocol,
-    ) {
-        (Some(window_handle), Some(endpoint), Some(video_protocol)) => {
+    let config = match (video_config, endpoint, kymux_config.video_protocol) {
+        (Some(video_config), Some(endpoint), Some(video_protocol)) => {
+            let Some(window_handle) = video_config.player.window_handle else {
+                return Ok(None);
+            };
+
             let uri = kymux.connect_video_endpoint_with_ipc_forward(*endpoint, video_protocol)?;
 
             Some(player::VideoConfig {
-                software_decode: player_config.software_decode,
+                software_decode: video_config.player.software_decode,
                 window_handle,
                 uri,
             })
@@ -144,13 +144,13 @@ fn create_audio_config(
 pub(super) async fn create_player(
     kymux: &mut kymux::Connection,
     kymux_config: &KymuxConfig,
-    player_config: &VideoPlayerConfig,
     streaming_config: &StreamingSessionConfig,
     video_endpoint: &Option<u16>,
     audio_endpoint: &Option<u16>,
     msg_proxy: MessageProxy,
 ) -> Result<Option<Player>> {
-    let video_config = create_video_config(kymux, kymux_config, player_config, video_endpoint)?;
+    let video_config =
+        create_video_config(kymux, kymux_config, &streaming_config.video, video_endpoint)?;
 
     let audio_config = create_audio_config(kymux, streaming_config.audio, audio_endpoint)?;
 

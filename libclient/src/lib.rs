@@ -206,13 +206,11 @@ impl Handler {
     async fn start_streaming_session(
         &mut self,
         streaming_config: &StreamingSessionConfig,
-        player_config: &VideoPlayerConfig,
     ) -> Result<()> {
         let msg_proxy = self.create_message_proxy();
 
         info!("Start streaming session");
         streaming_config.print();
-        player_config.print();
 
         match &streaming_config.protocol {
             #[cfg(feature = "websocket")]
@@ -221,7 +219,6 @@ impl Handler {
                     ws_backend::WsBackend::new(
                         &self.conn_params,
                         &self.http_client,
-                        player_config,
                         streaming_config,
                         msg_proxy,
                     )
@@ -236,7 +233,6 @@ impl Handler {
                     kymux_backend::KymuxBackend::new(
                         &self.conn_params,
                         &self.http_client,
-                        player_config,
                         streaming_config,
                         kymux_config.clone(),
                         msg_proxy,
@@ -252,7 +248,6 @@ impl Handler {
                     rtp_backend::RtpBackend::new(
                         &self.conn_params,
                         &self.http_client,
-                        player_config,
                         streaming_config,
                         msg_proxy,
                     )
@@ -330,13 +325,8 @@ impl Handler {
 
                 Ok(())
             }
-            Message::StartStreamingSession {
-                streaming_config,
-                player_config,
-            } => {
-                let ret = self
-                    .start_streaming_session(streaming_config, player_config)
-                    .await;
+            Message::StartStreamingSession { config } => {
+                let ret = self.start_streaming_session(config).await;
                 let (event, stop) = match ret {
                     Ok(()) => (Event::StreamingStarted, false),
                     Err(Error::DataPlaneConnectFailed) => {
@@ -474,6 +464,7 @@ pub struct VideoSessionConfig {
     pub display_id: u32,
     pub codec: VideoCodec,
     pub yuv444: bool,
+    pub player: VideoPlayerConfig,
 }
 
 #[derive(Clone)]
@@ -616,15 +607,8 @@ impl Client {
         Ok(())
     }
 
-    pub fn start_streaming(
-        &self,
-        streaming_config: StreamingSessionConfig,
-        player_config: VideoPlayerConfig,
-    ) -> Result<()> {
-        self.send_message(Message::StartStreamingSession {
-            streaming_config,
-            player_config,
-        })?;
+    pub fn start_streaming(&self, config: StreamingSessionConfig) -> Result<()> {
+        self.send_message(Message::StartStreamingSession { config })?;
         Ok(())
     }
 

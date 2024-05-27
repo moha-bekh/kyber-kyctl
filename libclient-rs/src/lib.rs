@@ -407,10 +407,10 @@ pub struct VideoSessionConfig {
 }
 
 impl VideoSessionConfig {
-    pub fn default(display_id: u32) -> Result<Self> {
+    pub fn default(display_id: u32, player: VideoPlayerConfig) -> Result<Self> {
         unsafe {
             let mut ptr: *mut _ = std::mem::zeroed();
-            let ret = sys::libclient_video_session_config_default(display_id, &mut ptr);
+            let ret = sys::libclient_video_session_config_default(display_id, player.ptr, &mut ptr);
             if ret == 0 {
                 Ok(Self { ptr })
             } else {
@@ -591,18 +591,8 @@ impl Client {
         }
     }
 
-    pub fn start_streaming(
-        &self,
-        session_config: &StreamingSessionConfig,
-        video_player_config: &VideoPlayerConfig,
-    ) -> Result<()> {
-        let ret = unsafe {
-            sys::libclient_client_start_streaming(
-                self.ptr,
-                session_config.ptr,
-                video_player_config.ptr,
-            )
-        };
+    pub fn start_streaming(&self, session_config: &StreamingSessionConfig) -> Result<()> {
+        let ret = unsafe { sys::libclient_client_start_streaming(self.ptr, session_config.ptr) };
         if ret == 0 {
             Ok(())
         } else {
