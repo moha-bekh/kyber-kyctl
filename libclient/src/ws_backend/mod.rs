@@ -16,7 +16,6 @@ use audio::AudioWsSocketHandler;
 use input::InputWebSocketHandler;
 use video::VideoWsSocketHandler;
 
-use crate::platform::get_cursor_format;
 use crate::platform::player::{get_video_decoder_config, AudioPlayer, VideoPlayer};
 use crate::platform::InputMsgSink;
 
@@ -104,14 +103,7 @@ impl WsBackend {
         info!("Start websocket session");
 
         // Start Websocket service
-        let cursor_format =
-            if let Some(input_config) = backend_config.streaming_config.input.as_ref() {
-                get_cursor_format(&input_config.pipeline)
-            } else {
-                None
-            };
-
-        host_service::start_stream(&backend_config, cursor_format).await?;
+        host_service::start_stream(&backend_config).await?;
 
         // Start video service
         let video_service = if let Some(video_config) = &backend_config.streaming_config.video {
