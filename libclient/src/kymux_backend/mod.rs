@@ -118,15 +118,7 @@ impl KymuxBackend {
             };
 
         // Start stream
-        let start_resp = host_service::start_stream(
-            backend_config.http_client,
-            backend_config.streaming_config.bitrate,
-            backend_config.kymux_config.clone(),
-            &backend_config.streaming_config.video,
-            backend_config.streaming_config.audio,
-            cursor_format,
-        )
-        .await?;
+        let start_resp = host_service::start_stream(&backend_config, cursor_format).await?;
 
         // Play Video and Audio
         let player = platform::create_player(

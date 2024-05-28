@@ -5,9 +5,9 @@ use serde_json::json;
 
 use crate::error::{Error, Result};
 use crate::http::HttpClient;
-use crate::{CursorFormat, VideoCodec, VideoSessionConfig};
+use crate::{CursorFormat, VideoCodec};
 
-use super::{KymuxConfig, KymuxTransportBackend};
+use super::{KymuxBackendConfig, KymuxConfig, KymuxTransportBackend};
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
@@ -77,35 +77,40 @@ pub(crate) struct StartResponse {
 }
 
 pub(crate) async fn start_stream(
-    client: &HttpClient,
-    bitrate: u32,
-    kymux_config: KymuxConfig,
-    video: &Option<VideoSessionConfig>,
-    audio: bool,
+    backend_config: &KymuxBackendConfig<'_>,
     inputs: Option<CursorFormat>,
 ) -> Result<StartResponse> {
     let url = format!(
         "{base_url}/kymux/start_session",
-        base_url = client.base_url()
+        base_url = backend_config.http_client.base_url()
     );
 
-    let video = video.as_ref().map(|video| StartRequestVideo {
-        display_id: video.display_id,
-        codec: video.codec,
-        yuv444: video.yuv444,
-    });
+    let video = backend_config
+        .streaming_config
+        .video
+        .as_ref()
+        .map(|video| StartRequestVideo {
+            display_id: video.display_id,
+            codec: video.codec,
+            yuv444: video.yuv444,
+        });
 
     let inputs = inputs.map(|cursor_format| StartRequestInput { cursor_format });
 
     let body = StartRequest {
-        bitrate,
-        kymux_config,
+        bitrate: backend_config.streaming_config.bitrate,
+        kymux_config: backend_config.kymux_config.clone(),
         video,
-        audio,
+        audio: backend_config.streaming_config.audio,
         inputs,
     };
 
-    let response = client.post(&url).json(&body).send().await?;
+    let response = backend_config
+        .http_client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await?;
     if response.status() != StatusCode::OK {
         warn!("POST /kymux/start_session failed: {}", response.status());
         return Err(Error::HttpQueryFailed {
