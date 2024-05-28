@@ -96,10 +96,24 @@ pub(crate) struct StartRequest {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+pub(crate) struct StartSessionVideoResponse {
+    pub(crate) endpoint: u16,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub(crate) struct StartSessionAudioResponse {
+    pub(crate) endpoint: u16,
+}
+#[derive(Debug, Deserialize, Serialize)]
+pub(crate) struct StartSessionInputResponse {
+    pub(crate) endpoint: u16,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct StartSessionResponse {
-    pub(crate) video_endpoint: Option<u16>,
-    pub(crate) audio_endpoint: Option<u16>,
-    pub(crate) input_endpoint: Option<u16>,
+    pub(crate) video: Option<StartSessionVideoResponse>,
+    pub(crate) audio: Option<StartSessionAudioResponse>,
+    pub(crate) input: Option<StartSessionInputResponse>,
 }
 
 #[post("/start_session")]
@@ -123,31 +137,40 @@ pub(crate) async fn start_session(
         Ok(response) => {
             info!("Stream started");
 
-            let video_endpoint = if let Some(video) = response.video {
+            let video = if let Some(video) = response.video {
                 ctrl.services.video = Some(video.avservice);
-                Some(video.endpoint)
+
+                Some(StartSessionVideoResponse {
+                    endpoint: video.endpoint,
+                })
             } else {
                 None
             };
 
-            let audio_endpoint = if let Some(audio) = response.audio {
+            let audio = if let Some(audio) = response.audio {
                 ctrl.services.audio = Some(audio.avservice);
-                Some(audio.endpoint)
+
+                Some(StartSessionAudioResponse {
+                    endpoint: audio.endpoint,
+                })
             } else {
                 None
             };
 
-            let input_endpoint = if let Some(input) = response.input {
+            let input = if let Some(input) = response.input {
                 ctrl.services.input = Some(input.inputservice);
-                Some(input.endpoint)
+
+                Some(StartSessionInputResponse {
+                    endpoint: input.endpoint,
+                })
             } else {
                 None
             };
 
             HttpResponse::Ok().json(StartSessionResponse {
-                video_endpoint,
-                audio_endpoint,
-                input_endpoint,
+                video,
+                audio,
+                input,
             })
         }
         Err(err) => {
