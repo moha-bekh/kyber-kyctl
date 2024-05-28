@@ -10,12 +10,12 @@ use kymux::{AVPacket, InputPacket, ProtocolEndpoint, ProtocolRecv, ProtocolSend,
 use libkynput::bufferproxy::{BufferProxy, BufferProxyReceiver, BufferProxySender};
 use libkynput::{InputNetworkStream, InputNetworkStreamMsg, InputNetworkStreamObserver};
 
-use super::KymuxConfig;
+use super::KymuxBackendConfig;
 use crate::kymux_backend::host_service::{StartKymuxCertificateHash, StartSessionResponse};
 use crate::platform::player::{AudioPlayer, FrameSink, VideoDecoderConfig, VideoPlayer};
 use crate::platform::InputMsgSink;
 use crate::{Error, Result};
-use crate::{InputSessionConfig, MessageProxy, StreamingSessionConfig, VideoSessionConfig};
+use crate::{InputSessionConfig, MessageProxy, VideoSessionConfig};
 
 pub(super) struct InputService {
     pub(super) proxy: Arc<BufferProxy>,
@@ -223,19 +223,18 @@ async fn create_audioplayer(
 
 pub(super) async fn create_player(
     kymux: &mut kymux::Connection,
-    kymux_config: &KymuxConfig,
-    streaming_config: &StreamingSessionConfig,
+    backend_config: &KymuxBackendConfig<'_>,
     host_config: &StartSessionResponse,
-    msg_proxy: MessageProxy,
 ) -> Result<Option<Player>> {
     // Create Video player
-    let video_decoder_config = create_video_decoder_config(&streaming_config.video).await;
+    let video_decoder_config =
+        create_video_decoder_config(&backend_config.streaming_config.video).await;
 
     let video_player = match (
         video_decoder_config,
-        &streaming_config.video,
+        &backend_config.streaming_config.video,
         &host_config.video,
-        kymux_config.video_protocol,
+        backend_config.kymux_config.video_protocol,
     ) {
         (
             Some(video_decoder_config),
@@ -249,7 +248,7 @@ pub(super) async fn create_player(
                 video_protocol,
                 video_session_config,
                 video_decoder_config,
-                msg_proxy.clone(),
+                backend_config.msg_proxy.clone(),
             )
             .await?;
 
@@ -263,10 +262,14 @@ pub(super) async fn create_player(
     };
 
     // Create Audio player
-    let audio_player = match (streaming_config.audio, &host_config.audio) {
+    let audio_player = match (backend_config.streaming_config.audio, &host_config.audio) {
         (true, Some(host_config)) => {
-            let audio_player =
-                create_audioplayer(kymux, host_config.endpoint, msg_proxy.clone()).await?;
+            let audio_player = create_audioplayer(
+                kymux,
+                host_config.endpoint,
+                backend_config.msg_proxy.clone(),
+            )
+            .await?;
 
             Some(audio_player)
         }

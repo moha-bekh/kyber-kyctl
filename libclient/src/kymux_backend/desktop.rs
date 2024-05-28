@@ -5,15 +5,13 @@ use log::{error, info, warn};
 use tokio::sync::oneshot;
 use tokio::task::{self, JoinHandle};
 
-use super::KymuxConfig;
+use super::KymuxBackendConfig;
 use crate::kymux_backend::host_service::{
     StartSessionAudioResponse, StartSessionResponse, StartSessionVideoResponse,
 };
 use crate::platform::player;
 use crate::platform::{InputClient, InputPipeline};
-use crate::{
-    ConnectionParams, InputSessionConfig, MessageProxy, StreamingSessionConfig, VideoSessionConfig,
-};
+use crate::{ConnectionParams, InputSessionConfig, MessageProxy};
 use crate::{Error, Result};
 
 pub(super) struct Player(player::Player);
@@ -94,12 +92,15 @@ pub(super) async fn connect_quinn(
 }
 
 fn create_video_config(
-    kymux: &kymux::Connection,
-    kymux_config: &KymuxConfig,
-    video_config: &Option<VideoSessionConfig>,
+    kymux: &mut kymux::Connection,
+    backend_config: &KymuxBackendConfig<'_>,
     host_config: &Option<StartSessionVideoResponse>,
 ) -> Result<Option<player::VideoConfig>> {
-    let config = match (video_config, host_config, kymux_config.video_protocol) {
+    let config = match (
+        &backend_config.streaming_config.video,
+        host_config,
+        backend_config.kymux_config.video_protocol,
+    ) {
         (Some(video_config), Some(host_config), Some(video_protocol)) => {
             let uri = kymux
                 .connect_video_endpoint_with_ipc_forward(host_config.endpoint, video_protocol)?;
@@ -121,11 +122,11 @@ fn create_video_config(
 }
 
 fn create_audio_config(
-    kymux: &kymux::Connection,
-    enabled: bool,
+    kymux: &mut kymux::Connection,
+    backend_config: &KymuxBackendConfig<'_>,
     host_config: &Option<StartSessionAudioResponse>,
 ) -> Result<Option<player::AudioConfig>> {
-    let config = match (enabled, host_config) {
+    let config = match (backend_config.streaming_config.audio, host_config) {
         (true, Some(host_config)) => {
             let uri = kymux.connect_audio_endpoint_with_ipc_forward(host_config.endpoint)?;
 
@@ -143,22 +144,15 @@ fn create_audio_config(
 
 pub(super) async fn create_player(
     kymux: &mut kymux::Connection,
-    kymux_config: &KymuxConfig,
-    streaming_config: &StreamingSessionConfig,
+    backend_config: &KymuxBackendConfig<'_>,
     host_config: &StartSessionResponse,
-    msg_proxy: MessageProxy,
 ) -> Result<Option<Player>> {
-    let video_config = create_video_config(
-        kymux,
-        kymux_config,
-        &streaming_config.video,
-        &host_config.video,
-    )?;
+    let video_config = create_video_config(kymux, backend_config, &host_config.video)?;
 
-    let audio_config = create_audio_config(kymux, streaming_config.audio, &host_config.audio)?;
+    let audio_config = create_audio_config(kymux, backend_config, &host_config.audio)?;
 
     let player = if video_config.is_some() || audio_config.is_some() {
-        let mut player = player::Player::new(msg_proxy.clone())?;
+        let mut player = player::Player::new(backend_config.msg_proxy.clone())?;
         player.play(video_config, audio_config)?;
 
         Some(Player(player))

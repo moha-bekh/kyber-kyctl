@@ -113,14 +113,7 @@ impl KymuxBackend {
         let host_config = host_service::start_stream(&backend_config).await?;
 
         // Play Video and Audio
-        let player = platform::create_player(
-            &mut kymux,
-            &backend_config.kymux_config,
-            backend_config.streaming_config,
-            &host_config,
-            backend_config.msg_proxy.clone(),
-        )
-        .await?;
+        let player = platform::create_player(&mut kymux, &backend_config, &host_config).await?;
 
         // Start input
         let input_service = match (
