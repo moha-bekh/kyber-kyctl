@@ -88,34 +88,42 @@ async fn kymux_closed_task(
     Ok(())
 }
 
+pub(crate) struct KymuxBackendConfig<'a> {
+    pub(crate) conn_params: &'a ConnectionParams,
+    pub(crate) http_client: &'a HttpClient,
+    pub(crate) streaming_config: &'a StreamingSessionConfig,
+    pub(crate) kymux_config: KymuxConfig,
+    pub(crate) msg_proxy: MessageProxy,
+}
+
 pub(crate) struct KymuxBackend {
     kymux: Arc<kymux::Connection>,
     inner: platform::Inner,
 }
 
 impl KymuxBackend {
-    pub(crate) async fn new(
-        conn_params: &ConnectionParams,
-        http_client: &HttpClient,
-        streaming_config: &StreamingSessionConfig,
-        kymux_config: KymuxConfig,
-        msg_proxy: MessageProxy,
-    ) -> Result<Self> {
-        let mut kymux = start_kymux(conn_params, http_client, kymux_config.backend).await?;
+    pub(crate) async fn new(backend_config: KymuxBackendConfig<'_>) -> Result<Self> {
+        let mut kymux = start_kymux(
+            backend_config.conn_params,
+            backend_config.http_client,
+            backend_config.kymux_config.backend,
+        )
+        .await?;
 
-        let cursor_format = if let Some(input_config) = streaming_config.input.as_ref() {
-            get_cursor_format(&input_config.pipeline)
-        } else {
-            None
-        };
+        let cursor_format =
+            if let Some(input_config) = backend_config.streaming_config.input.as_ref() {
+                get_cursor_format(&input_config.pipeline)
+            } else {
+                None
+            };
 
         // Start stream
         let start_resp = host_service::start_stream(
-            http_client,
-            streaming_config.bitrate,
-            kymux_config.clone(),
-            &streaming_config.video,
-            streaming_config.audio,
+            backend_config.http_client,
+            backend_config.streaming_config.bitrate,
+            backend_config.kymux_config.clone(),
+            &backend_config.streaming_config.video,
+            backend_config.streaming_config.audio,
             cursor_format,
         )
         .await?;
@@ -123,18 +131,22 @@ impl KymuxBackend {
         // Play Video and Audio
         let player = platform::create_player(
             &mut kymux,
-            &kymux_config,
-            streaming_config,
+            &backend_config.kymux_config,
+            backend_config.streaming_config,
             &start_resp.video_endpoint,
             &start_resp.audio_endpoint,
-            msg_proxy.clone(),
+            backend_config.msg_proxy.clone(),
         )
         .await?;
 
         // Start input
-        let input_service = match (streaming_config.input.as_ref(), start_resp.input_endpoint) {
+        let input_service = match (
+            backend_config.streaming_config.input.as_ref(),
+            start_resp.input_endpoint,
+        ) {
             (Some(config), Some(endpoint)) => {
-                platform::start_input(&kymux, config, endpoint, msg_proxy.clone()).await?
+                platform::start_input(&kymux, config, endpoint, backend_config.msg_proxy.clone())
+                    .await?
             }
             (None, None) => None,
             _ => {
@@ -146,8 +158,10 @@ impl KymuxBackend {
         // Monitor connection closed
         #[allow(clippy::arc_with_non_send_sync)]
         let kymux = Arc::new(kymux);
-        let closed_task =
-            platform::KymuxClosedTask::new(kymux_closed_task(kymux.clone(), msg_proxy.clone()));
+        let closed_task = platform::KymuxClosedTask::new(kymux_closed_task(
+            kymux.clone(),
+            backend_config.msg_proxy.clone(),
+        ));
 
         Ok(Self {
             kymux,

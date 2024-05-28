@@ -226,17 +226,15 @@ impl Handler {
             }
             #[cfg(feature = "kymux")]
             StreamingProtocol::Kymux(kymux_config) => {
-                let backend = Box::new(
-                    kymux_backend::KymuxBackend::new(
-                        &self.conn_params,
-                        &self.http_client,
-                        streaming_config,
-                        kymux_config.clone(),
-                        msg_proxy,
-                    )
-                    .await?,
-                );
+                let config = kymux_backend::KymuxBackendConfig {
+                    conn_params: &self.conn_params,
+                    http_client: &self.http_client,
+                    streaming_config,
+                    kymux_config: kymux_config.clone(),
+                    msg_proxy,
+                };
 
+                let backend = Box::new(kymux_backend::KymuxBackend::new(config).await?);
                 self.backend = Some(backend);
             }
             #[cfg(feature = "rtp")]
