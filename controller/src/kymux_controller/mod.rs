@@ -246,6 +246,7 @@ async fn start_input(
 }
 
 pub(crate) struct StartSessionVideoResponse {
+    display_id: u32,
     avservice: avservice::Handler,
     endpoint: u16,
 }
@@ -325,6 +326,7 @@ async fn start_session(
         .await?;
 
         Some(StartSessionVideoResponse {
+            display_id: video_request.display_id,
             avservice,
             endpoint,
         })
