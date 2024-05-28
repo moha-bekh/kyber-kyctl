@@ -5,6 +5,7 @@ use serde_json::json;
 
 use crate::error::{Error, Result};
 use crate::http::HttpClient;
+use crate::platform::get_cursor_format;
 use crate::{CursorFormat, VideoCodec};
 
 use super::{KymuxBackendConfig, KymuxConfig, KymuxTransportBackend};
@@ -76,10 +77,7 @@ pub(crate) struct StartResponse {
     pub(crate) input_endpoint: Option<u16>,
 }
 
-pub(crate) async fn start_stream(
-    backend_config: &KymuxBackendConfig<'_>,
-    inputs: Option<CursorFormat>,
-) -> Result<StartResponse> {
+pub(crate) async fn start_stream(backend_config: &KymuxBackendConfig<'_>) -> Result<StartResponse> {
     let url = format!(
         "{base_url}/kymux/start_session",
         base_url = backend_config.http_client.base_url()
@@ -95,7 +93,12 @@ pub(crate) async fn start_stream(
             yuv444: video.yuv444,
         });
 
-    let inputs = inputs.map(|cursor_format| StartRequestInput { cursor_format });
+    let inputs = if let Some(input_config) = &backend_config.streaming_config.input {
+        let cursor_format = get_cursor_format(&input_config.pipeline);
+        cursor_format.map(|cursor_format| StartRequestInput { cursor_format })
+    } else {
+        None
+    };
 
     let body = StartRequest {
         bitrate: backend_config.streaming_config.bitrate,

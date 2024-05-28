@@ -10,7 +10,6 @@ use serde::Serialize;
 
 use crate::error::{Error, Result};
 use crate::http::HttpClient;
-use crate::platform::get_cursor_format;
 use crate::{
     BackendDriver, ConnectionParams, DataPlaneCloseReason, Message, MessageProxy,
     StreamingSessionConfig,
@@ -110,15 +109,8 @@ impl KymuxBackend {
         )
         .await?;
 
-        let cursor_format =
-            if let Some(input_config) = backend_config.streaming_config.input.as_ref() {
-                get_cursor_format(&input_config.pipeline)
-            } else {
-                None
-            };
-
         // Start stream
-        let start_resp = host_service::start_stream(&backend_config, cursor_format).await?;
+        let start_resp = host_service::start_stream(&backend_config).await?;
 
         // Play Video and Audio
         let player = platform::create_player(
