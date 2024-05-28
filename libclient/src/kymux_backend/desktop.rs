@@ -5,6 +5,8 @@ use log::{error, info, warn};
 use tokio::sync::oneshot;
 use tokio::task::{self, JoinHandle};
 
+use kymux::VideoProtocol;
+
 use super::KymuxBackendConfig;
 use crate::kymux_backend::host_service::{
     StartSessionAudioResponse, StartSessionResponse, StartSessionVideoResponse,
@@ -96,29 +98,28 @@ fn create_video_config(
     backend_config: &KymuxBackendConfig<'_>,
     host_config: &Option<StartSessionVideoResponse>,
 ) -> Result<Option<player::VideoConfig>> {
-    let config = match (
-        &backend_config.streaming_config.video,
-        host_config,
-        backend_config.kymux_config.video_protocol,
-    ) {
-        (Some(video_config), Some(host_config), Some(video_protocol)) => {
-            let uri = kymux
-                .connect_video_endpoint_with_ipc_forward(host_config.endpoint, video_protocol)?;
-
-            Some(player::VideoConfig {
-                software_decode: video_config.player.software_decode,
-                window_handle: video_config.player.window_handle,
-                uri,
-            })
-        }
-        (None, None, None) => None,
+    let (video_config, host_config) = match (&backend_config.streaming_config.video, host_config) {
+        (Some(video_config), Some(host_config)) => (video_config, host_config),
+        (None, None) => return Ok(None),
         _ => {
             error!("Invalid Video config. Should either get a config and an endpoint, or none of them.");
             return Err(Error::InvalidState);
         }
     };
 
-    Ok(config)
+    let video_protocol = backend_config
+        .kymux_config
+        .video_protocol
+        .unwrap_or(VideoProtocol::Reliable);
+
+    let uri =
+        kymux.connect_video_endpoint_with_ipc_forward(host_config.endpoint, video_protocol)?;
+
+    Ok(Some(player::VideoConfig {
+        software_decode: video_config.player.software_decode,
+        window_handle: video_config.player.window_handle,
+        uri,
+    }))
 }
 
 fn create_audio_config(
