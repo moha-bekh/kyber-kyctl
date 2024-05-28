@@ -201,21 +201,43 @@ async fn start_kymux(
 }
 
 async fn start_video(
+    request: &requests::StartRequest,
+    connection: &mut ConnectionWrapper,
     process_factory: &Arc<ProcessFactory>,
     statemachine_proxy: StateMachineProxy,
-    display_id: u32,
-    uri: String,
-    bitrate: u32,
-    codec: avservice_types::VideoCodec,
-    yuv444: bool,
-) -> Result<avservice::Handler> {
-    let mut handler = avservice::Handler::new(avservice::HandlerType::Video, statemachine_proxy);
+) -> Result<Option<StartSessionVideoResponse>> {
+    let Some(video_request) = &request.video else {
+        return Ok(None);
+    };
 
-    handler
-        .kymux_start_video(process_factory, display_id, uri, bitrate, codec, yuv444)
+    let video_protocol = request
+        .kymux_config
+        .video_protocol
+        .unwrap_or(kymux::VideoProtocol::Reliable);
+
+    let (endpoint, uri) = connection
+        .connection
+        .register_video_endpoint_with_ipc_forward(None, video_protocol)
         .await?;
 
-    Ok(handler)
+    info!("Start Video avservice. Protocol: {video_protocol:?}, Endpoint: {endpoint:X}");
+    let mut avservice = avservice::Handler::new(avservice::HandlerType::Video, statemachine_proxy);
+    avservice
+        .kymux_start_video(
+            process_factory,
+            video_request.display_id,
+            uri,
+            request.bitrate,
+            video_request.codec.clone(),
+            video_request.yuv444,
+        )
+        .await?;
+
+    Ok(Some(StartSessionVideoResponse {
+        display_id: video_request.display_id,
+        avservice,
+        endpoint,
+    }))
 }
 
 async fn start_audio(
@@ -300,39 +322,13 @@ async fn start_session(
     };
 
     // Start services
-    let video = if let Some(video_request) = request.video {
-        // Video Server
-        let video_protocol = request
-            .kymux_config
-            .video_protocol
-            .unwrap_or(kymux::VideoProtocol::Reliable);
-
-        let (endpoint, uri) = connection
-            .connection
-            .register_video_endpoint_with_ipc_forward(None, video_protocol)
-            .await?;
-
-        info!("Start Video avservice. Protocol: {video_protocol:?}, Endpoint: {endpoint:X}");
-
-        let avservice = start_video(
-            &ctrl.process_factory,
-            state_machine_proxy.clone(),
-            video_request.display_id,
-            uri,
-            request.bitrate,
-            video_request.codec,
-            video_request.yuv444,
-        )
-        .await?;
-
-        Some(StartSessionVideoResponse {
-            display_id: video_request.display_id,
-            avservice,
-            endpoint,
-        })
-    } else {
-        None
-    };
+    let video = start_video(
+        &request,
+        connection,
+        &ctrl.process_factory,
+        state_machine_proxy.clone(),
+    )
+    .await?;
 
     // Audio server
     let audio = if request.audio {
