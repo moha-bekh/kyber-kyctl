@@ -241,15 +241,29 @@ async fn start_video(
 }
 
 async fn start_audio(
+    request: &requests::StartRequest,
+    connection: &mut ConnectionWrapper,
     process_factory: &Arc<ProcessFactory>,
     statemachine_proxy: StateMachineProxy,
-    uri: String,
-) -> Result<avservice::Handler> {
-    let mut handler = avservice::Handler::new(avservice::HandlerType::Audio, statemachine_proxy);
+) -> Result<Option<StartSessionAudioResponse>> {
+    if !request.audio {
+        warn!("Audio disabled");
+        return Ok(None);
+    }
 
-    handler.kymux_start_audio(process_factory, uri).await?;
+    let (endpoint, uri) = connection
+        .connection
+        .register_audio_endpoint_with_ipc_forward(None)
+        .await?;
 
-    Ok(handler)
+    info!("Start Audio avservice. Endpoint: {endpoint:X}");
+    let mut avservice = avservice::Handler::new(avservice::HandlerType::Audio, statemachine_proxy);
+    avservice.kymux_start_audio(process_factory, uri).await?;
+
+    Ok(Some(StartSessionAudioResponse {
+        avservice,
+        endpoint,
+    }))
 }
 
 async fn start_input(
@@ -330,27 +344,13 @@ async fn start_session(
     )
     .await?;
 
-    // Audio server
-    let audio = if request.audio {
-        let (endpoint, uri) = connection
-            .connection
-            .register_audio_endpoint_with_ipc_forward(None)
-            .await?;
-
-        info!("Start Audio avservice. Endpoint: {endpoint:X}");
-
-        let avservice =
-            start_audio(&ctrl.process_factory, state_machine_proxy.clone(), uri).await?;
-
-        Some(StartSessionAudioResponse {
-            avservice,
-            endpoint,
-        })
-    } else {
-        warn!("Audio disabled");
-
-        None
-    };
+    let audio = start_audio(
+        &request,
+        connection,
+        &ctrl.process_factory,
+        state_machine_proxy.clone(),
+    )
+    .await?;
 
     // Input server
     let input = if let Some(inputs_request) = request.inputs {
