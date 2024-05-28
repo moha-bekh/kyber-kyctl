@@ -71,13 +71,30 @@ struct StartRequest {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct StartResponse {
-    pub(crate) video_endpoint: Option<u16>,
-    pub(crate) audio_endpoint: Option<u16>,
-    pub(crate) input_endpoint: Option<u16>,
+pub(crate) struct StartSessionVideoResponse {
+    pub(crate) display_id: u32,
+    pub(crate) endpoint: u16,
 }
 
-pub(crate) async fn start_stream(backend_config: &KymuxBackendConfig<'_>) -> Result<StartResponse> {
+#[derive(Debug, Deserialize, Serialize)]
+pub(crate) struct StartSessionAudioResponse {
+    pub(crate) endpoint: u16,
+}
+#[derive(Debug, Deserialize, Serialize)]
+pub(crate) struct StartSessionInputResponse {
+    pub(crate) endpoint: u16,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub(crate) struct StartSessionResponse {
+    pub(crate) video: Option<StartSessionVideoResponse>,
+    pub(crate) audio: Option<StartSessionAudioResponse>,
+    pub(crate) input: Option<StartSessionInputResponse>,
+}
+
+pub(crate) async fn start_stream(
+    backend_config: &KymuxBackendConfig<'_>,
+) -> Result<StartSessionResponse> {
     let url = format!(
         "{base_url}/kymux/start_session",
         base_url = backend_config.http_client.base_url()

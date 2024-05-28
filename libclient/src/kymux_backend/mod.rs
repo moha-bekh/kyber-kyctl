@@ -117,8 +117,7 @@ impl KymuxBackend {
             &mut kymux,
             &backend_config.kymux_config,
             backend_config.streaming_config,
-            &start_resp.video_endpoint,
-            &start_resp.audio_endpoint,
+            &start_resp,
             backend_config.msg_proxy.clone(),
         )
         .await?;
@@ -126,11 +125,16 @@ impl KymuxBackend {
         // Start input
         let input_service = match (
             backend_config.streaming_config.input.as_ref(),
-            start_resp.input_endpoint,
+            start_resp.input,
         ) {
-            (Some(config), Some(endpoint)) => {
-                platform::start_input(&kymux, config, endpoint, backend_config.msg_proxy.clone())
-                    .await?
+            (Some(config), Some(host_config)) => {
+                platform::start_input(
+                    &kymux,
+                    config,
+                    host_config.endpoint,
+                    backend_config.msg_proxy.clone(),
+                )
+                .await?
             }
             (None, None) => None,
             _ => {

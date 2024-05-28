@@ -11,7 +11,7 @@ use libkynput::bufferproxy::{BufferProxy, BufferProxyReceiver, BufferProxySender
 use libkynput::{InputNetworkStream, InputNetworkStreamMsg, InputNetworkStreamObserver};
 
 use super::KymuxConfig;
-use crate::kymux_backend::host_service::StartKymuxCertificateHash;
+use crate::kymux_backend::host_service::{StartKymuxCertificateHash, StartSessionResponse};
 use crate::platform::player::{AudioPlayer, FrameSink, VideoDecoderConfig, VideoPlayer};
 use crate::platform::InputMsgSink;
 use crate::{Error, Result};
@@ -225,8 +225,7 @@ pub(super) async fn create_player(
     kymux: &mut kymux::Connection,
     kymux_config: &KymuxConfig,
     streaming_config: &StreamingSessionConfig,
-    video_endpoint: &Option<u16>,
-    audio_endpoint: &Option<u16>,
+    host_config: &StartSessionResponse,
     msg_proxy: MessageProxy,
 ) -> Result<Option<Player>> {
     // Create Video player
@@ -235,18 +234,18 @@ pub(super) async fn create_player(
     let video_player = match (
         video_decoder_config,
         &streaming_config.video,
-        video_endpoint,
+        &host_config.video,
         kymux_config.video_protocol,
     ) {
         (
             Some(video_decoder_config),
             Some(video_session_config),
-            Some(video_endpoint),
+            Some(host_config),
             Some(video_protocol),
         ) => {
             let video_player = create_videoplayer(
                 kymux,
-                *video_endpoint,
+                host_config.endpoint,
                 video_protocol,
                 video_session_config,
                 video_decoder_config,
@@ -264,10 +263,10 @@ pub(super) async fn create_player(
     };
 
     // Create Audio player
-    let audio_player = match (streaming_config.audio, audio_endpoint) {
-        (true, Some(audio_endpoint)) => {
+    let audio_player = match (streaming_config.audio, &host_config.audio) {
+        (true, Some(host_config)) => {
             let audio_player =
-                create_audioplayer(kymux, *audio_endpoint, msg_proxy.clone()).await?;
+                create_audioplayer(kymux, host_config.endpoint, msg_proxy.clone()).await?;
 
             Some(audio_player)
         }
