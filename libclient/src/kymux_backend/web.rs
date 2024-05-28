@@ -12,7 +12,8 @@ use libkynput::{InputNetworkStream, InputNetworkStreamMsg, InputNetworkStreamObs
 
 use super::KymuxBackendConfig;
 use crate::kymux_backend::host_service::{
-    StartKymuxCertificateHash, StartSessionResponse, StartSessionVideoResponse,
+    StartKymuxCertificateHash, StartSessionAudioResponse, StartSessionResponse,
+    StartSessionVideoResponse,
 };
 use crate::platform::player::{AudioPlayer, FrameSink, VideoDecoderConfig, VideoPlayer};
 use crate::platform::InputMsgSink;
@@ -223,12 +224,21 @@ async fn create_videoplayer(
 
 async fn create_audioplayer(
     kymux: &kymux::Connection,
-    audio_endpoint: u16,
-    msg_proxy: MessageProxy,
-) -> Result<Rc<AudioPlayer>> {
-    let audio_player = Rc::new(AudioPlayer::new(msg_proxy).await?);
+    backend_config: &KymuxBackendConfig<'_>,
+    host_config: &Option<StartSessionAudioResponse>,
+) -> Result<Option<Rc<AudioPlayer>>> {
+    let host_config = match (backend_config.streaming_config.audio, host_config) {
+        (true, Some(host_config)) => host_config,
+        (false, None) => return Ok(None),
+        _ => {
+            error!("Invalid Audio config. Should either get a config and an endpoint, or none of them.");
+            return Err(Error::InvalidState);
+        }
+    };
 
-    let endpoint = kymux.connect_audio_endpoint(audio_endpoint)?;
+    let audio_player = Rc::new(AudioPlayer::new(backend_config.msg_proxy.clone()).await?);
+
+    let endpoint = kymux.connect_audio_endpoint(host_config.endpoint)?;
     let recv = endpoint
         .ready()
         .await
@@ -236,7 +246,7 @@ async fn create_audioplayer(
 
     wasm_bindgen_futures::spawn_local(player_forward_task("audio", recv, audio_player.clone()));
 
-    Ok(audio_player)
+    Ok(Some(audio_player))
 }
 
 pub(super) async fn create_player(
@@ -245,26 +255,7 @@ pub(super) async fn create_player(
     host_config: &StartSessionResponse,
 ) -> Result<Option<Player>> {
     let video_player = create_videoplayer(kymux, backend_config, &host_config.video).await?;
-    // Create Video player
-
-    // Create Audio player
-    let audio_player = match (backend_config.streaming_config.audio, &host_config.audio) {
-        (true, Some(host_config)) => {
-            let audio_player = create_audioplayer(
-                kymux,
-                host_config.endpoint,
-                backend_config.msg_proxy.clone(),
-            )
-            .await?;
-
-            Some(audio_player)
-        }
-        (false, None) => None,
-        _ => {
-            error!("Invalid Audio config. Should either get a config and an endpoint, or none of them.");
-            return Err(Error::InvalidState);
-        }
-    };
+    let audio_player = create_audioplayer(kymux, backend_config, &host_config.audio).await?;
 
     if video_player.is_some() || audio_player.is_some() {
         Ok(Some(Player {
