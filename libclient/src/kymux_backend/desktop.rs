@@ -127,20 +127,18 @@ fn create_audio_config(
     backend_config: &KymuxBackendConfig<'_>,
     host_config: &Option<StartSessionAudioResponse>,
 ) -> Result<Option<player::AudioConfig>> {
-    let config = match (backend_config.streaming_config.audio, host_config) {
-        (true, Some(host_config)) => {
-            let uri = kymux.connect_audio_endpoint_with_ipc_forward(host_config.endpoint)?;
-
-            Some(player::AudioConfig { uri })
-        }
-        (false, None) => None,
+    let host_config = match (backend_config.streaming_config.audio, host_config) {
+        (true, Some(host_config)) => host_config,
+        (false, None) => return Ok(None),
         _ => {
             error!("Invalid Audio config. Should either get a config and an endpoint, or none of them.");
             return Err(Error::InvalidState);
         }
     };
 
-    Ok(config)
+    let uri = kymux.connect_audio_endpoint_with_ipc_forward(host_config.endpoint)?;
+
+    Ok(Some(player::AudioConfig { uri }))
 }
 
 pub(super) async fn create_player(
