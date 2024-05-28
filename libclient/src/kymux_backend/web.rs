@@ -11,7 +11,9 @@ use libkynput::bufferproxy::{BufferProxy, BufferProxyReceiver, BufferProxySender
 use libkynput::{InputNetworkStream, InputNetworkStreamMsg, InputNetworkStreamObserver};
 
 use super::KymuxBackendConfig;
-use crate::kymux_backend::host_service::{StartKymuxCertificateHash, StartSessionResponse};
+use crate::kymux_backend::host_service::{
+    StartKymuxCertificateHash, StartSessionResponse, StartSessionVideoResponse,
+};
 use crate::platform::player::{AudioPlayer, FrameSink, VideoDecoderConfig, VideoPlayer};
 use crate::platform::InputMsgSink;
 use crate::{Error, Result};
@@ -178,21 +180,37 @@ async fn player_forward_task<Player>(
 
 async fn create_videoplayer(
     kymux: &kymux::Connection,
-    video_endpoint: u16,
-    video_protocol: VideoProtocol,
-    video_session_config: &VideoSessionConfig,
-    video_decoder_config: VideoDecoderConfig,
-    msg_proxy: MessageProxy,
-) -> Result<Rc<VideoPlayer>> {
+    backend_config: &KymuxBackendConfig<'_>,
+    host_config: &Option<StartSessionVideoResponse>,
+) -> Result<Option<Rc<VideoPlayer>>> {
+    let Some(video_decoder_config) =
+        create_video_decoder_config(&backend_config.streaming_config.video).await
+    else {
+        return Ok(None);
+    };
+
+    let (video_config, host_config) = match (&backend_config.streaming_config.video, host_config) {
+        (Some(video_config), Some(host_config)) => (video_config, host_config),
+        (None, None) => return Ok(None),
+        _ => {
+            error!("Invalid Video config. Should either get a config and an endpoint, or none of them.");
+            return Err(Error::InvalidState);
+        }
+    };
+
     let video_player = Rc::new(VideoPlayer::new(
-        &video_session_config.player.canvas,
-        msg_proxy.clone(),
+        &video_config.player.canvas,
+        backend_config.msg_proxy.clone(),
         video_decoder_config,
     )?);
 
-    info!("Start video with protocol {video_protocol:?}");
+    let video_protocol = backend_config
+        .kymux_config
+        .video_protocol
+        .unwrap_or(VideoProtocol::Reliable);
 
-    let endpoint = kymux.connect_video_endpoint(video_endpoint, video_protocol)?;
+    info!("Start video with protocol {video_protocol:?}");
+    let endpoint = kymux.connect_video_endpoint(host_config.endpoint, video_protocol)?;
     let recv = endpoint
         .ready()
         .await
@@ -200,7 +218,7 @@ async fn create_videoplayer(
 
     wasm_bindgen_futures::spawn_local(player_forward_task("video", recv, video_player.clone()));
 
-    Ok(video_player)
+    Ok(Some(video_player))
 }
 
 async fn create_audioplayer(
@@ -226,40 +244,8 @@ pub(super) async fn create_player(
     backend_config: &KymuxBackendConfig<'_>,
     host_config: &StartSessionResponse,
 ) -> Result<Option<Player>> {
+    let video_player = create_videoplayer(kymux, backend_config, &host_config.video).await?;
     // Create Video player
-    let video_decoder_config =
-        create_video_decoder_config(&backend_config.streaming_config.video).await;
-
-    let video_player = match (
-        video_decoder_config,
-        &backend_config.streaming_config.video,
-        &host_config.video,
-        backend_config.kymux_config.video_protocol,
-    ) {
-        (
-            Some(video_decoder_config),
-            Some(video_session_config),
-            Some(host_config),
-            Some(video_protocol),
-        ) => {
-            let video_player = create_videoplayer(
-                kymux,
-                host_config.endpoint,
-                video_protocol,
-                video_session_config,
-                video_decoder_config,
-                backend_config.msg_proxy.clone(),
-            )
-            .await?;
-
-            Some(video_player)
-        }
-        (None, None, None, None) => None,
-        _ => {
-            error!("Invalid Video config. Should either get a config and an endpoint, or none of them.");
-            return Err(Error::InvalidState);
-        }
-    };
 
     // Create Audio player
     let audio_player = match (backend_config.streaming_config.audio, &host_config.audio) {
