@@ -31,20 +31,21 @@ pub struct KymuxConfig {
     pub video_protocol: Option<kymux::VideoProtocol>,
 }
 
-async fn start_kymux(
-    conn_params: &ConnectionParams,
-    client: &HttpClient,
-    backend: KymuxTransportBackend,
-) -> Result<kymux::Connection> {
+async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kymux::Connection> {
     // Request remote Kymux start
-    let start_response = host_service::start_kymux(client, backend, conn_params.port).await?;
+    let start_response = host_service::start_kymux(
+        backend_config.http_client,
+        backend_config.kymux_config.backend,
+        backend_config.conn_params.port,
+    )
+    .await?;
 
     // Start Kymux connection
-    let ret = match backend {
+    let ret = match backend_config.kymux_config.backend {
         #[cfg(feature = "desktop")]
         KymuxTransportBackend::Quic => {
             info!("Connect using Quic backend");
-            platform::connect_quinn(conn_params, start_response.port).await
+            platform::connect_quinn(backend_config.conn_params, start_response.port).await
         }
         #[cfg(feature = "web")]
         KymuxTransportBackend::Webtransport => {
@@ -55,7 +56,11 @@ async fn start_kymux(
                 return Err(Error::Rejected);
             };
 
-            platform::connect_webtransport(client.base_url().into(), certificate_hash).await
+            platform::connect_webtransport(
+                backend_config.http_client.base_url().into(),
+                certificate_hash,
+            )
+            .await
         }
     };
 
@@ -102,22 +107,17 @@ pub(crate) struct KymuxBackend {
 
 impl KymuxBackend {
     pub(crate) async fn new(backend_config: KymuxBackendConfig<'_>) -> Result<Self> {
-        let mut kymux = start_kymux(
-            backend_config.conn_params,
-            backend_config.http_client,
-            backend_config.kymux_config.backend,
-        )
-        .await?;
+        let mut kymux = start_kymux(&backend_config).await?;
 
         // Start stream
-        let start_resp = host_service::start_stream(&backend_config).await?;
+        let host_config = host_service::start_stream(&backend_config).await?;
 
         // Play Video and Audio
         let player = platform::create_player(
             &mut kymux,
             &backend_config.kymux_config,
             backend_config.streaming_config,
-            &start_resp,
+            &host_config,
             backend_config.msg_proxy.clone(),
         )
         .await?;
@@ -125,7 +125,7 @@ impl KymuxBackend {
         // Start input
         let input_service = match (
             backend_config.streaming_config.input.as_ref(),
-            start_resp.input,
+            host_config.input,
         ) {
             (Some(config), Some(host_config)) => {
                 platform::start_input(
