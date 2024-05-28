@@ -42,7 +42,7 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
             )
             .await?;
 
-        ctrl.services.video = Some(avservice);
+        ctrl.services.video = vec![avservice];
     }
 
     if let Some(config) = request.audio {

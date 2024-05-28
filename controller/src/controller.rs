@@ -62,7 +62,7 @@ impl ClientSession {
 
 #[derive(Default)]
 pub(crate) struct StreamingServices {
-    pub(crate) video: Option<avservice::Handler>,
+    pub(crate) video: Vec<avservice::Handler>,
     pub(crate) audio: Option<avservice::Handler>,
     pub(crate) input: Option<inputservice::Handler>,
 }
@@ -99,7 +99,10 @@ impl StreamingServices {
     }
 
     async fn stop(&mut self) -> Result<()> {
-        Self::stop_avservice(self.video.take()).await?;
+        for service in self.video.drain(0..) {
+            Self::stop_avservice(Some(service)).await?;
+        }
+
         Self::stop_avservice(self.audio.take()).await?;
         Self::stop_input(self.input.take()).await?;
 

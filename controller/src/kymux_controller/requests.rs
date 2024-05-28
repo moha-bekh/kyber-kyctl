@@ -139,7 +139,7 @@ pub(crate) async fn start_session(
             info!("Stream started");
 
             let video = if let Some(video) = response.video {
-                ctrl.services.video = Some(video.avservice);
+                ctrl.services.video = vec![video.avservice];
 
                 Some(StartSessionVideoResponse {
                     display_id: video.display_id,

@@ -134,6 +134,12 @@ async fn start_handler(
     let backend = WebsocketBackend::new(ws_router);
     client_session.data_plane = Some(DataPlaneBackend::Websocket(backend));
 
+    let avservice_video = if let Some(avservice_video) = avservice_video {
+        vec![avservice_video]
+    } else {
+        vec![]
+    };
+
     ctrl.services.video = avservice_video;
     ctrl.services.audio = avservice_audio;
     ctrl.services.input = inputservice;
