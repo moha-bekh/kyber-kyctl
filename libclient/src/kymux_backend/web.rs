@@ -102,13 +102,7 @@ pub(super) async fn connect_webtransport(
     )
 }
 
-async fn create_video_decoder_config(
-    config: &Option<VideoSessionConfig>,
-) -> Option<VideoDecoderConfig> {
-    let Some(config) = config.as_ref() else {
-        return None;
-    };
-
+async fn create_video_decoder_config(config: &VideoSessionConfig) -> Option<VideoDecoderConfig> {
     let supported_video_codecs =
         crate::Client::supported_video_codecs(config.player.software_decode).await;
 
@@ -184,12 +178,6 @@ async fn create_videoplayer(
     backend_config: &KymuxBackendConfig<'_>,
     host_config: &Option<StartSessionVideoResponse>,
 ) -> Result<Option<Rc<VideoPlayer>>> {
-    let Some(video_decoder_config) =
-        create_video_decoder_config(&backend_config.streaming_config.video).await
-    else {
-        return Ok(None);
-    };
-
     let (video_config, host_config) = match (&backend_config.streaming_config.video, host_config) {
         (Some(video_config), Some(host_config)) => (video_config, host_config),
         (None, None) => return Ok(None),
@@ -197,6 +185,10 @@ async fn create_videoplayer(
             error!("Invalid Video config. Should either get a config and an endpoint, or none of them.");
             return Err(Error::InvalidState);
         }
+    };
+
+    let Some(video_decoder_config) = create_video_decoder_config(&video_config).await else {
+        return Ok(None);
     };
 
     let video_player = Rc::new(VideoPlayer::new(
