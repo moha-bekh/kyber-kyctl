@@ -10,6 +10,8 @@ use serde::Serialize;
 
 use crate::error::{Error, Result};
 use crate::http::HttpClient;
+use crate::kymux_backend::host_service::StartSessionInputResponse;
+use crate::kymux_backend::platform::InputService;
 use crate::{
     BackendDriver, ConnectionParams, DataPlaneCloseReason, Message, MessageProxy,
     StreamingSessionConfig,
@@ -116,25 +118,7 @@ impl KymuxBackend {
         let player = platform::create_player(&mut kymux, &backend_config, &host_config).await?;
 
         // Start input
-        let input_service = match (
-            backend_config.streaming_config.input.as_ref(),
-            host_config.input,
-        ) {
-            (Some(config), Some(host_config)) => {
-                platform::start_input(
-                    &kymux,
-                    config,
-                    host_config.endpoint,
-                    backend_config.msg_proxy.clone(),
-                )
-                .await?
-            }
-            (None, None) => None,
-            _ => {
-                error!("Invalid Input config. Should either get a config and an endpoint, or none of them.");
-                return Err(Error::InvalidState);
-            }
-        };
+        let input_service = Self::start_inputs(&backend_config, &kymux, host_config.input).await?;
 
         // Monitor connection closed
         #[allow(clippy::arc_with_non_send_sync)]
@@ -152,6 +136,31 @@ impl KymuxBackend {
                 closed_task: Some(closed_task),
             },
         })
+    }
+
+    async fn start_inputs(
+        backend_config: &KymuxBackendConfig<'_>,
+        kymux: &kymux::Connection,
+        host_config: Option<StartSessionInputResponse>,
+    ) -> Result<Option<InputService>> {
+        let (input_config, endpoint) = match (&backend_config.streaming_config.input, host_config) {
+            (Some(input_config), Some(host_config)) => (input_config, host_config.endpoint),
+            (None, None) => return Ok(None),
+            _ => {
+                error!("Invalid Input config. Should either get a config and an endpoint, or none of them.");
+                return Err(Error::InvalidState);
+            }
+        };
+
+        let input_service = platform::start_input(
+            kymux,
+            input_config,
+            endpoint,
+            backend_config.msg_proxy.clone(),
+        )
+        .await?;
+
+        Ok(input_service)
     }
 }
 
