@@ -490,8 +490,8 @@ impl StreamingSessionConfig {
         unsafe { sys::libclient_streaming_session_config_set_bitrate(self.ptr, bitrate) }
     }
 
-    pub fn set_video(&self, config: VideoSessionConfig) {
-        unsafe { sys::libclient_streaming_session_config_set_video(self.ptr, config.ptr) }
+    pub fn add_video(&self, config: VideoSessionConfig) {
+        unsafe { sys::libclient_streaming_session_config_add_video(self.ptr, config.ptr) }
 
         mem::forget(config);
     }

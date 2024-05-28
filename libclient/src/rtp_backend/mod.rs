@@ -153,9 +153,12 @@ impl RtpBackend {
         backend_config: &RtpBackendConfig<'_>,
         local_ip: &str,
     ) -> Result<(Option<HostVideoConfig>, Option<player::VideoConfig>)> {
-        let Some(video_config) = backend_config.streaming_config.video.as_ref() else {
+        let video_config = &backend_config.streaming_config.video;
+        if video_config.is_empty() {
             return Ok((None, None));
-        };
+        }
+
+        let video_config = &video_config[0];
 
         // Create Host config
         let host_videoconfig = HostVideoConfig {

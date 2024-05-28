@@ -368,7 +368,7 @@ pub unsafe extern "C" fn libclient_streaming_session_config_default(
     let config = crate::StreamingSessionConfig {
         protocol: (*protocol).protocol.clone(),
         bitrate: 20_000_000,
-        video: None,
+        video: vec![],
         audio: false,
         input: None,
     };
@@ -403,13 +403,13 @@ pub unsafe extern "C" fn libclient_streaming_session_config_set_audio(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn libclient_streaming_session_config_set_video(
+pub unsafe extern "C" fn libclient_streaming_session_config_add_video(
     config: *mut libclient_StreamingSessionConfig,
     video: *mut libclient_VideoSessionConfig,
 ) {
     let video = Box::from_raw(video);
 
-    (*config).config.video = Some(video.config);
+    (*config).config.video.push(video.config);
 }
 
 #[no_mangle]

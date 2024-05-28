@@ -31,15 +31,18 @@ pub(super) async fn start_stream(backend_config: &WsBackendConfig<'_>) -> Result
     let base_url = backend_config.http_client.base_url();
     let url = format!("{base_url}/websocket/start");
 
-    let video = backend_config
-        .streaming_config
-        .video
-        .as_ref()
-        .map(|video| StartRequestVideo {
+    let video = &backend_config.streaming_config.video;
+    let video = if !video.is_empty() {
+        let video = &video[0];
+
+        Some(StartRequestVideo {
             display_id: video.display_id,
             codec: video.codec,
             yuv444: video.yuv444,
-        });
+        })
+    } else {
+        None
+    };
 
     let inputs = if let Some(input_config) = &backend_config.streaming_config.input {
         let cursor_format = get_cursor_format(&input_config.pipeline);

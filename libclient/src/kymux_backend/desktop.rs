@@ -98,13 +98,15 @@ fn create_video_config(
     backend_config: &KymuxBackendConfig<'_>,
     host_config: &Option<StartSessionVideoResponse>,
 ) -> Result<Option<player::VideoConfig>> {
-    let (video_config, host_config) = match (&backend_config.streaming_config.video, host_config) {
-        (Some(video_config), Some(host_config)) => (video_config, host_config),
-        (None, None) => return Ok(None),
-        _ => {
-            error!("Invalid Video config. Should either get a config and an endpoint, or none of them.");
-            return Err(Error::InvalidState);
-        }
+    let video_config = &backend_config.streaming_config.video;
+    if video_config.is_empty() {
+        return Ok(None);
+    }
+
+    let video_config = &video_config[0];
+
+    let Some(host_config) = host_config else {
+        return Ok(None);
     };
 
     let video_protocol = backend_config

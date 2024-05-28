@@ -120,9 +120,12 @@ impl WsBackend {
     async fn create_video_service(
         backend_config: &WsBackendConfig<'_>,
     ) -> Result<Option<VideoService>> {
-        let Some(video_config) = &backend_config.streaming_config.video else {
+        let video_config = &backend_config.streaming_config.video;
+        if video_config.is_empty() {
             return Ok(None);
-        };
+        }
+
+        let video_config = &video_config[0];
 
         let video_decoder_config = get_video_decoder_config(video_config).await?;
 

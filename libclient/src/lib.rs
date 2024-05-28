@@ -469,7 +469,7 @@ pub struct InputSessionConfig {
 pub struct StreamingSessionConfig {
     pub protocol: StreamingProtocol,
     pub bitrate: u32,
-    pub video: Option<VideoSessionConfig>,
+    pub video: Vec<VideoSessionConfig>,
     pub audio: bool,
     pub input: Option<InputSessionConfig>,
 }
@@ -497,11 +497,13 @@ impl StreamingSessionConfig {
 
         info!("\tbitrate: {}", self.bitrate);
 
-        if let Some(video) = &self.video {
-            info!("\tvideo: true");
-            info!("\t\tdisplay_id: {}", video.display_id);
-            info!("\t\tcodec: {:?}", video.codec);
-            info!("\t\tyuv444: {}", video.yuv444)
+        if !self.video.is_empty() {
+            for (idx, config) in self.video.iter().enumerate() {
+                info!("\tVideo session {idx}");
+                info!("\t\tdisplay_id: {}", config.display_id);
+                info!("\t\tcodec: {:?}", config.codec);
+                info!("\t\tyuv444: {}", config.yuv444)
+            }
         } else {
             info!("\tvideo: false");
         };
