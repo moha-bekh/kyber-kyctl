@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::future::Future;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -176,44 +177,60 @@ async fn player_forward_task<Player>(
 async fn create_videoplayer(
     kymux: &kymux::Connection,
     backend_config: &KymuxBackendConfig<'_>,
-    host_config: &Option<StartSessionVideoResponse>,
-) -> Result<Option<Rc<VideoPlayer>>> {
+    host_config: &Option<Vec<StartSessionVideoResponse>>,
+) -> Result<Option<Vec<Rc<VideoPlayer>>>> {
     let video_config = &backend_config.streaming_config.video;
     if video_config.is_empty() {
         return Ok(None);
     }
 
-    let video_config = &video_config[0];
-
     let Some(host_config) = host_config else {
         return Ok(None);
     };
 
-    let Some(video_decoder_config) = create_video_decoder_config(&video_config).await else {
-        return Ok(None);
-    };
-
-    let video_player = Rc::new(VideoPlayer::new(
-        &video_config.player.canvas,
-        backend_config.msg_proxy.clone(),
-        video_decoder_config,
-    )?);
+    let endpoint_list: HashMap<u32, u16> = host_config
+        .iter()
+        .map(|video| (video.display_id, video.endpoint))
+        .collect();
 
     let video_protocol = backend_config
         .kymux_config
         .video_protocol
         .unwrap_or(VideoProtocol::Reliable);
 
-    info!("Start video with protocol {video_protocol:?}");
-    let endpoint = kymux.connect_video_endpoint(host_config.endpoint, video_protocol)?;
-    let recv = endpoint
-        .ready()
-        .await
-        .map_err(|err| Error::KymuxReadyFailed { reason: err.0 })?;
+    let mut player_list = vec![];
 
-    wasm_bindgen_futures::spawn_local(player_forward_task("video", recv, video_player.clone()));
+    for config in video_config {
+        let endpoint = endpoint_list.get(&config.display_id).ok_or_else(|| {
+            warn!("No endpoint found for display {}", config.display_id);
+            Error::Rejected
+        })?;
 
-    Ok(Some(video_player))
+        let video_config = create_video_decoder_config(config).await.ok_or_else(|| {
+            warn!("No valid decoder config for display {}", config.display_id);
+            Error::Rejected
+        })?;
+
+        let video_player = Rc::new(VideoPlayer::new(
+            &config.player.canvas,
+            backend_config.msg_proxy.clone(),
+            video_config,
+        )?);
+
+        info!("Start video with protocol {video_protocol:?}");
+
+        let endpoint = kymux.connect_video_endpoint(*endpoint, video_protocol)?;
+        let recv = endpoint
+            .ready()
+            .await
+            .map_err(|err| Error::KymuxReadyFailed { reason: err.0 })?;
+
+        wasm_bindgen_futures::spawn_local(player_forward_task("video", recv, video_player.clone()));
+
+        player_list.push(video_player);
+    }
+
+    Ok(Some(player_list))
 }
 
 async fn create_audioplayer(
@@ -252,14 +269,8 @@ pub(super) async fn create_player(
     let audio_player = create_audioplayer(kymux, backend_config, &host_config.audio).await?;
 
     if video_player.is_some() || audio_player.is_some() {
-        let video = if let Some(video_player) = video_player {
-            vec![video_player]
-        } else {
-            vec![]
-        };
-
         Ok(Some(Player {
-            video,
+            video: video_player.unwrap_or_default(),
             audio: audio_player,
         }))
     } else {

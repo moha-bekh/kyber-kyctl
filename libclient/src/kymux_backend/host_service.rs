@@ -65,7 +65,7 @@ struct StartRequest {
     bitrate: u32,
 
     kymux_config: KymuxConfig,
-    video: Option<StartRequestVideo>,
+    video: Option<Vec<StartRequestVideo>>,
     audio: bool,
     inputs: Option<StartRequestInput>,
 }
@@ -87,7 +87,7 @@ pub(crate) struct StartSessionInputResponse {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct StartSessionResponse {
-    pub(crate) video: Option<StartSessionVideoResponse>,
+    pub(crate) video: Option<Vec<StartSessionVideoResponse>>,
     pub(crate) audio: Option<StartSessionAudioResponse>,
     pub(crate) input: Option<StartSessionInputResponse>,
 }
@@ -102,13 +102,16 @@ pub(crate) async fn start_stream(
 
     let video = &backend_config.streaming_config.video;
     let video = if !video.is_empty() {
-        let video = &video[0];
-
-        Some(StartRequestVideo {
-            display_id: video.display_id,
-            codec: video.codec,
-            yuv444: video.yuv444,
-        })
+        Some(
+            video
+                .iter()
+                .map(|config| StartRequestVideo {
+                    display_id: config.display_id,
+                    codec: config.codec,
+                    yuv444: config.yuv444,
+                })
+                .collect(),
+        )
     } else {
         None
     };

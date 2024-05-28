@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::future::Future;
 use std::net::SocketAddr;
 
@@ -96,32 +97,47 @@ pub(super) async fn connect_quinn(
 fn create_video_config(
     kymux: &mut kymux::Connection,
     backend_config: &KymuxBackendConfig<'_>,
-    host_config: &Option<StartSessionVideoResponse>,
-) -> Result<Option<player::VideoConfig>> {
+    host_config: &Option<Vec<StartSessionVideoResponse>>,
+) -> Result<Option<Vec<player::VideoConfig>>> {
     let video_config = &backend_config.streaming_config.video;
     if video_config.is_empty() {
         return Ok(None);
     }
 
-    let video_config = &video_config[0];
-
     let Some(host_config) = host_config else {
         return Ok(None);
     };
+
+    let endpoint_list: HashMap<u32, u16> = host_config
+        .iter()
+        .map(|video| (video.display_id, video.endpoint))
+        .collect();
 
     let video_protocol = backend_config
         .kymux_config
         .video_protocol
         .unwrap_or(VideoProtocol::Reliable);
 
-    let uri =
-        kymux.connect_video_endpoint_with_ipc_forward(host_config.endpoint, video_protocol)?;
+    let mut player_config_list = vec![];
 
-    Ok(Some(player::VideoConfig {
-        software_decode: video_config.player.software_decode,
-        window_handle: video_config.player.window_handle,
-        uri,
-    }))
+    for config in video_config {
+        let endpoint = endpoint_list.get(&config.display_id).ok_or_else(|| {
+            warn!("No endpoint found for display {}", config.display_id);
+            Error::Rejected
+        })?;
+
+        let uri = kymux.connect_video_endpoint_with_ipc_forward(*endpoint, video_protocol)?;
+
+        let player_config = player::VideoConfig {
+            software_decode: config.player.software_decode,
+            window_handle: config.player.window_handle,
+            uri,
+        };
+
+        player_config_list.push(player_config);
+    }
+
+    Ok(Some(player_config_list))
 }
 
 fn create_audio_config(
@@ -153,8 +169,6 @@ pub(super) async fn create_player(
     let audio_config = create_audio_config(kymux, backend_config, &host_config.audio)?;
 
     let player = if video_config.is_some() || audio_config.is_some() {
-        let video_config = video_config.map(|video_config| vec![video_config]);
-
         let mut player = player::Player::new(backend_config.msg_proxy.clone())?;
         player.play(video_config, audio_config)?;
 
