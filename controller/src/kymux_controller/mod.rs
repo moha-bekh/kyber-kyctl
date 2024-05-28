@@ -245,15 +245,25 @@ async fn start_input(
     Ok(inputservice)
 }
 
+pub(crate) struct StartSessionVideoResponse {
+    avservice: avservice::Handler,
+    endpoint: u16,
+}
+
+pub(crate) struct StartSessionAudioResponse {
+    avservice: avservice::Handler,
+    endpoint: u16,
+}
+
+pub(crate) struct StartSessionInputResponse {
+    inputservice: inputservice::Handler,
+    endpoint: u16,
+}
+
 pub(crate) struct StartSessionResponse {
-    pub(crate) avservice_video: Option<avservice::Handler>,
-    pub(crate) video_endpoint: Option<u16>,
-
-    pub(crate) avservice_audio: Option<avservice::Handler>,
-    pub(crate) audio_endpoint: Option<u16>,
-
-    pub(crate) inputservice: Option<inputservice::Handler>,
-    pub(crate) input_endpoint: Option<u16>,
+    pub(crate) video: Option<StartSessionVideoResponse>,
+    pub(crate) audio: Option<StartSessionAudioResponse>,
+    pub(crate) input: Option<StartSessionInputResponse>,
 }
 
 async fn start_session(
@@ -289,65 +299,69 @@ async fn start_session(
     };
 
     // Start services
-    let (video_endpoint, avservice_video) = if let Some(video_request) = request.video {
+    let video = if let Some(video_request) = request.video {
         // Video Server
         let video_protocol = request
             .kymux_config
             .video_protocol
             .unwrap_or(kymux::VideoProtocol::Reliable);
 
-        let (video_endpoint, video_uri) = connection
+        let (endpoint, uri) = connection
             .connection
             .register_video_endpoint_with_ipc_forward(None, video_protocol)
             .await?;
 
-        info!("Start Video avservice. Protocol: {video_protocol:?}, Endpoint: {video_endpoint:X}");
+        info!("Start Video avservice. Protocol: {video_protocol:?}, Endpoint: {endpoint:X}");
 
-        let avservice_video = start_video(
+        let avservice = start_video(
             &ctrl.process_factory,
             state_machine_proxy.clone(),
             video_request.display_id,
-            video_uri,
+            uri,
             request.bitrate,
             video_request.codec,
             video_request.yuv444,
         )
         .await?;
 
-        (Some(video_endpoint), Some(avservice_video))
+        Some(StartSessionVideoResponse {
+            avservice,
+            endpoint,
+        })
     } else {
-        (None, None)
+        None
     };
 
     // Audio server
-    let (audio_endpoint, avservice_audio) = if request.audio {
-        let (audio_endpoint, audio_uri) = connection
+    let audio = if request.audio {
+        let (endpoint, uri) = connection
             .connection
             .register_audio_endpoint_with_ipc_forward(None)
             .await?;
 
-        info!("Start Audio avservice. Endpoint: {audio_endpoint:X}");
+        info!("Start Audio avservice. Endpoint: {endpoint:X}");
 
-        let avservice_audio = start_audio(
-            &ctrl.process_factory,
-            state_machine_proxy.clone(),
-            audio_uri,
-        )
-        .await?;
-        (Some(audio_endpoint), Some(avservice_audio))
+        let avservice =
+            start_audio(&ctrl.process_factory, state_machine_proxy.clone(), uri).await?;
+
+        Some(StartSessionAudioResponse {
+            avservice,
+            endpoint,
+        })
     } else {
         warn!("Audio disabled");
-        (None, None)
+
+        None
     };
 
     // Input server
-    let (input_endpoint, inputservice) = if let Some(inputs_request) = request.inputs {
-        let (input_endpoint, uri) = connection
+    let input = if let Some(inputs_request) = request.inputs {
+        let (endpoint, uri) = connection
             .connection
             .register_input_endpoint_with_ipc_forward(None)
             .await?;
 
-        info!("Start Inputservice. Endpoint: {input_endpoint:X}");
+        info!("Start Inputservice. Endpoint: {endpoint:X}");
 
         let host_config = inputservice_types::HostConfig {
             display_list: ctrl.displays.convert(),
@@ -359,18 +373,19 @@ async fn start_session(
 
         let inputservice =
             start_input(&ctrl.process_factory, host_config, service_config, uri).await?;
-        (Some(input_endpoint), Some(inputservice))
+
+        Some(StartSessionInputResponse {
+            inputservice,
+            endpoint,
+        })
     } else {
         warn!("Input server disabled");
-        (None, None)
+        None
     };
 
     Ok(StartSessionResponse {
-        avservice_video,
-        video_endpoint,
-        avservice_audio,
-        audio_endpoint,
-        inputservice,
-        input_endpoint,
+        video,
+        audio,
+        input,
     })
 }

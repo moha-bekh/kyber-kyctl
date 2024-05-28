@@ -123,14 +123,31 @@ pub(crate) async fn start_session(
         Ok(response) => {
             info!("Stream started");
 
-            ctrl.services.video = response.avservice_video;
-            ctrl.services.audio = response.avservice_audio;
-            ctrl.services.input = response.inputservice;
+            let video_endpoint = if let Some(video) = response.video {
+                ctrl.services.video = Some(video.avservice);
+                Some(video.endpoint)
+            } else {
+                None
+            };
+
+            let audio_endpoint = if let Some(audio) = response.audio {
+                ctrl.services.audio = Some(audio.avservice);
+                Some(audio.endpoint)
+            } else {
+                None
+            };
+
+            let input_endpoint = if let Some(input) = response.input {
+                ctrl.services.input = Some(input.inputservice);
+                Some(input.endpoint)
+            } else {
+                None
+            };
 
             HttpResponse::Ok().json(StartSessionResponse {
-                video_endpoint: response.video_endpoint,
-                audio_endpoint: response.audio_endpoint,
-                input_endpoint: response.input_endpoint,
+                video_endpoint,
+                audio_endpoint,
+                input_endpoint,
             })
         }
         Err(err) => {
