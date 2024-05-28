@@ -26,13 +26,13 @@ pub(super) struct InputService {
 }
 
 pub(super) struct Player {
-    pub(super) video: Option<Rc<VideoPlayer>>,
+    pub(super) video: Vec<Rc<VideoPlayer>>,
     pub(super) audio: Option<Rc<AudioPlayer>>,
 }
 
 impl Player {
     pub(super) async fn stop(self) -> Result<()> {
-        if let Some(video_player) = self.video {
+        for video_player in self.video {
             info!("Stop video player");
             let ret = video_player.stop().await;
             if let Err(err) = ret {
@@ -250,8 +250,14 @@ pub(super) async fn create_player(
     let audio_player = create_audioplayer(kymux, backend_config, &host_config.audio).await?;
 
     if video_player.is_some() || audio_player.is_some() {
+        let video = if let Some(video_player) = video_player {
+            vec![video_player]
+        } else {
+            vec![]
+        };
+
         Ok(Some(Player {
-            video: video_player,
+            video,
             audio: audio_player,
         }))
     } else {
