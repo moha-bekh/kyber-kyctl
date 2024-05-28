@@ -44,7 +44,7 @@ pub(crate) struct AudioConfig {
 
 pub(crate) struct Player {
     instance: vlc::Instance,
-    video_mediaplayer: Option<vlc::MediaPlayer>,
+    video_mediaplayer: Vec<vlc::MediaPlayer>,
     audio_mediaplayer: Option<vlc::MediaPlayer>,
     message_proxy: MessageProxy,
 }
@@ -77,7 +77,7 @@ impl Player {
 
         Ok(Self {
             instance,
-            video_mediaplayer: None,
+            video_mediaplayer: vec![],
             audio_mediaplayer: None,
             message_proxy,
         })
@@ -119,7 +119,7 @@ impl Player {
         // Play
         mp.play().or(Err(PlayerError::PlayFailed))?;
 
-        self.video_mediaplayer = Some(mp);
+        self.video_mediaplayer.push(mp);
 
         Ok(())
     }
@@ -146,7 +146,7 @@ impl Player {
 
     pub(crate) fn play(
         &mut self,
-        video_config: Option<VideoConfig>,
+        video_config: Option<Vec<VideoConfig>>,
         audio_config: Option<AudioConfig>,
     ) -> Result<()> {
         if video_config.is_none() && audio_config.is_none() {
@@ -156,10 +156,12 @@ impl Player {
 
         // Video playback
         if let Some(video_config) = video_config {
-            let ret = self.play_video(video_config);
-            if let Err(err) = ret {
-                error!("Fail to start video playback: {:?}", err);
-                return Err(err);
+            for config in video_config {
+                let ret = self.play_video(config);
+                if let Err(err) = ret {
+                    error!("Fail to start video playback: {:?}", err);
+                    return Err(err);
+                }
             }
         }
 
@@ -208,11 +210,9 @@ impl Player {
         }
 
         info!("Stop video player");
-        let video_mediaplayer = self
-            .video_mediaplayer
-            .as_mut()
-            .ok_or(PlayerError::AlreadyStopped)?;
-        Self::mdp_stop_async(video_mediaplayer).await?;
+        for video_mediaplayer in self.video_mediaplayer.iter() {
+            Self::mdp_stop_async(video_mediaplayer).await?;
+        }
 
         Ok(())
     }

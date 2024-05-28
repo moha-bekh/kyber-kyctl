@@ -151,6 +151,8 @@ pub(super) async fn create_player(
     let audio_config = create_audio_config(kymux, backend_config, &host_config.audio)?;
 
     let player = if video_config.is_some() || audio_config.is_some() {
+        let video_config = video_config.map(|video_config| vec![video_config]);
+
         let mut player = player::Player::new(backend_config.msg_proxy.clone())?;
         player.play(video_config, audio_config)?;
 

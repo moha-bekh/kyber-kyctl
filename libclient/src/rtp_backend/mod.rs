@@ -130,6 +130,8 @@ impl RtpBackend {
 
         // Start Video/Audio playback
         let player = if vlc_videoconfig.is_some() || vlc_audioconfig.is_some() {
+            let vlc_videoconfig = vlc_videoconfig.map(|video_config| vec![video_config]);
+
             let mut player = player::Player::new(backend_config.msg_proxy.clone())?;
             player.play(vlc_videoconfig, vlc_audioconfig)?;
 
