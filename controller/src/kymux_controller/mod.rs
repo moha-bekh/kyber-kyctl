@@ -205,39 +205,48 @@ async fn start_video(
     connection: &mut ConnectionWrapper,
     process_factory: &Arc<ProcessFactory>,
     statemachine_proxy: StateMachineProxy,
-) -> Result<Option<StartSessionVideoResponse>> {
+) -> Result<Option<Vec<StartSessionVideoResponse>>> {
     let Some(video_request) = &request.video else {
         return Ok(None);
     };
 
-    let video_protocol = request
-        .kymux_config
-        .video_protocol
-        .unwrap_or(kymux::VideoProtocol::Reliable);
+    let video_stream_count = video_request.len() as u32;
 
-    let (endpoint, uri) = connection
-        .connection
-        .register_video_endpoint_with_ipc_forward(None, video_protocol)
-        .await?;
+    let mut video_streams = vec![];
 
-    info!("Start Video avservice. Protocol: {video_protocol:?}, Endpoint: {endpoint:X}");
-    let mut avservice = avservice::Handler::new(avservice::HandlerType::Video, statemachine_proxy);
-    avservice
-        .kymux_start_video(
-            process_factory,
-            video_request.display_id,
-            uri,
-            request.bitrate,
-            video_request.codec.clone(),
-            video_request.yuv444,
-        )
-        .await?;
+    for stream_request in video_request {
+        let video_protocol = request
+            .kymux_config
+            .video_protocol
+            .unwrap_or(kymux::VideoProtocol::Reliable);
 
-    Ok(Some(StartSessionVideoResponse {
-        display_id: video_request.display_id,
-        avservice,
-        endpoint,
-    }))
+        let (endpoint, uri) = connection
+            .connection
+            .register_video_endpoint_with_ipc_forward(None, video_protocol)
+            .await?;
+
+        info!("Start Video avservice. Protocol: {video_protocol:?}, Endpoint: {endpoint:X}");
+        let mut avservice =
+            avservice::Handler::new(avservice::HandlerType::Video, statemachine_proxy.clone());
+        avservice
+            .kymux_start_video(
+                process_factory,
+                stream_request.display_id,
+                uri,
+                request.bitrate / video_stream_count,
+                stream_request.codec.clone(),
+                stream_request.yuv444,
+            )
+            .await?;
+
+        video_streams.push(StartSessionVideoResponse {
+            display_id: stream_request.display_id,
+            avservice,
+            endpoint,
+        })
+    }
+
+    Ok(Some(video_streams))
 }
 
 async fn start_audio(
@@ -316,7 +325,7 @@ pub(crate) struct StartSessionInputResponse {
 }
 
 pub(crate) struct StartSessionResponse {
-    pub(crate) video: Option<StartSessionVideoResponse>,
+    pub(crate) video: Option<Vec<StartSessionVideoResponse>>,
     pub(crate) audio: Option<StartSessionAudioResponse>,
     pub(crate) input: Option<StartSessionInputResponse>,
 }

@@ -90,7 +90,7 @@ pub(crate) struct StartRequest {
     // Global bitrate for the whole Quic connection. Unit: bits/sec
     pub(crate) bitrate: u32,
     pub(crate) kymux_config: KymuxConfig,
-    pub(crate) video: Option<StartRequestVideo>,
+    pub(crate) video: Option<Vec<StartRequestVideo>>,
     pub(crate) audio: bool,
     pub(crate) inputs: Option<StartRequestInput>,
 }
@@ -112,7 +112,7 @@ pub(crate) struct StartSessionInputResponse {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct StartSessionResponse {
-    pub(crate) video: Option<StartSessionVideoResponse>,
+    pub(crate) video: Option<Vec<StartSessionVideoResponse>>,
     pub(crate) audio: Option<StartSessionAudioResponse>,
     pub(crate) input: Option<StartSessionInputResponse>,
 }
@@ -126,9 +126,11 @@ pub(crate) async fn start_session(
 
     // Check request validity
     if let Some(video_request) = request.video.as_ref() {
-        if !ctrl.display_known(video_request.display_id) {
-            warn!("Unknown Display Id {}", video_request.display_id);
-            return HttpResponse::Forbidden().finish();
+        for request in video_request {
+            if !ctrl.display_known(request.display_id) {
+                warn!("Unknown Display Id {}", request.display_id);
+                return HttpResponse::Forbidden().finish();
+            }
         }
     }
 
@@ -138,16 +140,19 @@ pub(crate) async fn start_session(
         Ok(response) => {
             info!("Stream started");
 
-            let video = if let Some(video) = response.video {
-                ctrl.services.video = vec![video.avservice];
+            let video = response.video.map(|video| {
+                video
+                    .into_iter()
+                    .map(|video| {
+                        ctrl.services.video.push(video.avservice);
 
-                Some(StartSessionVideoResponse {
-                    display_id: video.display_id,
-                    endpoint: video.endpoint,
-                })
-            } else {
-                None
-            };
+                        StartSessionVideoResponse {
+                            display_id: video.display_id,
+                            endpoint: video.endpoint,
+                        }
+                    })
+                    .collect()
+            });
 
             let audio = if let Some(audio) = response.audio {
                 ctrl.services.audio = Some(audio.avservice);
