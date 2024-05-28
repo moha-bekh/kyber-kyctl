@@ -267,18 +267,36 @@ async fn start_audio(
 }
 
 async fn start_input(
+    request: &requests::StartRequest,
+    connection: &mut ConnectionWrapper,
     process_factory: &Arc<ProcessFactory>,
     host_config: inputservice_types::HostConfig,
-    service_config: inputservice_types::ServiceConfig,
-    uri: String,
-) -> Result<inputservice::Handler> {
-    let mut inputservice = inputservice::Handler::new();
+) -> Result<Option<StartSessionInputResponse>> {
+    let Some(inputs_request) = &request.inputs else {
+        warn!("Input server disabled");
+        return Ok(None);
+    };
 
+    let (endpoint, uri) = connection
+        .connection
+        .register_input_endpoint_with_ipc_forward(None)
+        .await?;
+
+    info!("Start Inputservice. Endpoint: {endpoint:X}");
+
+    let service_config = inputservice_types::ServiceConfig {
+        cursor_format: inputs_request.cursor_format.clone(),
+    };
+
+    let mut inputservice = inputservice::Handler::new();
     inputservice
         .start_kymux(process_factory, host_config, service_config, uri)
         .await?;
 
-    Ok(inputservice)
+    Ok(Some(StartSessionInputResponse {
+        inputservice,
+        endpoint,
+    }))
 }
 
 pub(crate) struct StartSessionVideoResponse {
@@ -352,34 +370,15 @@ async fn start_session(
     )
     .await?;
 
-    // Input server
-    let input = if let Some(inputs_request) = request.inputs {
-        let (endpoint, uri) = connection
-            .connection
-            .register_input_endpoint_with_ipc_forward(None)
-            .await?;
-
-        info!("Start Inputservice. Endpoint: {endpoint:X}");
-
-        let host_config = inputservice_types::HostConfig {
+    let input = start_input(
+        &request,
+        connection,
+        &ctrl.process_factory,
+        inputservice_types::HostConfig {
             display_list: ctrl.displays.convert(),
-        };
-
-        let service_config = inputservice_types::ServiceConfig {
-            cursor_format: inputs_request.cursor_format,
-        };
-
-        let inputservice =
-            start_input(&ctrl.process_factory, host_config, service_config, uri).await?;
-
-        Some(StartSessionInputResponse {
-            inputservice,
-            endpoint,
-        })
-    } else {
-        warn!("Input server disabled");
-        None
-    };
+        },
+    )
+    .await?;
 
     Ok(StartSessionResponse {
         video,
