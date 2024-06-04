@@ -13,7 +13,6 @@ export class JSMutex {
             if (Atomics.compareExchange(this._mutex, 0, UNLOCKED, LOCKED) == UNLOCKED) {
                 return;
             }
-            Atomics.wait(this._mutex, 0, LOCKED);
         }
     }
 
@@ -21,6 +20,5 @@ export class JSMutex {
         if (Atomics.compareExchange(this._mutex, 0, LOCKED, UNLOCKED) != LOCKED) {
             throw new Error("Inconsistent mutex state: unlock() unlocked mutex");
         }
-        Atomics.notify(this._mutex, 0, 1);
     }
 }
