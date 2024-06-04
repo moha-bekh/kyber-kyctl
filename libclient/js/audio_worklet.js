@@ -1,6 +1,6 @@
-import { JSMutex } from './mutex.js';
+import { JSSpinLock } from './spinlock.js';
 
-const FIELD_MUTEX = 0;
+const FIELD_SPINLOCK = 0;
 const FIELD_HEAD = 1;
 const FIELD_TAIL = 2;
 const FIELD_UNDERFLOW = 3;
@@ -15,7 +15,7 @@ class AudioPlayerSharedMemory {
         this.sab = sab;
 
         this.fields = new Int32Array(sab, 0, FIELDS);
-        this.mutex = new JSMutex(this.fields.subarray(0, 1))
+        this.spinlock = new JSSpinLock(this.fields.subarray(FIELD_SPINLOCK, FIELD_SPINLOCK + 1))
 
         this.allocSize = allocSize; // in samples
         this.sampleSize = sampleSize;
@@ -120,7 +120,7 @@ class KyberAudioWorklet extends AudioWorkletProcessor {
         const nbChannels = output.length;
         const nbFrames = output[0].length;
 
-        this.memory.mutex.lock();
+        this.memory.spinlock.lock();
         try {
 
             let played = this.memory.getPlayed();
@@ -149,7 +149,7 @@ class KyberAudioWorklet extends AudioWorkletProcessor {
             this.memory.setPlayed(true);
 
         } finally {
-            this.memory.mutex.unlock();
+            this.memory.spinlock.unlock();
         }
 
         return true;

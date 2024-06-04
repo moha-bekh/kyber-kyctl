@@ -125,7 +125,7 @@ case "$ACTION" in
             $JS_SRC_DIR/audio_decoder.js \
             $JS_SRC_DIR/audio_demuxer_worker.js \
             $JS_SRC_DIR/audio_worklet.js \
-            $JS_SRC_DIR/mutex.js \
+            $JS_SRC_DIR/spinlock.js \
             $JS_SRC_DIR/video_decoder.js \
             $JS_SRC_DIR/video_demuxer_worker.js \
             $JS_SRC_DIR/video_renderer_worker.js \
