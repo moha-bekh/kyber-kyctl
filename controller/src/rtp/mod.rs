@@ -17,7 +17,12 @@ pub async fn generate_video_sdp(
 
     let avservice = avservice::Handler::new(avservice::HandlerType::VideoSdp, state_machine_proxy);
     avservice
-        .rtp_generate_video_sdp(&ctrl.process_factory, request.display_id, request.yuv444)
+        .rtp_generate_video_sdp(
+            &ctrl.process_factory,
+            request.display_id,
+            request.yuv444,
+            request.intra_refresh,
+        )
         .await
 }
 
@@ -39,6 +44,7 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
                 video_request.port,
                 request.bitrate,
                 video_request.yuv444,
+                video_request.intra_refresh,
             )
             .await?;
 

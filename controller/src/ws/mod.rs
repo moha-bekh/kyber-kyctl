@@ -72,6 +72,7 @@ async fn start_handler(
                 request.bitrate,
                 video_request.codec.clone(),
                 video_request.yuv444,
+                video_request.intra_refresh,
             )
             .await?;
 

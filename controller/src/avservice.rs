@@ -178,13 +178,18 @@ impl Handler {
         process_factory: &Arc<ProcessFactory>,
         display_id: u32,
         yuv444: bool,
+        intra_refresh: Option<bool>,
     ) -> Result<String> {
         // Generate SDP
         let mut inner = self.spawn_process(process_factory).await?;
 
         let evt = inner
             .sender
-            .send(Command::RtpGenerateVideoSdp { display_id, yuv444 })
+            .send(Command::RtpGenerateVideoSdp {
+                display_id,
+                yuv444,
+                intra_refresh,
+            })
             .await?;
 
         // Stop avserver
@@ -198,6 +203,7 @@ impl Handler {
         Ok(sdp)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn rtp_start_video(
         &mut self,
         process_factory: &Arc<ProcessFactory>,
@@ -206,6 +212,7 @@ impl Handler {
         port: u16,
         bitrate: u32,
         yuv444: bool,
+        intra_refresh: Option<bool>,
     ) -> Result<()> {
         self.start_inner(
             process_factory,
@@ -215,6 +222,7 @@ impl Handler {
                 port,
                 bitrate,
                 yuv444,
+                intra_refresh,
             },
         )
         .await?;
@@ -234,6 +242,7 @@ impl Handler {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn kymux_start_video(
         &mut self,
         process_factory: &Arc<ProcessFactory>,
@@ -242,6 +251,7 @@ impl Handler {
         bitrate: u32,
         codec: VideoCodec,
         yuv444: bool,
+        intra_refresh: Option<bool>,
     ) -> Result<()> {
         self.start_inner(
             process_factory,
@@ -251,6 +261,7 @@ impl Handler {
                 bitrate,
                 codec,
                 yuv444,
+                intra_refresh,
             },
         )
         .await?;

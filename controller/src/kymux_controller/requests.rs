@@ -78,6 +78,7 @@ pub(crate) struct StartRequestVideo {
     pub(crate) display_id: u32,
     pub(crate) codec: VideoCodec,
     pub(crate) yuv444: bool,
+    pub(crate) intra_refresh: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]

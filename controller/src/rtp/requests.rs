@@ -11,6 +11,7 @@ use crate::controller::Controller;
 pub struct GenerateSdpRequest {
     pub yuv444: bool,
     pub display_id: u32,
+    pub intra_refresh: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -23,6 +24,7 @@ pub struct StartRequestVideo {
     pub port: u16,
     pub display_id: u32,
     pub yuv444: bool,
+    pub intra_refresh: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]

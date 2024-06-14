@@ -236,6 +236,7 @@ async fn start_video(
                 request.bitrate / video_stream_count,
                 stream_request.codec.clone(),
                 stream_request.yuv444,
+                stream_request.intra_refresh,
             )
             .await?;
 
