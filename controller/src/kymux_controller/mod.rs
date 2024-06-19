@@ -271,12 +271,17 @@ async fn start_audio(
         return Ok(None);
     }
 
+    let audio_protocol = request
+        .kymux_config
+        .audio_protocol
+        .unwrap_or(kymux::AudioProtocol::Reliable);
+
     let (endpoint, uri) = connection
         .connection
-        .register_audio_endpoint_with_ipc_forward(None)
+        .register_audio_endpoint_with_ipc_forward(None, audio_protocol)
         .await?;
 
-    info!("Start Audio avservice. Endpoint: {endpoint:X}");
+    info!("Start Audio avservice. Protocol: {audio_protocol:?}, Endpoint: {endpoint:X}");
     let mut avservice = avservice::Handler::new(avservice::HandlerType::Audio, statemachine_proxy);
     avservice.kymux_start_audio(process_factory, uri).await?;
 

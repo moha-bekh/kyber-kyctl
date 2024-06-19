@@ -71,6 +71,7 @@ pub(crate) async fn start_mux(
 #[derive(Debug, Deserialize)]
 pub(crate) struct KymuxConfig {
     pub(crate) video_protocol: Option<kymux::VideoProtocol>,
+    pub(crate) audio_protocol: Option<kymux::AudioProtocol>,
 }
 
 #[derive(Debug, Deserialize)]
