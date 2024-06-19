@@ -426,7 +426,7 @@ impl Handler {
 pub use kymux_backend::{KymuxConfig, KymuxTransportBackend};
 
 #[cfg(feature = "kymux")]
-pub use kymux::VideoProtocol;
+pub use kymux::{AudioProtocol, VideoProtocol};
 
 #[derive(Clone, Debug)]
 pub enum StreamingProtocol {
@@ -490,6 +490,7 @@ impl StreamingSessionConfig {
                 info!("\tprotocol: Kymux");
                 info!("\t\tbackend: {:?}", config.backend);
                 info!("\t\tvideo_protocol: {:?}", config.video_protocol);
+                info!("\t\taudio_protocol: {:?}", config.audio_protocol);
             }
             #[cfg(feature = "websocket")]
             StreamingProtocol::Websocket => {

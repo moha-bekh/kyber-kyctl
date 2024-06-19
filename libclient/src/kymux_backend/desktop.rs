@@ -6,7 +6,7 @@ use log::{error, info, warn};
 use tokio::sync::oneshot;
 use tokio::task::{self, JoinHandle};
 
-use kymux::VideoProtocol;
+use kymux::{AudioProtocol, VideoProtocol};
 
 use super::KymuxBackendConfig;
 use crate::kymux_backend::host_service::{
@@ -154,7 +154,12 @@ fn create_audio_config(
         }
     };
 
-    let uri = kymux.connect_audio_endpoint_with_ipc_forward(host_config.endpoint)?;
+    let audio_protocol = backend_config
+        .kymux_config
+        .audio_protocol
+        .unwrap_or(AudioProtocol::Reliable);
+    let uri =
+        kymux.connect_audio_endpoint_with_ipc_forward(host_config.endpoint, audio_protocol)?;
 
     Ok(Some(player::AudioConfig { uri }))
 }

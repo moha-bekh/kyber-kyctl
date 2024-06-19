@@ -6,7 +6,10 @@ use log::{error, info, warn};
 use tokio::sync::oneshot;
 use wasm_bindgen_futures::spawn_local;
 
-use kymux::{AVPacket, InputPacket, ProtocolEndpoint, ProtocolRecv, ProtocolSend, VideoProtocol};
+use kymux::{
+    AVPacket, AudioProtocol, InputPacket, ProtocolEndpoint, ProtocolRecv, ProtocolSend,
+    VideoProtocol,
+};
 use libkynput::bufferproxy::{BufferProxy, BufferProxyReceiver, BufferProxySender};
 use libkynput::{InputNetworkStream, InputNetworkStreamMsg, InputNetworkStreamObserver};
 
@@ -227,7 +230,11 @@ async fn create_audioplayer(
     let (audio_player, audio_player_handle) =
         AudioPlayer::create(backend_config.msg_proxy.clone()).await?;
 
-    let endpoint = kymux.connect_audio_endpoint(host_config.endpoint)?;
+    let audio_protocol = backend_config
+        .kymux_config
+        .audio_protocol
+        .unwrap_or(AudioProtocol::Reliable);
+    let endpoint = kymux.connect_audio_endpoint(host_config.endpoint, audio_protocol)?;
     let recv = endpoint
         .ready()
         .await

@@ -77,6 +77,22 @@ impl From<libclient_KymuxVideoProtocol> for kymux::VideoProtocol {
     }
 }
 
+#[cfg(feature = "kymux")]
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub enum libclient_KymuxAudioProtocol {
+    Reliable,
+}
+
+#[cfg(feature = "kymux")]
+impl From<libclient_KymuxAudioProtocol> for kymux::AudioProtocol {
+    fn from(value: libclient_KymuxAudioProtocol) -> Self {
+        match value {
+            libclient_KymuxAudioProtocol::Reliable => Self::Reliable,
+        }
+    }
+}
+
 #[repr(C)]
 pub enum LogLevel {
     Error,
@@ -241,9 +257,11 @@ pub unsafe extern "C" fn libclient_streaming_protocol_rtp() -> *mut libclient_St
 #[no_mangle]
 pub unsafe extern "C" fn libclient_streaming_protocol_kymux(
     video_protocol: libclient_KymuxVideoProtocol,
+    audio_protocol: libclient_KymuxAudioProtocol,
 ) -> *mut libclient_StreamingProtocol {
     let protocol = crate::StreamingProtocol::Kymux(crate::kymux_backend::KymuxConfig {
         video_protocol: Some(video_protocol.into()),
+        audio_protocol: Some(audio_protocol.into()),
         backend: crate::kymux_backend::KymuxTransportBackend::Quic,
     });
 

@@ -31,6 +31,7 @@ pub enum KymuxTransportBackend {
 pub struct KymuxConfig {
     pub backend: KymuxTransportBackend,
     pub video_protocol: Option<kymux::VideoProtocol>,
+    pub audio_protocol: Option<kymux::AudioProtocol>,
 }
 
 async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kymux::Connection> {

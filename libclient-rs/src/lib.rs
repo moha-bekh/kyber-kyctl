@@ -45,12 +45,32 @@ impl KymuxVideoProtocol {
     }
 }
 
+#[cfg(feature = "kymux")]
+#[derive(Clone, Copy, Debug)]
+pub enum KymuxAudioProtocol {
+    Reliable,
+}
+
+#[cfg(feature = "kymux")]
+impl KymuxAudioProtocol {
+    fn to_u32(self) -> u32 {
+        match self {
+            Self::Reliable => {
+                sys::libclient_KymuxAudioProtocol_LIBCLIENT_KYMUX_AUDIO_PROTOCOL_RELIABLE
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum StreamingProtocol {
     #[cfg(feature = "rtp")]
     Rtp,
     #[cfg(feature = "kymux")]
-    Kymux(KymuxVideoProtocol),
+    Kymux {
+        video_protocol: KymuxVideoProtocol,
+        audio_protocol: KymuxAudioProtocol,
+    },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -476,8 +496,14 @@ impl StreamingSessionConfig {
             #[cfg(feature = "rtp")]
             StreamingProtocol::Rtp => unsafe { sys::libclient_streaming_protocol_rtp() },
             #[cfg(feature = "kymux")]
-            StreamingProtocol::Kymux(video_protocol) => unsafe {
-                sys::libclient_streaming_protocol_kymux(video_protocol.to_u32())
+            StreamingProtocol::Kymux {
+                video_protocol,
+                audio_protocol,
+            } => unsafe {
+                sys::libclient_streaming_protocol_kymux(
+                    video_protocol.to_u32(),
+                    audio_protocol.to_u32(),
+                )
             },
         };
 
