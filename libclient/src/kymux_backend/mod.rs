@@ -46,12 +46,18 @@ async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kymux::C
     let ret = match backend_config.kymux_config.backend {
         #[cfg(feature = "desktop")]
         KymuxTransportBackend::Quic => {
-            info!("Connect using Quic backend");
+            info!(
+                "Connect using Quic backend. Port: {port}",
+                port = start_response.port
+            );
             platform::connect_quinn(backend_config.conn_params, start_response.port).await
         }
         #[cfg(feature = "web")]
         KymuxTransportBackend::Webtransport => {
-            info!("Connect using Webtransport backend");
+            info!(
+                "Connect using Webtransport backend. Port: {port}",
+                port = start_response.port
+            );
 
             let Some(certificate_hash) = start_response.certificate_hash else {
                 error!("No certificate hash returned");
