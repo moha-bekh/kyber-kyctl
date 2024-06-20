@@ -64,11 +64,13 @@ async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kymux::C
                 return Err(Error::Rejected);
             };
 
-            platform::connect_webtransport(
-                backend_config.http_client.base_url().into(),
-                certificate_hash,
-            )
-            .await
+            let url = format!(
+                "https://{host}:{port}",
+                host = backend_config.conn_params.host,
+                port = start_response.port
+            );
+
+            platform::connect_webtransport(url, certificate_hash).await
         }
     };
 
