@@ -129,7 +129,6 @@ class KyberAudioWorklet extends AudioWorkletProcessor {
                 // Wait until the buffer is filled up to at least targetBuffering
                 // before playing
                 if (bufferedSamples < this.targetBuffering) {
-                    console.log("[Audio] Inserting initial buffering silence: " + nbFrames + " samples");
                     // Output buffer is already initialized with zeros
                     return true;
                 }
