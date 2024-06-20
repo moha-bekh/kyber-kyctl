@@ -135,10 +135,20 @@ async fn start_kymux(
         }
     }
 
-    // Load TLS config
-    let (listening_port, tls_config) = {
+    // Load network and TLS config
+    let (listening_port, public_port, tls_config) = {
         let ctrl = ctrl.lock().await;
-        (ctrl.config.port(), ctrl.tls_config.clone())
+
+        // If dataplane port has been overriden, use it directly.
+        // This will break controllers deployed behind a NAT.
+        let (listening_port, public_port) =
+            if let Some(dataplane_port) = ctrl.config.dataplane_port() {
+                (dataplane_port, dataplane_port)
+            } else {
+                (ctrl.config.port(), public_port)
+            };
+
+        (listening_port, public_port, ctrl.tls_config.clone())
     };
 
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), listening_port);

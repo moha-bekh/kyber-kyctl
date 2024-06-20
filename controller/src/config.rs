@@ -11,14 +11,16 @@ const LISTENING_PORT: u16 = 8080;
 #[derive(Debug, Default, Deserialize)]
 pub(crate) struct Config {
     port: Option<u16>,
+    dataplane_port: Option<u16>,
 }
 
 impl Config {
     pub(crate) fn port(&self) -> u16 {
-        match self.port {
-            Some(port) => port,
-            None => LISTENING_PORT,
-        }
+        self.port.unwrap_or(LISTENING_PORT)
+    }
+
+    pub(crate) fn dataplane_port(&self) -> Option<u16> {
+        self.dataplane_port
     }
 }
 
