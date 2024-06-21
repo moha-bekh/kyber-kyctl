@@ -556,24 +556,42 @@ pub struct ConnectConfig {
 }
 
 impl ConnectConfig {
-    pub fn default(host: &str, tls_host: &str, tls_root_cert: &str) -> Result<Self> {
+    pub fn default(host: &str) -> Result<Self> {
         let chost = to_cstr(host);
-        let ctlshost = to_cstr(tls_host);
-        let ctls_root_cert = to_cstr(tls_root_cert);
 
         unsafe {
             let mut ptr: *mut _ = std::mem::zeroed();
-            let ret = sys::libclient_connect_config_default(
-                chost.as_ptr(),
-                ctlshost.as_ptr(),
-                ctls_root_cert.as_ptr(),
-                &mut ptr,
-            );
+            let ret = sys::libclient_connect_config_default(chost.as_ptr(), &mut ptr);
             if ret == 0 {
                 Ok(Self { ptr })
             } else {
                 Err(Error::Generic)
             }
+        }
+    }
+
+    pub fn set_tls_host(&self, tls_host: &str) -> Result<()> {
+        let ctlshost = to_cstr(tls_host);
+
+        let ret =
+            unsafe { sys::libclient_connect_config_set_tls_host(self.ptr, ctlshost.as_ptr()) };
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err(Error::Generic)
+        }
+    }
+
+    pub fn set_tls_root_cert(&self, tls_root_cert: &str) -> Result<()> {
+        let ctls_root_cert = to_cstr(tls_root_cert);
+
+        let ret = unsafe {
+            sys::libclient_connect_config_set_tls_root_cert(self.ptr, ctls_root_cert.as_ptr())
+        };
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err(Error::Generic)
         }
     }
 

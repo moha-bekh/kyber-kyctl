@@ -202,8 +202,6 @@ pub unsafe extern "C" fn libclient_windowshandle_from_hwnd(
 #[no_mangle]
 pub unsafe extern "C" fn libclient_connect_config_default(
     host: *const c_char,
-    tls_host: *const c_char,
-    tls_root_cert: *const c_char,
     out_config: *mut *mut libclient_ConnectConfig,
 ) -> c_int {
     let Ok(host) = CStr::from_ptr(host).to_str() else {
@@ -211,24 +209,44 @@ pub unsafe extern "C" fn libclient_connect_config_default(
         return -1;
     };
 
+    let config = crate::ConnectConfig {
+        host: host.into(),
+        port: crate::STREAMER_PORT,
+        tls_host: None,
+        tls_root_cert: None,
+    };
+
+    *out_config = Box::into_raw(Box::new(libclient_ConnectConfig { config }));
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_connect_config_set_tls_host(
+    config: *mut libclient_ConnectConfig,
+    tls_host: *const c_char,
+) -> c_int {
     let Ok(tls_host) = CStr::from_ptr(tls_host).to_str() else {
         warn!("Fail to convert client TLS host");
         return -1;
     };
 
+    (*config).config.tls_host = Some(tls_host.into());
+
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_connect_config_set_tls_root_cert(
+    config: *mut libclient_ConnectConfig,
+    tls_root_cert: *const c_char,
+) -> c_int {
     let Ok(tls_root_cert) = CStr::from_ptr(tls_root_cert).to_str() else {
         warn!("Fail to convert Root TLS certificate");
         return -1;
     };
 
-    let config = crate::ConnectConfig {
-        host: host.into(),
-        port: crate::STREAMER_PORT,
-        tls_host: tls_host.into(),
-        tls_root_cert: tls_root_cert.into(),
-    };
+    (*config).config.tls_root_cert = Some(tls_root_cert.into());
 
-    *out_config = Box::into_raw(Box::new(libclient_ConnectConfig { config }));
     0
 }
 

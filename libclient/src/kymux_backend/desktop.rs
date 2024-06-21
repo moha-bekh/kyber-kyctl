@@ -98,20 +98,30 @@ pub(super) async fn connect_quinn(
     conn_params: &ConnectionParams,
     port: u16,
 ) -> Result<kymux::Connection> {
-    let mut roots = rustls::RootCertStore::empty();
-    roots
-        .add(&rustls::Certificate(
-            conn_params.tls_config.root_certificate.clone(),
-        ))
-        .map_err(|err| {
-            warn!("Failed to crate RootCertStore: {err:?}");
-            Error::Rejected
-        })?;
+    let roots = if let Some(tls_config) = &conn_params.tls_config {
+        let mut roots = rustls::RootCertStore::empty();
+        roots
+            .add(&rustls::Certificate(tls_config.root_certificate.clone()))
+            .map_err(|err| {
+                warn!("Failed to crate RootCertStore: {err:?}");
+                Error::Rejected
+            })?;
+
+        Some(roots)
+    } else {
+        None
+    };
+
+    let server_name = if let Some(tls_host) = &conn_params.tls_host {
+        tls_host.clone()
+    } else {
+        conn_params.host.clone()
+    };
 
     Ok(kymux::Connection::connect(kymux::ClientConfig::Quic {
         addr: SocketAddr::new(conn_params.addr.ip(), port),
         roots,
-        server_name: conn_params.tls_host.clone(),
+        server_name,
     })
     .await?)
 }

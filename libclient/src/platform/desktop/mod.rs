@@ -21,8 +21,8 @@ use crate::{Error, Result};
 pub struct ConnectConfig {
     pub host: String,
     pub port: u16,
-    pub tls_host: String,
-    pub tls_root_cert: String,
+    pub tls_host: Option<String>,
+    pub tls_root_cert: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -45,15 +45,19 @@ pub(crate) struct ConnectionParams {
     pub(crate) host: String,
     pub(crate) port: u16,
     pub(crate) addr: std::net::SocketAddr,
-    pub(crate) tls_host: String,
-    pub(crate) tls_config: tls::Config,
+    pub(crate) tls_host: Option<String>,
+    pub(crate) tls_config: Option<tls::Config>,
 }
 
 impl ConnectionParams {
     pub(crate) fn new(connect_config: ConnectConfig) -> Result<Self> {
         let addr = Self::resolve_streamer_host(&connect_config.host, connect_config.port)?;
 
-        let tls_config = tls::load_tls_config(&connect_config.tls_root_cert)?;
+        let tls_config = if let Some(tls_root_cert) = &connect_config.tls_root_cert {
+            Some(tls::load_tls_config(tls_root_cert)?)
+        } else {
+            None
+        };
 
         Ok(Self {
             host: connect_config.host,

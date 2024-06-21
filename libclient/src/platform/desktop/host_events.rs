@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use async_tungstenite::{
-    tokio::{client_async_tls_with_connector, ClientStream},
+    tokio::{client_async_tls_with_connector, connect_async, ClientStream},
     tungstenite::Message as tungstenite_Message,
     WebSocketStream,
 };
@@ -11,6 +11,7 @@ use log::{error, info, warn};
 use tokio::{net::TcpStream, sync::oneshot, task};
 
 use crate::host_events::{self, HostEventFrame, HostEventSink};
+use crate::platform::tls;
 use crate::{
     ConnectionParams, ControlPlaneCapabilities, ControlPlaneCloseReason, Error, Message, Result,
 };
@@ -26,13 +27,15 @@ impl WsClient {
         capabilities: &ControlPlaneCapabilities,
         event_sink: HostEventSink,
     ) -> Result<Self> {
-        let url = format!(
-            "wss://{host}:{port}/ws",
-            host = conn_params.tls_host,
-            port = conn_params.port
-        );
+        let host = conn_params.tls_host.as_ref().unwrap_or(&conn_params.host);
+        let port = conn_params.port;
+        let url = format!("wss://{host}:{port}/ws");
 
-        let stream = Self::connect(url, conn_params).await?;
+        let stream = if let Some(tls_config) = &conn_params.tls_config {
+            Self::connect_with_rootca(url, conn_params, tls_config).await?
+        } else {
+            Self::connect_without_rootca(url).await?
+        };
 
         let (stop_tx, stop_rx) = oneshot::channel();
 
@@ -46,17 +49,14 @@ impl WsClient {
         Ok(Self { handle, stop_tx })
     }
 
-    async fn connect(
+    async fn connect_with_rootca(
         url: String,
         conn_params: &ConnectionParams,
+        tls_config: &tls::Config,
     ) -> Result<WebSocketStream<ClientStream<TcpStream>>> {
-        let stream = TcpStream::connect(conn_params.addr).await?;
-
         let mut certs_store = rustls::RootCertStore::empty();
         certs_store
-            .add(&rustls::Certificate(
-                conn_params.tls_config.root_certificate.clone(),
-            ))
+            .add(&rustls::Certificate(tls_config.root_certificate.clone()))
             .map_err(|err| {
                 warn!("Failed to crate RootCertStore: {err:?}");
                 Error::Rejected
@@ -69,12 +69,24 @@ impl WsClient {
                 .with_no_client_auth(),
         );
 
+        let stream = TcpStream::connect(conn_params.addr).await?;
         let (stream, _) = client_async_tls_with_connector(url, stream, Some(rustls_config.into()))
             .await
             .map_err(|err| {
                 warn!("Failed to open websocket: {err:?}");
                 Error::Rejected
             })?;
+
+        Ok(stream)
+    }
+
+    async fn connect_without_rootca(
+        url: String,
+    ) -> Result<WebSocketStream<ClientStream<TcpStream>>> {
+        let (stream, _) = connect_async(url).await.map_err(|err| {
+            warn!("Failed to open websocket: {err:?}");
+            Error::Rejected
+        })?;
 
         Ok(stream)
     }
