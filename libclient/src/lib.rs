@@ -278,7 +278,11 @@ impl Handler {
                     Ok(()) => Event::ControlPlaneConnected {
                         displays: self.displays.clone(),
                     },
-                    Err(_) => Event::ControlPlaneConnectFailed,
+                    Err(err) => {
+                        warn!("Failed to connect to ControlPlane: {err:?}");
+
+                        Event::ControlPlaneConnectFailed
+                    }
                 };
 
                 self.event_manager.send_event(event);
