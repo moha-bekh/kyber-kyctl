@@ -55,6 +55,7 @@ desktop = [
     "kymux?/ipc",
     "kymux?/tokio-rt",
     "reqwest/rustls-tls",
+    "reqwest/rustls-tls-native-roots",
     "tokio/rt-multi-thread",
 ]
 js-player = [
