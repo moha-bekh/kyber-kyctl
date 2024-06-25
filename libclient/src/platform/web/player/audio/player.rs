@@ -1,5 +1,5 @@
 use crate::platform::player::audio::decoder::{AudioDecoder, AudioDecoderCallbacks};
-use crate::platform::player::packet::{CodecPacket, Packet};
+use crate::platform::player::packet::{CodecPacket, HolePacket, Packet};
 use crate::platform::player::PacketSink;
 use crate::{Message, MessageProxy, Result};
 
@@ -8,6 +8,10 @@ use super::{CHANNELS, SAMPLE_RATE, SAMPLE_SIZE};
 
 use kyaudioreg::memory::AudioRegulatorSharedMemory;
 use kyaudioreg::AudioRegulatorPush;
+
+use std::cell::RefCell;
+use std::collections::VecDeque;
+use std::rc::Rc;
 
 use wasm_bindgen::prelude::*;
 
@@ -18,6 +22,9 @@ pub struct AudioPlayer {
     message_proxy: MessageProxy,
     cbs: Option<AudioDecoderCallbacks>,
     audio_decoder: Option<AudioDecoder>,
+    push_seq: u64,
+    holes: Holes,
+    hole: u32,
 }
 
 impl AudioPlayer {
@@ -32,6 +39,10 @@ impl AudioPlayer {
 
         let memory = AudioRegulatorSharedMemory::js(sab.clone(), alloc_size, sample_size);
         let mut reg = AudioRegulatorPush::new(memory, SAMPLE_RATE, Self::AUDIO_TARGET_BUFFERING);
+
+        let holes = Holes::new();
+        let holes2 = holes.clone();
+        let mut push_seq = 0u64;
 
         let message_proxy2 = message_proxy.clone();
         let cbs = AudioDecoderCallbacks {
@@ -70,7 +81,9 @@ impl AudioPlayer {
                         .frame_count(samples),
                 );
 
-                reg.push(&tmp);
+                let missing_samples = holes2.pull(push_seq).unwrap_or(0);
+                reg.push(missing_samples, &tmp);
+                push_seq += 1;
 
                 Ok(())
             }),
@@ -89,6 +102,9 @@ impl AudioPlayer {
             message_proxy,
             cbs: Some(cbs),
             audio_decoder: None,
+            push_seq: 0,
+            holes,
+            hole: 0,
         };
         let handle = AudioPlayerHandle {
             audio_worklet: Some(audio_worklet),
@@ -102,6 +118,13 @@ impl AudioPlayer {
             Packet::Media(packet) => {
                 assert!(self.audio_decoder.is_some());
                 if let Some(audio_decoder) = &mut self.audio_decoder {
+                    if !packet.header.is_config {
+                        if self.hole > 0 {
+                            self.holes.push(self.push_seq, self.hole);
+                            self.hole = 0;
+                        }
+                        self.push_seq += 1;
+                    }
                     audio_decoder.send_packet(packet)?;
                 } else {
                     error!("Audio decoder not set");
@@ -119,6 +142,13 @@ impl AudioPlayer {
 
                     self.audio_decoder = Some(AudioDecoder::new(cbs)?);
                 }
+            }
+            Packet::Hole(HolePacket {
+                missing_audio_samples,
+            }) => {
+                assert_eq!(self.hole, 0); // Two consecutive hole packets is not permitted
+                assert!(missing_audio_samples > 0);
+                self.hole = missing_audio_samples;
             }
         }
 
@@ -161,5 +191,45 @@ impl AudioPlayerHandle {
         }
 
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct Hole {
+    seq: u64,
+    missing_audio_samples: u32,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct Holes {
+    queue: Rc<RefCell<VecDeque<Hole>>>,
+}
+
+impl Holes {
+    pub(crate) fn new() -> Self {
+        let queue = Rc::new(RefCell::new(VecDeque::new()));
+        Self { queue }
+    }
+
+    pub(crate) fn push(&self, seq: u64, missing_audio_samples: u32) {
+        assert!(missing_audio_samples > 0);
+        self.queue.borrow_mut().push_back(Hole {
+            seq,
+            missing_audio_samples,
+        });
+    }
+
+    pub(crate) fn pull(&self, expected_seq: u64) -> Option<u32> {
+        let mut queue = self.queue.borrow_mut();
+        if let Some(hole) = queue
+            .front()
+            .filter(|hole| hole.seq == expected_seq)
+            .map(|hole| hole.missing_audio_samples)
+        {
+            queue.pop_front().unwrap();
+            Some(hole)
+        } else {
+            None
+        }
     }
 }

@@ -2,6 +2,7 @@
 pub enum Packet {
     Codec(CodecPacket),
     Media(MediaPacket),
+    Hole(HolePacket),
 }
 
 #[derive(Debug)]
@@ -14,6 +15,11 @@ pub struct CodecPacket {
 pub struct MediaPacket {
     pub header: MediaPacketHeader,
     pub data: js_sys::Uint8Array, // does not include the 12-byte header
+}
+
+#[derive(Debug)]
+pub struct HolePacket {
+    pub missing_audio_samples: u32,
 }
 
 #[derive(Debug)]
@@ -44,6 +50,9 @@ impl From<kymux::AVPacket> for Packet {
                     buffer.copy_from(&packet.payload);
                     buffer
                 },
+            }),
+            kymux::AVPacket::Hole(packet) => Packet::Hole(HolePacket {
+                missing_audio_samples: packet.header.missing_audio_samples,
             }),
         }
     }

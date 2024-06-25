@@ -114,6 +114,7 @@ impl VideoPlayer {
                     )?);
                 }
             }
+            Packet::Hole(_) => panic!("Unexpected hole packet in video stream"),
         }
 
         Ok(())
