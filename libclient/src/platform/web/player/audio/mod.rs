@@ -1,5 +1,4 @@
 mod decoder;
-mod demuxer_worker;
 pub(super) mod player;
 mod worklet;
 

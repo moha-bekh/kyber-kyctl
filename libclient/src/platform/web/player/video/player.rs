@@ -30,7 +30,7 @@ impl VideoPlayer {
 }
 
 impl FrameSink for VideoPlayer {
-    fn send_frame(&self, frame: js_sys::ArrayBuffer) -> Result<()> {
+    fn send_frame(&mut self, frame: js_sys::ArrayBuffer) -> Result<()> {
         self.worker.send_frame(frame)?;
 
         Ok(())

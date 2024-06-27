@@ -126,8 +126,11 @@ async fn create_video_decoder_config(config: &VideoSessionConfig) -> Option<Vide
     Some(video_decoder_config)
 }
 
-async fn player_forward_task<Player>(type_: &str, mut recv: ProtocolRecv<AVPacket>, player: Player)
-where
+async fn player_forward_task<Player>(
+    type_: &str,
+    mut recv: ProtocolRecv<AVPacket>,
+    mut player: Player,
+) where
     Player: FrameSink,
 {
     loop {

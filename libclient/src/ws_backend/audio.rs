@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use log::info;
@@ -10,7 +11,7 @@ use crate::Result;
 
 pub struct AudioWsSocketHandler {
     ws: Rc<WebSocket>,
-    player: AudioPlayer,
+    player: RefCell<AudioPlayer>,
 }
 
 impl AudioWsSocketHandler {
@@ -19,7 +20,7 @@ impl AudioWsSocketHandler {
 
         let this = Rc::new(Self {
             ws: ws.clone(),
-            player,
+            player: RefCell::new(player),
         });
 
         ws.plug_handler(this.clone())?;
@@ -44,7 +45,7 @@ impl WebSocketHandler for AudioWsSocketHandler {
             return Ok(());
         };
 
-        self.player.send_frame(buf)?;
+        self.player.borrow_mut().send_frame(buf)?;
 
         Ok(())
     }

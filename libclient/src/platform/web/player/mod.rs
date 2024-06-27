@@ -9,5 +9,5 @@ pub(crate) use video::{get_video_decoder_config, supported_video_codecs, VideoDe
 use crate::Result;
 
 pub(crate) trait FrameSink {
-    fn send_frame(&self, frame: js_sys::ArrayBuffer) -> Result<()>;
+    fn send_frame(&mut self, frame: js_sys::ArrayBuffer) -> Result<()>;
 }
