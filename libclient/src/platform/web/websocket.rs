@@ -1,14 +1,12 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use async_trait::async_trait;
 use log::{error, info};
 use wasm_bindgen::prelude::*;
 use web_sys::{BinaryType, CloseEvent, MessageEvent};
 
 use crate::Result;
 
-#[async_trait(?Send)]
 pub(crate) trait WebSocketHandler {
     const NAME: &'static str;
 
