@@ -10,11 +10,11 @@ use crate::Result;
 
 pub struct AudioWsSocketHandler {
     ws: Rc<WebSocket>,
-    player: Rc<AudioPlayer>,
+    player: AudioPlayer,
 }
 
 impl AudioWsSocketHandler {
-    pub fn new(url: &str, player: Rc<AudioPlayer>) -> Result<Rc<Self>> {
+    pub fn new(url: &str, player: AudioPlayer) -> Result<Rc<Self>> {
         let ws = WebSocket::new(url)?;
 
         let this = Rc::new(Self {

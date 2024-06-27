@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::future::Future;
-use std::rc::Rc;
 use std::sync::Arc;
 
 use log::{error, info, warn};
@@ -16,7 +15,9 @@ use crate::kymux_backend::host_service::{
     StartKymuxCertificateHash, StartSessionAudioResponse, StartSessionResponse,
     StartSessionVideoResponse,
 };
-use crate::platform::player::{AudioPlayer, FrameSink, VideoDecoderConfig, VideoPlayer};
+use crate::platform::player::{
+    AudioPlayer, AudioPlayerHandle, FrameSink, VideoDecoderConfig, VideoPlayer, VideoPlayerHandle,
+};
 use crate::platform::InputMsgSink;
 use crate::{Error, Result};
 use crate::{InputSessionConfig, MessageProxy, VideoSessionConfig};
@@ -27,8 +28,8 @@ pub(super) struct InputService {
 }
 
 pub(super) struct Player {
-    pub(super) video: Vec<Rc<VideoPlayer>>,
-    pub(super) audio: Option<Rc<AudioPlayer>>,
+    pub(super) video: Vec<VideoPlayerHandle>,
+    pub(super) audio: Option<AudioPlayerHandle>,
 }
 
 impl Player {
@@ -41,7 +42,7 @@ impl Player {
             }
         }
 
-        if let Some(audio_player) = self.audio {
+        if let Some(mut audio_player) = self.audio {
             info!("Stop audio player");
             let ret = audio_player.stop().await;
             if let Err(err) = ret {
@@ -125,11 +126,8 @@ async fn create_video_decoder_config(config: &VideoSessionConfig) -> Option<Vide
     Some(video_decoder_config)
 }
 
-async fn player_forward_task<Player>(
-    type_: &str,
-    mut recv: ProtocolRecv<AVPacket>,
-    player: Rc<Player>,
-) where
+async fn player_forward_task<Player>(type_: &str, mut recv: ProtocolRecv<AVPacket>, player: Player)
+where
     Player: FrameSink,
 {
     loop {
@@ -178,7 +176,7 @@ async fn create_videoplayer(
     kymux: &kymux::Connection,
     backend_config: &KymuxBackendConfig<'_>,
     host_config: &Option<Vec<StartSessionVideoResponse>>,
-) -> Result<Option<Vec<Rc<VideoPlayer>>>> {
+) -> Result<Option<Vec<VideoPlayerHandle>>> {
     let video_config = &backend_config.streaming_config.video;
     if video_config.is_empty() {
         return Ok(None);
@@ -211,11 +209,11 @@ async fn create_videoplayer(
             Error::Rejected
         })?;
 
-        let video_player = Rc::new(VideoPlayer::new(
+        let (video_player, video_player_handle) = VideoPlayer::create(
             &config.player.canvas,
             backend_config.msg_proxy.clone(),
             video_config,
-        )?);
+        )?;
 
         info!("Start video with protocol {video_protocol:?}");
 
@@ -225,9 +223,9 @@ async fn create_videoplayer(
             .await
             .map_err(|err| Error::KymuxReadyFailed { reason: err.0 })?;
 
-        wasm_bindgen_futures::spawn_local(player_forward_task("video", recv, video_player.clone()));
+        wasm_bindgen_futures::spawn_local(player_forward_task("video", recv, video_player));
 
-        player_list.push(video_player);
+        player_list.push(video_player_handle);
     }
 
     Ok(Some(player_list))
@@ -237,7 +235,7 @@ async fn create_audioplayer(
     kymux: &kymux::Connection,
     backend_config: &KymuxBackendConfig<'_>,
     host_config: &Option<StartSessionAudioResponse>,
-) -> Result<Option<Rc<AudioPlayer>>> {
+) -> Result<Option<AudioPlayerHandle>> {
     let host_config = match (backend_config.streaming_config.audio, host_config) {
         (true, Some(host_config)) => host_config,
         (false, None) => return Ok(None),
@@ -247,7 +245,8 @@ async fn create_audioplayer(
         }
     };
 
-    let audio_player = Rc::new(AudioPlayer::new(backend_config.msg_proxy.clone()).await?);
+    let (audio_player, audio_player_handle) =
+        AudioPlayer::create(backend_config.msg_proxy.clone()).await?;
 
     let endpoint = kymux.connect_audio_endpoint(host_config.endpoint)?;
     let recv = endpoint
@@ -255,9 +254,9 @@ async fn create_audioplayer(
         .await
         .map_err(|err| Error::KymuxReadyFailed { reason: err.0 })?;
 
-    wasm_bindgen_futures::spawn_local(player_forward_task("audio", recv, audio_player.clone()));
+    wasm_bindgen_futures::spawn_local(player_forward_task("audio", recv, audio_player));
 
-    Ok(Some(audio_player))
+    Ok(Some(audio_player_handle))
 }
 
 pub(super) async fn create_player(

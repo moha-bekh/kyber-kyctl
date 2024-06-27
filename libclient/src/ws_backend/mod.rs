@@ -16,7 +16,9 @@ use audio::AudioWsSocketHandler;
 use input::InputWebSocketHandler;
 use video::VideoWsSocketHandler;
 
-use crate::platform::player::{get_video_decoder_config, AudioPlayer, VideoPlayer};
+use crate::platform::player::{
+    get_video_decoder_config, AudioPlayer, AudioPlayerHandle, VideoPlayer, VideoPlayerHandle,
+};
 use crate::platform::InputMsgSink;
 
 use crate::http::HttpClient;
@@ -25,7 +27,7 @@ use crate::{Error, Result};
 
 struct VideoService {
     ws: Rc<VideoWsSocketHandler>,
-    player: Rc<VideoPlayer>,
+    player_handle: VideoPlayerHandle,
 }
 
 impl VideoService {
@@ -37,7 +39,7 @@ impl VideoService {
             warn!("Video ws stop failed: {err:?}");
         }
 
-        let ret = self.player.stop().await;
+        let ret = self.player_handle.stop().await;
         if let Err(err) = ret {
             warn!("Video player stop failed: {err:?}");
         }
@@ -46,11 +48,11 @@ impl VideoService {
 
 struct AudioService {
     ws: Rc<AudioWsSocketHandler>,
-    player: Rc<AudioPlayer>,
+    player_handle: AudioPlayerHandle,
 }
 
 impl AudioService {
-    async fn stop(self) {
+    async fn stop(mut self) {
         info!("Stop audio service");
 
         let ret = self.ws.stop();
@@ -58,7 +60,7 @@ impl AudioService {
             warn!("Audio ws stop failed: {err:?}");
         }
 
-        let ret = self.player.stop().await;
+        let ret = self.player_handle.stop().await;
         if let Err(err) = ret {
             warn!("Audio player stop failed: {err:?}");
         }
@@ -129,19 +131,19 @@ impl WsBackend {
 
         let video_decoder_config = get_video_decoder_config(video_config).await?;
 
-        let player = Rc::new(VideoPlayer::new(
+        let (player, player_handle) = VideoPlayer::create(
             &video_config.player.canvas,
             backend_config.msg_proxy.clone(),
             video_decoder_config,
-        )?);
+        )?;
 
         let url = format!(
             "wss://{host}/websocket/video",
             host = backend_config.http_client.host()
         );
-        let ws = VideoWsSocketHandler::new(&url, player.clone())?;
+        let ws = VideoWsSocketHandler::new(&url, player)?;
 
-        Ok(Some(VideoService { ws, player }))
+        Ok(Some(VideoService { ws, player_handle }))
     }
 
     async fn create_audio_service(
@@ -151,15 +153,15 @@ impl WsBackend {
             return Ok(None);
         }
 
-        let player = Rc::new(AudioPlayer::new(backend_config.msg_proxy.clone()).await?);
+        let (player, player_handle) = AudioPlayer::create(backend_config.msg_proxy.clone()).await?;
 
         let url = format!(
             "wss://{host}/websocket/audio",
             host = backend_config.http_client.host()
         );
-        let ws = AudioWsSocketHandler::new(&url, player.clone())?;
+        let ws = AudioWsSocketHandler::new(&url, player)?;
 
-        Ok(Some(AudioService { ws, player }))
+        Ok(Some(AudioService { ws, player_handle }))
     }
 
     fn create_input_service(backend_config: &WsBackendConfig<'_>) -> Result<Option<InputService>> {

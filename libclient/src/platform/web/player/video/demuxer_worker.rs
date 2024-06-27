@@ -196,9 +196,8 @@ impl VideoDemuxerWorkerCtx {
 }
 
 pub struct DemuxerWorker {
-    worker: web_sys::Worker,
+    worker: Rc<web_sys::Worker>,
     running: Rc<AtomicBool>,
-    stop_tx: Rc<RefCell<Option<oneshot::Sender<()>>>>,
     _message_closure: Closure<dyn FnMut(MessageEvent)>,
 }
 
@@ -207,11 +206,13 @@ impl DemuxerWorker {
     const TYPE_STOP: &'static str = "stop";
     const TYPE_FRAME: &'static str = "frame";
 
-    pub fn new(message_proxy: MessageProxy) -> Result<DemuxerWorker, JsValue> {
-        let worker = web_sys::Worker::new_with_options(
+    pub fn create(
+        message_proxy: MessageProxy,
+    ) -> Result<(DemuxerWorker, DemuxerWorkerHandle), JsValue> {
+        let worker = Rc::new(web_sys::Worker::new_with_options(
             "./video_demuxer_worker.js",
             web_sys::WorkerOptions::new().type_(web_sys::WorkerType::Module),
-        )?;
+        )?);
 
         let running = Rc::new(AtomicBool::new(true));
         let stop_tx = Rc::new(RefCell::new(None));
@@ -234,12 +235,18 @@ impl DemuxerWorker {
             });
         worker.set_onmessage(Some(worker_message_cb.as_ref().unchecked_ref()));
 
-        Ok(Self {
+        let demuxer_worker = Self {
+            worker: worker.clone(),
+            running: running.clone(),
+            _message_closure: worker_message_cb,
+        };
+        let handle = DemuxerWorkerHandle {
             worker,
             running,
             stop_tx,
-            _message_closure: worker_message_cb,
-        })
+        };
+
+        Ok((demuxer_worker, handle))
     }
 
     fn message_proxy_send(message_proxy: &MessageProxy, msg: Message) {
@@ -337,27 +344,6 @@ impl DemuxerWorker {
         Ok(())
     }
 
-    pub async fn stop(&self) -> Result<(), JsValue> {
-        self.running.store(false, Ordering::Relaxed);
-
-        let (stop_tx, stop_rx) = oneshot::channel();
-
-        {
-            let mut self_stop_tx = self.stop_tx.borrow_mut();
-            *self_stop_tx = Some(stop_tx);
-        }
-
-        let msg = js_sys::Object::new();
-        reflect::set(&msg, "type", Self::TYPE_STOP.into())?;
-
-        self.worker.post_message(&msg)?;
-
-        let _ = stop_rx.await;
-        info!("Video demuxer worker stopped");
-
-        Ok(())
-    }
-
     pub fn send_frame(&self, frame: js_sys::ArrayBuffer) -> Result<(), JsValue> {
         if !self.running.load(Ordering::Relaxed) {
             return Ok(());
@@ -371,6 +357,35 @@ impl DemuxerWorker {
 
         self.worker
             .post_message_with_transfer(&msg, &transfer.into())?;
+
+        Ok(())
+    }
+}
+
+pub(crate) struct DemuxerWorkerHandle {
+    worker: Rc<web_sys::Worker>,
+    running: Rc<AtomicBool>,
+    stop_tx: Rc<RefCell<Option<oneshot::Sender<()>>>>,
+}
+
+impl DemuxerWorkerHandle {
+    pub async fn stop(&self) -> Result<(), JsValue> {
+        self.running.store(false, Ordering::Relaxed);
+
+        let (stop_tx, stop_rx) = oneshot::channel();
+
+        {
+            let mut self_stop_tx = self.stop_tx.borrow_mut();
+            *self_stop_tx = Some(stop_tx);
+        }
+
+        let msg = js_sys::Object::new();
+        reflect::set(&msg, "type", DemuxerWorker::TYPE_STOP.into())?;
+
+        self.worker.post_message(&msg)?;
+
+        let _ = stop_rx.await;
+        info!("Video demuxer worker stopped");
 
         Ok(())
     }

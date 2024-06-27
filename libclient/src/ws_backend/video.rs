@@ -10,11 +10,11 @@ use crate::Result;
 
 pub struct VideoWsSocketHandler {
     ws: Rc<WebSocket>,
-    player: Rc<VideoPlayer>,
+    player: VideoPlayer,
 }
 
 impl VideoWsSocketHandler {
-    pub fn new(url: &str, player: Rc<VideoPlayer>) -> Result<Rc<Self>> {
+    pub fn new(url: &str, player: VideoPlayer) -> Result<Rc<Self>> {
         let ws = WebSocket::new(url)?;
 
         let this = Rc::new(Self {
