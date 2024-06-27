@@ -12,15 +12,15 @@ use crate::Result;
 pub(crate) trait WebSocketHandler {
     const NAME: &'static str;
 
-    fn on_open(self: &Rc<Self>) -> Result<()> {
+    fn on_open(&self) -> Result<()> {
         Ok(())
     }
 
-    fn on_close(self: &Rc<Self>, _event: CloseEvent) -> Result<()> {
+    fn on_close(&self, _event: CloseEvent) -> Result<()> {
         Ok(())
     }
 
-    fn on_message(self: &Rc<Self>, event: MessageEvent) -> Result<()>;
+    fn on_message(&self, event: MessageEvent) -> Result<()>;
 }
 
 struct Closures {

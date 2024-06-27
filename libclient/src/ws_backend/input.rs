@@ -49,9 +49,9 @@ impl InputWebSocketHandler {
     }
 
     // Tasks
-    async fn tx_task(self: Rc<Self>, mut rx: BufferProxyReceiver) -> Result<()> {
+    async fn tx_task(ws: Rc<WebSocket>, mut rx: BufferProxyReceiver) -> Result<()> {
         while let Ok(buf) = rx.recv().await {
-            self.ws.ws.send_with_u8_array(&buf)?;
+            ws.ws.send_with_u8_array(&buf)?;
         }
 
         Ok(())
@@ -62,15 +62,15 @@ impl WebSocketHandler for InputWebSocketHandler {
     const NAME: &'static str = "Input";
 
     // Event handlers
-    fn on_open(self: &Rc<Self>) -> Result<()> {
+    fn on_open(&self) -> Result<()> {
         self.msg_sink
             .on_message(InputNetworkStreamMsg::ClientConnected);
 
         // Spawn Pipeline => WS task
         if let Some(proxy_receiver) = self.proxy_receiver.borrow_mut().take() {
-            let this = self.clone();
+            let ws = self.ws.clone();
             spawn_local(async move {
-                let ret = this.tx_task(proxy_receiver).await;
+                let ret = Self::tx_task(ws, proxy_receiver).await;
                 if let Err(err) = ret {
                     warn!("Websocket input tx task ended with error {err:?}");
                 }
@@ -82,14 +82,14 @@ impl WebSocketHandler for InputWebSocketHandler {
         Ok(())
     }
 
-    fn on_close(self: &Rc<Self>, _event: CloseEvent) -> Result<()> {
+    fn on_close(&self, _event: CloseEvent) -> Result<()> {
         self.msg_sink
             .on_message(InputNetworkStreamMsg::ClientDisconnected);
 
         Ok(())
     }
 
-    fn on_message(self: &Rc<Self>, msg: MessageEvent) -> Result<()> {
+    fn on_message(&self, msg: MessageEvent) -> Result<()> {
         let Ok(buf) = msg.data().dyn_into::<js_sys::ArrayBuffer>() else {
             info!("Unexpected message type");
             return Ok(());

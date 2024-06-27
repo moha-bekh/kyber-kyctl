@@ -37,7 +37,7 @@ impl AudioWsSocketHandler {
 impl WebSocketHandler for AudioWsSocketHandler {
     const NAME: &'static str = "Audio";
 
-    fn on_message(self: &Rc<Self>, msg: MessageEvent) -> Result<()> {
+    fn on_message(&self, msg: MessageEvent) -> Result<()> {
         // Unpack MessageEvent
         let Ok(buf) = msg.data().dyn_into::<js_sys::ArrayBuffer>() else {
             info!("Unexpected message type");

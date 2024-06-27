@@ -30,7 +30,7 @@ struct Timer {
 struct Inner {
     ws: Rc<WebSocket>,
     timer_duration: Duration,
-    event_sink: HostEventSink,
+    event_sink: Rc<HostEventSink>,
     timer: RefCell<Option<Timer>>,
     started_tx: RefCell<Option<oneshot::Sender<ConnectionResult>>>,
 }
@@ -51,7 +51,7 @@ impl Inner {
         let this = Rc::new(Self {
             ws: ws.clone(),
             timer_duration,
-            event_sink,
+            event_sink: Rc::new(event_sink),
             timer: RefCell::new(None),
             started_tx: RefCell::new(Some(started_tx)),
         });
@@ -61,14 +61,14 @@ impl Inner {
         Ok(this)
     }
 
-    fn stop(self: &Rc<Self>) -> Result<()> {
+    fn stop(&self) -> Result<()> {
         self.clear_timeout()?;
         self.ws.unplug_handler()?;
 
         Ok(())
     }
 
-    fn clear_timeout(self: &Rc<Self>) -> Result<()> {
+    fn clear_timeout(&self) -> Result<()> {
         let mut timer = self.timer.borrow_mut();
         if let Some(timer) = timer.take() {
             let window = dom::window()?;
@@ -78,16 +78,13 @@ impl Inner {
         Ok(())
     }
 
-    fn arm_timeout(self: &Rc<Self>, duration: Duration) -> Result<()> {
-        let this = Rc::downgrade(self);
+    fn arm_timeout(&self, duration: Duration) -> Result<()> {
+        let event_sink = self.event_sink.clone();
 
         let ontimeout_cb = Closure::<dyn FnMut()>::new(move || {
-            if let Some(this) = this.upgrade() {
-                this.event_sink
-                    .blocking_push_msg(Message::ControlPlaneClosed {
-                        reason: ControlPlaneCloseReason::Timeout,
-                    });
-            }
+            event_sink.blocking_push_msg(Message::ControlPlaneClosed {
+                reason: ControlPlaneCloseReason::Timeout,
+            });
         });
 
         let window = dom::window()?;
@@ -114,7 +111,7 @@ impl WebSocketHandler for Inner {
     const NAME: &'static str = "Control";
 
     // Event handlers
-    fn on_open(self: &Rc<Self>) -> Result<()> {
+    fn on_open(&self) -> Result<()> {
         self.arm_timeout(self.timer_duration)?;
 
         let Some(started_tx) = self.started_tx.borrow_mut().take() else {
@@ -130,7 +127,7 @@ impl WebSocketHandler for Inner {
         Ok(())
     }
 
-    fn on_message(self: &Rc<Self>, msg: MessageEvent) -> Result<()> {
+    fn on_message(&self, msg: MessageEvent) -> Result<()> {
         // Unpack MessageEvent
         let Ok(msg) = msg.data().dyn_into::<js_sys::JsString>() else {
             info!("Unexpected message type");
@@ -170,7 +167,7 @@ impl WebSocketHandler for Inner {
         Ok(())
     }
 
-    fn on_close(self: &Rc<Self>, event: CloseEvent) -> Result<()> {
+    fn on_close(&self, event: CloseEvent) -> Result<()> {
         self.clear_timeout()?;
 
         if let Some(started_tx) = self.started_tx.borrow_mut().take() {
