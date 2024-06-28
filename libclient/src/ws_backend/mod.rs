@@ -31,7 +31,7 @@ struct VideoService {
 }
 
 impl VideoService {
-    async fn stop(self) {
+    async fn stop(mut self) {
         info!("Stop video service");
 
         let ret = self.ws.stop();

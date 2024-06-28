@@ -1,12 +1,27 @@
 use crate::platform::dom;
+use crate::platform::player::packet::{buffer_to_packet, CodecPacket, Packet};
+use crate::platform::player::video::decoder::{VideoDecoder, VideoDecoderCallbacks};
+use crate::platform::player::video::renderer_worker::{RendererWorker, RendererWorkerHandle};
 use crate::platform::player::FrameSink;
-use crate::{MessageProxy, Result};
+use crate::{Message, MessageProxy, Result};
 
-use super::demuxer_worker::{DemuxerWorker, DemuxerWorkerHandle};
 use super::VideoDecoderConfig;
 
+use std::rc::Rc;
+use std::sync::atomic::{AtomicU8, Ordering};
+
+use wasm_bindgen::prelude::*;
+
+#[allow(unused)]
+use log::{debug, error, info, warn};
+
 pub struct VideoPlayer {
-    worker: DemuxerWorker,
+    message_proxy: MessageProxy,
+    cbs: Option<VideoDecoderCallbacks>,
+    video_decoder: Option<VideoDecoder>,
+    codec: String,
+    hardware_acceleration: bool,
+    video_rotation: Rc<AtomicU8>,
 }
 
 impl VideoPlayer {
@@ -19,19 +34,106 @@ impl VideoPlayer {
 
         let offscreen_canvas = canvas.transfer_control_to_offscreen()?;
 
-        let (worker, worker_handle) = DemuxerWorker::create(message_proxy)?;
-        worker.start(offscreen_canvas, decoder_config)?;
+        let (renderer_worker, renderer_worker_handle) =
+            RendererWorker::create(message_proxy.clone())?;
+        renderer_worker.start(offscreen_canvas)?;
 
-        let player = Self { worker };
-        let handle = VideoPlayerHandle { worker_handle };
+        let video_rotation = Rc::new(AtomicU8::new(0));
+        let video_rotation_ref = video_rotation.clone();
+
+        let codec = decoder_config.webcodec;
+        let hardware_acceleration = match decoder_config.hardware_acceleration {
+            web_sys::HardwareAcceleration::PreferHardware => true,
+            web_sys::HardwareAcceleration::PreferSoftware => false,
+            _ => {
+                error!(
+                    "Unexpected hardware acceperation {:?}",
+                    decoder_config.hardware_acceleration
+                );
+                return Err(JsValue::from("Invalid hardware acceleration setting").into());
+            }
+        };
+
+        let message_proxy2 = message_proxy.clone();
+        let cbs = VideoDecoderCallbacks {
+            output: Box::new(move |frame| {
+                let rotation = video_rotation_ref.load(Ordering::Relaxed);
+                renderer_worker.send_frame(frame, rotation)?;
+                Ok(())
+            }),
+            error: Box::new(move |error| {
+                info!("video decoding error: {error:?}");
+
+                Self::message_proxy_send(&message_proxy2, Message::VideoDecodeError);
+
+                Ok(())
+            }),
+        };
+
+        let player = Self {
+            message_proxy,
+            cbs: Some(cbs),
+            video_decoder: None,
+            codec,
+            hardware_acceleration,
+            video_rotation,
+        };
+        let handle = VideoPlayerHandle {
+            renderer_worker_handle,
+        };
 
         Ok((player, handle))
+    }
+
+    fn process_packet(&mut self, data: js_sys::ArrayBuffer) -> Result<()> {
+        let packet = buffer_to_packet(data)?;
+        match packet {
+            Packet::Media(packet) => {
+                assert!(self.video_decoder.is_some());
+                if let Some(video_decoder) = &mut self.video_decoder {
+                    video_decoder.send_packet(packet)?;
+                } else {
+                    error!("Video decoder not set");
+                    return Err(JsValue::from("Video decoder not set").into());
+                }
+            }
+            Packet::Codec(CodecPacket { rotation }) => {
+                self.video_rotation.store(rotation, Ordering::Relaxed);
+
+                if self.video_decoder.is_none() {
+                    info!("Video codec packet");
+
+                    let Some(cbs) = self.cbs.take() else {
+                        error!("Callbacks already consumed");
+                        return Err(JsValue::from("Callbacks already consumed").into());
+                    };
+
+                    self.video_decoder = Some(VideoDecoder::new(
+                        cbs,
+                        self.codec.clone(),
+                        self.hardware_acceleration,
+                    )?);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn message_proxy_send(message_proxy: &MessageProxy, msg: Message) {
+        let ret = message_proxy.send(msg.clone());
+        if let Err(err) = ret {
+            warn!("Failed to send {msg:?}: {err:?}");
+        }
     }
 }
 
 impl FrameSink for VideoPlayer {
-    fn send_frame(&mut self, frame: js_sys::ArrayBuffer) -> Result<()> {
-        self.worker.send_frame(frame)?;
+    fn send_frame(&mut self, data: js_sys::ArrayBuffer) -> Result<()> {
+        if let Err(err) = self.process_packet(data) {
+            Self::message_proxy_send(&self.message_proxy, Message::VideoDecodeError);
+            Err(err)?;
+        }
 
         Ok(())
     }
@@ -39,12 +141,15 @@ impl FrameSink for VideoPlayer {
 
 // Used to stop the player without the full player instance
 pub(crate) struct VideoPlayerHandle {
-    worker_handle: DemuxerWorkerHandle,
+    renderer_worker_handle: RendererWorkerHandle,
 }
 
 impl VideoPlayerHandle {
-    pub async fn stop(&self) -> Result<()> {
-        self.worker_handle.stop().await?;
+    pub async fn stop(&mut self) -> Result<()> {
+        let ret = self.renderer_worker_handle.stop();
+        if let Err(err) = ret {
+            warn!("Failed to stop video renderer: {err:?}");
+        }
 
         Ok(())
     }

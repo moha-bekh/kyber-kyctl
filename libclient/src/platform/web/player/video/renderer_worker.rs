@@ -1,9 +1,11 @@
 use log::{info, warn};
+use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::MessageEvent;
 
 use crate::platform::reflect;
+use crate::{Message, MessageProxy};
 
 use super::cell_buf::{self, CellBufConsumer, CellBufProducer};
 use super::renderer::{RenderResult, Renderer};
@@ -105,7 +107,7 @@ impl VideoRendererWorkerCtx {
 }
 
 pub struct RendererWorker {
-    worker: web_sys::Worker,
+    worker: Rc<web_sys::Worker>,
     _message_closure: Closure<dyn FnMut(MessageEvent)>,
 }
 
@@ -113,28 +115,58 @@ impl RendererWorker {
     const TYPE_START: &'static str = "start";
     const TYPE_FRAME: &'static str = "frame";
 
-    pub fn new() -> Result<RendererWorker, JsValue> {
-        let worker = web_sys::Worker::new_with_options(
+    pub fn create(
+        message_proxy: MessageProxy,
+    ) -> Result<(RendererWorker, RendererWorkerHandle), JsValue> {
+        let worker = Rc::new(web_sys::Worker::new_with_options(
             "./video_renderer_worker.js",
             web_sys::WorkerOptions::new().type_(web_sys::WorkerType::Module),
-        )?;
-
-        // Get messages from worker and forward them to parent worker
-        let js_self = js_sys::eval("self")?.dyn_into::<web_sys::DedicatedWorkerGlobalScope>()?;
+        )?);
 
         let worker_message_cb =
             Closure::<dyn FnMut(_)>::new(move |event: web_sys::MessageEvent| {
-                let ret = js_self.post_message(&event.data());
+                let ret = Self::handle_worker_message(event, &message_proxy);
                 if let Err(err) = ret {
-                    warn!("RendererWorker.post_message() failed: {err:?}");
+                    warn!("VideoDemuxerWorker failed to process message: {err:?}");
                 }
             });
         worker.set_onmessage(Some(worker_message_cb.as_ref().unchecked_ref()));
 
-        Ok(Self {
-            worker,
+        let renderer_worker = Self {
+            worker: worker.clone(),
             _message_closure: worker_message_cb,
-        })
+        };
+        let handle = RendererWorkerHandle { worker };
+
+        Ok((renderer_worker, handle))
+    }
+
+    fn handle_worker_message(
+        event: web_sys::MessageEvent,
+        message_proxy: &MessageProxy,
+    ) -> Result<(), JsValue> {
+        let msg = &event.data().dyn_into::<js_sys::Object>()?;
+        let msg_type = reflect::get_string(msg, "type")?;
+
+        match msg_type.as_str() {
+            "canvas_resized" => {
+                let width = reflect::get_f64(msg, "width")?;
+                let height = reflect::get_f64(msg, "height")?;
+
+                Self::message_proxy_send(
+                    message_proxy,
+                    Message::CanvasResized {
+                        width: width as _,
+                        height: height as _,
+                    },
+                );
+            }
+            _ => {
+                warn!("Got unknown message type: {msg_type:?}");
+            }
+        }
+
+        Ok(())
     }
 
     pub fn start(&self, canvas: web_sys::OffscreenCanvas) -> Result<(), JsValue> {
@@ -152,13 +184,6 @@ impl RendererWorker {
         Ok(())
     }
 
-    pub async fn stop(&self) -> Result<(), JsValue> {
-        self.worker.terminate();
-        info!("Video renderer worker stopped");
-
-        Ok(())
-    }
-
     pub fn send_frame(&self, frame: web_sys::VideoFrame, rotation: u8) -> Result<(), JsValue> {
         let frame_param: JsValue = frame.into();
 
@@ -171,6 +196,26 @@ impl RendererWorker {
 
         self.worker
             .post_message_with_transfer(&msg, &transfer.into())?;
+
+        Ok(())
+    }
+
+    fn message_proxy_send(message_proxy: &MessageProxy, msg: Message) {
+        let ret = message_proxy.send(msg.clone());
+        if let Err(err) = ret {
+            warn!("Failed to send {msg:?}: {err:?}");
+        }
+    }
+}
+
+pub(crate) struct RendererWorkerHandle {
+    worker: Rc<web_sys::Worker>,
+}
+
+impl RendererWorkerHandle {
+    pub(crate) fn stop(&mut self) -> Result<(), JsValue> {
+        self.worker.terminate();
+        info!("Video renderer worker stopped");
 
         Ok(())
     }

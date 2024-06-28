@@ -1,6 +1,7 @@
 use js_sys::{Object, Reflect};
 use wasm_bindgen::prelude::*;
 
+#[allow(dead_code)]
 pub(crate) fn get_bool(obj: &Object, name: &str) -> Result<bool, JsValue> {
     match Reflect::get(obj, &name.into())?.as_bool() {
         Some(b) => Ok(b),

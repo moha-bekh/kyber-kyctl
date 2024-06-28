@@ -34,7 +34,7 @@ pub(super) struct Player {
 
 impl Player {
     pub(super) async fn stop(self) -> Result<()> {
-        for video_player in self.video {
+        for mut video_player in self.video {
             info!("Stop video player");
             let ret = video_player.stop().await;
             if let Err(err) = ret {
