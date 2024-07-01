@@ -96,7 +96,7 @@ impl VideoPlayer {
                     return Err(JsValue::from("Video decoder not set").into());
                 }
             }
-            Packet::Codec(CodecPacket { rotation }) => {
+            Packet::Codec(CodecPacket { rotation, .. }) => {
                 self.video_rotation.store(rotation, Ordering::Relaxed);
 
                 if self.video_decoder.is_none() {

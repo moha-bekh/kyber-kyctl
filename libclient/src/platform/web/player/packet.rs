@@ -8,6 +8,7 @@ pub enum Packet {
 
 #[derive(Debug)]
 pub struct CodecPacket {
+    pub codec: u32,
     pub rotation: u8,
 }
 
@@ -49,8 +50,9 @@ pub(crate) fn buffer_to_packet(frame: js_sys::ArrayBuffer) -> Result<Packet, JsV
 
         Packet::Media(MediaPacket { header, data })
     } else {
+        let codec = u32::from_be_bytes(buf[..4].try_into().unwrap());
         let rotation = buf[4];
-        Packet::Codec(CodecPacket { rotation })
+        Packet::Codec(CodecPacket { codec, rotation })
     };
 
     Ok(pkt)
