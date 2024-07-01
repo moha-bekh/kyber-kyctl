@@ -1,8 +1,8 @@
 use crate::platform::dom;
-use crate::platform::player::packet::{buffer_to_packet, CodecPacket, Packet};
+use crate::platform::player::packet::{CodecPacket, Packet};
 use crate::platform::player::video::decoder::{VideoDecoder, VideoDecoderCallbacks};
 use crate::platform::player::video::renderer_worker::{RendererWorker, RendererWorkerHandle};
-use crate::platform::player::FrameSink;
+use crate::platform::player::PacketSink;
 use crate::{Message, MessageProxy, Result};
 
 use super::VideoDecoderConfig;
@@ -85,8 +85,7 @@ impl VideoPlayer {
         Ok((player, handle))
     }
 
-    fn process_packet(&mut self, data: js_sys::ArrayBuffer) -> Result<()> {
-        let packet = buffer_to_packet(data)?;
+    fn process_packet(&mut self, packet: Packet) -> Result<()> {
         match packet {
             Packet::Media(packet) => {
                 assert!(self.video_decoder.is_some());
@@ -128,9 +127,9 @@ impl VideoPlayer {
     }
 }
 
-impl FrameSink for VideoPlayer {
-    fn send_frame(&mut self, data: js_sys::ArrayBuffer) -> Result<()> {
-        if let Err(err) = self.process_packet(data) {
+impl PacketSink for VideoPlayer {
+    fn send_packet(&mut self, packet: Packet) -> Result<()> {
+        if let Err(err) = self.process_packet(packet) {
             Self::message_proxy_send(&self.message_proxy, Message::VideoDecodeError);
             Err(err)?;
         }

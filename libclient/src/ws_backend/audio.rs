@@ -5,7 +5,8 @@ use log::info;
 use wasm_bindgen::prelude::*;
 use web_sys::MessageEvent;
 
-use crate::platform::player::{AudioPlayer, FrameSink};
+use crate::platform::player::packet::buffer_to_packet;
+use crate::platform::player::{AudioPlayer, PacketSink};
 use crate::platform::{WebSocket, WebSocketHandler};
 use crate::Result;
 
@@ -45,7 +46,8 @@ impl WebSocketHandler for AudioWsSocketHandler {
             return Ok(());
         };
 
-        self.player.borrow_mut().send_frame(buf)?;
+        let packet = buffer_to_packet(buf)?;
+        self.player.borrow_mut().send_packet(packet)?;
 
         Ok(())
     }

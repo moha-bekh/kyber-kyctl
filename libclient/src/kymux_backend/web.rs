@@ -15,8 +15,9 @@ use crate::kymux_backend::host_service::{
     StartKymuxCertificateHash, StartSessionAudioResponse, StartSessionResponse,
     StartSessionVideoResponse,
 };
+use crate::platform::player::packet::buffer_to_packet;
 use crate::platform::player::{
-    AudioPlayer, AudioPlayerHandle, FrameSink, VideoDecoderConfig, VideoPlayer, VideoPlayerHandle,
+    AudioPlayer, AudioPlayerHandle, PacketSink, VideoDecoderConfig, VideoPlayer, VideoPlayerHandle,
 };
 use crate::platform::InputMsgSink;
 use crate::{Error, Result};
@@ -131,7 +132,7 @@ async fn player_forward_task<Player>(
     mut recv: ProtocolRecv<AVPacket>,
     mut player: Player,
 ) where
-    Player: FrameSink,
+    Player: PacketSink,
 {
     loop {
         let packet = match recv.recv().await {
@@ -143,7 +144,7 @@ async fn player_forward_task<Player>(
             }
         };
 
-        let frame = match packet {
+        let buffer = match packet {
             AVPacket::Codec(packet) => {
                 let header = packet.header.serialize();
 
@@ -168,7 +169,8 @@ async fn player_forward_task<Player>(
             }
         };
 
-        let ret = player.send_frame(frame.buffer());
+        let packet = buffer_to_packet(buffer.buffer()).expect("Incorrect packet serialization");
+        let ret = player.send_packet(packet);
         if let Err(err) = ret {
             warn!("Failed to send {type_} frame to player: {err:?}");
         }

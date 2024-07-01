@@ -5,7 +5,8 @@ use log::info;
 use wasm_bindgen::prelude::*;
 use web_sys::MessageEvent;
 
-use crate::platform::player::{FrameSink, VideoPlayer};
+use crate::platform::player::packet::buffer_to_packet;
+use crate::platform::player::{PacketSink, VideoPlayer};
 use crate::platform::{WebSocket, WebSocketHandler};
 use crate::Result;
 
@@ -46,7 +47,8 @@ impl WebSocketHandler for VideoWsSocketHandler {
             return Ok(());
         };
 
-        self.player.borrow_mut().send_frame(buf)?;
+        let packet = buffer_to_packet(buf)?;
+        self.player.borrow_mut().send_packet(packet)?;
 
         Ok(())
     }

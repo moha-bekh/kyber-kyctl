@@ -1,6 +1,6 @@
 use crate::platform::player::audio::decoder::{AudioDecoder, AudioDecoderCallbacks};
-use crate::platform::player::packet::{buffer_to_packet, CodecPacket, Packet};
-use crate::platform::player::FrameSink;
+use crate::platform::player::packet::{CodecPacket, Packet};
+use crate::platform::player::PacketSink;
 use crate::{Message, MessageProxy, Result};
 
 use super::worklet::AudioWorklet;
@@ -97,8 +97,7 @@ impl AudioPlayer {
         Ok((player, handle))
     }
 
-    fn process_packet(&mut self, data: js_sys::ArrayBuffer) -> Result<()> {
-        let packet = buffer_to_packet(data)?;
+    fn process_packet(&mut self, packet: Packet) -> Result<()> {
         match packet {
             Packet::Media(packet) => {
                 assert!(self.audio_decoder.is_some());
@@ -134,9 +133,9 @@ impl AudioPlayer {
     }
 }
 
-impl FrameSink for AudioPlayer {
-    fn send_frame(&mut self, data: js_sys::ArrayBuffer) -> Result<()> {
-        if let Err(err) = self.process_packet(data) {
+impl PacketSink for AudioPlayer {
+    fn send_packet(&mut self, packet: Packet) -> Result<()> {
+        if let Err(err) = self.process_packet(packet) {
             Self::message_proxy_send(&self.message_proxy, Message::AudioDecodeError);
             Err(err)?;
         }
