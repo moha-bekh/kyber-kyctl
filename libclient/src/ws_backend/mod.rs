@@ -1,6 +1,7 @@
 mod audio;
 mod host_service;
 mod input;
+mod packet;
 mod video;
 
 use std::rc::Rc;
