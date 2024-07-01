@@ -26,6 +26,31 @@ pub struct MediaPacketHeader {
     pub size: u32,
 }
 
+#[cfg(feature = "kymux")]
+impl From<kymux::AVPacket> for Packet {
+    fn from(packet: kymux::AVPacket) -> Self {
+        match packet {
+            kymux::AVPacket::Codec(packet) => Packet::Codec(CodecPacket {
+                codec: packet.header.codec,
+                rotation: packet.header.rotation,
+            }),
+            kymux::AVPacket::Media(packet) => Packet::Media(MediaPacket {
+                header: MediaPacketHeader {
+                    is_config: packet.header.is_config,
+                    is_key: packet.header.is_key,
+                    pts: packet.header.pts,
+                    size: packet.header.size,
+                },
+                data: {
+                    let buffer = js_sys::Uint8Array::new_with_length(packet.payload.len() as _);
+                    buffer.copy_from(&packet.payload);
+                    buffer
+                },
+            }),
+        }
+    }
+}
+
 pub(crate) fn buffer_to_packet(frame: js_sys::ArrayBuffer) -> Result<Packet, JsValue> {
     let buf = js_sys::Uint8Array::new(&frame).to_vec();
 

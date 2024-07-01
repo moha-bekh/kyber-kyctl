@@ -15,7 +15,6 @@ use crate::kymux_backend::host_service::{
     StartKymuxCertificateHash, StartSessionAudioResponse, StartSessionResponse,
     StartSessionVideoResponse,
 };
-use crate::platform::player::packet::buffer_to_packet;
 use crate::platform::player::{
     AudioPlayer, AudioPlayerHandle, PacketSink, VideoDecoderConfig, VideoPlayer, VideoPlayerHandle,
 };
@@ -135,8 +134,8 @@ async fn player_forward_task<Player>(
     Player: PacketSink,
 {
     loop {
-        let packet = match recv.recv().await {
-            Ok(Some(packet)) => packet,
+        let kypacket = match recv.recv().await {
+            Ok(Some(kypacket)) => kypacket,
             Ok(None) => break,
             Err(err) => {
                 warn!("Failed to receive {type_} from Kymux: {err:?}");
@@ -144,32 +143,7 @@ async fn player_forward_task<Player>(
             }
         };
 
-        let buffer = match packet {
-            AVPacket::Codec(packet) => {
-                let header = packet.header.serialize();
-
-                let buffer = js_sys::Uint8Array::new_with_length(header.len() as _);
-                buffer.copy_from(&header);
-                buffer
-            }
-            AVPacket::Media(packet) => {
-                let header = packet.header.serialize();
-                let payload: Vec<u8> = packet.payload.to_vec();
-
-                let buffer =
-                    js_sys::Uint8Array::new_with_length((header.len() + payload.len()) as _);
-
-                let header_view = buffer.subarray(0, header.len() as _);
-                header_view.copy_from(&header);
-
-                let payload_view = buffer.subarray(header.len() as _, buffer.length());
-                payload_view.copy_from(&payload);
-
-                buffer
-            }
-        };
-
-        let packet = buffer_to_packet(buffer.buffer()).expect("Incorrect packet serialization");
+        let packet = kypacket.into();
         let ret = player.send_packet(packet);
         if let Err(err) = ret {
             warn!("Failed to send {type_} frame to player: {err:?}");
