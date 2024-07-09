@@ -58,6 +58,7 @@ struct StartRequestVideo {
 #[derive(Debug, Serialize)]
 struct StartRequestInput {
     cursor_format: CursorFormat,
+    gamepad_force_xbox360: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -120,7 +121,10 @@ pub(crate) async fn start_stream(
 
     let inputs = if let Some(input_config) = &backend_config.streaming_config.input {
         let cursor_format = get_cursor_format(&input_config.pipeline);
-        cursor_format.map(|cursor_format| StartRequestInput { cursor_format })
+        cursor_format.map(|cursor_format| StartRequestInput {
+            cursor_format,
+            gamepad_force_xbox360: None,
+        })
     } else {
         None
     };

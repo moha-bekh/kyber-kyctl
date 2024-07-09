@@ -25,6 +25,7 @@ struct StartRequestAudio {
 #[derive(Debug, Serialize)]
 pub(crate) struct StartRequestInput {
     pub(crate) cursor_format: CursorFormat,
+    pub(crate) gamepad_force_xbox360: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -115,7 +116,10 @@ pub(super) async fn start_stream(
         .as_ref()
         .map(|audio| StartRequestAudio { port: audio.port });
 
-    let inputs = inputs.map(|cursor_format| StartRequestInput { cursor_format });
+    let inputs = inputs.map(|cursor_format| StartRequestInput {
+        cursor_format,
+        gamepad_force_xbox360: None,
+    });
 
     let body = StartRequest {
         ip: local_ip.into(),
