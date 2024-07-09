@@ -5,7 +5,8 @@ use serde_json::json;
 
 use crate::error::{Error, Result};
 use crate::http::HttpClient;
-use crate::CursorFormat;
+use crate::platform::get_cursor_format;
+use crate::{CursorFormat, InputSessionConfig};
 
 use super::{HostAudioConfig, HostVideoConfig};
 
@@ -101,7 +102,7 @@ pub(super) async fn start_stream(
     bitrate: u32,
     video: &Option<HostVideoConfig>,
     audio: &Option<HostAudioConfig>,
-    inputs: Option<CursorFormat>,
+    input_config: &Option<InputSessionConfig>,
 ) -> Result<()> {
     let url = format!("{base_url}/rtp/start", base_url = client.base_url());
 
@@ -116,10 +117,15 @@ pub(super) async fn start_stream(
         .as_ref()
         .map(|audio| StartRequestAudio { port: audio.port });
 
-    let inputs = inputs.map(|cursor_format| StartRequestInput {
-        cursor_format,
-        gamepad_force_xbox360: None,
-    });
+    let inputs = if let Some(input_config) = input_config {
+        let cursor_format = get_cursor_format(&input_config.pipeline);
+        cursor_format.map(|cursor_format| StartRequestInput {
+            cursor_format,
+            gamepad_force_xbox360: None,
+        })
+    } else {
+        None
+    };
 
     let body = StartRequest {
         ip: local_ip.into(),

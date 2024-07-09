@@ -8,7 +8,7 @@ use log::{debug, info};
 
 use crate::http::HttpClient;
 use crate::platform::player;
-use crate::platform::{get_cursor_format, InputClient, InputPipeline};
+use crate::platform::{InputClient, InputPipeline};
 use crate::{BackendDriver, ConnectionParams, Error, MessageProxy, Result, StreamingSessionConfig};
 
 const RTP_VIDEO_PORT: u16 = 30000;
@@ -112,20 +112,13 @@ impl RtpBackend {
             Self::create_audio_config(&backend_config, &local_ip).await?;
 
         // Start stream
-        let cursor_format =
-            if let Some(input_config) = backend_config.streaming_config.input.as_ref() {
-                get_cursor_format(&input_config.pipeline)
-            } else {
-                None
-            };
-
         host_service::start_stream(
             backend_config.http_client,
             &local_ip,
             backend_config.streaming_config.bitrate,
             &host_videoconfig,
             &host_audioconfig,
-            cursor_format,
+            &backend_config.streaming_config.input,
         )
         .await?;
 
