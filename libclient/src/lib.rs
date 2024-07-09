@@ -512,7 +512,16 @@ impl StreamingSessionConfig {
         };
 
         info!("\taudio: {}", self.audio);
-        info!("\tinput: {}", self.input.is_some());
+
+        if let Some(input) = &self.input {
+            info!("\tinput: true");
+            info!(
+                "\t\tgamepad_force_xbox360: {:?}",
+                input.gamepad_force_xbox360
+            );
+        } else {
+            info!("\tinput: false");
+        }
     }
 }
 
