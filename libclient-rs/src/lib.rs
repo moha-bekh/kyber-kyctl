@@ -454,6 +454,10 @@ impl InputSessionConfig {
             }
         }
     }
+
+    pub fn gamepad_force_xbox360(&self, force: bool) {
+        unsafe { sys::libclient_input_session_config_gamepad_force_xbox360(self.ptr, force) };
+    }
 }
 
 impl Drop for InputSessionConfig {

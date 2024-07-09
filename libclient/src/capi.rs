@@ -354,7 +354,10 @@ pub unsafe extern "C" fn libclient_input_session_config_default(
 ) -> c_int {
     let pipeline = Pipeline::from_ptr(pipeline);
 
-    let config = crate::InputSessionConfig { pipeline };
+    let config = crate::InputSessionConfig {
+        pipeline,
+        gamepad_force_xbox360: None,
+    };
 
     *out_config = Box::into_raw(Box::new(libclient_InputSessionConfig { config }));
     0
@@ -367,6 +370,14 @@ pub unsafe extern "C" fn libclient_input_session_config_unref(
     if !cfg.is_null() {
         let _ = Box::from_raw(cfg);
     }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_input_session_config_gamepad_force_xbox360(
+    cfg: *mut libclient_InputSessionConfig,
+    gamepad_force_xbox360: bool,
+) {
+    (*cfg).config.gamepad_force_xbox360 = Some(gamepad_force_xbox360);
 }
 
 #[no_mangle]

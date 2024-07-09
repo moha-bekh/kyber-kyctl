@@ -121,7 +121,7 @@ pub(super) async fn start_stream(
         let cursor_format = get_cursor_format(&input_config.pipeline);
         cursor_format.map(|cursor_format| StartRequestInput {
             cursor_format,
-            gamepad_force_xbox360: None,
+            gamepad_force_xbox360: input_config.gamepad_force_xbox360,
         })
     } else {
         None

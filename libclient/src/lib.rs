@@ -464,6 +464,7 @@ pub struct VideoSessionConfig {
 #[derive(Clone)]
 pub struct InputSessionConfig {
     pub pipeline: InputPipeline,
+    pub gamepad_force_xbox360: Option<bool>,
 }
 
 #[derive(Clone)]
