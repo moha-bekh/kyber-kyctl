@@ -108,6 +108,7 @@ async fn start_handler(
 
         let service_config = inputservice_types::ServiceConfig {
             cursor_format: inputs_request.cursor_format.clone(),
+            gamepad_force_xbox360: None,
         };
 
         let uri = format!("kymux://127.0.0.1:{WS_LOCAL_CLIENTS_PORT}/{INPUT_STREAM_IDX:X}");

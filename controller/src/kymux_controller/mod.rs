@@ -306,6 +306,7 @@ async fn start_input(
 
     let service_config = inputservice_types::ServiceConfig {
         cursor_format: inputs_request.cursor_format.clone(),
+        gamepad_force_xbox360: None,
     };
 
     let mut inputservice = inputservice::Handler::new();
