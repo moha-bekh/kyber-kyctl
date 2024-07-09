@@ -503,7 +503,8 @@ impl StreamingSessionConfig {
                 info!("\tVideo session {idx}");
                 info!("\t\tdisplay_id: {}", config.display_id);
                 info!("\t\tcodec: {:?}", config.codec);
-                info!("\t\tyuv444: {}", config.yuv444)
+                info!("\t\tyuv444: {}", config.yuv444);
+                info!("\t\tintra_refresh: {:?}", config.intra_refresh);
             }
         } else {
             info!("\tvideo: false");
