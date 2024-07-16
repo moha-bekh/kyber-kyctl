@@ -253,16 +253,16 @@ impl HostEventSender {
     ) {
         loop {
             let msg = match stream.recv().await {
+                None | Some(Ok(actix_ws::Message::Close(_))) => {
+                    info!("End of stream");
+                    break;
+                }
                 Some(Ok(actix_ws::Message::Text(msg))) => msg,
                 Some(Ok(_)) => {
                     continue;
                 }
                 Some(Err(err)) => {
                     warn!("recv() failed: {err:?}");
-                    break;
-                }
-                None => {
-                    info!("End of stream");
                     break;
                 }
             };
