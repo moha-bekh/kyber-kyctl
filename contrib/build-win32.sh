@@ -108,6 +108,7 @@ build_libvlc() {
 --disable-schroedinger --disable-shout --disable-sidplay2 --disable-zvbi --disable-srt --disable-ncurses
 --disable-flac --disable-dav1d --disable-libxml2 --disable-gpg-error
 --disable-soxr --disable-chromaprint --disable-spatialaudio --disable-harfbuzz --disable-png
+--disable-gcrypt --disable-gpg-error
 EOF
 )
 
@@ -120,7 +121,7 @@ EOF
 --disable-flac --disable-screen --disable-freetype --disable-taglib --disable-smb2 --disable-sparkle
 --disable-addonmanagermodules --disable-mad --disable-chromecast --disable-lua --disable-medialibrary --disable-a52
 --disable-rav1e --disable-jpeg --disable-ncurses --disable-chromaprint --disable-shout --disable-schroedinger
---disable-soxr --disable-spatialaudio --disable-caca
+--disable-soxr --disable-spatialaudio --disable-caca --disable-secret --disable-libgcrypt --disable-update-check
 EOF
 )
 
