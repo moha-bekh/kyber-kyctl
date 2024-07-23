@@ -70,6 +70,8 @@ pub(crate) enum Message {
     CanvasResized {
         width: i32,
         height: i32,
+        frame_coded_width: i32,
+        frame_coded_height: i32,
     },
 }
 
@@ -105,6 +107,8 @@ pub enum Event {
     CanvasResized {
         width: i32,
         height: i32,
+        frame_coded_width: i32,
+        frame_coded_height: i32,
     },
     StreamerPipelineEvent {
         type_: StreamerPipelineType,

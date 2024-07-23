@@ -107,11 +107,18 @@ impl VideoRendererWorkerCtx {
             let result = renderer.draw(frame)?;
             match result {
                 None => {}
-                Some(RenderResult::CanvasResized { width, height }) => {
+                Some(RenderResult::CanvasResized {
+                    width,
+                    height,
+                    frame_coded_width,
+                    frame_coded_height,
+                }) => {
                     let msg = js_sys::Object::new();
                     reflect::set(&msg, "type", "canvas_resized".into())?;
-                    reflect::set(&msg, "width", width.into())?;
                     reflect::set(&msg, "height", height.into())?;
+                    reflect::set(&msg, "width", width.into())?;
+                    reflect::set(&msg, "frame_coded_width", frame_coded_width.into())?;
+                    reflect::set(&msg, "frame_coded_height", frame_coded_height.into())?;
 
                     js_self.post_message(&msg)?;
                 }
@@ -166,12 +173,16 @@ impl RendererWorker {
             "canvas_resized" => {
                 let width = reflect::get_f64(msg, "width")?;
                 let height = reflect::get_f64(msg, "height")?;
+                let frame_coded_width = reflect::get_f64(msg, "frame_coded_width")?;
+                let frame_coded_height = reflect::get_f64(msg, "frame_coded_height")?;
 
                 Self::message_proxy_send(
                     message_proxy,
                     Message::CanvasResized {
                         width: width as _,
                         height: height as _,
+                        frame_coded_width: frame_coded_width as _,
+                        frame_coded_height: frame_coded_height as _,
                     },
                 );
             }

@@ -5,7 +5,12 @@ use wasm_bindgen::prelude::*;
 use super::renderer_worker::VideoFrameWrapper;
 
 pub(super) enum RenderResult {
-    CanvasResized { width: u32, height: u32 },
+    CanvasResized {
+        width: u32,
+        height: u32,
+        frame_coded_width: u32,
+        frame_coded_height: u32,
+    },
 }
 
 pub(super) struct Renderer {
@@ -43,6 +48,8 @@ impl Renderer {
                 Some(RenderResult::CanvasResized {
                     width: display_width,
                     height: display_height,
+                    frame_coded_width: frame.frame.coded_width(),
+                    frame_coded_height: frame.frame.coded_height(),
                 })
             } else {
                 None
