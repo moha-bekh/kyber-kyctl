@@ -10,6 +10,8 @@ use crate::{Message, MessageProxy};
 use super::cell_buf::{self, CellBufConsumer, CellBufProducer};
 use super::renderer::{RenderResult, Renderer};
 
+const FRAME_SKIPPED_DISPLAY_THRESHOLD: usize = 30;
+
 pub struct VideoFrameWrapper {
     pub frame: web_sys::VideoFrame,
     pub rotation: u8,
@@ -18,13 +20,17 @@ pub struct VideoFrameWrapper {
 #[wasm_bindgen]
 pub struct VideoRendererWorkerCtx {
     producer: Option<CellBufProducer<VideoFrameWrapper>>,
+    frame_skipped: usize,
 }
 
 #[wasm_bindgen]
 impl VideoRendererWorkerCtx {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
-        Self { producer: None }
+        Self {
+            producer: None,
+            frame_skipped: 0,
+        }
     }
 
     pub fn on_message(&mut self, event: web_sys::MessageEvent) -> Result<(), JsValue> {
@@ -73,9 +79,17 @@ impl VideoRendererWorkerCtx {
 
         if let Some(old) = producer.replace(frame) {
             // Previous frame skipped
-            info!("Frame skipped");
+            self.frame_skipped += 1;
+            if self.frame_skipped % FRAME_SKIPPED_DISPLAY_THRESHOLD == 0 {
+                info!("{} VideoFrames skipped", self.frame_skipped);
+            }
+
             old.frame.close();
+        } else if self.frame_skipped > 0 {
+            info!("{} VideoFrames have been skipped", self.frame_skipped);
+            self.frame_skipped = 0;
         }
+
         Ok(())
     }
 
