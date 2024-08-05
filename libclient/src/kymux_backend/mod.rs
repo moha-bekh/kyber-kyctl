@@ -114,6 +114,7 @@ pub(crate) struct KymuxBackendConfig<'a> {
 pub(crate) struct KymuxBackend {
     kymux: Arc<kymux::Connection>,
     inner: platform::Inner,
+    close_requested: platform::CloseRequestState,
 }
 
 impl KymuxBackend {
@@ -123,8 +124,12 @@ impl KymuxBackend {
         // Start stream
         let host_config = host_service::start_stream(&backend_config).await?;
 
+        let close_requested = platform::CloseRequestState::new();
+
         // Play Video and Audio
-        let player = platform::create_player(&mut kymux, &backend_config, &host_config).await?;
+        let player =
+            platform::create_player(&mut kymux, &backend_config, &host_config, &close_requested)
+                .await?;
 
         // Start input
         let input_service = Self::start_inputs(&backend_config, &kymux, host_config.input).await?;
@@ -144,6 +149,7 @@ impl KymuxBackend {
                 input_service,
                 closed_task: Some(closed_task),
             },
+            close_requested,
         })
     }
 
@@ -186,6 +192,8 @@ impl BackendDriver for KymuxBackend {
 
     async fn stop(&mut self) -> Result<()> {
         self.inner.stop().await?;
+
+        self.close_requested.close();
 
         let ret = self.kymux.stop().await;
         match ret {

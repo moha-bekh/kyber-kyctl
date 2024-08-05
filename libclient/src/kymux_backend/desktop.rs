@@ -1,6 +1,10 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::net::SocketAddr;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 
 use log::{error, info, warn};
 use tokio::sync::oneshot;
@@ -16,6 +20,24 @@ use crate::platform::player;
 use crate::platform::{InputClient, InputPipeline};
 use crate::{ConnectionParams, InputSessionConfig, MessageProxy};
 use crate::{Error, Result};
+
+#[derive(Clone)]
+pub(super) struct CloseRequestState(Arc<AtomicBool>);
+
+#[allow(dead_code)]
+impl CloseRequestState {
+    pub(super) fn new() -> Self {
+        Self(Arc::new(AtomicBool::new(false)))
+    }
+
+    pub(super) fn close(&self) {
+        self.0.store(true, Ordering::Relaxed)
+    }
+
+    pub(super) fn is_closed(&self) -> bool {
+        self.0.load(Ordering::Relaxed)
+    }
+}
 
 pub(super) struct Player(player::Player);
 
@@ -168,6 +190,7 @@ pub(super) async fn create_player(
     kymux: &mut kymux::Connection,
     backend_config: &KymuxBackendConfig<'_>,
     host_config: &StartSessionResponse,
+    _close_requested: &CloseRequestState,
 ) -> Result<Option<Player>> {
     let video_config = create_video_config(kymux, backend_config, &host_config.video)?;
 

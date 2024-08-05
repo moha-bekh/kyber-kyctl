@@ -1,5 +1,7 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::future::Future;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use log::{error, info, warn};
@@ -24,6 +26,25 @@ use crate::platform::player::{
 use crate::platform::InputMsgSink;
 use crate::{Error, Result};
 use crate::{InputSessionConfig, MessageProxy, VideoSessionConfig};
+
+#[derive(Clone)]
+pub(super) struct CloseRequestState(Rc<RefCell<bool>>);
+
+impl CloseRequestState {
+    pub(super) fn new() -> Self {
+        Self(Rc::new(RefCell::new(false)))
+    }
+
+    pub(super) fn close(&self) {
+        let mut value = self.0.borrow_mut();
+        *value = true;
+    }
+
+    pub(super) fn is_closed(&self) -> bool {
+        let value = self.0.borrow();
+        *value
+    }
+}
 
 pub(super) struct InputService {
     pub(super) proxy: Arc<BufferProxy>,
@@ -133,6 +154,7 @@ async fn player_forward_task<Player>(
     type_: &str,
     mut recv: ProtocolRecv<AVPacket>,
     mut player: Player,
+    close_requested: CloseRequestState,
 ) where
     Player: PacketSink,
 {
@@ -141,7 +163,12 @@ async fn player_forward_task<Player>(
             Ok(Some(kypacket)) => kypacket,
             Ok(None) => break,
             Err(err) => {
-                warn!("Failed to receive {type_} from Kymux: {err:?}");
+                // Only if the error occurs before the user requested to stop.
+                // Otherwise, read errors are expected and should not be
+                // reported.
+                if !close_requested.is_closed() {
+                    warn!("Failed to receive {type_} from Kymux: {err:?}");
+                }
                 break;
             }
         };
@@ -158,6 +185,7 @@ async fn create_videoplayer(
     kymux: &kymux::Connection,
     backend_config: &KymuxBackendConfig<'_>,
     host_config: &Option<Vec<StartSessionVideoResponse>>,
+    close_requested: &CloseRequestState,
 ) -> Result<Option<Vec<VideoPlayerHandle>>> {
     let video_config = &backend_config.streaming_config.video;
     if video_config.is_empty() {
@@ -205,7 +233,8 @@ async fn create_videoplayer(
             .await
             .map_err(|err| Error::KymuxReadyFailed { reason: err.0 })?;
 
-        wasm_bindgen_futures::spawn_local(player_forward_task("video", recv, video_player));
+        let cr = close_requested.clone();
+        wasm_bindgen_futures::spawn_local(player_forward_task("video", recv, video_player, cr));
 
         player_list.push(video_player_handle);
     }
@@ -217,6 +246,7 @@ async fn create_audioplayer(
     kymux: &kymux::Connection,
     backend_config: &KymuxBackendConfig<'_>,
     host_config: &Option<StartSessionAudioResponse>,
+    close_requested: &CloseRequestState,
 ) -> Result<Option<AudioPlayerHandle>> {
     let host_config = match (backend_config.streaming_config.audio, host_config) {
         (true, Some(host_config)) => host_config,
@@ -240,7 +270,8 @@ async fn create_audioplayer(
         .await
         .map_err(|err| Error::KymuxReadyFailed { reason: err.0 })?;
 
-    wasm_bindgen_futures::spawn_local(player_forward_task("audio", recv, audio_player));
+    let cr = close_requested.clone();
+    wasm_bindgen_futures::spawn_local(player_forward_task("audio", recv, audio_player, cr));
 
     Ok(Some(audio_player_handle))
 }
@@ -249,9 +280,12 @@ pub(super) async fn create_player(
     kymux: &mut kymux::Connection,
     backend_config: &KymuxBackendConfig<'_>,
     host_config: &StartSessionResponse,
+    close_requested: &CloseRequestState,
 ) -> Result<Option<Player>> {
-    let video_player = create_videoplayer(kymux, backend_config, &host_config.video).await?;
-    let audio_player = create_audioplayer(kymux, backend_config, &host_config.audio).await?;
+    let video_player =
+        create_videoplayer(kymux, backend_config, &host_config.video, close_requested).await?;
+    let audio_player =
+        create_audioplayer(kymux, backend_config, &host_config.audio, close_requested).await?;
 
     if video_player.is_some() || audio_player.is_some() {
         Ok(Some(Player {
