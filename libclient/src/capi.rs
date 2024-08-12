@@ -83,6 +83,7 @@ impl From<libclient_KymuxVideoProtocol> for kymux::VideoProtocol {
 pub enum libclient_KymuxAudioProtocol {
     Reliable,
     Unreliable,
+    UnreliableFec,
 }
 
 #[cfg(feature = "kymux")]
@@ -91,6 +92,7 @@ impl From<libclient_KymuxAudioProtocol> for kymux::AudioProtocol {
         match value {
             libclient_KymuxAudioProtocol::Reliable => Self::Reliable,
             libclient_KymuxAudioProtocol::Unreliable => Self::Unreliable,
+            libclient_KymuxAudioProtocol::UnreliableFec => Self::UnreliableFec,
         }
     }
 }
