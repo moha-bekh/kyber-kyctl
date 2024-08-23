@@ -60,18 +60,13 @@ async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kymux::C
                 port = start_response.port
             );
 
-            let Some(certificate_hash) = start_response.certificate_hash else {
-                error!("No certificate hash returned");
-                return Err(Error::Rejected);
-            };
-
             let url = format!(
                 "https://{host}:{port}",
                 host = backend_config.conn_params.host,
                 port = start_response.port
             );
 
-            platform::connect_webtransport(url, certificate_hash).await
+            platform::connect_webtransport(url, start_response.certificate_hash).await
         }
     };
 

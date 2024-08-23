@@ -116,13 +116,17 @@ impl KymuxClosedTask {
 
 pub(super) async fn connect_webtransport(
     url: String,
-    certificate_hash: StartKymuxCertificateHash,
+    certificate_hash: Option<StartKymuxCertificateHash>,
 ) -> Result<kymux::Connection> {
+    let certificate_hash = certificate_hash.map(|c| kymux::WebTransportCertificateHash {
+        hash_algorithm: c.algorithm,
+        hash: c.hash,
+    });
+
     Ok(
         kymux::Connection::connect(kymux::ClientConfig::WebTransport {
             url,
-            certificate_hash_algorithm: certificate_hash.algorithm,
-            certificate_hash: certificate_hash.hash,
+            certificate_hash,
         })
         .await?,
     )
