@@ -243,7 +243,7 @@ impl crate::host_events::WsClient for WsClient {
 
 pub(crate) struct WsClientBuilder;
 
-#[async_trait]
+#[async_trait(?Send)]
 impl crate::host_events::WsClientBuilder for WsClientBuilder {
     type Type = WsClient;
 
