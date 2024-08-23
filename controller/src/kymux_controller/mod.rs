@@ -136,7 +136,7 @@ async fn start_kymux(
     }
 
     // Load network and TLS config
-    let (listening_port, public_port, tls_config) = {
+    let (listening_port, public_port, tls_config, webtransport_gen_certificate) = {
         let ctrl = ctrl.lock().await;
 
         // If dataplane port has been overriden, use it directly.
@@ -148,7 +148,14 @@ async fn start_kymux(
                 (ctrl.config.port(), public_port)
             };
 
-        (listening_port, public_port, ctrl.tls_config.clone())
+        let webtransport_gen_certificate = ctrl.config.webtransport_gen_certificate();
+
+        (
+            listening_port,
+            public_port,
+            ctrl.tls_config.clone(),
+            webtransport_gen_certificate,
+        )
     };
 
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), listening_port);
@@ -169,22 +176,37 @@ async fn start_kymux(
         KymuxTransportBackend::Webtransport => {
             info!("Start webtransport listener on address {addr:?}");
 
-            let cert = webtransport::gen_webtransport_cert()?;
+            let (cert_chain, private_key, certificate_hash) = if webtransport_gen_certificate {
+                info!("Generate certificate for webtransport connection");
+
+                let cert = webtransport::gen_webtransport_cert()?;
+
+                let certificate_hash = StartKymuxCertificateHash {
+                    algorithm: "sha-2566".into(),
+                    hash: cert.cert_digest,
+                };
+
+                (
+                    vec![rustls::Certificate(cert.cert_der)],
+                    rustls::PrivateKey(cert.key_der),
+                    Some(certificate_hash),
+                )
+            } else {
+                (
+                    tls_config.cert_chain.clone(),
+                    tls_config.private_key.clone(),
+                    None,
+                )
+            };
 
             let server_config = kymux::ServerConfig::Wtransport {
                 addr,
-                cert_chain: vec![rustls::Certificate(cert.cert_der)],
-                private_key: rustls::PrivateKey(cert.key_der),
+                cert_chain,
+                private_key,
             };
             let server = kymux::Server::new(server_config).await?;
 
-            (
-                server,
-                Some(StartKymuxCertificateHash {
-                    algorithm: "sha-256".into(),
-                    hash: cert.cert_digest,
-                }),
-            )
+            (server, certificate_hash)
         }
     };
 

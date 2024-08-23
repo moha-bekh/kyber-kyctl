@@ -12,6 +12,7 @@ const LISTENING_PORT: u16 = 8080;
 pub(crate) struct Config {
     port: Option<u16>,
     dataplane_port: Option<u16>,
+    webtransport_gen_certificate: Option<bool>,
 }
 
 impl Config {
@@ -21,6 +22,10 @@ impl Config {
 
     pub(crate) fn dataplane_port(&self) -> Option<u16> {
         self.dataplane_port
+    }
+
+    pub(crate) fn webtransport_gen_certificate(&self) -> bool {
+        self.webtransport_gen_certificate.unwrap_or(true)
     }
 }
 
