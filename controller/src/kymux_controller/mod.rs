@@ -158,12 +158,16 @@ async fn start_kymux(
         KymuxTransportBackend::Quic => {
             info!("Start Quic listener on address {addr:?}");
 
-            let certificate = rustls::Certificate(tls_config.certificate.clone());
+            let cert_chain = tls_config
+                .cert_chain
+                .iter()
+                .map(|c| rustls::Certificate(c.clone()))
+                .collect();
             let private_key = rustls::PrivateKey(tls_config.private_key.clone());
 
             let config = kymux::ServerConfig::Quic {
                 addr,
-                certificate,
+                cert_chain,
                 private_key,
             };
             let server = kymux::Server::new(config).await?;
@@ -176,8 +180,8 @@ async fn start_kymux(
 
             let server_config = kymux::ServerConfig::Wtransport {
                 addr,
-                certificate: cert.cert_der,
-                private_key: cert.key_der,
+                cert_chain: vec![rustls::Certificate(cert.cert_der)],
+                private_key: rustls::PrivateKey(cert.key_der),
             };
             let server = kymux::Server::new(server_config).await?;
 

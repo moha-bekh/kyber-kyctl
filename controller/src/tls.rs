@@ -1,14 +1,14 @@
 use std::fs::File;
 use std::io::BufReader;
 
-use log::error;
+use log::{error, warn};
 
 use crate::utils::get_resource_path;
 use crate::{Error, Result};
 
 #[derive(Clone)]
 pub(crate) struct Config {
-    pub(crate) certificate: Vec<u8>,
+    pub(crate) cert_chain: Vec<Vec<u8>>,
     pub(crate) private_key: Vec<u8>,
 }
 
@@ -29,13 +29,17 @@ pub(crate) fn load_config(cert_path: &str, key_path: &str) -> Result<Config> {
     // Load certificate
     let mut cert_reader = open_reader(cert_path)?;
 
-    let certificate = match rustls_pemfile::read_one(&mut cert_reader)? {
-        Some(Item::X509Certificate(cert)) => cert,
-        _ => {
-            error!("{cert_path} doesn't contain a X509 Certificate");
-            return Err(Error::TlsInvalidFile);
-        }
-    };
+    let cert_chain = rustls_pemfile::read_all(&mut cert_reader)?;
+    let cert_chain: Vec<_> = cert_chain
+        .into_iter()
+        .filter_map(|item| match item {
+            Item::X509Certificate(cert) => Some(cert),
+            _ => {
+                warn!("{cert_path}: Ignore non X509 Certificate item");
+                None
+            }
+        })
+        .collect();
 
     // Load key
     let mut key_reader = open_reader(key_path)?;
@@ -51,7 +55,7 @@ pub(crate) fn load_config(cert_path: &str, key_path: &str) -> Result<Config> {
 
     // Build configuration
     Ok(Config {
-        certificate,
+        cert_chain,
         private_key,
     })
 }
