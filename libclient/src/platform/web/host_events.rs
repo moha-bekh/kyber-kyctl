@@ -200,7 +200,6 @@ impl WebSocketHandler for Inner {
 /// to send the value to a worker, it is acceptable to force Rc<Inner> to be
 /// Send.
 struct InnerRef(Rc<Inner>);
-unsafe impl Send for InnerRef {}
 
 pub(crate) struct WsClient {
     _inner: InnerRef,

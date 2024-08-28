@@ -15,7 +15,7 @@ use crate::Result;
 
 pub struct InputWebSocketHandler {
     ws: Rc<WebSocket>,
-    msg_sink: Arc<dyn InputNetworkStreamObserver + Send + Sync>,
+    msg_sink: Arc<dyn InputNetworkStreamObserver>,
     proxy_sender: BufferProxySender,
     proxy_receiver: RefCell<Option<BufferProxyReceiver>>,
 }
@@ -25,7 +25,7 @@ impl InputWebSocketHandler {
         url: &str,
         proxy_sender: BufferProxySender,
         proxy_receiver: BufferProxyReceiver,
-        msg_sink: Arc<dyn InputNetworkStreamObserver + Send + Sync>,
+        msg_sink: Arc<dyn InputNetworkStreamObserver>,
     ) -> Result<Rc<Self>> {
         // Connect
         let ws = WebSocket::new(url)?;
