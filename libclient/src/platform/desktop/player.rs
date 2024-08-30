@@ -25,9 +25,15 @@ pub(crate) fn plug_event_manager_to_player(
         }
     };
 
-    event_manager
-        .attach(vlc::EventType::MediaPlayerPlaying, cb)
-        .map_err(|_| PlayerError::EvtRegisterFailed)?;
+    let events = &[
+        vlc::EventType::MediaPlayerPlaying,
+    ];
+
+    for e in events {
+        event_manager
+            .attach(*e, cb.clone())
+            .map_err(|_| PlayerError::EvtRegisterFailed)?;
+    }
 
     Ok(())
 }
