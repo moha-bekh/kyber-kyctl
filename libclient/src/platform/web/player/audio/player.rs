@@ -180,6 +180,34 @@ pub(crate) struct AudioPlayerHandle {
 }
 
 impl AudioPlayerHandle {
+    pub fn set_volume(&self, volume: f32) -> Result<()> {
+        let Some(audio_worklet) = &self.audio_worklet else {
+            warn!("No AudioWorklet to control");
+            return Ok(());
+        };
+
+        let ret = audio_worklet.set_volume(volume);
+        if let Err(err) = ret {
+            warn!("Failed to set audio worklet volume: {err:?}");
+        }
+
+        Ok(())
+    }
+
+    pub fn set_mute(&self, mute: bool) -> Result<()> {
+        let Some(audio_worklet) = &self.audio_worklet else {
+            warn!("No AudioWorklet to control");
+            return Ok(());
+        };
+
+        let ret = audio_worklet.set_mute(mute);
+        if let Err(err) = ret {
+            warn!("Failed to set audio worklet mute: {err:?}");
+        }
+
+        Ok(())
+    }
+
     pub async fn stop(&mut self) -> Result<()> {
         if let Some(audio_worklet) = self.audio_worklet.take() {
             let ret = audio_worklet.stop().await;

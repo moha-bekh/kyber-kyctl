@@ -5,7 +5,7 @@ use wasm_bindgen_futures::JsFuture;
 
 use crate::platform::player::AudioPlayer;
 use crate::platform::reflect;
-use crate::MessageProxy;
+use crate::{Error, Message, MessageProxy};
 
 struct GainNodeConfig {
     gain: f32,
@@ -86,6 +86,38 @@ impl AudioWorklet {
             node,
             message_proxy,
         })
+    }
+
+    pub fn set_volume(&self, volume: f32) -> Result<(), Error> {
+        let mut gain_cfg = self.gain_cfg.borrow_mut();
+
+        if !gain_cfg.mute {
+            self.gain_node.gain().set_value(volume);
+        }
+
+        gain_cfg.gain = volume;
+
+        self.message_proxy
+            .send(Message::AudioVolumeChanged { volume })?;
+
+        Ok(())
+    }
+
+    pub fn set_mute(&self, mute: bool) -> Result<(), Error> {
+        let mut gain_cfg = self.gain_cfg.borrow_mut();
+
+        if mute {
+            self.gain_node.gain().set_value(0.0);
+        } else {
+            self.gain_node.gain().set_value(gain_cfg.gain);
+        }
+
+        gain_cfg.mute = mute;
+
+        self.message_proxy
+            .send(Message::AudioMuteChanged { mute })?;
+
+        Ok(())
     }
 
     pub async fn stop(self) -> Result<(), JsValue> {
