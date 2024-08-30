@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use log::{error, info, warn};
+use vlc::MediaPlayerAudioEx;
 
 use crate::error::{Error, PlayerError, Result};
 use crate::platform::WindowHandle;
@@ -17,6 +18,11 @@ pub(crate) fn plug_event_manager_to_player(
         let msg = match event {
             vlc::Event::MediaPlayerPlaying => Some(Message::PlayerStarted),
             vlc::Event::MediaPlayerStopped => Some(Message::PlayerStopped),
+            vlc::Event::MediaPlayerMuted => Some(Message::AudioMuteChanged { mute: true }),
+            vlc::Event::MediaPlayerUnmuted => Some(Message::AudioMuteChanged { mute: false }),
+            vlc::Event::MediaPlayerAudioVolume(volume) => {
+                Some(Message::AudioVolumeChanged { volume })
+            }
             _ => None,
         };
 
@@ -27,6 +33,9 @@ pub(crate) fn plug_event_manager_to_player(
 
     let events = &[
         vlc::EventType::MediaPlayerPlaying,
+        vlc::EventType::MediaPlayerMuted,
+        vlc::EventType::MediaPlayerUnmuted,
+        vlc::EventType::MediaPlayerAudioVolume,
     ];
 
     for e in events {
@@ -219,6 +228,32 @@ impl Player {
         for video_mediaplayer in self.video_mediaplayer.iter() {
             Self::mdp_stop_async(video_mediaplayer).await?;
         }
+
+        Ok(())
+    }
+
+    pub(crate) fn audio_set_volume(&self, volume: f32) -> Result<()> {
+        let audio_mediaplayer = self
+            .audio_mediaplayer
+            .as_ref()
+            .ok_or(Error::NoAudioPlayer)?;
+
+        let ret = audio_mediaplayer.set_volume((volume * 100.0) as i32);
+        if ret.is_err() {
+            warn!("Failed to set audio volume");
+            return Err(Error::Rejected);
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn audio_set_mute(&self, mute: bool) -> Result<()> {
+        let audio_mediaplayer = self
+            .audio_mediaplayer
+            .as_ref()
+            .ok_or(Error::NoAudioPlayer)?;
+
+        audio_mediaplayer.set_mute(mute);
 
         Ok(())
     }

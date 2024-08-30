@@ -28,6 +28,7 @@ pub enum Error {
     NoPipeline,
     NoClient,
     NoInputService,
+    NoAudioPlayer,
     Input(platform::InputError),
     #[cfg(feature = "kymux")]
     Kymux(kymux::Error),
