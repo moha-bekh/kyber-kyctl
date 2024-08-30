@@ -539,6 +539,24 @@ pub unsafe extern "C" fn libclient_client_stop_streaming(client: *mut libclient_
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn libclient_client_audio_set_volume(
+    client: *mut libclient_Client,
+    volume: f32,
+) -> c_int {
+    let ret = (*client).client.audio_set_volume(volume);
+    result_to_c_int(ret)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_client_audio_set_mute(
+    client: *mut libclient_Client,
+    mute: bool,
+) -> c_int {
+    let ret = (*client).client.audio_set_mute(mute);
+    result_to_c_int(ret)
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn libclient_client_ref(
     client: *mut libclient_Client,
 ) -> *mut libclient_Client {
@@ -569,6 +587,8 @@ pub enum libclient_EventType {
     StreamingStartFailed,
     StreamingStopped,
     StreamerPipelineEvent,
+    AudioVolumeChanged,
+    AudioMuteChanged,
 }
 
 #[repr(C)]
@@ -616,6 +636,8 @@ pub unsafe extern "C" fn libclient_event_get_type(event: *const Event) -> libcli
         Event::StreamingStartFailed => libclient_EventType::StreamingStartFailed,
         Event::StreamingStopped => libclient_EventType::StreamingStopped,
         Event::StreamerPipelineEvent { .. } => libclient_EventType::StreamerPipelineEvent,
+        Event::AudioVolumeChanged { .. } => libclient_EventType::AudioVolumeChanged,
+        Event::AudioMuteChanged { .. } => libclient_EventType::AudioMuteChanged,
     }
 }
 
@@ -725,6 +747,34 @@ pub unsafe extern "C" fn libclient_event_unpack_streamer_pipeline_event(
         crate::StreamerPipelineEventType::Stopped => libclient_StreamerPipelineEventType::Stopped,
         crate::StreamerPipelineEventType::Error => libclient_StreamerPipelineEventType::Error,
     };
+
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_event_unpack_audio_volume_changed(
+    event: *const Event,
+    out_volume: *mut f32,
+) -> c_int {
+    let Event::AudioVolumeChanged { volume } = &*event else {
+        return -1;
+    };
+
+    *out_volume = *volume;
+
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_event_unpack_audio_mute_changed(
+    event: *const Event,
+    out_mute: *mut bool,
+) -> c_int {
+    let Event::AudioMuteChanged { mute } = &*event else {
+        return -1;
+    };
+
+    *out_mute = *mute;
 
     0
 }

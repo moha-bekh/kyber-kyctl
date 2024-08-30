@@ -51,6 +51,12 @@ pub(crate) enum Message {
     },
     StopStreamingSession,
 
+    AudioSetVolume {
+        volume: f32,
+    },
+    AudioSetMute {
+        mute: bool,
+    },
     PlayerStarted,
     PlayerStopped,
 
@@ -103,6 +109,12 @@ pub enum Event {
     StreamingStarted,
     StreamingStartFailed,
     StreamingStopped,
+    AudioVolumeChanged {
+        volume: f32,
+    },
+    AudioMuteChanged {
+        mute: bool,
+    },
     #[cfg(feature = "web")]
     CanvasResized {
         width: i32,

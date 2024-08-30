@@ -354,6 +354,12 @@ impl Handler {
 
                 Ok(())
             }
+            Message::AudioSetVolume { volume } => {
+                Ok(())
+            }
+            Message::AudioSetMute { mute } => {
+                Ok(())
+            }
             Message::PlayerStarted => {
                 info!("Player started");
                 Ok(())
@@ -633,6 +639,16 @@ impl Client {
 
     pub fn stop_streaming(&self) -> Result<()> {
         self.send_message(Message::StopStreamingSession)?;
+        Ok(())
+    }
+
+    pub fn audio_set_volume(&self, volume: f32) -> Result<()> {
+        self.send_message(Message::AudioSetVolume { volume })?;
+        Ok(())
+    }
+
+    pub fn audio_set_mute(&self, mute: bool) -> Result<()> {
+        self.send_message(Message::AudioSetMute { mute })?;
         Ok(())
     }
 
