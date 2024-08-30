@@ -173,12 +173,14 @@ impl WsBackend {
         // Create and configure libkynput network proxy
         let mut input_proxy = BufferProxy::new();
         let (libkynput_tx, libkynput_rx) = input_proxy.split()?;
+        #[allow(clippy::arc_with_non_send_sync)]
         let input_proxy = Arc::new(input_proxy);
 
         input_proxy.plug_consumer(Arc::downgrade(&input_config.pipeline.get_input_sink()))?;
         input_proxy.run()?;
 
         // Spawn websocket
+        #[allow(clippy::arc_with_non_send_sync)]
         let msg_sink = Arc::new(InputMsgSink::new(backend_config.msg_proxy.clone()));
         let inputs_url = format!(
             "wss://{host}/websocket/inputs",

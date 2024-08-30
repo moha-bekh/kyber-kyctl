@@ -363,6 +363,7 @@ pub(super) async fn start_input(
     // Configure pipeline
     let mut input_proxy = BufferProxy::new();
     let (libkynput_tx, libkynput_rx) = input_proxy.split()?;
+    #[allow(clippy::arc_with_non_send_sync)]
     let input_proxy = Arc::new(input_proxy);
 
     input_proxy.plug_consumer(Arc::downgrade(&config.pipeline.get_input_sink()))?;
