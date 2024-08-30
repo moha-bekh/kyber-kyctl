@@ -255,6 +255,22 @@ pub(super) struct Inner {
 }
 
 impl Inner {
+    pub(super) fn audio_set_volume(&self, volume: f32) -> Result<()> {
+        let player = self.player.as_ref().ok_or(Error::NoAudioPlayer)?;
+
+        player.0.audio_set_volume(volume)?;
+
+        Ok(())
+    }
+
+    pub(super) fn audio_set_mute(&self, mute: bool) -> Result<()> {
+        let player = self.player.as_ref().ok_or(Error::NoAudioPlayer)?;
+
+        player.0.audio_set_mute(mute)?;
+
+        Ok(())
+    }
+
     pub(super) async fn input_service_connected(&mut self) -> Result<()> {
         let input_service = self.input_service.as_mut().ok_or(Error::NoInputService)?;
 

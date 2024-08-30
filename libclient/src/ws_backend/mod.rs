@@ -199,6 +199,22 @@ impl WsBackend {
 
 #[async_trait(?Send)]
 impl BackendDriver for WsBackend {
+    fn audio_set_volume(&self, volume: f32) -> Result<()> {
+        let audio_service = self.audio_service.as_ref().ok_or(Error::NoAudioPlayer)?;
+
+        audio_service.player_handle.set_volume(volume)?;
+
+        Ok(())
+    }
+
+    fn audio_set_mute(&self, mute: bool) -> Result<()> {
+        let audio_service = self.audio_service.as_ref().ok_or(Error::NoAudioPlayer)?;
+
+        audio_service.player_handle.set_mute(mute)?;
+
+        Ok(())
+    }
+
     async fn stop(&mut self) -> Result<()> {
         if let Some(video_service) = self.video_service.take() {
             video_service.stop().await;

@@ -78,6 +78,10 @@ impl MessageProxy {
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 trait BackendDriver {
+    fn audio_set_volume(&self, volume: f32) -> Result<()>;
+
+    fn audio_set_mute(&self, mute: bool) -> Result<()>;
+
     async fn input_service_connected(&mut self) -> Result<()>;
 
     async fn input_service_disconnected(&mut self) -> Result<()>;
@@ -355,9 +359,17 @@ impl Handler {
                 Ok(())
             }
             Message::AudioSetVolume { volume } => {
+                if let Some(backend) = &self.backend {
+                    backend.audio_set_volume(*volume)?;
+                }
+
                 Ok(())
             }
             Message::AudioSetMute { mute } => {
+                if let Some(backend) = &self.backend {
+                    backend.audio_set_mute(*mute)?;
+                }
+
                 Ok(())
             }
             Message::AudioVolumeChanged { volume } => {

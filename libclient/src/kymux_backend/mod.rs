@@ -177,6 +177,14 @@ impl KymuxBackend {
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 impl BackendDriver for KymuxBackend {
+    fn audio_set_volume(&self, volume: f32) -> Result<()> {
+        self.inner.audio_set_volume(volume)
+    }
+
+    fn audio_set_mute(&self, mute: bool) -> Result<()> {
+        self.inner.audio_set_mute(mute)
+    }
+
     async fn input_service_connected(&mut self) -> Result<()> {
         self.inner.input_service_connected().await
     }
