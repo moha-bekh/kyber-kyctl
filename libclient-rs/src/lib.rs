@@ -188,6 +188,12 @@ pub enum Event {
         stage: StreamerPipelineStage,
         event: StreamerPipelineEventType,
     },
+    AudioVolumeChanged {
+        volume: f32,
+    },
+    AudioMuteChanged {
+        mute: bool,
+    },
 }
 
 pub trait EventSink {
@@ -384,6 +390,34 @@ impl EventSinkData {
                     stage,
                     event,
                 });
+            }
+            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_AUDIO_VOLUME_CHANGED => {
+                let mut volume = mem::MaybeUninit::uninit();
+
+                let ret = unsafe {
+                    sys::libclient_event_unpack_audio_volume_changed(event, volume.as_mut_ptr())
+                };
+                if ret != 0 {
+                    warn!("Fail to unpack EventType::AudioVolumeChanged");
+                    return;
+                }
+
+                let volume = volume.assume_init();
+                data.sink.on_event(Event::AudioVolumeChanged { volume });
+            }
+            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_AUDIO_MUTE_CHANGED => {
+                let mut mute = mem::MaybeUninit::uninit();
+
+                let ret = unsafe {
+                    sys::libclient_event_unpack_audio_mute_changed(event, mute.as_mut_ptr())
+                };
+                if ret != 0 {
+                    warn!("Fail to unpack EventType::AudioMuteChanged");
+                    return;
+                }
+
+                let mute = mute.assume_init();
+                data.sink.on_event(Event::AudioMuteChanged { mute });
             }
             _ => {
                 error!("Invalid libclient_EventType {}", event_type)
@@ -662,6 +696,24 @@ impl Client {
 
     pub fn stop_streaming(&self) -> Result<()> {
         let ret = unsafe { sys::libclient_client_stop_streaming(self.ptr) };
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err(Error::Generic)
+        }
+    }
+
+    pub fn audio_set_volume(&self, volume: f32) -> Result<()> {
+        let ret = unsafe { sys::libclient_client_audio_set_volume(self.ptr, volume) };
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err(Error::Generic)
+        }
+    }
+
+    pub fn audio_set_mute(&self, mute: bool) -> Result<()> {
+        let ret = unsafe { sys::libclient_client_audio_set_mute(self.ptr, mute) };
         if ret == 0 {
             Ok(())
         } else {
