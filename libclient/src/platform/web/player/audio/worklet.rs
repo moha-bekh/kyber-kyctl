@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
 
@@ -5,8 +7,15 @@ use crate::platform::player::AudioPlayer;
 use crate::platform::reflect;
 use crate::MessageProxy;
 
+struct GainNodeConfig {
+    gain: f32,
+    mute: bool,
+}
+
 pub(crate) struct AudioWorklet {
     ctx: web_sys::AudioContext,
+    gain_node: web_sys::GainNode,
+    gain_cfg: RefCell<GainNodeConfig>,
     node: web_sys::AudioWorkletNode,
     message_proxy: MessageProxy,
 }
@@ -16,12 +25,14 @@ impl AudioWorklet {
         sab: js_sys::SharedArrayBuffer,
         message_proxy: MessageProxy,
     ) -> Result<Self, JsValue> {
+        // AudioContext
         let ctx = web_sys::AudioContext::new_with_context_options(
             web_sys::AudioContextOptions::new()
                 .sample_rate(super::SAMPLE_RATE as f32)
                 .latency_hint(&JsValue::from("interactive")),
         )?;
 
+        // AudioProcessor/AudioRenderer
         let promise = ctx.audio_worklet()?.add_module("audio_worklet.js")?;
         JsFuture::from(promise).await?;
 
@@ -53,12 +64,28 @@ impl AudioWorklet {
                 ))))
                 .processor_options(Some(&processor_options)),
         )?;
-        node.connect_with_audio_node(&ctx.destination())?;
 
+        // AudioGain
+        let gain: web_sys::GainNode = ctx.create_gain()?;
+
+        // Link everything
+        node.connect_with_audio_node(&gain)?;
+        gain.connect_with_audio_node(&ctx.destination())?;
+
+        // Resume AudioContext
         let promise = ctx.resume()?;
         JsFuture::from(promise).await?;
 
-        Ok(Self { ctx, node, message_proxy })
+        Ok(Self {
+            ctx,
+            gain_node: gain,
+            gain_cfg: RefCell::new(GainNodeConfig {
+                gain: 1.0,
+                mute: false,
+            }),
+            node,
+            message_proxy,
+        })
     }
 
     pub async fn stop(self) -> Result<(), JsValue> {
