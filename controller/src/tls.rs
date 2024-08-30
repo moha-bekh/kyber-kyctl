@@ -8,8 +8,8 @@ use crate::{Error, Result};
 
 #[derive(Clone)]
 pub(crate) struct Config {
-    pub(crate) cert_chain: Vec<Vec<u8>>,
-    pub(crate) private_key: Vec<u8>,
+    pub(crate) cert_chain: Vec<rustls::Certificate>,
+    pub(crate) private_key: rustls::PrivateKey,
 }
 
 fn open_reader(path: &str) -> Result<BufReader<File>> {
@@ -33,7 +33,7 @@ pub(crate) fn load_config(cert_path: &str, key_path: &str) -> Result<Config> {
     let cert_chain: Vec<_> = cert_chain
         .into_iter()
         .filter_map(|item| match item {
-            Item::X509Certificate(cert) => Some(cert),
+            Item::X509Certificate(cert) => Some(rustls::Certificate(cert)),
             _ => {
                 warn!("{cert_path}: Ignore non X509 Certificate item");
                 None
@@ -45,8 +45,8 @@ pub(crate) fn load_config(cert_path: &str, key_path: &str) -> Result<Config> {
     let mut key_reader = open_reader(key_path)?;
 
     let private_key = match rustls_pemfile::read_one(&mut key_reader)? {
-        Some(Item::RSAKey(key)) => key,
-        Some(Item::PKCS8Key(key)) => key,
+        Some(Item::RSAKey(key)) => rustls::PrivateKey(key),
+        Some(Item::PKCS8Key(key)) => rustls::PrivateKey(key),
         _ => {
             error!("{key_path} doesn't contain a PKCS1/PKCS8 Key");
             return Err(Error::TlsInvalidFile);

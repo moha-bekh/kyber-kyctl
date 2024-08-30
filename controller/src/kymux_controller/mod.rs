@@ -158,17 +158,10 @@ async fn start_kymux(
         KymuxTransportBackend::Quic => {
             info!("Start Quic listener on address {addr:?}");
 
-            let cert_chain = tls_config
-                .cert_chain
-                .iter()
-                .map(|c| rustls::Certificate(c.clone()))
-                .collect();
-            let private_key = rustls::PrivateKey(tls_config.private_key.clone());
-
             let config = kymux::ServerConfig::Quic {
                 addr,
-                cert_chain,
-                private_key,
+                cert_chain: tls_config.cert_chain.clone(),
+                private_key: tls_config.private_key.clone(),
             };
             let server = kymux::Server::new(config).await?;
             (server, None)

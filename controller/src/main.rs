@@ -133,18 +133,13 @@ async fn stop_session(ctrl: web::Data<Mutex<Controller>>) -> HttpResponse {
 }
 
 fn build_serverconfig(tls_config: &tls::Config) -> Result<rustls::ServerConfig> {
-    let cert_chain = tls_config
-        .cert_chain
-        .iter()
-        .map(|c| rustls::Certificate(c.clone()))
-        .collect();
-    let private_key = rustls::PrivateKey(tls_config.private_key.clone());
-
-    // Build configuration
     Ok(rustls::ServerConfig::builder()
         .with_safe_defaults()
         .with_no_client_auth()
-        .with_single_cert(cert_chain, private_key)?)
+        .with_single_cert(
+            tls_config.cert_chain.clone(),
+            tls_config.private_key.clone(),
+        )?)
 }
 
 fn setup_logs(logfile: &str, level: LevelFilter) -> log4rs::Handle {
