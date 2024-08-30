@@ -57,6 +57,13 @@ pub(crate) enum Message {
     AudioSetMute {
         mute: bool,
     },
+    AudioVolumeChanged {
+        volume: f32,
+    },
+    AudioMuteChanged {
+        mute: bool,
+    },
+
     PlayerStarted,
     PlayerStopped,
 

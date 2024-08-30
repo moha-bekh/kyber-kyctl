@@ -360,6 +360,18 @@ impl Handler {
             Message::AudioSetMute { mute } => {
                 Ok(())
             }
+            Message::AudioVolumeChanged { volume } => {
+                self.event_manager
+                    .send_event(Event::AudioVolumeChanged { volume: *volume });
+
+                Ok(())
+            }
+            Message::AudioMuteChanged { mute } => {
+                self.event_manager
+                    .send_event(Event::AudioMuteChanged { mute: *mute });
+
+                Ok(())
+            }
             Message::PlayerStarted => {
                 info!("Player started");
                 Ok(())
