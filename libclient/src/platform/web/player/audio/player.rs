@@ -96,7 +96,7 @@ impl AudioPlayer {
             }),
         };
 
-        let audio_worklet = AudioWorklet::start(sab).await?;
+        let audio_worklet = AudioWorklet::start(sab, message_proxy.clone()).await?;
 
         let player = Self {
             message_proxy,

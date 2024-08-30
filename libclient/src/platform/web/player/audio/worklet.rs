@@ -3,14 +3,19 @@ use wasm_bindgen_futures::JsFuture;
 
 use crate::platform::player::AudioPlayer;
 use crate::platform::reflect;
+use crate::MessageProxy;
 
 pub(crate) struct AudioWorklet {
     ctx: web_sys::AudioContext,
     node: web_sys::AudioWorkletNode,
+    message_proxy: MessageProxy,
 }
 
 impl AudioWorklet {
-    pub async fn start(sab: js_sys::SharedArrayBuffer) -> Result<Self, JsValue> {
+    pub async fn start(
+        sab: js_sys::SharedArrayBuffer,
+        message_proxy: MessageProxy,
+    ) -> Result<Self, JsValue> {
         let ctx = web_sys::AudioContext::new_with_context_options(
             web_sys::AudioContextOptions::new()
                 .sample_rate(super::SAMPLE_RATE as f32)
@@ -53,7 +58,7 @@ impl AudioWorklet {
         let promise = ctx.resume()?;
         JsFuture::from(promise).await?;
 
-        Ok(Self { ctx, node })
+        Ok(Self { ctx, node, message_proxy })
     }
 
     pub async fn stop(self) -> Result<(), JsValue> {
