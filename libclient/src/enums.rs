@@ -84,7 +84,7 @@ pub enum StopReason {
     DecodeError,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Event {
     ControlPlaneConnected {
         displays: Vec<Display>,
