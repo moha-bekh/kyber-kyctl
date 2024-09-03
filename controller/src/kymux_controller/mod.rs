@@ -182,7 +182,7 @@ async fn start_kymux(
                 let cert = webtransport::gen_webtransport_cert()?;
 
                 let certificate_hash = StartKymuxCertificateHash {
-                    algorithm: "sha-2566".into(),
+                    algorithm: "sha-256".into(),
                     hash: cert.cert_digest,
                 };
 
