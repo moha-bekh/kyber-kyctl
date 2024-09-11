@@ -73,13 +73,12 @@ impl AudioPlayer {
                 let bytes = samples * sample_size;
 
                 // TODO reuse allocation
+                let copy_options = web_sys::AudioDataCopyToOptions::new(0);
+                copy_options.set_format(web_sys::AudioSampleFormat::F32);
+                copy_options.set_frame_count(samples);
+
                 let mut tmp = vec![0u8; bytes as usize];
-                frame.copy_to_with_u8_array(
-                    &mut tmp,
-                    web_sys::AudioDataCopyToOptions::new(0)
-                        .format(web_sys::AudioSampleFormat::F32)
-                        .frame_count(samples),
-                );
+                frame.copy_to_with_u8_array(&mut tmp, &copy_options)?;
 
                 let missing_samples = holes2.pull(push_seq).unwrap_or(0);
                 reg.push(missing_samples, &tmp);

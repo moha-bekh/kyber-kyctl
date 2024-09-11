@@ -139,9 +139,12 @@ impl RendererWorker {
     pub fn create(
         message_proxy: MessageProxy,
     ) -> Result<(RendererWorker, RendererWorkerHandle), JsValue> {
+        let options = web_sys::WorkerOptions::new();
+        options.set_type(web_sys::WorkerType::Module);
+
         let worker = Rc::new(web_sys::Worker::new_with_options(
             "./video_renderer_worker.js",
-            web_sys::WorkerOptions::new().type_(web_sys::WorkerType::Module),
+            &options,
         )?);
 
         let worker_message_cb =

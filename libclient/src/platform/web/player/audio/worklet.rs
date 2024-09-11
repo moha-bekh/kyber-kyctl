@@ -26,11 +26,11 @@ impl AudioWorklet {
         message_proxy: MessageProxy,
     ) -> Result<Self, JsValue> {
         // AudioContext
-        let ctx = web_sys::AudioContext::new_with_context_options(
-            web_sys::AudioContextOptions::new()
-                .sample_rate(super::SAMPLE_RATE as f32)
-                .latency_hint(&JsValue::from("interactive")),
-        )?;
+        let options = web_sys::AudioContextOptions::new();
+        options.set_sample_rate(super::SAMPLE_RATE as f32);
+        options.set_latency_hint(&JsValue::from("interactive"));
+
+        let ctx = web_sys::AudioContext::new_with_context_options(&options)?;
 
         // AudioProcessor/AudioRenderer
         let promise = ctx.audio_worklet()?.add_module("audio_worklet.js")?;
@@ -55,15 +55,13 @@ impl AudioWorklet {
             AudioPlayer::AUDIO_TARGET_BUFFERING.into(),
         )?;
 
-        let node = web_sys::AudioWorkletNode::new_with_options(
-            &ctx,
-            "AudioRenderer",
-            web_sys::AudioWorkletNodeOptions::new()
-                .output_channel_count(&JsValue::from(js_sys::Array::of1(&JsValue::from(
-                    super::CHANNELS,
-                ))))
-                .processor_options(Some(&processor_options)),
-        )?;
+        let options = web_sys::AudioWorkletNodeOptions::new();
+        options.set_output_channel_count(&JsValue::from(js_sys::Array::of1(&JsValue::from(
+            super::CHANNELS,
+        ))));
+        options.set_processor_options(Some(&processor_options));
+
+        let node = web_sys::AudioWorkletNode::new_with_options(&ctx, "AudioRenderer", &options)?;
 
         // AudioGain
         let gain: web_sys::GainNode = ctx.create_gain()?;

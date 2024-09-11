@@ -38,11 +38,11 @@ pub(crate) async fn supported_video_codecs(force_software: bool) -> Vec<VideoDec
     for (codec, yuv444, webcodec_str) in codecs {
         for acceleration in &accelerations {
             // Run promise
-            let promise = web_sys::VideoDecoder::is_config_supported(
-                web_sys::VideoDecoderConfig::new(webcodec_str)
-                    .hardware_acceleration(*acceleration)
-                    .optimize_for_latency(true),
-            );
+            let decoder_config = web_sys::VideoDecoderConfig::new(webcodec_str);
+            decoder_config.set_hardware_acceleration(*acceleration);
+            decoder_config.set_optimize_for_latency(true);
+
+            let promise = web_sys::VideoDecoder::is_config_supported(&decoder_config);
 
             let promise_ret = match wasm_bindgen_futures::JsFuture::from(promise).await {
                 Ok(ret) => ret,

@@ -1,23 +1,8 @@
-use log::{error, info};
+use log::{error, info, warn};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
 use crate::platform::player::packet::MediaPacket;
-
-#[wasm_bindgen(raw_module = "./video_decoder.js")]
-extern "C" {
-    #[wasm_bindgen(catch)]
-    fn decoder_configure(
-        decoder: &web_sys::VideoDecoder,
-        config: &web_sys::VideoDecoderConfig,
-    ) -> Result<(), JsValue>;
-
-    #[wasm_bindgen(catch)]
-    fn decoder_decode(
-        decoder: &web_sys::VideoDecoder,
-        chunk: &web_sys::EncodedVideoChunk,
-    ) -> Result<(), JsValue>;
-}
 
 pub struct VideoDecoder {
     _output_closure: Closure<dyn FnMut(web_sys::VideoFrame) -> Result<(), JsValue>>,
@@ -72,12 +57,11 @@ impl VideoDecoder {
                 web_sys::HardwareAcceleration::PreferSoftware
             };
 
-            decoder_configure(
-                &self.video_decoder,
-                web_sys::VideoDecoderConfig::new(&self.codec)
-                    .optimize_for_latency(true)
-                    .hardware_acceleration(hardware_acceleration),
-            )?;
+            let decoder_config = web_sys::VideoDecoderConfig::new(&self.codec);
+            decoder_config.set_optimize_for_latency(true);
+            decoder_config.set_hardware_acceleration(hardware_acceleration);
+
+            self.video_decoder.configure(&decoder_config)?;
             self.pending_config = Some(packet.data.to_vec());
 
             info!("Video decoder configure. Codec: {}, HardwareAcceleration: {hardware_acceleration:?}", self.codec);
@@ -101,7 +85,7 @@ impl VideoDecoder {
                 &data, timestamp, type_,
             ))?;
 
-            let ret = decoder_decode(&self.video_decoder, &chunk);
+            let ret = self.video_decoder.decode(&chunk);
             if let Err(err) = &ret {
                 error!("decode() error: {err:?}")
             }
@@ -120,6 +104,10 @@ impl VideoDecoder {
 impl Drop for VideoDecoder {
     fn drop(&mut self) {
         info!("Close video decoder");
-        self.video_decoder.close();
+
+        let ret = self.video_decoder.close();
+        if let Err(err) = ret {
+            warn!("Failed to close video deocder: {err:?}");
+        }
     }
 }

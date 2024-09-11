@@ -1,23 +1,8 @@
-use log::{error, info};
+use log::{error, info, warn};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
 use crate::platform::player::packet::MediaPacket;
-
-#[wasm_bindgen(raw_module = "./audio_decoder.js")]
-extern "C" {
-    #[wasm_bindgen(catch)]
-    fn decoder_configure(
-        decoder: &web_sys::AudioDecoder,
-        config: &web_sys::AudioDecoderConfig,
-    ) -> Result<(), JsValue>;
-
-    #[wasm_bindgen(catch)]
-    fn decoder_decode(
-        decoder: &web_sys::AudioDecoder,
-        chunk: &web_sys::EncodedAudioChunk,
-    ) -> Result<(), JsValue>;
-}
 
 pub struct AudioDecoder {
     _output_closure: Closure<dyn FnMut(web_sys::AudioData) -> Result<(), JsValue>>,
@@ -54,14 +39,12 @@ impl AudioDecoder {
             // <https://developer.mozilla.org/en-US/docs/Web/Media/Formats/codecs_parameter#basic_syntax>
             info!("Create AudioDecoder");
 
-            decoder_configure(
-                &self.audio_decoder,
-                &web_sys::AudioDecoderConfig::new(
+            self.audio_decoder
+                .configure(&web_sys::AudioDecoderConfig::new(
                     super::CODEC,
                     super::CHANNELS,
                     super::SAMPLE_RATE,
-                ),
-            )?;
+                ))?;
         } else {
             let header = &packet.header;
             let type_ = if header.is_key {
@@ -77,7 +60,7 @@ impl AudioDecoder {
                 type_,
             ))?;
 
-            let ret = decoder_decode(&self.audio_decoder, &chunk);
+            let ret = self.audio_decoder.decode(&chunk);
             if let Err(err) = &ret {
                 error!("Audio decode() error: {err:?}")
             }
@@ -96,6 +79,10 @@ impl AudioDecoder {
 impl Drop for AudioDecoder {
     fn drop(&mut self) {
         info!("Close audio decoder");
-        self.audio_decoder.close();
+
+        let ret = self.audio_decoder.close();
+        if let Err(err) = ret {
+            warn!("Failed to close audio deocder: {err:?}");
+        }
     }
 }
