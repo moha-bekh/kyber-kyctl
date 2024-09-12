@@ -49,6 +49,8 @@ clippy-debian-bookworm-x86_64:
     - main
     - merge_requests
     - tags
+  needs:
+    - build-debian-bookworm-x86_64
   script: |
     ./build-linux.sh -k -c -o $(pwd)/rootfs
 
@@ -73,6 +75,8 @@ clippy-windows-x86_64:
     - main
     - merge_requests
     - tags
+  needs:
+    - build-windows-x86_64
   script: |
     ./build-win32.sh -k -c -o $(pwd)/rootfs
 
@@ -111,6 +115,8 @@ build-macos-x86_64:
 clippy-macos-x86_64:
   extends: .clippy-macos-common
   variables: *variables-macos-x86_64
+  needs:
+    - build-macos-x86_64
 
 build-macos-arm64:
   extends: .build-macos-common
@@ -119,3 +125,5 @@ build-macos-arm64:
 clippy-macos-arm64:
   extends: .clippy-macos-common
   variables: *variables-macos-arm64
+  needs:
+    - build-macos-arm64
