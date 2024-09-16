@@ -40,5 +40,7 @@ pub(crate) fn load_tls_config(root_cert_path: &str) -> Result<Config> {
         }
     };
 
-    Ok(Config { root_certificate })
+    Ok(Config {
+        root_certificate: root_certificate.to_vec(),
+    })
 }

@@ -101,7 +101,7 @@ pub(super) async fn connect_quinn(
     let roots = if let Some(tls_config) = &conn_params.tls_config {
         let mut roots = rustls::RootCertStore::empty();
         roots
-            .add(&rustls::Certificate(tls_config.root_certificate.clone()))
+            .add(tls_config.root_certificate.clone().into())
             .map_err(|err| {
                 warn!("Failed to crate RootCertStore: {err:?}");
                 Error::Rejected

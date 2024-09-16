@@ -56,7 +56,7 @@ impl WsClient {
     ) -> Result<WebSocketStream<ClientStream<TcpStream>>> {
         let mut certs_store = rustls::RootCertStore::empty();
         certs_store
-            .add(&rustls::Certificate(tls_config.root_certificate.clone()))
+            .add(tls_config.root_certificate.clone().into())
             .map_err(|err| {
                 warn!("Failed to crate RootCertStore: {err:?}");
                 Error::Rejected
@@ -64,7 +64,6 @@ impl WsClient {
 
         let rustls_config = Arc::new(
             rustls::ClientConfig::builder()
-                .with_safe_defaults()
                 .with_root_certificates(certs_store)
                 .with_no_client_auth(),
         );
