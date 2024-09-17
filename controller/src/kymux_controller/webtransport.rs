@@ -1,12 +1,13 @@
+use rustls::pki_types;
 use sha2::{Digest, Sha256};
 use time::Duration;
 
 use crate::{Error, Result};
 
 pub(super) struct Cert {
-    pub(super) cert_der: Vec<u8>,
+    pub(super) cert_der: pki_types::CertificateDer<'static>,
     pub(super) cert_digest: String,
-    pub(super) key_der: Vec<u8>,
+    pub(super) key_der: pki_types::PrivateKeyDer<'static>,
 }
 
 pub(super) fn gen_webtransport_cert() -> Result<Cert> {
@@ -18,12 +19,8 @@ pub(super) fn gen_webtransport_cert() -> Result<Cert> {
     let mut dname = rcgen::DistinguishedName::new();
     dname.push(rcgen::DnType::CommonName, COMMON_NAME);
 
-    let keypair = rcgen::KeyPair::generate(&rcgen::PKCS_ECDSA_P256_SHA256)?;
-
-    let mut cert_params = rcgen::CertificateParams::new(vec![COMMON_NAME.to_string()]);
+    let mut cert_params = rcgen::CertificateParams::new(vec![COMMON_NAME.to_string()])?;
     cert_params.distinguished_name = dname;
-    cert_params.alg = &rcgen::PKCS_ECDSA_P256_SHA256;
-    cert_params.key_pair = Some(keypair);
     cert_params.not_before = now
         .checked_sub(Duration::days(2))
         .ok_or(Error::DateOperationOverflow)?;
@@ -31,11 +28,12 @@ pub(super) fn gen_webtransport_cert() -> Result<Cert> {
         .checked_add(Duration::days(2))
         .ok_or(Error::DateOperationOverflow)?;
 
-    let certificate = rcgen::Certificate::from_params(cert_params)?;
+    let key_pair = rcgen::KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256)?;
+    let cert = cert_params.self_signed(&key_pair)?;
 
     // Extract keys
-    let cert_der = certificate.serialize_der()?;
-    let key_der = certificate.serialize_private_key_der();
+    let cert_der = cert.der().clone();
+    let key_der = pki_types::PrivatePkcs8KeyDer::from(key_pair.serialize_der()).into();
 
     // Create key digest
     let mut hasher = Sha256::new();
@@ -43,7 +41,7 @@ pub(super) fn gen_webtransport_cert() -> Result<Cert> {
     let cert_digest = format!("{:x}", hasher.finalize());
 
     Ok(Cert {
-        cert_der: cert_der.clone(),
+        cert_der,
         cert_digest,
         key_der,
     })

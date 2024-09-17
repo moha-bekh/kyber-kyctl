@@ -6,10 +6,20 @@ use log::{error, warn};
 use crate::utils::get_resource_path;
 use crate::{Error, Result};
 
-#[derive(Clone)]
+use rustls::pki_types;
+
 pub(crate) struct Config {
-    pub(crate) cert_chain: Vec<rustls::Certificate>,
-    pub(crate) private_key: rustls::PrivateKey,
+    pub(crate) cert_chain: Vec<pki_types::CertificateDer<'static>>,
+    pub(crate) private_key: pki_types::PrivateKeyDer<'static>,
+}
+
+impl Clone for Config {
+    fn clone(&self) -> Self {
+        Self {
+            cert_chain: self.cert_chain.clone(),
+            private_key: self.private_key.clone_key(),
+        }
+    }
 }
 
 fn open_reader(path: &str) -> Result<BufReader<File>> {
@@ -29,11 +39,11 @@ pub(crate) fn load_config(cert_path: &str, key_path: &str) -> Result<Config> {
     // Load certificate
     let mut cert_reader = open_reader(cert_path)?;
 
-    let cert_chain = rustls_pemfile::read_all(&mut cert_reader)?;
-    let cert_chain: Vec<_> = cert_chain
+    let cert_chain: Vec<_> = rustls_pemfile::read_all(&mut cert_reader)
+        .collect::<std::io::Result<Vec<_>>>()?
         .into_iter()
         .filter_map(|item| match item {
-            Item::X509Certificate(cert) => Some(rustls::Certificate(cert)),
+            Item::X509Certificate(cert) => Some(cert),
             _ => {
                 warn!("{cert_path}: Ignore non X509 Certificate item");
                 None
@@ -45,8 +55,8 @@ pub(crate) fn load_config(cert_path: &str, key_path: &str) -> Result<Config> {
     let mut key_reader = open_reader(key_path)?;
 
     let private_key = match rustls_pemfile::read_one(&mut key_reader)? {
-        Some(Item::RSAKey(key)) => rustls::PrivateKey(key),
-        Some(Item::PKCS8Key(key)) => rustls::PrivateKey(key),
+        Some(rustls_pemfile::Item::Pkcs1Key(key)) => pki_types::PrivateKeyDer::Pkcs1(key),
+        Some(rustls_pemfile::Item::Pkcs8Key(key)) => pki_types::PrivateKeyDer::Pkcs8(key),
         _ => {
             error!("{key_path} doesn't contain a PKCS1/PKCS8 Key");
             return Err(Error::TlsInvalidFile);

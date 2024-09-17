@@ -134,11 +134,10 @@ async fn stop_session(ctrl: web::Data<Mutex<Controller>>) -> HttpResponse {
 
 fn build_serverconfig(tls_config: &tls::Config) -> Result<rustls::ServerConfig> {
     Ok(rustls::ServerConfig::builder()
-        .with_safe_defaults()
         .with_no_client_auth()
         .with_single_cert(
             tls_config.cert_chain.clone(),
-            tls_config.private_key.clone(),
+            tls_config.private_key.clone_key(),
         )?)
 }
 
@@ -298,7 +297,7 @@ async fn main() {
             app
         }
     })
-    .bind_rustls_021(bind_addr, server_config)
+    .bind_rustls_0_23(bind_addr, server_config)
     .unwrap()
     .run()
     .await

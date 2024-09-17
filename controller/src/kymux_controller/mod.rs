@@ -168,7 +168,7 @@ async fn start_kymux(
             let config = kymux::ServerConfig::Quic {
                 addr,
                 cert_chain: tls_config.cert_chain.clone(),
-                private_key: tls_config.private_key.clone(),
+                private_key: tls_config.private_key.clone_key(),
             };
             let server = kymux::Server::new(config).await?;
             (server, None)
@@ -186,15 +186,11 @@ async fn start_kymux(
                     hash: cert.cert_digest,
                 };
 
-                (
-                    vec![rustls::Certificate(cert.cert_der)],
-                    rustls::PrivateKey(cert.key_der),
-                    Some(certificate_hash),
-                )
+                (vec![cert.cert_der], cert.key_der, Some(certificate_hash))
             } else {
                 (
                     tls_config.cert_chain.clone(),
-                    tls_config.private_key.clone(),
+                    tls_config.private_key.clone_key(),
                     None,
                 )
             };
