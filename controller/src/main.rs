@@ -196,6 +196,11 @@ fn setup_logs(logfile: &str, level: LevelFilter) -> log4rs::Handle {
 async fn main() {
     let _log_handle = setup_logs("controller", LevelFilter::Info);
 
+    // Initialize rustls crypto
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .unwrap();
+
     info!("Kyber controller. Revision {}", env!("VERGEN_GIT_DESCRIBE"));
 
     // Load configuration
