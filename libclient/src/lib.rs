@@ -37,6 +37,13 @@ use http::HttpClient;
 pub use platform::{ConnectConfig, VideoPlayerConfig};
 pub(crate) use platform::{ConnectionParams, InputPipeline, MainLoopEngine};
 
+pub fn init_crypto() {
+    #[cfg(feature = "desktop")]
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .unwrap();
+}
+
 #[allow(dead_code)]
 pub(crate) const STREAMER_PORT: u16 = 8080;
 

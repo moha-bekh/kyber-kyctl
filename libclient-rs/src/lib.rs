@@ -765,6 +765,9 @@ extern "C" fn log_cb(
     log::log!(target: target, level.unwrap(), "{}", line);
 }
 
-pub fn init_logger() {
-    unsafe { sys::libclient_set_log_cb(Some(log_cb), std::ptr::null_mut()) };
+pub fn init() {
+    unsafe {
+        sys::libclient_set_log_cb(Some(log_cb), std::ptr::null_mut());
+        sys::libclient_init_crypto();
+    }
 }

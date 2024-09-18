@@ -55,6 +55,11 @@ fn result_to_c_int<T>(result: crate::Result<T>) -> c_int {
     }
 }
 
+#[no_mangle]
+pub extern "C" fn libclient_init_crypto() {
+    crate::init_crypto();
+}
+
 #[cfg(feature = "kymux")]
 #[derive(Clone, Copy)]
 #[repr(C)]
