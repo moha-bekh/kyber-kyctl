@@ -99,6 +99,7 @@ impl VideoRendererWorkerCtx {
     ) -> Result<(), JsValue> {
         let js_self = js_sys::eval("self")?.dyn_into::<web_sys::DedicatedWorkerGlobalScope>()?;
 
+        let mut first_frame = true;
         let renderer = Renderer::new(canvas)?;
 
         loop {
@@ -122,6 +123,11 @@ impl VideoRendererWorkerCtx {
 
                     js_self.post_message(&msg)?;
                 }
+            }
+
+            if first_frame {
+                info!("First video frame rendered");
+                first_frame = false;
             }
         }
     }
