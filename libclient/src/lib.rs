@@ -104,6 +104,7 @@ struct Handler {
 
     host_events: Option<HostEventReceiver>,
 
+    state: Arc<Mutex<State>>,
     displays: Vec<Display>,
 
     #[cfg(target_arch = "wasm32")]
@@ -117,6 +118,7 @@ impl Handler {
         connect_config: ConnectConfig,
         event_manager: EventManager,
         sender: Sender<Message>,
+        state: Arc<Mutex<State>>,
     ) -> Result<Self> {
         let conn_params = ConnectionParams::new(connect_config)?;
         let http_client = HttpClient::new(conn_params.clone())?;
@@ -127,6 +129,7 @@ impl Handler {
             event_manager,
             sender,
             host_events: None,
+            state,
             displays: vec![],
             backend: None,
         })
@@ -380,12 +383,22 @@ impl Handler {
                 Ok(())
             }
             Message::AudioVolumeChanged { volume } => {
+                {
+                    let mut state = self.state.lock().unwrap();
+                    state.volume = Some(*volume);
+                }
+
                 self.event_manager
                     .send_event(Event::AudioVolumeChanged { volume: *volume });
 
                 Ok(())
             }
             Message::AudioMuteChanged { mute } => {
+                {
+                    let mut state = self.state.lock().unwrap();
+                    state.mute = Some(*mute);
+                }
+
                 self.event_manager
                     .send_event(Event::AudioMuteChanged { mute: *mute });
 
@@ -614,11 +627,20 @@ impl MainLoop {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct State {
+    pub volume: Option<f32>,
+    pub mute: Option<bool>,
+}
+
+use std::sync::{Arc, Mutex};
+
 pub struct Client {
     event_manager: EventManager,
     sender: Sender<Message>,
 
     mainloop_engine: MainLoopEngine,
+    state: Arc<Mutex<State>>,
 }
 
 impl Client {
@@ -629,7 +651,14 @@ impl Client {
         let event_manager_handler = event_manager.clone();
         let sender_handler = sender.clone();
 
-        let handler = Handler::new(connect_config, event_manager_handler, sender_handler)?;
+        let state = Arc::new(Mutex::new(State::default()));
+
+        let handler = Handler::new(
+            connect_config,
+            event_manager_handler,
+            sender_handler,
+            state.clone(),
+        )?;
         let mainloop = MainLoop::new(receiver, handler);
 
         let mainloop_engine = MainLoopEngine::new(mainloop);
@@ -638,6 +667,7 @@ impl Client {
             event_manager,
             sender,
             mainloop_engine,
+            state,
         })
     }
 
@@ -697,6 +727,11 @@ impl Client {
 
     pub fn get_event_manager(&self) -> EventManager {
         self.event_manager.clone()
+    }
+
+    pub fn get_state(&self) -> State {
+        let state = self.state.lock().unwrap();
+        (*state).clone()
     }
 
     #[cfg(feature = "js-player")]
