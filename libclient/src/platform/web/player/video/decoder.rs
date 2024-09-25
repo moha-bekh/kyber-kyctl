@@ -74,6 +74,7 @@ impl VideoDecoder {
             };
             let timestamp = header.pts as f64;
             let data = if let Some(mut data) = self.pending_config.take() {
+                info!("Video keyframe received");
                 assert!(packet.header.is_key);
                 // Concat the first keyframe with the config packet
                 data.extend(packet.data.to_vec());
