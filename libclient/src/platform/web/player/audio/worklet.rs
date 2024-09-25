@@ -64,11 +64,17 @@ impl AudioWorklet {
         let node = web_sys::AudioWorkletNode::new_with_options(&ctx, "AudioRenderer", &options)?;
 
         // AudioGain
-        let gain: web_sys::GainNode = ctx.create_gain()?;
+        let gain_node: web_sys::GainNode = ctx.create_gain()?;
+
+        let gain = gain_node.gain().value();
+        message_proxy.send(Message::AudioVolumeChanged { volume: gain })?;
+
+        let mute = gain <= 0.0;
+        message_proxy.send(Message::AudioMuteChanged { mute })?;
 
         // Link everything
-        node.connect_with_audio_node(&gain)?;
-        gain.connect_with_audio_node(&ctx.destination())?;
+        node.connect_with_audio_node(&gain_node)?;
+        gain_node.connect_with_audio_node(&ctx.destination())?;
 
         // Resume AudioContext
         let promise = ctx.resume()?;
@@ -76,11 +82,8 @@ impl AudioWorklet {
 
         Ok(Self {
             ctx,
-            gain_node: gain,
-            gain_cfg: RefCell::new(GainNodeConfig {
-                gain: 1.0,
-                mute: false,
-            }),
+            gain_node,
+            gain_cfg: RefCell::new(GainNodeConfig { gain, mute }),
             node,
             message_proxy,
         })
