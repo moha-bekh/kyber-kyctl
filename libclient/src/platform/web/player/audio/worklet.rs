@@ -24,7 +24,7 @@ impl AudioWorklet {
     pub async fn start(
         sab: js_sys::SharedArrayBuffer,
         message_proxy: MessageProxy,
-    ) -> Result<Self, JsValue> {
+    ) -> Result<Self, Error> {
         // AudioContext
         let options = web_sys::AudioContextOptions::new();
         options.set_sample_rate(super::SAMPLE_RATE as f32);
