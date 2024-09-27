@@ -9,6 +9,8 @@ pub enum WindowHandle {
     AppKit(u64),
     #[cfg(target_os = "windows")]
     Win32(u64),
+    #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
+    UiKit(u64),
 }
 
 impl From<RawWindowHandle> for WindowHandle {

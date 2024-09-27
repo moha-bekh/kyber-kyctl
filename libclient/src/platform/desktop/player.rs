@@ -236,6 +236,11 @@ impl Player {
                 info!("Windows");
                 mp.set_hwnd(handle as _);
             }
+            #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
+            WindowHandle::UiKit(handle) => {
+                info!("ios ({})", handle);
+                mp.set_nsobject(handle as _);
+            }
         }
 
         plug_event_manager_to_player(&mp, self.message_sender.clone())?;

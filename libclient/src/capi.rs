@@ -206,6 +206,16 @@ pub unsafe extern "C" fn libclient_windowshandle_from_ns_view(
     }))
 }
 
+#[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
+#[no_mangle]
+pub unsafe extern "C" fn libclient_windowshandle_from_ui_view(
+    handle: u64,
+) -> *mut libclient_WindowHandle {
+    Box::into_raw(Box::new(libclient_WindowHandle {
+        handle: crate::platform::WindowHandle::UiKit(handle),
+    }))
+}
+
 #[cfg(target_os = "windows")]
 #[no_mangle]
 pub unsafe extern "C" fn libclient_windowshandle_from_hwnd(

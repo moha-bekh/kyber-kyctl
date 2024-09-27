@@ -17,6 +17,18 @@ stages:
 .variables-macos-arm64: &variables-macos-arm64
   HOST_ARCH: arm64
 
+.variables-ios: &variables-ios
+  BUILD_TARGET: ios
+  RUST_VERSION: 1.89.0
+
+.variables-tvos: &variables-tvos
+  BUILD_TARGET: tvos
+  RUST_VERSION: nightly-2025-08-24
+
+.variables-visionos: &variables-visionos
+  BUILD_TARGET: visionos
+  RUST_VERSION: nightly-2025-08-24
+
 lint:
   stage: lint
   image: $DEBIAN_IMAGE
@@ -253,3 +265,30 @@ clippy-wasm:
     - build-wasm
   script: |
     ./build-wasm.sh -k -c
+
+.build-ios-common:
+  stage: build
+  tags:
+    - macos
+  only:
+    - main
+    - merge_requests
+    - tags
+  script: |
+    rustup override set $RUST_VERSION
+    ./build-ios.sh -k -t $BUILD_TARGET -o $(pwd)/$rootfs
+  needs:
+    - lint
+  when: manual
+
+build-ios:
+  extends: .build-ios-common
+  variables: *variables-ios
+
+build-tvos:
+  extends: .build-ios-common
+  variables: *variables-tvos
+
+build-visionos:
+  extends: .build-ios-common
+  variables: *variables-visionos
