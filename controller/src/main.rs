@@ -4,7 +4,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use actix_web::{get, middleware, post, web, App, HttpRequest, HttpResponse, HttpServer};
-use log::{info, warn, LevelFilter};
+use log::{error, info, warn, LevelFilter};
 use serde::Serialize;
 use tokio::sync::Mutex;
 
@@ -304,9 +304,11 @@ async fn main() {
         }
     })
     .bind_rustls_0_23(bind_addr, server_config)
+    .inspect_err(|e| error!("Failed to bind HTTP server: {e:?}"))
     .unwrap()
     .run()
     .await
+    .inspect_err(|e| error!("httpserver.run() ended with error: {e:?}"))
     .unwrap();
 
     watchdog.stop().await.unwrap();
