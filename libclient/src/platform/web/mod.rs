@@ -27,6 +27,7 @@ pub struct ConnectConfig {
 pub struct VideoPlayerConfig {
     pub canvas: String,
     pub software_decode: bool,
+    pub notify_decoded: bool,
 }
 
 impl VideoPlayerConfig {
@@ -34,6 +35,7 @@ impl VideoPlayerConfig {
         info!("VideoPlayerConfig");
         info!("\tcanvas: {}", self.canvas);
         info!("\tsoftware_decode: {}", self.software_decode);
+        info!("\tnotify_decoded: {}", self.notify_decoded);
     }
 }
 

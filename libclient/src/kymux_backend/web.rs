@@ -232,6 +232,7 @@ async fn create_videoplayer(
             &config.player.canvas,
             backend_config.msg_proxy.clone(),
             video_config,
+            config.player.notify_decoded,
         )?;
 
         info!("Start video with protocol {video_protocol:?}");

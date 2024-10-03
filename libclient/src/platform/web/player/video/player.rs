@@ -29,6 +29,7 @@ impl VideoPlayer {
         canvas: &str,
         message_proxy: MessageProxy,
         decoder_config: VideoDecoderConfig,
+        notify_decoded: bool,
     ) -> Result<(Self, VideoPlayerHandle)> {
         let canvas = dom::get_canvas(canvas)?;
 
@@ -55,10 +56,20 @@ impl VideoPlayer {
         };
 
         let message_proxy2 = message_proxy.clone();
+        let message_proxy3 = message_proxy.clone();
         let cbs = VideoDecoderCallbacks {
             output: Box::new(move |frame| {
                 let rotation = video_rotation_ref.load(Ordering::Relaxed);
+                let pts = frame.timestamp().unwrap_or(-1.);
                 renderer_worker.send_frame(frame, rotation)?;
+
+                if notify_decoded {
+                    Self::message_proxy_send(
+                        &message_proxy3,
+                        Message::ImageDecoded { pts: pts as u64 },
+                    );
+                }
+
                 Ok(())
             }),
             error: Box::new(move |error| {

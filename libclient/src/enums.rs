@@ -87,6 +87,11 @@ pub(crate) enum Message {
     AudioDecodeError,
 
     #[cfg(feature = "web")]
+    ImageDecoded {
+        pts: u64,
+    },
+
+    #[cfg(feature = "web")]
     CanvasResized {
         width: i32,
         height: i32,
@@ -123,6 +128,10 @@ pub enum Event {
     StreamingStarted,
     StreamingStartFailed,
     StreamingStopped,
+    #[cfg(feature = "web")]
+    ImageDecoded {
+        pts: u64,
+    },
     AudioVolumeChanged {
         volume: f32,
     },

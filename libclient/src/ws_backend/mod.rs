@@ -137,6 +137,7 @@ impl WsBackend {
             &video_config.player.canvas,
             backend_config.msg_proxy.clone(),
             video_decoder_config,
+            video_config.player.notify_decoded,
         )?;
 
         let url = format!(
