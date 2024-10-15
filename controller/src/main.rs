@@ -234,6 +234,7 @@ async fn main() {
                 .await
                 .unwrap();
 
+        info!("Got initial displays: {displays:?}");
         ctrl.displays = displays;
 
         // Configure StateMachine listener
