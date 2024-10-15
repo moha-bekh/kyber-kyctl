@@ -332,9 +332,12 @@ impl Handler {
             }
             Message::DataPlaneClosed { reason } => {
                 warn!("DataPlaneClosed. Reason: {reason:?}");
+
+                let ret = self.stop_backend().await;
+
                 self.event_manager.send_event(Event::DataPlaneClosed);
 
-                Ok(())
+                ret
             }
             Message::StartStreamingSession { config } => {
                 let ret = self.start_streaming_session(config).await;
