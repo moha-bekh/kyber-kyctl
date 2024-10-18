@@ -4,7 +4,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use actix_web::{get, middleware, post, web, App, HttpRequest, HttpResponse, HttpServer};
-use log::{error, info, warn, LevelFilter};
+use log::{info, warn, LevelFilter};
 use serde::Serialize;
 use tokio::sync::Mutex;
 
@@ -192,19 +192,16 @@ fn setup_logs(logfile: &str, level: LevelFilter) -> log4rs::Handle {
     log4rs::init_config(config).unwrap()
 }
 
-#[actix_web::main]
-async fn main() {
-    let _log_handle = setup_logs("controller", LevelFilter::Info);
-
+async fn real_main() -> Result<()> {
     // Initialize rustls crypto
-    rustls::crypto::aws_lc_rs::default_provider()
-        .install_default()
-        .unwrap();
-
-    info!("Kyber controller. Revision {}", env!("VERGEN_GIT_DESCRIBE"));
+    let ret = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    if ret.is_err() {
+        warn!("Rustls default provider init failed");
+        return Err(Error::RustlsDefaultProviderInit);
+    }
 
     // Load configuration
-    let config = config::load().unwrap();
+    let config = config::load()?;
 
     // Load TLS config
     //
@@ -212,8 +209,8 @@ async fn main() {
     // 1. This TLS configuration is only valid for tests.
     //    It must NOT be used in production
     // 2. Those files are provided by the project that packages the final bundle
-    let tls_config = tls::load_config(STREAMER_CERT, STREAMER_KEY).unwrap();
-    let server_config = build_serverconfig(&tls_config).unwrap();
+    let tls_config = tls::load_config(STREAMER_CERT, STREAMER_KEY)?;
+    let server_config = build_serverconfig(&tls_config)?;
 
     let process_factory = Arc::new(ProcessFactory::new(false));
 
@@ -223,16 +220,14 @@ async fn main() {
         tls_config,
     )));
 
-    let statemachine = StateMachine::new(ctrl.clone()).unwrap();
+    let statemachine = StateMachine::new(ctrl.clone())?;
 
     let (watchdog, listening_port) = {
         let mut ctrl = ctrl.lock().await;
 
         // Configure watchdog
         let (watchdog, displays) =
-            watchdog::Watchdog::new(&process_factory, statemachine.create_proxy())
-                .await
-                .unwrap();
+            watchdog::Watchdog::new(&process_factory, statemachine.create_proxy()).await?;
 
         info!("Got initial displays: {displays:?}");
         ctrl.displays = displays;
@@ -303,14 +298,25 @@ async fn main() {
             app
         }
     })
-    .bind_rustls_0_23(bind_addr, server_config)
-    .inspect_err(|e| error!("Failed to bind HTTP server: {e:?}"))
-    .unwrap()
+    .bind_rustls_0_23(bind_addr, server_config)?
     .run()
-    .await
-    .inspect_err(|e| error!("httpserver.run() ended with error: {e:?}"))
-    .unwrap();
+    .await?;
 
-    watchdog.stop().await.unwrap();
-    statemachine.stop().await.unwrap();
+    watchdog.stop().await?;
+    statemachine.stop().await?;
+
+    Ok(())
+}
+
+#[actix_web::main]
+async fn main() -> Result<()> {
+    let _log_handle = setup_logs("controller", LevelFilter::Info);
+    info!("Kyber controller. Revision {}", env!("VERGEN_GIT_DESCRIBE"));
+
+    let ret = real_main().await;
+    if let Err(err) = &ret {
+        warn!("main() ended with error {err:?}");
+    }
+
+    ret
 }

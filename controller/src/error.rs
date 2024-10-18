@@ -46,6 +46,8 @@ pub enum Error {
         #[from]
         source: rustls::Error,
     },
+    #[error("rustls default provider failed to initialize")]
+    RustlsDefaultProviderInit,
     #[error("rcgen error: {source:?}")]
     RcGen {
         #[from]
