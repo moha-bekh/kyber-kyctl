@@ -47,7 +47,7 @@ impl VideoPlayer {
             web_sys::HardwareAcceleration::PreferSoftware => false,
             _ => {
                 error!(
-                    "Unexpected hardware acceperation {:?}",
+                    "Unexpected hardware acceleration {:?}",
                     decoder_config.hardware_acceleration
                 );
                 return Err(JsValue::from("Invalid hardware acceleration setting").into());
