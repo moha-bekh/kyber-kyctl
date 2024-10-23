@@ -5,8 +5,11 @@ use crate::platform::player::video::renderer_worker::{RendererWorker, RendererWo
 use crate::platform::player::PacketSink;
 use crate::{Message, MessageProxy, Result};
 
+use super::regulator::jstime;
 use super::VideoDecoderConfig;
 
+use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU8, Ordering};
 
@@ -22,6 +25,7 @@ pub struct VideoPlayer {
     codec: String,
     hardware_acceleration: bool,
     video_rotation: Rc<AtomicU8>,
+    recv_dates: Rc<RefCell<VecDeque<u64>>>,
 }
 
 impl VideoPlayer {
@@ -55,13 +59,17 @@ impl VideoPlayer {
             }
         };
 
+        let recv_dates = Rc::new(RefCell::new(VecDeque::new()));
+        let recv_dates2 = recv_dates.clone();
+
         let message_proxy2 = message_proxy.clone();
         let message_proxy3 = message_proxy.clone();
         let cbs = VideoDecoderCallbacks {
             output: Box::new(move |frame| {
                 let rotation = video_rotation_ref.load(Ordering::Relaxed);
                 let pts = frame.timestamp().unwrap_or(-1.);
-                renderer_worker.send_frame(frame, rotation)?;
+                let recv_date = recv_dates2.borrow_mut().pop_front().unwrap();
+                renderer_worker.send_frame(frame, rotation, recv_date)?;
 
                 if notify_decoded {
                     Self::message_proxy_send(
@@ -88,6 +96,7 @@ impl VideoPlayer {
             codec,
             hardware_acceleration,
             video_rotation,
+            recv_dates,
         };
         let handle = VideoPlayerHandle {
             renderer_worker_handle,
@@ -101,6 +110,10 @@ impl VideoPlayer {
             Packet::Media(packet) => {
                 assert!(self.video_decoder.is_some());
                 if let Some(video_decoder) = &mut self.video_decoder {
+                    if !packet.header.is_config {
+                        let recv_date = jstime::now_us();
+                        self.recv_dates.borrow_mut().push_back(recv_date);
+                    }
                     video_decoder.send_packet(packet)?;
                 } else {
                     error!("Video decoder not set");

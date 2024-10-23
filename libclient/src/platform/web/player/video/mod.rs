@@ -5,6 +5,7 @@ use crate::{Error, Result, VideoCodec, VideoSessionConfig};
 mod cell_buf;
 mod decoder;
 pub(super) mod player;
+mod regulator;
 mod renderer;
 mod renderer_worker;
 

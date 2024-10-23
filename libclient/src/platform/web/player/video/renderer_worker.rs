@@ -8,8 +8,10 @@ use crate::platform::reflect;
 use crate::{Message, MessageProxy};
 
 use super::cell_buf::{self, CellBufConsumer, CellBufProducer};
+use super::regulator::{self, VideoRegulatorPull, VideoRegulatorPush};
 use super::renderer::{RenderResult, Renderer};
 
+const VIDEO_BUFFERING_US: u64 = 0;
 const FRAME_SKIPPED_DISPLAY_THRESHOLD: usize = 30;
 
 pub struct VideoFrameWrapper {
@@ -50,31 +52,51 @@ impl FrameBufPush {
     }
 }
 
+enum FrameSink {
+    FrameBuf(FrameBufPush),
+    Regulator(VideoRegulatorPush<VideoFrameWrapper>),
+}
+
 #[wasm_bindgen]
 pub struct VideoRendererWorkerCtx {
-    producer: Option<FrameBufPush>,
+    sink: Option<FrameSink>,
 }
 
 #[wasm_bindgen]
 impl VideoRendererWorkerCtx {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
-        Self { producer: None }
+        Self { sink: None }
     }
 
-    pub fn on_message(&mut self, event: web_sys::MessageEvent) -> Result<(), JsValue> {
+    pub async fn on_message(&mut self, event: web_sys::MessageEvent) -> Result<(), JsValue> {
         let msg = &event.data().dyn_into::<js_sys::Object>()?;
         let msg_type = reflect::get_string(msg, "type")?;
 
         match msg_type.as_str() {
             RendererWorker::TYPE_START => {
-                assert!(self.producer.is_none());
+                assert!(self.sink.is_none());
                 let canvas = js_sys::Reflect::get(msg, &"canvas".into())?
                     .dyn_into::<web_sys::OffscreenCanvas>()?;
 
                 let (producer, consumer) = cell_buf::cell_buf();
                 let producer = FrameBufPush::new(producer);
-                self.producer = Some(producer);
+
+                let sink = if VIDEO_BUFFERING_US > 0 {
+                    let (reg_push, reg_pull) = regulator::create_regulator(VIDEO_BUFFERING_US);
+
+                    spawn_local(async move {
+                        let ret = Self::forward_frames(reg_pull, producer).await;
+                        if let Err(err) = ret {
+                            warn!("VideoRenderer forward_frames() ended with error {err:?}");
+                        }
+                    });
+
+                    FrameSink::Regulator(reg_push)
+                } else {
+                    FrameSink::FrameBuf(producer)
+                };
+                self.sink = Some(sink);
 
                 spawn_local(async move {
                     let ret = Self::display_frames(canvas, consumer).await;
@@ -84,20 +106,40 @@ impl VideoRendererWorkerCtx {
                 });
             }
             RendererWorker::TYPE_FRAME => {
-                assert!(self.producer.is_some());
-                let producer = self.producer.as_mut().unwrap();
+                let sink = self.sink.as_mut().expect("Frame sink not initialized");
 
                 let frame = js_sys::Reflect::get(msg, &"frame".into())?
                     .dyn_into::<web_sys::VideoFrame>()?;
                 let rotation = reflect::get_f64(msg, "rotation")? as u8;
+                let frame_w = VideoFrameWrapper { frame, rotation };
 
-                producer.push(VideoFrameWrapper { frame, rotation });
+                match sink {
+                    FrameSink::FrameBuf(ref mut sink) => sink.push(frame_w),
+                    FrameSink::Regulator(ref mut sink) => {
+                        let recv_date = reflect::get_f64(msg, "recv_date")? as u64;
+                        let pts = frame_w.frame.timestamp().expect("No pts") as u64;
+                        if let Err(err) = sink.push(frame_w, recv_date, pts).await {
+                            warn!("Error pushing frame: {err:?}");
+                        }
+                    }
+                }
             }
             _ => {
                 return Err(JsValue::from(format!(
                     "Unexpected message type: {msg_type}"
                 )));
             }
+        }
+
+        Ok(())
+    }
+
+    async fn forward_frames(
+        mut reg_pull: VideoRegulatorPull<VideoFrameWrapper>,
+        mut producer: FrameBufPush,
+    ) -> Result<(), JsValue> {
+        while let Some(frame) = reg_pull.pull().await {
+            producer.push(frame);
         }
 
         Ok(())
@@ -228,13 +270,20 @@ impl RendererWorker {
         Ok(())
     }
 
-    pub fn send_frame(&self, frame: web_sys::VideoFrame, rotation: u8) -> Result<(), JsValue> {
+    pub fn send_frame(
+        &self,
+        frame: web_sys::VideoFrame,
+        rotation: u8,
+        recv_date: u64,
+    ) -> Result<(), JsValue> {
         let frame_param: JsValue = frame.into();
 
         let msg = js_sys::Object::new();
         reflect::set(&msg, "type", Self::TYPE_FRAME.into())?;
         reflect::set_ref(&msg, "frame", &frame_param)?;
         reflect::set(&msg, "rotation", rotation.into())?;
+        let recv_date = recv_date as f64;
+        reflect::set(&msg, "recv_date", recv_date.into())?;
 
         let transfer = js_sys::Array::of1(&frame_param);
 

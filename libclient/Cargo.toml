@@ -84,6 +84,7 @@ js-player = [
     "web-sys/HardwareAcceleration",
     "web-sys/OffscreenCanvas",
     "web-sys/OffscreenCanvasRenderingContext2d",
+    "web-sys/Performance",
     "web-sys/VideoDecoder",
     "web-sys/VideoDecoderConfig",
     "web-sys/VideoDecoderInit",
