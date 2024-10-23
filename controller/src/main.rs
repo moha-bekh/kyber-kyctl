@@ -3,9 +3,14 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
-use actix_web::{get, middleware, post, web, App, HttpRequest, HttpResponse, HttpServer};
-use log::{info, warn, LevelFilter};
+use actix_session::storage::CookieSessionStore;
+use actix_session::SessionMiddleware;
+use actix_web::{
+    cookie, get, middleware, post, web, App, HttpMessage, HttpRequest, HttpResponse, HttpServer,
+};
+use log::{error, info, warn, LevelFilter};
 use serde::{Deserialize, Serialize};
+use session::identity::Identity;
 use tokio::sync::Mutex;
 
 mod avservice;
@@ -16,6 +21,7 @@ mod host_events;
 mod inputservice;
 mod kymux_controller;
 mod rtp;
+mod session;
 mod statemachine;
 mod tls;
 mod utils;
@@ -292,6 +298,7 @@ async fn real_main() -> Result<()> {
     }
 
     HttpServer::new(move || {
+        let cookie_key = cookie::Key::generate();
         let app = App::new()
             .app_data(ctrl.clone())
             .app_data(web::JsonConfig::default().limit(1024))
@@ -302,6 +309,12 @@ async fn real_main() -> Result<()> {
                     .allow_any_origin()
                     .supports_credentials()
                     .allowed_header(actix_web::http::header::CONTENT_TYPE),
+            )
+            .wrap(session::identity::middleware::IdentityMiddleware {})
+            .wrap(
+                SessionMiddleware::builder(CookieSessionStore::default(), cookie_key)
+                    .cookie_same_site(cookie::SameSite::Strict)
+                    .build(),
             )
             // Kymux
             .service(
