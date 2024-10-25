@@ -23,20 +23,43 @@ impl Drop for VideoFrameWrapper {
     }
 }
 
+struct FrameBufPush {
+    producer: CellBufProducer<VideoFrameWrapper>,
+    frame_skipped: usize,
+}
+
+impl FrameBufPush {
+    fn new(producer: CellBufProducer<VideoFrameWrapper>) -> Self {
+        Self {
+            producer,
+            frame_skipped: 0,
+        }
+    }
+
+    fn push(&mut self, frame: VideoFrameWrapper) {
+        if self.producer.replace(frame).is_some() {
+            // Previous frame skipped
+            self.frame_skipped += 1;
+            if self.frame_skipped % FRAME_SKIPPED_DISPLAY_THRESHOLD == 0 {
+                info!("{} VideoFrames skipped", self.frame_skipped);
+            }
+        } else if self.frame_skipped > 0 {
+            info!("{} VideoFrames have been skipped", self.frame_skipped);
+            self.frame_skipped = 0;
+        }
+    }
+}
+
 #[wasm_bindgen]
 pub struct VideoRendererWorkerCtx {
-    producer: Option<CellBufProducer<VideoFrameWrapper>>,
-    frame_skipped: usize,
+    producer: Option<FrameBufPush>,
 }
 
 #[wasm_bindgen]
 impl VideoRendererWorkerCtx {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
-        Self {
-            producer: None,
-            frame_skipped: 0,
-        }
+        Self { producer: None }
     }
 
     pub fn on_message(&mut self, event: web_sys::MessageEvent) -> Result<(), JsValue> {
@@ -50,6 +73,7 @@ impl VideoRendererWorkerCtx {
                     .dyn_into::<web_sys::OffscreenCanvas>()?;
 
                 let (producer, consumer) = cell_buf::cell_buf();
+                let producer = FrameBufPush::new(producer);
                 self.producer = Some(producer);
 
                 spawn_local(async move {
@@ -61,37 +85,19 @@ impl VideoRendererWorkerCtx {
             }
             RendererWorker::TYPE_FRAME => {
                 assert!(self.producer.is_some());
+                let producer = self.producer.as_mut().unwrap();
 
                 let frame = js_sys::Reflect::get(msg, &"frame".into())?
                     .dyn_into::<web_sys::VideoFrame>()?;
                 let rotation = reflect::get_f64(msg, "rotation")? as u8;
 
-                self.push(VideoFrameWrapper { frame, rotation })?;
+                producer.push(VideoFrameWrapper { frame, rotation });
             }
             _ => {
                 return Err(JsValue::from(format!(
                     "Unexpected message type: {msg_type}"
                 )));
             }
-        }
-
-        Ok(())
-    }
-
-    fn push(&mut self, frame: VideoFrameWrapper) -> Result<(), JsValue> {
-        let Some(producer) = self.producer.as_mut() else {
-            return Err(JsValue::from("No producer"));
-        };
-
-        if producer.replace(frame).is_some() {
-            // Previous frame skipped
-            self.frame_skipped += 1;
-            if self.frame_skipped % FRAME_SKIPPED_DISPLAY_THRESHOLD == 0 {
-                info!("{} VideoFrames skipped", self.frame_skipped);
-            }
-        } else if self.frame_skipped > 0 {
-            info!("{} VideoFrames have been skipped", self.frame_skipped);
-            self.frame_skipped = 0;
         }
 
         Ok(())
