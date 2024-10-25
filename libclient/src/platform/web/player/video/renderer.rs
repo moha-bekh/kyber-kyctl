@@ -84,8 +84,6 @@ impl Renderer {
             )?;
         };
 
-        frame.frame.close();
-
         Ok(render_result)
     }
 }

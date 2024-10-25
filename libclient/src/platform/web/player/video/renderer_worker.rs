@@ -17,6 +17,12 @@ pub struct VideoFrameWrapper {
     pub rotation: u8,
 }
 
+impl Drop for VideoFrameWrapper {
+    fn drop(&mut self) {
+        self.frame.close();
+    }
+}
+
 #[wasm_bindgen]
 pub struct VideoRendererWorkerCtx {
     producer: Option<CellBufProducer<VideoFrameWrapper>>,
@@ -77,14 +83,12 @@ impl VideoRendererWorkerCtx {
             return Err(JsValue::from("No producer"));
         };
 
-        if let Some(old) = producer.replace(frame) {
+        if producer.replace(frame).is_some() {
             // Previous frame skipped
             self.frame_skipped += 1;
             if self.frame_skipped % FRAME_SKIPPED_DISPLAY_THRESHOLD == 0 {
                 info!("{} VideoFrames skipped", self.frame_skipped);
             }
-
-            old.frame.close();
         } else if self.frame_skipped > 0 {
             info!("{} VideoFrames have been skipped", self.frame_skipped);
             self.frame_skipped = 0;
