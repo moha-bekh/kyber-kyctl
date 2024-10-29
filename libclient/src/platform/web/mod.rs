@@ -37,6 +37,11 @@ impl VideoPlayerConfig {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct AudioPlayerConfig {
+    pub audio_buffer: u32, // ms
+}
+
 #[derive(Clone)]
 pub(crate) struct ConnectionParams {
     pub(crate) host: String,

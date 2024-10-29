@@ -60,7 +60,7 @@ pub(super) async fn start_stream(backend_config: &WsBackendConfig<'_>) -> Result
     let body = StartRequest {
         bitrate: backend_config.streaming_config.bitrate,
         video: video.clone(),
-        audio: backend_config.streaming_config.audio,
+        audio: backend_config.streaming_config.audio.is_some(),
         inputs,
     };
 

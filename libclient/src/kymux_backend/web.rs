@@ -25,6 +25,7 @@ use crate::kymux_backend::host_service::{
 use crate::platform::player::{
     AudioPlayer, AudioPlayerHandle, PacketSink, VideoDecoderConfig, VideoPlayer, VideoPlayerHandle,
 };
+use crate::platform::AudioPlayerConfig;
 use crate::platform::InputMsgSink;
 use crate::{BackendDriver, DataPlaneCloseReason, MessageProxy, VideoSessionConfig};
 use crate::{Error, Result};
@@ -256,17 +257,20 @@ async fn create_audioplayer(
     host_config: &Option<StartSessionAudioResponse>,
     close_requested: &CloseRequestState,
 ) -> Result<Option<AudioPlayerHandle>> {
-    let host_config = match (backend_config.streaming_config.audio, host_config) {
-        (true, Some(host_config)) => host_config,
-        (false, None) => return Ok(None),
+    let (audio_config, host_config) = match (&backend_config.streaming_config.audio, host_config) {
+        (Some(audio_config), Some(host_config)) => (audio_config, host_config),
+        (None, None) => return Ok(None),
         _ => {
             error!("Invalid Audio config. Should either get a config and an endpoint, or none of them.");
             return Err(Error::InvalidState);
         }
     };
 
+    let audio_buffer = audio_config.audio_buffer();
+    let audio_player_config = AudioPlayerConfig { audio_buffer };
+
     let (audio_player, audio_player_handle) =
-        AudioPlayer::create(backend_config.msg_proxy.clone()).await?;
+        AudioPlayer::create(backend_config.msg_proxy.clone(), &audio_player_config).await?;
 
     let audio_protocol = backend_config
         .kymux_config

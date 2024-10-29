@@ -500,6 +500,28 @@ impl Drop for VideoSessionConfig {
     }
 }
 
+pub struct AudioSessionConfig {
+    ptr: *mut sys::libclient_AudioSessionConfig,
+}
+
+impl AudioSessionConfig {
+    pub fn new_default() -> Result<Self> {
+        unsafe {
+            let mut ptr: *mut _ = std::mem::zeroed();
+            let ret = sys::libclient_audio_session_config_default(&mut ptr);
+            if ret == 0 {
+                Ok(Self { ptr })
+            } else {
+                Err(Error::Generic)
+            }
+        }
+    }
+
+    pub fn set_audio_buffer(&self, audio_buffer: u32) {
+        unsafe { sys::libclient_audio_session_config_set_audio_buffer(self.ptr, audio_buffer) }
+    }
+}
+
 pub struct InputSessionConfig {
     ptr: *mut sys::libclient_InputSessionConfig,
 }
@@ -572,8 +594,8 @@ impl StreamingSessionConfig {
         mem::forget(config);
     }
 
-    pub fn set_audio(&self, enabled: bool) {
-        unsafe { sys::libclient_streaming_session_config_set_audio(self.ptr, enabled) }
+    pub fn set_audio(&self, config: AudioSessionConfig) {
+        unsafe { sys::libclient_streaming_session_config_set_audio(self.ptr, config.ptr) }
     }
 
     pub fn set_input(&self, config: InputSessionConfig) {

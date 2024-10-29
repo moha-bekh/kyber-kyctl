@@ -44,6 +44,11 @@ pub struct libclient_VideoSessionConfig {
 }
 
 #[allow(non_camel_case_types)]
+pub struct libclient_AudioSessionConfig {
+    config: crate::AudioSessionConfig,
+}
+
+#[allow(non_camel_case_types)]
 pub struct libclient_InputSessionConfig {
     config: crate::InputSessionConfig,
 }
@@ -393,6 +398,27 @@ pub unsafe extern "C" fn libclient_video_session_config_set_intra_refresh(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn libclient_audio_session_config_default(
+    out_config: *mut *mut libclient_AudioSessionConfig,
+) -> c_int {
+    let config = crate::AudioSessionConfig { audio_buffer: None };
+    *out_config = Box::into_raw(Box::new(libclient_AudioSessionConfig { config }));
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_audio_session_config_set_audio_buffer(
+    config: *mut libclient_AudioSessionConfig,
+    audio_buffer: u32,
+) {
+    (*config).config.audio_buffer = if audio_buffer != 0 {
+        Some(audio_buffer)
+    } else {
+        None
+    };
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn libclient_input_session_config_default(
     pipeline: *mut libkynput_sys::libkynput_Pipeline,
     out_config: *mut *mut libclient_InputSessionConfig,
@@ -434,7 +460,7 @@ pub unsafe extern "C" fn libclient_streaming_session_config_default(
         protocol: (*protocol).protocol.clone(),
         bitrate: 20_000_000,
         video: vec![],
-        audio: false,
+        audio: None,
         input: None,
     };
 
@@ -462,9 +488,11 @@ pub unsafe extern "C" fn libclient_streaming_session_config_set_bitrate(
 #[no_mangle]
 pub unsafe extern "C" fn libclient_streaming_session_config_set_audio(
     config: *mut libclient_StreamingSessionConfig,
-    audio: bool,
+    audio: *mut libclient_AudioSessionConfig,
 ) {
-    (*config).config.audio = audio;
+    let audio = Box::from_raw(audio);
+
+    (*config).config.audio = Some(audio.config);
 }
 
 #[no_mangle]

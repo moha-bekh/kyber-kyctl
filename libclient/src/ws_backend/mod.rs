@@ -20,6 +20,7 @@ use video::VideoWsSocketHandler;
 use crate::platform::player::{
     get_video_decoder_config, AudioPlayer, AudioPlayerHandle, VideoPlayer, VideoPlayerHandle,
 };
+use crate::platform::AudioPlayerConfig;
 use crate::platform::InputMsgSink;
 
 use crate::http::HttpClient;
@@ -150,11 +151,15 @@ impl WsBackend {
     async fn create_audio_service(
         backend_config: &WsBackendConfig<'_>,
     ) -> Result<Option<AudioService>> {
-        if !backend_config.streaming_config.audio {
+        let Some(audio_config) = &backend_config.streaming_config.audio else {
             return Ok(None);
-        }
+        };
 
-        let (player, player_handle) = AudioPlayer::create(backend_config.msg_proxy.clone()).await?;
+        let audio_buffer = audio_config.audio_buffer();
+        let audio_player_config = AudioPlayerConfig { audio_buffer };
+
+        let (player, player_handle) =
+            AudioPlayer::create(backend_config.msg_proxy.clone(), &audio_player_config).await?;
 
         let url = format!(
             "wss://{host}/websocket/audio",

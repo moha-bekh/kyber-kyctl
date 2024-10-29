@@ -125,8 +125,9 @@ impl RtpBackend {
         // Start Video/Audio playback
         let player = if vlc_videoconfig.is_some() || vlc_audioconfig.is_some() {
             let vlc_videoconfig = vlc_videoconfig.map(|video_config| vec![video_config]);
+            let audio_buffer = vlc_audioconfig.as_ref().map(|config| config.audio_buffer);
 
-            let mut player = player::Player::new(backend_config.msg_proxy.clone())?;
+            let mut player = player::Player::new(backend_config.msg_proxy.clone(), audio_buffer)?;
             player.play(vlc_videoconfig, vlc_audioconfig)?;
 
             Some(player)
@@ -184,7 +185,7 @@ impl RtpBackend {
         backend_config: &RtpBackendConfig<'_>,
         local_ip: &str,
     ) -> Result<(Option<HostAudioConfig>, Option<player::AudioConfig>)> {
-        if !backend_config.streaming_config.audio {
+        let Some(audio_config) = &backend_config.streaming_config.audio else {
             return Ok((None, None));
         };
 
@@ -193,7 +194,8 @@ impl RtpBackend {
         };
 
         let uri = create_audio_sdp_file(local_ip, RTP_AUDIO_PORT)?;
-        let vlc_config = player::AudioConfig { uri };
+        let audio_buffer = audio_config.audio_buffer();
+        let vlc_config = player::AudioConfig { uri, audio_buffer };
 
         Ok((Some(host_config), Some(vlc_config)))
     }

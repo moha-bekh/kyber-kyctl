@@ -157,9 +157,9 @@ fn create_audio_config(
     backend_config: &KymuxBackendConfig<'_>,
     host_config: &Option<StartSessionAudioResponse>,
 ) -> Result<Option<player::AudioConfig>> {
-    let host_config = match (backend_config.streaming_config.audio, host_config) {
-        (true, Some(host_config)) => host_config,
-        (false, None) => return Ok(None),
+    let (audio_config, host_config) = match (&backend_config.streaming_config.audio, host_config) {
+        (Some(audio_config), Some(host_config)) => (audio_config, host_config),
+        (None, None) => return Ok(None),
         _ => {
             error!("Invalid Audio config. Should either get a config and an endpoint, or none of them.");
             return Err(Error::InvalidState);
@@ -171,8 +171,9 @@ fn create_audio_config(
         .audio_protocol
         .unwrap_or(AudioProtocol::Reliable);
     let uri = kymux.connect_and_forward_audio_endpoint(host_config.endpoint, audio_protocol)?;
+    let audio_buffer = audio_config.audio_buffer();
 
-    Ok(Some(player::AudioConfig { uri }))
+    Ok(Some(player::AudioConfig { uri, audio_buffer }))
 }
 
 async fn create_player(
@@ -185,7 +186,9 @@ async fn create_player(
     let audio_config = create_audio_config(kymux, backend_config, &host_config.audio)?;
 
     let player = if video_config.is_some() || audio_config.is_some() {
-        let mut player = player::Player::new(backend_config.msg_proxy.clone())?;
+        let audio_buffer = audio_config.as_ref().map(|config| config.audio_buffer);
+
+        let mut player = player::Player::new(backend_config.msg_proxy.clone(), audio_buffer)?;
         player.play(video_config, audio_config)?;
 
         Some(Player(player))

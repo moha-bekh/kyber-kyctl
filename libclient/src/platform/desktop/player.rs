@@ -55,6 +55,7 @@ pub(crate) struct VideoConfig {
 
 pub(crate) struct AudioConfig {
     pub(crate) uri: String,
+    pub(crate) audio_buffer: u32, // ms
 }
 
 pub(crate) struct Player {
@@ -65,19 +66,22 @@ pub(crate) struct Player {
 }
 
 impl Player {
-    pub(crate) fn new(message_proxy: MessageProxy) -> Result<Self> {
-        let options = [
-            "--0latency",
-            "--low-delay",
-            "--network-caching=0",
-            "--video-title=Kyber Client",
-            "--no-spu",
-            "--no-osd",
+    pub(crate) fn new(message_proxy: MessageProxy, audio_buffer: Option<u32>) -> Result<Self> {
+        let mut options = vec![
+            "--0latency".to_string(),
+            "--low-delay".to_string(),
+            "--network-caching=0".to_string(),
+            "--video-title=Kyber Client".to_string(),
+            "--no-spu".to_string(),
+            "--no-osd".to_string(),
         ];
 
+        if let Some(audio_buffer) = audio_buffer {
+            options.push(format!("--audio-buffer={}", audio_buffer));
+        }
+
         let instance =
-            vlc::Instance::with_args(Some(options.iter().map(|&s| s.to_string()).collect()))
-                .ok_or(PlayerError::InstanceCreateFailed)?;
+            vlc::Instance::with_args(Some(options)).ok_or(PlayerError::InstanceCreateFailed)?;
 
         instance.set_log(|level: vlc::LogLevel, _log_ctx: vlc::Log, msg: Cow<str>| {
             let level = match level {

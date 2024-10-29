@@ -1,6 +1,7 @@
 use crate::platform::player::audio::decoder::{AudioDecoder, AudioDecoderCallbacks};
 use crate::platform::player::packet::{CodecPacket, HolePacket, Packet};
 use crate::platform::player::PacketSink;
+use crate::platform::AudioPlayerConfig;
 use crate::{Message, MessageProxy, Result};
 
 use super::worklet::AudioWorklet;
@@ -28,17 +29,20 @@ pub struct AudioPlayer {
 }
 
 impl AudioPlayer {
-    pub(crate) const AUDIO_BUFFER_ALLOC_SIZE: u32 = 2 * SAMPLE_RATE;
-    pub(crate) const AUDIO_TARGET_BUFFERING: u32 = 50 * 48;
-
-    pub async fn create(message_proxy: MessageProxy) -> Result<(Self, AudioPlayerHandle)> {
-        let alloc_size = Self::AUDIO_BUFFER_ALLOC_SIZE;
+    pub async fn create(
+        message_proxy: MessageProxy,
+        audio_player_config: &AudioPlayerConfig,
+    ) -> Result<(Self, AudioPlayerHandle)> {
         let sample_size = SAMPLE_SIZE * CHANNELS;
+
+        let target_buffering =
+            (audio_player_config.audio_buffer as u64 * SAMPLE_RATE as u64 / 1000u64) as u32;
+        let alloc_size = 2 * SAMPLE_RATE + target_buffering;
 
         let sab = AudioRegulatorSharedMemory::create_sab(alloc_size, sample_size);
 
         let memory = AudioRegulatorSharedMemory::js(sab.clone(), alloc_size, sample_size);
-        let mut reg = AudioRegulatorPush::new(memory, SAMPLE_RATE, Self::AUDIO_TARGET_BUFFERING);
+        let mut reg = AudioRegulatorPush::new(memory, SAMPLE_RATE, target_buffering);
 
         let holes = Holes::new();
         let holes2 = holes.clone();
@@ -95,7 +99,8 @@ impl AudioPlayer {
             }),
         };
 
-        let audio_worklet = AudioWorklet::start(sab, message_proxy.clone()).await?;
+        let audio_worklet =
+            AudioWorklet::start(sab, message_proxy.clone(), alloc_size, target_buffering).await?;
 
         let player = Self {
             message_proxy,

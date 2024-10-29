@@ -133,7 +133,7 @@ pub(crate) async fn start_stream(
         bitrate: backend_config.streaming_config.bitrate,
         kymux_config: backend_config.kymux_config.clone(),
         video,
-        audio: backend_config.streaming_config.audio,
+        audio: backend_config.streaming_config.audio.is_some(),
         inputs,
     };
 

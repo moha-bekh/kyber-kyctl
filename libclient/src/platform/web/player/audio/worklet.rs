@@ -3,7 +3,6 @@ use std::cell::RefCell;
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
 
-use crate::platform::player::AudioPlayer;
 use crate::platform::reflect;
 use crate::{Error, Message, MessageProxy};
 
@@ -24,6 +23,8 @@ impl AudioWorklet {
     pub async fn start(
         sab: js_sys::SharedArrayBuffer,
         message_proxy: MessageProxy,
+        alloc_size: u32,
+        target_buffering: u32,
     ) -> Result<Self, Error> {
         // AudioContext
         let options = web_sys::AudioContextOptions::new();
@@ -43,16 +44,12 @@ impl AudioWorklet {
 
         reflect::set(&processor_options, "sampleSize", super::SAMPLE_SIZE.into())?;
 
-        reflect::set(
-            &processor_options,
-            "allocSize",
-            AudioPlayer::AUDIO_BUFFER_ALLOC_SIZE.into(),
-        )?;
+        reflect::set(&processor_options, "allocSize", alloc_size.into())?;
 
         reflect::set(
             &processor_options,
             "targetBuffering",
-            AudioPlayer::AUDIO_TARGET_BUFFERING.into(),
+            target_buffering.into(),
         )?;
 
         let options = web_sys::AudioWorkletNodeOptions::new();

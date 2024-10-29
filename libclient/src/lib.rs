@@ -524,6 +524,20 @@ pub struct VideoSessionConfig {
     pub player: VideoPlayerConfig,
 }
 
+#[derive(Clone, Debug)]
+pub struct AudioSessionConfig {
+    pub audio_buffer: Option<u32>, // None means default value
+}
+
+impl AudioSessionConfig {
+    pub(crate) const DEFAULT_AUDIO_BUFFER: u32 = 50; // milliseconds
+
+    pub(crate) fn audio_buffer(&self) -> u32 {
+        self.audio_buffer
+            .unwrap_or(AudioSessionConfig::DEFAULT_AUDIO_BUFFER)
+    }
+}
+
 #[derive(Clone)]
 pub struct InputSessionConfig {
     pub pipeline: InputPipeline,
@@ -535,7 +549,7 @@ pub struct StreamingSessionConfig {
     pub protocol: StreamingProtocol,
     pub bitrate: u32,
     pub video: Vec<VideoSessionConfig>,
-    pub audio: bool,
+    pub audio: Option<AudioSessionConfig>,
     pub input: Option<InputSessionConfig>,
 }
 
@@ -575,7 +589,12 @@ impl StreamingSessionConfig {
             info!("\tvideo: false");
         };
 
-        info!("\taudio: {}", self.audio);
+        if let Some(audio) = &self.audio {
+            info!("\taudio: true");
+            info!("\t\taudio_buffer: {}", audio.audio_buffer());
+        } else {
+            info!("\taudio: false");
+        }
 
         if let Some(input) = &self.input {
             info!("\tinput: true");
