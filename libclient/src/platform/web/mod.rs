@@ -28,6 +28,7 @@ pub struct VideoPlayerConfig {
     pub canvas: String,
     pub software_decode: bool,
     pub notify_decoded: bool,
+    pub video_buffer: u32, // ms
 }
 
 impl VideoPlayerConfig {
@@ -36,6 +37,7 @@ impl VideoPlayerConfig {
         info!("\tcanvas: {}", self.canvas);
         info!("\tsoftware_decode: {}", self.software_decode);
         info!("\tnotify_decoded: {}", self.notify_decoded);
+        info!("\tvideo_buffer: {}", self.video_buffer);
     }
 }
 

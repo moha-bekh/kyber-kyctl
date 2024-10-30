@@ -605,6 +605,7 @@ impl StreamingSessionConfig {
                 info!("\t\tcodec: {:?}", config.codec);
                 info!("\t\tyuv444: {}", config.yuv444);
                 info!("\t\tintra_refresh: {:?}", config.intra_refresh);
+                info!("\t\tvideo_buffer: {:}", config.player.video_buffer);
             }
         } else {
             info!("\tvideo: false");

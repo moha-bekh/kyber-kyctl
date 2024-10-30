@@ -3,6 +3,7 @@ use crate::platform::player::packet::{CodecPacket, Packet};
 use crate::platform::player::video::decoder::{VideoDecoder, VideoDecoderCallbacks};
 use crate::platform::player::video::renderer_worker::{RendererWorker, RendererWorkerHandle};
 use crate::platform::player::PacketSink;
+use crate::platform::VideoPlayerConfig;
 use crate::{Message, MessageProxy, Result};
 
 use super::regulator::jstime;
@@ -30,18 +31,18 @@ pub struct VideoPlayer {
 
 impl VideoPlayer {
     pub fn create(
-        canvas: &str,
         message_proxy: MessageProxy,
+        player_config: &VideoPlayerConfig,
         decoder_config: VideoDecoderConfig,
         notify_decoded: bool,
     ) -> Result<(Self, VideoPlayerHandle)> {
-        let canvas = dom::get_canvas(canvas)?;
+        let canvas = dom::get_canvas(&player_config.canvas)?;
 
         let offscreen_canvas = canvas.transfer_control_to_offscreen()?;
 
         let (renderer_worker, renderer_worker_handle) =
             RendererWorker::create(message_proxy.clone())?;
-        renderer_worker.start(offscreen_canvas)?;
+        renderer_worker.start(offscreen_canvas, player_config.video_buffer)?;
 
         let video_rotation = Rc::new(AtomicU8::new(0));
         let video_rotation_ref = video_rotation.clone();

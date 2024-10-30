@@ -11,7 +11,6 @@ use super::cell_buf::{self, CellBufConsumer, CellBufProducer};
 use super::regulator::{self, VideoRegulatorPull, VideoRegulatorPush};
 use super::renderer::{RenderResult, Renderer};
 
-const VIDEO_BUFFERING_US: u64 = 0;
 const FRAME_SKIPPED_DISPLAY_THRESHOLD: usize = 30;
 
 pub struct VideoFrameWrapper {
@@ -78,12 +77,16 @@ impl VideoRendererWorkerCtx {
                 assert!(self.sink.is_none());
                 let canvas = js_sys::Reflect::get(msg, &"canvas".into())?
                     .dyn_into::<web_sys::OffscreenCanvas>()?;
+                let video_buffer_ms = js_sys::Reflect::get(msg, &"video_buffer".into())?
+                    .as_f64()
+                    .unwrap() as u32;
 
                 let (producer, consumer) = cell_buf::cell_buf();
                 let producer = FrameBufPush::new(producer);
 
-                let sink = if VIDEO_BUFFERING_US > 0 {
-                    let (reg_push, reg_pull) = regulator::create_regulator(VIDEO_BUFFERING_US);
+                let sink = if video_buffer_ms > 0 {
+                    let video_buffer_us = video_buffer_ms as u64 * 1000;
+                    let (reg_push, reg_pull) = regulator::create_regulator(video_buffer_us);
 
                     spawn_local(async move {
                         let ret = Self::forward_frames(reg_pull, producer).await;
@@ -255,12 +258,17 @@ impl RendererWorker {
         Ok(())
     }
 
-    pub fn start(&self, canvas: web_sys::OffscreenCanvas) -> Result<(), JsValue> {
+    pub fn start(
+        &self,
+        canvas: web_sys::OffscreenCanvas,
+        video_buffer: u32,
+    ) -> Result<(), JsValue> {
         let canvas_param = canvas.into();
 
         let msg = js_sys::Object::new();
         reflect::set(&msg, "type", Self::TYPE_START.into())?;
         reflect::set_ref(&msg, "canvas", &canvas_param)?;
+        reflect::set(&msg, "video_buffer", video_buffer.into())?;
 
         let transfer = js_sys::Array::of1(&canvas_param);
 

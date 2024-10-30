@@ -134,8 +134,8 @@ impl WsBackend {
         let video_decoder_config = get_video_decoder_config(video_config).await?;
 
         let (player, player_handle) = VideoPlayer::create(
-            &video_config.player.canvas,
             backend_config.msg_proxy.clone(),
+            &video_config.player,
             video_decoder_config,
             video_config.player.notify_decoded,
         )?;

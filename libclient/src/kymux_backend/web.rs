@@ -229,8 +229,8 @@ async fn create_videoplayer(
         })?;
 
         let (video_player, video_player_handle) = VideoPlayer::create(
-            &config.player.canvas,
             backend_config.msg_proxy.clone(),
+            &config.player,
             video_config,
             config.player.notify_decoded,
         )?;

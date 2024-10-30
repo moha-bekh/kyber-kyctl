@@ -54,6 +54,7 @@ pub(crate) struct VideoConfig {
     pub(crate) software_decode: bool,
     pub(crate) window_handle: WindowHandle,
     pub(crate) uri: String,
+    pub(crate) video_buffer: u32, // ms
 }
 
 pub(crate) struct AudioConfig {
@@ -69,7 +70,11 @@ pub(crate) struct Player {
 }
 
 impl Player {
-    pub(crate) fn new(message_proxy: MessageProxy, audio_buffer: Option<u32>) -> Result<Self> {
+    pub(crate) fn new(
+        message_proxy: MessageProxy,
+        video_buffer: Option<u32>,
+        audio_buffer: Option<u32>,
+    ) -> Result<Self> {
         let mut options = vec![
             "--0latency".to_string(),
             "--low-delay".to_string(),
@@ -78,6 +83,10 @@ impl Player {
             "--no-spu".to_string(),
             "--no-osd".to_string(),
         ];
+
+        if let Some(video_buffer) = video_buffer {
+            options.push(format!("--video-buffer={}", video_buffer));
+        }
 
         if let Some(audio_buffer) = audio_buffer {
             options.push(format!("--audio-buffer={}", audio_buffer));

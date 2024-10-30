@@ -473,6 +473,10 @@ impl VideoPlayerConfig {
     pub fn set_software_decode(&self, software_decode: bool) {
         unsafe { sys::libclient_video_player_config_set_software_decode(self.ptr, software_decode) }
     }
+
+    pub fn set_video_buffer(&self, video_buffer: u32) {
+        unsafe { sys::libclient_video_player_config_set_video_buffer(self.ptr, video_buffer) }
+    }
 }
 
 impl Drop for VideoPlayerConfig {

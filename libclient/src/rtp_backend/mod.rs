@@ -135,8 +135,20 @@ impl RtpBackend {
         let player = if vlc_videoconfig.is_some() || vlc_audioconfig.is_some() {
             let vlc_videoconfig = vlc_videoconfig.map(|video_config| vec![video_config]);
             let audio_buffer = vlc_audioconfig.as_ref().map(|config| config.audio_buffer);
+            let video_buffer = if let Some(video_config) = vlc_videoconfig.as_ref() {
+                // XXX VLC only supports one global video_buffer value, but each
+                // VideoPlayerConfig has a video_buffer value
+                if video_config.is_empty() {
+                    None
+                } else {
+                    Some(video_config[0].video_buffer)
+                }
+            } else {
+                None
+            };
 
-            let mut player = player::Player::new(backend_config.msg_proxy.clone(), audio_buffer)?;
+            let mut player =
+                player::Player::new(backend_config.msg_proxy.clone(), video_buffer, audio_buffer)?;
             player.play(vlc_videoconfig, vlc_audioconfig)?;
 
             Some(player)
@@ -185,6 +197,7 @@ impl RtpBackend {
             uri: sdp_path,
             software_decode: video_config.player.software_decode,
             window_handle: video_config.player.window_handle,
+            video_buffer: video_config.player.video_buffer,
         };
 
         Ok((Some(host_videoconfig), Some(vlc_videoconfig)))

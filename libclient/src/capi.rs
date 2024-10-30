@@ -332,6 +332,7 @@ pub unsafe extern "C" fn libclient_video_player_config_default(
     let config = crate::VideoPlayerConfig {
         window_handle: window_handle.handle,
         software_decode: false,
+        video_buffer: 0,
     };
 
     *out_config = Box::into_raw(Box::new(libclient_VideoPlayerConfig { config }));
@@ -362,6 +363,14 @@ pub unsafe extern "C" fn libclient_video_player_config_set_software_decode(
     software_decode: bool,
 ) {
     (*config).config.software_decode = software_decode;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_video_player_config_set_video_buffer(
+    config: *mut libclient_VideoPlayerConfig,
+    video_buffer: u32,
+) {
+    (*config).config.video_buffer = video_buffer;
 }
 
 #[no_mangle]

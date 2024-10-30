@@ -29,6 +29,7 @@ pub struct ConnectConfig {
 pub struct VideoPlayerConfig {
     pub window_handle: WindowHandle,
     pub software_decode: bool,
+    pub video_buffer: u32, // ms
 }
 
 impl VideoPlayerConfig {
@@ -36,6 +37,7 @@ impl VideoPlayerConfig {
         info!("VideoPlayerConfig");
         info!("\twindow_handle: {:?}", self.window_handle);
         info!("\tsoftware_decode: {}", self.software_decode);
+        info!("\tvideo_buffer: {}", self.video_buffer);
     }
 }
 
