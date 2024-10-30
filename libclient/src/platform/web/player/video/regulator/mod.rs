@@ -57,28 +57,28 @@ struct Packet<T> {
 }
 
 pub struct VideoRegulatorPush<T> {
-    tx: mpsc::Sender<Packet<T>>,
+    tx: mpsc::UnboundedSender<Packet<T>>,
     shared_data: Arc<SharedData>,
 }
 
 pub struct VideoRegulatorPull<T> {
     delay: u64,
-    rx: mpsc::Receiver<Packet<T>>,
+    rx: mpsc::UnboundedReceiver<Packet<T>>,
     shared_data: Arc<SharedData>,
 }
 
 impl<T> VideoRegulatorPush<T> {
-    fn new(tx: mpsc::Sender<Packet<T>>, shared_data: Arc<SharedData>) -> Self {
+    fn new(tx: mpsc::UnboundedSender<Packet<T>>, shared_data: Arc<SharedData>) -> Self {
         Self { tx, shared_data }
     }
 
     // recv_date retrieved by jstime::now_us()
-    pub async fn push(&self, object: T, recv_date: u64, pts: u64) -> Result<(), JsValue> {
+    pub fn push(&self, object: T, recv_date: u64, pts: u64) -> Result<(), JsValue> {
         {
             let mut clock = self.shared_data.clock.lock().unwrap();
             clock.update(recv_date, pts);
         }
-        self.tx.send(Packet { object, pts }).await.map_err(|_| {
+        self.tx.send(Packet { object, pts }).map_err(|_| {
             JsValue::from(js_sys::Error::new(
                 "Could not push packet to video regulator",
             ))
@@ -90,7 +90,11 @@ impl<T> VideoRegulatorPush<T> {
 }
 
 impl<T> VideoRegulatorPull<T> {
-    fn new(delay: u64, rx: mpsc::Receiver<Packet<T>>, shared_data: Arc<SharedData>) -> Self {
+    fn new(
+        delay: u64,
+        rx: mpsc::UnboundedReceiver<Packet<T>>,
+        shared_data: Arc<SharedData>,
+    ) -> Self {
         Self {
             delay,
             rx,
@@ -144,7 +148,8 @@ impl<T> VideoRegulatorPull<T> {
 
 pub fn create_regulator<T>(delay: u64) -> (VideoRegulatorPush<T>, VideoRegulatorPull<T>) {
     let shared_data = Arc::new(SharedData::new());
-    let (tx, rx) = mpsc::channel::<Packet<T>>(64);
+    // A push() must never await, it is called from Javascript on_message()
+    let (tx, rx) = mpsc::unbounded_channel::<Packet<T>>();
     let push = VideoRegulatorPush::new(tx, shared_data.clone());
     let pull = VideoRegulatorPull::new(delay, rx, shared_data);
     (push, pull)

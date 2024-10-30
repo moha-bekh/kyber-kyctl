@@ -69,7 +69,7 @@ impl VideoRendererWorkerCtx {
         Self { sink: None }
     }
 
-    pub async fn on_message(&mut self, event: web_sys::MessageEvent) -> Result<(), JsValue> {
+    pub fn on_message(&mut self, event: web_sys::MessageEvent) -> Result<(), JsValue> {
         let msg = &event.data().dyn_into::<js_sys::Object>()?;
         let msg_type = reflect::get_string(msg, "type")?;
 
@@ -118,7 +118,7 @@ impl VideoRendererWorkerCtx {
                     FrameSink::Regulator(ref mut sink) => {
                         let recv_date = reflect::get_f64(msg, "recv_date")? as u64;
                         let pts = frame_w.frame.timestamp().expect("No pts") as u64;
-                        if let Err(err) = sink.push(frame_w, recv_date, pts).await {
+                        if let Err(err) = sink.push(frame_w, recv_date, pts) {
                             warn!("Error pushing frame: {err:?}");
                         }
                     }
