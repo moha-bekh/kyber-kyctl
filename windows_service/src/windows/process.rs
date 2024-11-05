@@ -139,12 +139,14 @@ pub unsafe fn start_subprocess(path: &str, token: HANDLE, inherited: &[&Event]) 
         &mut pi,
     );
     if b == 0 {
-        warn!("Fail to spawn executable '{}'", path);
         let err = last_win32_error("CreateProcessAsUserW", std::file!(), std::line!());
-        return match err {
+        let err = match err {
             Ok(_) => Err(Error::Rejected),
             Err(err) => Err(err),
         };
+
+        warn!("Fail to spawn executable '{path}': {err:?}");
+        return err;
     }
 
     CloseHandle(pi.hThread);
