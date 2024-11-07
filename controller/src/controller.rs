@@ -11,6 +11,7 @@ use crate::config;
 use crate::error::{Error, Result};
 use crate::inputservice;
 use crate::kymux_controller::KymuxBackend;
+use crate::session::ClientAuthTokens;
 use crate::tls;
 use crate::ws::WebsocketBackend;
 use crate::HostEventSender;
@@ -64,7 +65,19 @@ impl StreamingSession {
 pub(crate) struct ClientSession {
     pub(crate) uid: Uuid,
     pub(crate) username: String,
+    pub(crate) auth_tokens: ClientAuthTokens,
     pub(crate) stream_session: Option<StreamingSession>,
+}
+
+impl ClientSession {
+    pub(crate) fn new(uid: Uuid, username: String) -> Self {
+        Self {
+            uid,
+            username,
+            auth_tokens: ClientAuthTokens::generate(),
+            stream_session: None,
+        }
+    }
 }
 
 #[derive(Default)]

@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use actix_web::{web, HttpRequest, HttpResponse};
+use actix_ws::{CloseCode, CloseReason};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use tokio::{
@@ -159,6 +159,13 @@ pub(crate) enum HostEvent {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+enum HostAuthEvent {
+    Request,
+    Token(String),
+    Succeed,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 enum HostEventFrame {
     Ping { id: u64 },
     Pong { id: u64 },
@@ -172,13 +179,11 @@ pub(crate) struct HostEventSender {
 }
 
 impl HostEventSender {
-    pub(crate) fn new(
-        req: HttpRequest,
-        stream: web::Payload,
+    fn new(
+        session: actix_ws::Session,
+        msg_stream: actix_ws::MessageStream,
         statemachine_proxy: StateMachineProxy,
-    ) -> Result<(Self, HttpResponse)> {
-        let (res, session, msg_stream) = actix_ws::handle(&req, stream)?;
-
+    ) -> Self {
         let (events_tx, events_rx) = mpsc::channel(32);
         let (stop_tx, stop_rx) = oneshot::channel();
 
@@ -191,14 +196,11 @@ impl HostEventSender {
             statemachine_proxy,
         ));
 
-        Ok((
-            Self {
-                events_tx,
-                handle,
-                stop_tx,
-            },
-            res,
-        ))
+        Self {
+            events_tx,
+            handle,
+            stop_tx,
+        }
     }
 
     pub(crate) async fn stop(self) -> Result<()> {
@@ -323,5 +325,69 @@ impl HostEventSender {
                 break;
             }
         }
+    }
+}
+
+pub(crate) async fn wait_authentication(
+    session: actix_ws::Session,
+    msg_stream: actix_ws::MessageStream,
+) -> Result<(String, PendingHostEventSender)> {
+    let mut pending_sender = PendingHostEventSender {
+        session,
+        msg_stream,
+    };
+    let Ok(resp) =
+        tokio::time::timeout(Duration::from_secs(5), pending_sender.msg_stream.recv()).await
+    else {
+        pending_sender.reject().await;
+        return Err(Error::WsAuthTimeout);
+    };
+
+    let msg = match resp {
+        None | Some(Ok(actix_ws::Message::Close(_))) => {
+            pending_sender.reject().await;
+            return Err(Error::ChannelClosedRx);
+        }
+        Some(Ok(actix_ws::Message::Text(msg))) => msg,
+        _ => {
+            pending_sender.reject().await;
+            return Err(Error::WsInvalidAuthMessage);
+        }
+    };
+
+    #[derive(Deserialize)]
+    struct Token {
+        token: String,
+    }
+    let Ok(token_holder) = serde_json::from_str::<Token>(&msg) else {
+        pending_sender.reject().await;
+        return Err(Error::WsInvalidAuthMessage);
+    };
+
+    Ok((token_holder.token, pending_sender))
+}
+
+pub(crate) struct PendingHostEventSender {
+    session: actix_ws::Session,
+    msg_stream: actix_ws::MessageStream,
+}
+
+impl PendingHostEventSender {
+    pub(crate) async fn accept(mut self, proxy: StateMachineProxy) -> Result<HostEventSender> {
+        const SUCCESS_JSON: &str = "\"Welcome\"";
+        let Ok(_) = self.session.text(SUCCESS_JSON).await else {
+            self.reject().await;
+            return Err(Error::ChannelClosedTx);
+        };
+
+        Ok(HostEventSender::new(self.session, self.msg_stream, proxy))
+    }
+
+    pub(crate) async fn reject(self) {
+        let reason = CloseReason {
+            code: CloseCode::Protocol,
+            description: Some("Invalid credentials".to_owned()),
+        };
+        let _ = self.session.close(Some(reason)).await;
     }
 }

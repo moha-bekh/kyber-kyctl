@@ -79,6 +79,10 @@ pub enum Error {
     WsComponentNotReady { component: String },
     #[error("Websocket got invalid endpoint {endpoint_id:X} from process")]
     WsInvalidEndpoint { endpoint_id: u16 },
+    #[error("Invalid authentication message")]
+    WsInvalidAuthMessage,
+    #[error("Authentication timed out")]
+    WsAuthTimeout,
     #[error("Config parse failed")]
     ConfigParseFail,
     #[error("Config load failed: {reason:?}")]

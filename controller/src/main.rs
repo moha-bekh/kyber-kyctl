@@ -73,6 +73,11 @@ async fn login(ctrl: web::Data<Mutex<Controller>>, req: HttpRequest) -> HttpResp
 
     info!("Logging in \"{}\"...", username);
     let uuid = Identity::login(&req.extensions()).unwrap();
+    let client_session = ClientSession::new(uuid, username);
+    let body = serde_json::json!({
+        "uid": uuid,
+        "websocket": client_session.auth_tokens.websocket,
+    });
 
     let mut ctrl = ctrl.lock().await;
 
@@ -85,13 +90,9 @@ async fn login(ctrl: web::Data<Mutex<Controller>>, req: HttpRequest) -> HttpResp
         let _ = ctrl.stop().await;
     }
 
-    ctrl.client_session = Some(ClientSession {
-        uid: uuid,
-        username,
-        stream_session: None,
-    });
+    ctrl.client_session = Some(client_session);
 
-    HttpResponse::Ok().json(uuid)
+    HttpResponse::Ok().json(body)
 }
 
 #[get("/capabilities")]
@@ -112,32 +113,54 @@ async fn websocket_service(
     req: HttpRequest,
     stream: web::Payload,
 ) -> HttpResponse {
-    let mut ctrl = ctrl.lock().await;
-
-    let Some(state_machine_proxy) = ctrl.state_machine_proxy.clone() else {
-        warn!("StateMachineProxy not configured");
-        return HttpResponse::Forbidden().finish();
+    let (http_response, session, msg_stream) = match actix_ws::handle(&req, stream) {
+        Ok((http_response, session, msg_stream)) => (http_response, session, msg_stream),
+        Err(err) => {
+            warn!("Fail to start websocket: {err:?}");
+            return HttpResponse::Forbidden().finish();
+        }
     };
 
-    let displays = ctrl.displays.convert();
-
-    let Some(client_session) = ctrl.client_session.as_mut() else {
-        return HttpResponse::Unauthorized().finish();
-    };
-    let (host_event_sender, http_response) =
-        match HostEventSender::new(req, stream, state_machine_proxy) {
-            Ok((host_event_sender, http_response)) => (host_event_sender, http_response),
-            Err(err) => {
-                warn!("Fail to start websocket: {err:?}");
-                return HttpResponse::Forbidden().finish();
+    tokio::task::spawn_local(async move {
+        let auth = host_events::wait_authentication(session, msg_stream).await;
+        let (token, pending_sender) = match auth {
+            Ok(values) => values,
+            Err(e) => {
+                error!("Websocket initialization failed: {e:?}");
+                return;
             }
         };
 
-    host_event_sender
-        .send(HostEvent::DisplayList { displays })
-        .await;
+        let mut ctrl = ctrl.lock().await;
 
-    client_session.stream_session = Some(StreamingSession::new(host_event_sender));
+        let Some(state_machine_proxy) = ctrl.state_machine_proxy.clone() else {
+            warn!("StateMachineProxy not configured");
+            return;
+        };
+
+        let displays = ctrl.displays.convert();
+
+        let Some(client_session) = ctrl.client_session.as_mut() else {
+            error!("No client session attached to websocket connection");
+            return;
+        };
+
+        if client_session.auth_tokens.websocket != token {
+            error!("Client websocket token is invalid: \"{token}\"");
+            pending_sender.reject().await;
+            return;
+        }
+
+        let Ok(sender) = pending_sender.accept(state_machine_proxy).await else {
+            error!("Could not accept websocket connection");
+            return;
+        };
+
+        sender.send(HostEvent::DisplayList { displays }).await;
+
+        client_session.stream_session = Some(StreamingSession::new(sender));
+        info!("Session \"{}\" controlplane connected", client_session.uid);
+    });
 
     http_response
 }
