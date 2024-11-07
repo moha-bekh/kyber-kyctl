@@ -7,8 +7,8 @@ use tokio::sync::Mutex;
 use avservice_types::VideoCodec;
 use inputservice_types::CursorFormat;
 
-use crate::controller::Controller;
 use crate::utils::generate_session_id;
+use crate::{controller::Controller, session::identity::Identity};
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 pub(crate) enum KymuxTransportBackend {
@@ -36,6 +36,7 @@ pub(crate) struct StartKymuxResponse {
 
 #[post("/start_mux")]
 pub(crate) async fn start_mux(
+    _user: Identity,
     ctrl: web::Data<Mutex<Controller>>,
     request: web::Json<StartKymux>,
 ) -> HttpResponse {
@@ -143,6 +144,7 @@ pub(crate) struct StartSessionResponse {
 
 #[post("/start_session")]
 pub(crate) async fn start_session(
+    _user: Identity,
     ctrl: web::Data<Mutex<Controller>>,
     request: web::Json<StartRequest>,
 ) -> HttpResponse {

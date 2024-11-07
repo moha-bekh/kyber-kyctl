@@ -52,6 +52,24 @@ struct Capabilities {
     control_plane: ControlPlaneCapabilities,
 }
 
+#[post("/login")]
+async fn login(ctrl: web::Data<Mutex<Controller>>, req: HttpRequest) -> HttpResponse {
+    let mut ctrl = ctrl.lock().await;
+
+    if let Some(existing) = &ctrl.client_session {
+        let _ = ctrl.stop().await;
+    }
+
+    let uuid = Identity::login(&req.extensions()).unwrap();
+
+    ctrl.client_session = Some(ClientSession {
+        uid: uuid,
+        stream_session: None,
+    });
+
+    HttpResponse::Ok().json(uuid)
+}
+
 #[get("/capabilities")]
 async fn capabilities() -> HttpResponse {
     let ret = Capabilities {
@@ -77,6 +95,11 @@ async fn websocket_service(
         return HttpResponse::Forbidden().finish();
     };
 
+    let displays = ctrl.displays.convert();
+
+    let Some(client_session) = ctrl.client_session.as_mut() else {
+        return HttpResponse::Unauthorized().finish();
+    };
     let (host_event_sender, http_response) =
         match HostEventSender::new(req, stream, state_machine_proxy) {
             Ok((host_event_sender, http_response)) => (host_event_sender, http_response),
@@ -87,14 +110,10 @@ async fn websocket_service(
         };
 
     host_event_sender
-        .send(HostEvent::DisplayList {
-            displays: ctrl.displays.convert(),
-        })
+        .send(HostEvent::DisplayList { displays })
         .await;
 
-    ctrl.client_session = Some(ClientSession {
-        stream_session: Some(StreamingSession::new(host_event_sender)),
-    });
+    client_session.stream_session = Some(StreamingSession::new(host_event_sender));
 
     http_response
 }
@@ -107,7 +126,7 @@ async fn enumerate_displays(ctrl: web::Data<Mutex<Controller>>) -> HttpResponse 
 }
 
 #[post("/stop_streaming")]
-async fn stop_streaming(ctrl: web::Data<Mutex<Controller>>) -> HttpResponse {
+async fn stop_streaming(ctrl: web::Data<Mutex<Controller>>, _user: Identity) -> HttpResponse {
     let mut ctrl = ctrl.lock().await;
 
     let ret = ctrl.stop_streaming().await;
@@ -124,7 +143,7 @@ async fn stop_streaming(ctrl: web::Data<Mutex<Controller>>) -> HttpResponse {
 }
 
 #[post("/stop_session")]
-async fn stop_session(ctrl: web::Data<Mutex<Controller>>) -> HttpResponse {
+async fn stop_session(ctrl: web::Data<Mutex<Controller>>, user: Identity) -> HttpResponse {
     let mut ctrl = ctrl.lock().await;
 
     let ret = ctrl.stop().await;
@@ -150,6 +169,7 @@ pub(crate) struct SetBitrate {
 pub(crate) async fn set_bitrate(
     ctrl: web::Data<Mutex<Controller>>,
     request: web::Json<SetBitrate>,
+    _user: Identity,
 ) -> HttpResponse {
     info!("Set bitrate: {}", request.bitrate);
 
@@ -344,6 +364,7 @@ async fn real_main() -> Result<()> {
                     .service(ws::requests::audio),
             )
             .service(capabilities)
+            .service(login)
             .service(websocket_service)
             .service(enumerate_displays)
             .service(stop_streaming)

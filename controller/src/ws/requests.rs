@@ -7,7 +7,7 @@ use avservice_types::VideoCodec;
 use inputservice_types::CursorFormat;
 
 use crate::utils::generate_session_id;
-use crate::Controller;
+use crate::{session::identity::Identity, Controller};
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct StartRequestVideo {
@@ -42,6 +42,7 @@ pub struct StartResponse {
 async fn start_handler(
     ctrl: web::Data<Mutex<Controller>>,
     request: web::Json<StartRequest>,
+    _user: Identity,
 ) -> HttpResponse {
     let ret = super::start_handler(ctrl, request).await;
     match ret {
@@ -65,6 +66,7 @@ async fn video(
     ctrl: web::Data<Mutex<Controller>>,
     request: HttpRequest,
     stream: web::Payload,
+    _user: Identity,
 ) -> HttpResponse {
     let ret = super::start_video(ctrl, request, stream).await;
     match ret {
@@ -84,6 +86,7 @@ async fn audio(
     ctrl: web::Data<Mutex<Controller>>,
     request: HttpRequest,
     stream: web::Payload,
+    _user: Identity,
 ) -> HttpResponse {
     let ret = super::start_audio(ctrl, request, stream).await;
     match ret {
@@ -103,6 +106,7 @@ async fn inputs(
     ctrl: web::Data<Mutex<Controller>>,
     request: HttpRequest,
     stream: web::Payload,
+    _user: Identity,
 ) -> HttpResponse {
     let ret = super::start_inputs(ctrl, request, stream).await;
     match ret {

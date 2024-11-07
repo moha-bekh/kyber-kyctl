@@ -5,8 +5,8 @@ use tokio::sync::Mutex;
 
 use inputservice_types::CursorFormat;
 
-use crate::controller::Controller;
 use crate::utils::generate_session_id;
+use crate::{controller::Controller, session::identity::Identity};
 
 #[derive(Debug, Serialize)]
 pub struct HelloResponse {
@@ -61,7 +61,7 @@ pub struct StartResponse {
 }
 
 #[get("/hello")]
-async fn hello(req: HttpRequest) -> HttpResponse {
+async fn hello(req: HttpRequest, _user: Identity) -> HttpResponse {
     let peer_addr = if let Some(peer_addr) = req.peer_addr() {
         peer_addr
     } else {
@@ -77,6 +77,7 @@ async fn hello(req: HttpRequest) -> HttpResponse {
 async fn generate_sdp(
     ctrl: web::Data<Mutex<Controller>>,
     request: web::Json<GenerateSdpRequest>,
+    _user: Identity,
 ) -> HttpResponse {
     let mut ctrl = ctrl.lock().await;
 
@@ -104,6 +105,7 @@ async fn generate_sdp(
 async fn start(
     ctrl: web::Data<Mutex<Controller>>,
     request: web::Json<StartRequest>,
+    _user: Identity,
 ) -> HttpResponse {
     let mut ctrl = ctrl.lock().await;
 

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use log::{info, warn};
+use uuid::Uuid;
 
 use avservice_types::Display;
 use libkypc::process::ProcessFactory;
@@ -61,6 +62,7 @@ impl StreamingSession {
 }
 
 pub(crate) struct ClientSession {
+    pub(crate) uid: Uuid,
     pub(crate) stream_session: Option<StreamingSession>,
 }
 
@@ -152,6 +154,19 @@ impl Controller {
             client_session: None,
             services: Default::default(),
             state_machine_proxy: None,
+        }
+    }
+
+    pub fn get_session<'a>(&'a mut self, uid: &uuid::Uuid) -> Result<&'a mut ClientSession> {
+        let session = self
+            .client_session
+            .as_mut()
+            .ok_or(Error::SessionNotOpened)?;
+
+        if &session.uid == uid {
+            Ok(session)
+        } else {
+            Err(Error::InvalidSession { uid: session.uid })
         }
     }
 

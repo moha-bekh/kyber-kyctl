@@ -35,6 +35,8 @@ pub enum Error {
     DataPlaneAlreadyOpened,
     #[error("Client session not opened")]
     SessionNotOpened,
+    #[error("Invalid session \"{uid}\"")]
+    InvalidSession { uid: uuid::Uuid },
     #[error("Kymux accept() timeout")]
     KymuxAcceptTimeout,
     #[error("Kymux isn't listening")]
