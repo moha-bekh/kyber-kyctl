@@ -132,11 +132,14 @@ async fn start_handler(
 
     // Store objects
     let Some(client_session) = ctrl.client_session.as_mut() else {
+        return Err(Error::SessionNotOpened);
+    };
+    let Some(streaming_session) = client_session.stream_session.as_mut() else {
         return Err(Error::ControlPlaneNotOpened);
     };
 
     let backend = WebsocketBackend::new(ws_router);
-    client_session.data_plane = Some(DataPlaneBackend::Websocket(backend));
+    streaming_session.data_plane = Some(DataPlaneBackend::Websocket(backend));
 
     let avservice_video = if let Some(avservice_video) = avservice_video {
         vec![avservice_video]
@@ -160,10 +163,13 @@ async fn start_video(
     let mut ctrl = ctrl.lock().await;
 
     let Some(client_session) = ctrl.client_session.as_mut() else {
+        return Err(Error::SessionNotOpened);
+    };
+    let Some(streaming_session) = client_session.stream_session.as_mut() else {
         return Err(Error::ControlPlaneNotOpened);
     };
 
-    let Some(DataPlaneBackend::Websocket(backend)) = client_session.data_plane.as_mut() else {
+    let Some(DataPlaneBackend::Websocket(backend)) = streaming_session.data_plane.as_mut() else {
         return Err(Error::WsNoRouter);
     };
 
@@ -184,10 +190,13 @@ async fn start_audio(
     let mut ctrl = ctrl.lock().await;
 
     let Some(client_session) = ctrl.client_session.as_mut() else {
+        return Err(Error::SessionNotOpened);
+    };
+    let Some(streaming_session) = client_session.stream_session.as_mut() else {
         return Err(Error::ControlPlaneNotOpened);
     };
 
-    let Some(DataPlaneBackend::Websocket(backend)) = client_session.data_plane.as_mut() else {
+    let Some(DataPlaneBackend::Websocket(backend)) = streaming_session.data_plane.as_mut() else {
         return Err(Error::WsNoRouter);
     };
 
@@ -208,10 +217,13 @@ async fn start_inputs(
     let mut ctrl = ctrl.lock().await;
 
     let Some(client_session) = ctrl.client_session.as_mut() else {
+        return Err(Error::SessionNotOpened);
+    };
+    let Some(streaming_session) = client_session.stream_session.as_mut() else {
         return Err(Error::ControlPlaneNotOpened);
     };
 
-    let Some(DataPlaneBackend::Websocket(backend)) = client_session.data_plane.as_mut() else {
+    let Some(DataPlaneBackend::Websocket(backend)) = streaming_session.data_plane.as_mut() else {
         return Err(Error::WsNoRouter);
     };
 

@@ -213,12 +213,17 @@ async fn start_kymux(
 
     {
         let mut ctrl = ctrl.lock().await;
+
         let Some(client_session) = ctrl.client_session.as_mut() else {
+            return Err(Error::SessionNotOpened);
+        };
+
+        let Some(stream_session) = client_session.stream_session.as_mut() else {
             return Err(Error::ControlPlaneNotOpened);
         };
 
         let backend = KymuxBackend::new(server, statemachine_proxy).await?;
-        client_session.data_plane = Some(DataPlaneBackend::Kymux(backend));
+        stream_session.data_plane = Some(DataPlaneBackend::Kymux(backend));
     }
 
     Ok(requests::StartKymuxResponse {
@@ -476,10 +481,13 @@ async fn start_session(
 
     // Complete Kymux connection
     let Some(client_session) = ctrl.client_session.as_mut() else {
+        return Err(Error::SessionNotOpened);
+    };
+    let Some(streaming_session) = client_session.stream_session.as_mut() else {
         return Err(Error::ControlPlaneNotOpened);
     };
 
-    let Some(DataPlaneBackend::Kymux(backend)) = client_session.data_plane.as_mut() else {
+    let Some(DataPlaneBackend::Kymux(backend)) = streaming_session.data_plane.as_mut() else {
         return Err(Error::KymuxNotListening);
     };
 

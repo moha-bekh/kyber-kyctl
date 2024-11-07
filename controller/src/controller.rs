@@ -21,12 +21,12 @@ pub(crate) enum DataPlaneBackend {
     Websocket(WebsocketBackend),
 }
 
-pub(crate) struct ClientSession {
+pub(crate) struct StreamingSession {
     pub(crate) host_event_sender: HostEventSender,
     pub(crate) data_plane: Option<DataPlaneBackend>,
 }
 
-impl ClientSession {
+impl StreamingSession {
     pub(crate) fn new(host_event_sender: HostEventSender) -> Self {
         Self {
             host_event_sender,
@@ -58,6 +58,10 @@ impl ClientSession {
 
         Ok(())
     }
+}
+
+pub(crate) struct ClientSession {
+    pub(crate) stream_session: Option<StreamingSession>,
 }
 
 #[derive(Default)]
@@ -154,8 +158,12 @@ impl Controller {
     pub async fn stop_streaming(&mut self) -> Result<()> {
         info!("Stop streaming");
 
-        if let Some(client_session) = self.client_session.as_mut() {
-            let ret = client_session.stop_dataplane().await;
+        let Some(client_session) = self.client_session.as_mut() else {
+            return Err(Error::ControlPlaneNotOpened);
+        };
+
+        if let Some(stream_session) = client_session.stream_session.as_mut() {
+            let ret = stream_session.stop_dataplane().await;
             if let Err(err) = ret {
                 warn!("Failed to stop client session: {err:?}");
             }
@@ -172,8 +180,12 @@ impl Controller {
     pub async fn stop(&mut self) -> Result<()> {
         info!("Stop");
 
-        if let Some(client_session) = self.client_session.take() {
-            let ret = client_session.stop().await;
+        let Some(mut client_session) = self.client_session.take() else {
+            return Err(Error::ControlPlaneNotOpened);
+        };
+
+        if let Some(stream_session) = client_session.stream_session.take() {
+            let ret = stream_session.stop().await;
             if let Err(err) = ret {
                 warn!("Failed to stop client session: {err:?}");
             }
@@ -192,7 +204,11 @@ impl Controller {
             return Err(Error::ControlPlaneNotOpened);
         };
 
-        Ok(client_session.data_plane.is_some())
+        let Some(stream_session) = client_session.stream_session.as_ref() else {
+            return Err(Error::ControlPlaneNotOpened);
+        };
+
+        Ok(stream_session.data_plane.is_some())
     }
 
     pub(crate) fn display_known(&self, display_id: u32) -> bool {

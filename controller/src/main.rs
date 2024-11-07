@@ -31,7 +31,7 @@ mod ws;
 
 use libkypc::process::ProcessFactory;
 
-use controller::{ClientSession, Controller, DataPlaneBackend};
+use controller::{ClientSession, Controller, DataPlaneBackend, StreamingSession};
 use error::{Error, Result};
 use host_events::{HostEvent, HostEventSender};
 use statemachine::{StateMachine, StateMachineEvent, StateMachineProxy};
@@ -92,7 +92,9 @@ async fn websocket_service(
         })
         .await;
 
-    ctrl.client_session = Some(ClientSession::new(host_event_sender));
+    ctrl.client_session = Some(ClientSession {
+        stream_session: Some(StreamingSession::new(host_event_sender)),
+    });
 
     http_response
 }
@@ -167,8 +169,12 @@ pub(crate) async fn set_bitrate(
         }
     }
 
-    if let Some(client_session) = &ctrl.client_session {
-        client_session
+    if let Some(session) = ctrl
+        .client_session
+        .as_ref()
+        .and_then(|s| s.stream_session.as_ref())
+    {
+        session
             .host_event_sender
             .send(HostEvent::BitrateChanged {
                 bitrate: request.bitrate,

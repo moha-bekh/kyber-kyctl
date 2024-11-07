@@ -102,8 +102,12 @@ impl StateMachine {
                     info!("Got display update: {displays:?}");
                     let mut ctrl = ctrl.lock().await;
 
-                    if let Some(client_session) = ctrl.client_session.as_ref() {
-                        client_session
+                    if let Some(streaming_session) = ctrl
+                        .client_session
+                        .as_ref()
+                        .and_then(|cs| cs.stream_session.as_ref())
+                    {
+                        streaming_session
                             .host_event_sender
                             .send(HostEvent::DisplayList {
                                 displays: displays.convert(),
@@ -129,8 +133,12 @@ impl StateMachine {
                 } => {
                     let ctrl = ctrl.lock().await;
 
-                    if let Some(client_session) = ctrl.client_session.as_ref() {
-                        client_session
+                    if let Some(streaming_session) = ctrl
+                        .client_session
+                        .as_ref()
+                        .and_then(|cs| cs.stream_session.as_ref())
+                    {
+                        streaming_session
                             .host_event_sender
                             .send(HostEvent::StreamerPipelineEvent(event.into()))
                             .await;
@@ -141,7 +149,11 @@ impl StateMachine {
 
                     let ctrl = ctrl.lock().await;
 
-                    if let Some(client_session) = ctrl.client_session.as_ref() {
+                    if let Some(streaming_session) = ctrl
+                        .client_session
+                        .as_ref()
+                        .and_then(|cs| cs.stream_session.as_ref())
+                    {
                         let type_ = match type_ {
                             avservice::HandlerType::EnumerateDisplays => {
                                 host_events::StreamerPipelineType::EnumerateDisplays
@@ -161,7 +173,7 @@ impl StateMachine {
                             event: host_events::StreamerPipelineEventType::Stopped,
                         };
 
-                        client_session
+                        streaming_session
                             .host_event_sender
                             .send(HostEvent::StreamerPipelineEvent(event))
                             .await;

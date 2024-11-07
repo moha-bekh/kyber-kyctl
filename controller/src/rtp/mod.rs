@@ -86,10 +86,13 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
     }
 
     let Some(client_session) = ctrl.client_session.as_mut() else {
+        return Err(Error::SessionNotOpened);
+    };
+    let Some(streaming_session) = client_session.stream_session.as_mut() else {
         return Err(Error::ControlPlaneNotOpened);
     };
 
-    client_session.data_plane = Some(DataPlaneBackend::Rtp);
+    streaming_session.data_plane = Some(DataPlaneBackend::Rtp);
 
     time::sleep(Duration::from_millis(100)).await;
     Ok(())
