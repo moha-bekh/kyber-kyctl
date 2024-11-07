@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 pub struct Identity(IdentityInner);
 
+const UID_KEY: &str = "uid";
 #[derive(Clone)]
 struct IdentityInner {
     session: actix_session::Session,
@@ -19,24 +20,36 @@ impl IdentityInner {
             .expect("Actix session middleware is required before identity middleware.")
             .to_owned()
     }
+
+    fn get_identity(&self) -> Result<Uuid, ExtractError> {
+        self.session
+            .get(UID_KEY)?
+            .ok_or_else(|| ExtractError::MissingIdentity)
+    }
 }
 
 impl Identity {
-    pub fn login(ext: &Extensions) -> Result<(), actix_session::SessionInsertError> {
+    pub fn login(ext: &Extensions) -> Result<Uuid, actix_session::SessionInsertError> {
         let inner = IdentityInner::extract(ext);
 
-        // TODO: store identity UID.
+        let uuid = Uuid::new_v4();
+        inner.session.insert(UID_KEY, &uuid)?;
         inner.session.renew();
 
-        Ok(())
+        Ok(uuid)
     }
 
     pub fn logout(self) {
         self.0.session.purge();
     }
 
+    pub fn uid(&self) -> Result<Uuid, ExtractError> {
+        self.0.get_identity()
+    }
+
     fn extract(ext: &Extensions) -> Result<Self, ExtractError> {
         let inner = IdentityInner::extract(ext);
+        inner.get_identity()?;
         Ok(Self(inner))
     }
 }
