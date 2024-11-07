@@ -142,8 +142,10 @@ async fn stop_streaming(ctrl: web::Data<Mutex<Controller>>, _user: Identity) -> 
     }
 }
 
-#[post("/stop_session")]
-async fn stop_session(ctrl: web::Data<Mutex<Controller>>, user: Identity) -> HttpResponse {
+#[post("/logout")]
+async fn logout(ctrl: web::Data<Mutex<Controller>>, user: Identity) -> HttpResponse {
+    user.logout();
+
     let mut ctrl = ctrl.lock().await;
 
     let ret = ctrl.stop().await;
@@ -368,7 +370,7 @@ async fn real_main() -> Result<()> {
             .service(websocket_service)
             .service(enumerate_displays)
             .service(stop_streaming)
-            .service(stop_session)
+            .service(logout)
             .service(set_bitrate);
 
         if let Some(webclient_root) = &webclient_root {
