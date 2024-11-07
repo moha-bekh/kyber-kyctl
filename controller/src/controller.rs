@@ -63,6 +63,7 @@ impl StreamingSession {
 
 pub(crate) struct ClientSession {
     pub(crate) uid: Uuid,
+    pub(crate) username: String,
     pub(crate) stream_session: Option<StreamingSession>,
 }
 

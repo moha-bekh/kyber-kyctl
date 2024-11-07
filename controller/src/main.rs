@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use session::identity::Identity;
 use tokio::sync::Mutex;
 
+mod auth;
 mod avservice;
 mod config;
 mod controller;
@@ -54,16 +55,39 @@ struct Capabilities {
 
 #[post("/login")]
 async fn login(ctrl: web::Data<Mutex<Controller>>, req: HttpRequest) -> HttpResponse {
+    let Some(Ok((auth_type, auth_creds))) = req
+        .headers()
+        .get(actix_web::http::header::AUTHORIZATION)
+        .map(auth::from_authorization_header)
+    else {
+        return HttpResponse::BadRequest().json("Invalid authentication type");
+    };
+
+    let username = match auth::authenticate(&auth_type, &auth_creds) {
+        Ok(username) => username,
+        Err(err) => {
+            error!("Authentication failed: {err}");
+            return HttpResponse::Unauthorized().finish();
+        }
+    };
+
+    info!("Logging in \"{}\"...", username);
+    let uuid = Identity::login(&req.extensions()).unwrap();
+
     let mut ctrl = ctrl.lock().await;
 
     if let Some(existing) = &ctrl.client_session {
+        warn!(
+            "Login attempt on an existing session from user \'{}\"",
+            existing.username
+        );
+
         let _ = ctrl.stop().await;
     }
 
-    let uuid = Identity::login(&req.extensions()).unwrap();
-
     ctrl.client_session = Some(ClientSession {
         uid: uuid,
+        username,
         stream_session: None,
     });
 
@@ -336,7 +360,8 @@ async fn real_main() -> Result<()> {
                     .allowed_methods(vec!["GET", "POST"])
                     .allow_any_origin()
                     .supports_credentials()
-                    .allowed_header(actix_web::http::header::CONTENT_TYPE),
+                    .allowed_header(actix_web::http::header::CONTENT_TYPE)
+                    .allowed_header(actix_web::http::header::AUTHORIZATION),
             )
             .wrap(session::identity::middleware::IdentityMiddleware {})
             .wrap(
