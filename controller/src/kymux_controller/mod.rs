@@ -227,7 +227,7 @@ async fn start_kymux(
 
 async fn start_video(
     request: &requests::StartRequest,
-    connection: &mut ConnectionWrapper,
+    connection: &kymux::Connection,
     process_factory: &Arc<ProcessFactory>,
     statemachine_proxy: StateMachineProxy,
 ) -> Result<Option<Vec<StartSessionVideoResponse>>> {
@@ -246,7 +246,6 @@ async fn start_video(
             .unwrap_or(kymux::VideoProtocol::Reliable);
 
         let (endpoint, uri) = connection
-            .connection
             .register_video_endpoint_with_ipc_forward(None, video_protocol)
             .await?;
 
@@ -277,7 +276,7 @@ async fn start_video(
 
 async fn start_audio(
     request: &requests::StartRequest,
-    connection: &mut ConnectionWrapper,
+    connection: &kymux::Connection,
     process_factory: &Arc<ProcessFactory>,
     statemachine_proxy: StateMachineProxy,
 ) -> Result<Option<StartSessionAudioResponse>> {
@@ -292,7 +291,6 @@ async fn start_audio(
         .unwrap_or(kymux::AudioProtocol::Reliable);
 
     let (endpoint, uri) = connection
-        .connection
         .register_audio_endpoint_with_ipc_forward(None, audio_protocol)
         .await?;
 
@@ -308,7 +306,7 @@ async fn start_audio(
 
 async fn start_input(
     request: &requests::StartRequest,
-    connection: &mut ConnectionWrapper,
+    connection: &kymux::Connection,
     process_factory: &Arc<ProcessFactory>,
     host_config: inputservice_types::HostConfig,
 ) -> Result<Option<StartSessionInputResponse>> {
@@ -318,7 +316,6 @@ async fn start_input(
     };
 
     let (endpoint, uri) = connection
-        .connection
         .register_input_endpoint_with_ipc_forward(None)
         .await?;
 
@@ -382,22 +379,10 @@ async fn start_session(
         .wait_connected(Duration::from_millis(500))
         .await?;
 
-    let closed_task = ClosedTask::new(connection.clone(), backend.statemachine_proxy.clone());
-
-    backend.connection = Some(ConnectionWrapper {
-        connection,
-        closed_task,
-    });
-
-    let Some(connection) = backend.connection.as_mut() else {
-        warn!("Kymux not connected");
-        return Err(Error::KymuxNotConnected);
-    };
-
     // Start services
     let video = start_video(
         &request,
-        connection,
+        &connection,
         &ctrl.process_factory,
         state_machine_proxy.clone(),
     )
@@ -405,7 +390,7 @@ async fn start_session(
 
     let audio = start_audio(
         &request,
-        connection,
+        &connection,
         &ctrl.process_factory,
         state_machine_proxy.clone(),
     )
@@ -413,13 +398,20 @@ async fn start_session(
 
     let input = start_input(
         &request,
-        connection,
+        &connection,
         &ctrl.process_factory,
         inputservice_types::HostConfig {
             display_list: ctrl.displays.convert(),
         },
     )
     .await?;
+
+    let closed_task = ClosedTask::new(connection.clone(), backend.statemachine_proxy.clone());
+
+    backend.connection = Some(ConnectionWrapper {
+        connection,
+        closed_task,
+    });
 
     Ok(StartSessionResponse {
         video,

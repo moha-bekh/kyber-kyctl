@@ -27,8 +27,6 @@ pub enum Error {
     ControlPlaneNotOpened,
     #[error("Data plane already opened")]
     DataPlaneAlreadyOpened,
-    #[error("Kymux has no connection")]
-    KymuxNotConnected,
     #[error("Kymux accept() timeout")]
     KymuxAcceptTimeout,
     #[error("Kymux isn't listening")]
