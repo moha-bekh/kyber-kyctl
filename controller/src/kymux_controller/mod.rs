@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use actix_web::web;
+use kymux::ProtocolEndpoint;
 use log::{info, warn};
 use tokio::sync::{oneshot, Mutex};
 use tokio::task::{self, JoinHandle};
@@ -80,16 +81,21 @@ impl ConnectionTask {
 pub(crate) struct KymuxBackend {
     pub(crate) server: KymuxServer,
     connection_task: Option<ConnectionTask>,
+    services_sink: kymux::ipc::IpcHandler,
     statemachine_proxy: StateMachineProxy,
 }
 
 impl KymuxBackend {
-    fn new(server: KymuxServer, statemachine_proxy: StateMachineProxy) -> Self {
-        Self {
+    async fn new(server: KymuxServer, statemachine_proxy: StateMachineProxy) -> Result<Self> {
+        const IPC_PORT: u16 = 9091;
+        let services_sink = kymux::ipc::IpcHandler::new(IPC_PORT).await?;
+
+        Ok(Self {
             server,
             connection_task: None,
+            services_sink,
             statemachine_proxy,
-        }
+        })
     }
 
     pub(crate) async fn stop(mut self) -> Result<()> {
@@ -100,12 +106,13 @@ impl KymuxBackend {
             if let Err(err) = ret {
                 warn!("Kymux Closed task stop raised an error: {err:?}");
             }
-
-            let ret = connection.connection.stop().await;
-            if let Err(err) = ret {
-                warn!("Kymux Connection stop raised an error: {err:?}");
-            }
         };
+
+        info!("Stop running IPC Services sink");
+        let ret = self.services_sink.stop().await;
+        if let Err(err) = ret {
+            warn!("Kymux IPC stop raised an error: {err:?}");
+        }
 
         info!("Stop running Kymux Server");
         let ret = self.server.stop().await;
@@ -210,7 +217,7 @@ async fn start_kymux(
             return Err(Error::ControlPlaneNotOpened);
         };
 
-        let backend = KymuxBackend::new(server, statemachine_proxy);
+        let backend = KymuxBackend::new(server, statemachine_proxy).await?;
         client_session.data_plane = Some(DataPlaneBackend::Kymux(backend));
     }
 
@@ -222,6 +229,7 @@ async fn start_kymux(
 
 async fn start_video(
     request: &requests::StartRequest,
+    services_sink: &kymux::ipc::IpcHandler,
     connection: &kymux::Connection,
     process_factory: &Arc<ProcessFactory>,
     statemachine_proxy: StateMachineProxy,
@@ -240,11 +248,14 @@ async fn start_video(
             .video_protocol
             .unwrap_or(kymux::VideoProtocol::Reliable);
 
-        let (endpoint, uri) = connection
-            .register_video_endpoint_with_ipc_forward(None, video_protocol)
+        let endpoint = connection
+            .register_video_endpoint(None, video_protocol)
             .await?;
 
-        info!("Start Video avservice. Protocol: {video_protocol:?}, Endpoint: {endpoint:X}");
+        let endpoint_id = endpoint.id();
+        let uri = services_sink.register_and_forward(endpoint)?;
+
+        info!("Start Video avservice. Protocol: {video_protocol:?}, Endpoint: {endpoint_id:X}");
         let mut avservice =
             avservice::Handler::new(avservice::HandlerType::Video, statemachine_proxy.clone());
         avservice
@@ -262,7 +273,7 @@ async fn start_video(
         video_streams.push(StartSessionVideoResponse {
             display_id: stream_request.display_id,
             avservice,
-            endpoint,
+            endpoint: endpoint_id,
         })
     }
 
@@ -271,6 +282,7 @@ async fn start_video(
 
 async fn start_audio(
     request: &requests::StartRequest,
+    services_sink: &kymux::ipc::IpcHandler,
     connection: &kymux::Connection,
     process_factory: &Arc<ProcessFactory>,
     statemachine_proxy: StateMachineProxy,
@@ -285,22 +297,26 @@ async fn start_audio(
         .audio_protocol
         .unwrap_or(kymux::AudioProtocol::Reliable);
 
-    let (endpoint, uri) = connection
-        .register_audio_endpoint_with_ipc_forward(None, audio_protocol)
+    let endpoint = connection
+        .register_audio_endpoint(None, audio_protocol)
         .await?;
 
-    info!("Start Audio avservice. Protocol: {audio_protocol:?}, Endpoint: {endpoint:X}");
+    let endpoint_id = endpoint.id();
+    let uri = services_sink.register_and_forward(endpoint)?;
+
+    info!("Start Audio avservice. Protocol: {audio_protocol:?}, Endpoint: {endpoint_id:X}");
     let mut avservice = avservice::Handler::new(avservice::HandlerType::Audio, statemachine_proxy);
     avservice.kymux_start_audio(process_factory, uri).await?;
 
     Ok(Some(StartSessionAudioResponse {
         avservice,
-        endpoint,
+        endpoint: endpoint_id,
     }))
 }
 
 async fn start_input(
     request: &requests::StartRequest,
+    services_sink: &kymux::ipc::IpcHandler,
     connection: &kymux::Connection,
     process_factory: &Arc<ProcessFactory>,
     host_config: inputservice_types::HostConfig,
@@ -310,11 +326,12 @@ async fn start_input(
         return Ok(None);
     };
 
-    let (endpoint, uri) = connection
-        .register_input_endpoint_with_ipc_forward(None)
-        .await?;
+    let endpoint = connection.register_input_endpoint(None).await?;
 
-    info!("Start Inputservice. Endpoint: {endpoint:X}");
+    let endpoint_id = endpoint.id();
+    let uri = services_sink.register_and_forward(endpoint)?;
+
+    info!("Start Inputservice. Endpoint: {endpoint_id:X}");
 
     let service_config = inputservice_types::ServiceConfig {
         cursor_format: inputs_request.cursor_format.clone(),
@@ -328,7 +345,7 @@ async fn start_input(
 
     Ok(Some(StartSessionInputResponse {
         inputservice,
-        endpoint,
+        endpoint: endpoint_id,
     }))
 }
 
@@ -377,6 +394,7 @@ async fn start_session(
     // Start services
     let video = start_video(
         &request,
+        &backend.services_sink,
         &connection,
         &ctrl.process_factory,
         state_machine_proxy.clone(),
@@ -385,6 +403,7 @@ async fn start_session(
 
     let audio = start_audio(
         &request,
+        &backend.services_sink,
         &connection,
         &ctrl.process_factory,
         state_machine_proxy.clone(),
@@ -393,6 +412,7 @@ async fn start_session(
 
     let input = start_input(
         &request,
+        &backend.services_sink,
         &connection,
         &ctrl.process_factory,
         inputservice_types::HostConfig {
