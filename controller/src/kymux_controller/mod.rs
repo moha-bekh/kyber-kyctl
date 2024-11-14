@@ -23,12 +23,12 @@ use crate::{Controller, DataPlaneBackend, StateMachineEvent, StateMachineProxy};
 
 use requests::{KymuxTransportBackend, StartKymuxCertificateHash};
 
-struct ClosedTask {
+struct ConnectionTask {
     stop_tx: oneshot::Sender<()>,
     join_handle: JoinHandle<()>,
 }
 
-impl ClosedTask {
+impl ConnectionTask {
     fn new(connection: Arc<kymux::Connection>, statemachine_proxy: StateMachineProxy) -> Self {
         let (stop_tx, stop_rx) = oneshot::channel();
 
@@ -77,14 +77,9 @@ impl ClosedTask {
     }
 }
 
-struct ConnectionWrapper {
-    connection: Arc<kymux::Connection>,
-    closed_task: ClosedTask,
-}
-
 pub(crate) struct KymuxBackend {
     pub(crate) server: KymuxServer,
-    connection: Option<ConnectionWrapper>,
+    connection_task: Option<ConnectionTask>,
     statemachine_proxy: StateMachineProxy,
 }
 
@@ -92,16 +87,16 @@ impl KymuxBackend {
     fn new(server: KymuxServer, statemachine_proxy: StateMachineProxy) -> Self {
         Self {
             server,
-            connection: None,
+            connection_task: None,
             statemachine_proxy,
         }
     }
 
     pub(crate) async fn stop(mut self) -> Result<()> {
-        if let Some(connection) = self.connection.take() {
+        if let Some(task) = self.connection_task.take() {
             info!("Stop running Kymux Connection");
 
-            let ret = connection.closed_task.stop().await;
+            let ret = task.stop().await;
             if let Err(err) = ret {
                 warn!("Kymux Closed task stop raised an error: {err:?}");
             }
@@ -406,12 +401,10 @@ async fn start_session(
     )
     .await?;
 
-    let closed_task = ClosedTask::new(connection.clone(), backend.statemachine_proxy.clone());
-
-    backend.connection = Some(ConnectionWrapper {
-        connection,
-        closed_task,
-    });
+    backend.connection_task = Some(ConnectionTask::new(
+        connection.clone(),
+        backend.statemachine_proxy.clone(),
+    ));
 
     Ok(StartSessionResponse {
         video,
