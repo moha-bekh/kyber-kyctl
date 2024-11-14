@@ -39,7 +39,7 @@ impl PingTask {
                     let id = next_id;
                     next_id += 1;
 
-                    // Check if timeout occured
+                    // Check if timeout occurred
                     // - If true: Notify of disconnection lost
                     // - Else continue to ping
                     if id - last_id_received.unwrap_or(FIRST_ID) >= KEEPCNT {

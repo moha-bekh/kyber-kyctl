@@ -141,7 +141,7 @@ async fn start_kymux(
     let (listening_port, public_port, tls_config, webtransport_gen_certificate) = {
         let ctrl = ctrl.lock().await;
 
-        // If dataplane port has been overriden, use it directly.
+        // If dataplane port has been overridden, use it directly.
         // This will break controllers deployed behind a NAT.
         let (listening_port, public_port) =
             if let Some(dataplane_port) = ctrl.config.dataplane_port() {
