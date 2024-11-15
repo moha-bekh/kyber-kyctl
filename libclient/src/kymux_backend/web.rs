@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::future::Future;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -17,6 +16,7 @@ use libkynput::bufferproxy::{BufferProxy, BufferProxyReceiver, BufferProxySender
 use libkynput::{InputNetworkStream, InputNetworkStreamMsg, InputNetworkStreamObserver};
 
 use super::{KymuxBackendConfig, KymuxTransportBackend};
+use crate::enums::Message;
 use crate::kymux_backend::host_service;
 use crate::kymux_backend::host_service::{
     StartKymuxCertificateHash, StartSessionAudioResponse, StartSessionResponse,
@@ -85,19 +85,21 @@ struct KymuxClosedTask {
 }
 
 impl KymuxClosedTask {
-    fn new<F>(task_entry: F) -> Self
-    where
-        F: Future<Output = Result<()>> + 'static,
-    {
+    fn new(connection: kymux::Connection, msg_proxy: MessageProxy) -> Self {
         let (stop_tx, stop_rx) = oneshot::channel();
 
         spawn_local(async move {
             tokio::select! {
-                _ = stop_rx => {
-                }
-                ret = task_entry => {
+                _ = stop_rx => {}
+                ret = connection.closed() => {
+                    let reason = match ret {
+                        Ok(()) => DataPlaneCloseReason::Closed,
+                        Err(_) => DataPlaneCloseReason::Error,
+                    };
+
+                    let ret = msg_proxy.send_async(Message::DataPlaneClosed{ reason }).await;
                     if let Err(err) = ret {
-                        warn!("ClosedTask task ended with error {err:?}");
+                        warn!("Fail to send DataPlaneClosed: {err:?}");
                     }
                 }
             }
@@ -466,11 +468,7 @@ impl KymuxBackend {
         .await?;
 
         // Monitor connection closed
-        let kymux = Rc::new(kymux);
-        let closed_task = KymuxClosedTask::new(super::kymux_closed_task(
-            kymux.clone(),
-            backend_config.msg_proxy.clone(),
-        ));
+        let closed_task = KymuxClosedTask::new(kymux, backend_config.msg_proxy.clone());
 
         Ok(Self {
             player,
@@ -542,6 +540,8 @@ impl BackendDriver for KymuxBackend {
             info!("Stop input service");
             input_service.pipeline.stop()?;
         }
+
+        self.close_requested.close();
 
         Ok(())
     }

@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -11,6 +10,7 @@ use tokio::task::{self, JoinHandle};
 use kymux::{AudioProtocol, VideoProtocol};
 
 use super::{KymuxBackendConfig, KymuxTransportBackend};
+use crate::enums::Message;
 use crate::kymux_backend::host_service;
 use crate::kymux_backend::host_service::{
     StartSessionAudioResponse, StartSessionResponse, StartSessionVideoResponse,
@@ -38,19 +38,21 @@ struct KymuxClosedTask {
 }
 
 impl KymuxClosedTask {
-    fn new<F>(task_entry: F) -> Self
-    where
-        F: Future<Output = Result<()>> + Send + 'static,
-    {
+    fn new(connection: Arc<kymux::Connection>, msg_proxy: MessageProxy) -> Self {
         let (stop_tx, stop_rx) = oneshot::channel();
 
         let join_handle = task::spawn(async move {
             tokio::select! {
-                _ = stop_rx => {
-                }
-                ret = task_entry => {
+                _ = stop_rx => {}
+                ret = connection.closed() => {
+                    let reason = match ret {
+                        Ok(()) => DataPlaneCloseReason::Closed,
+                        Err(_) => DataPlaneCloseReason::Error,
+                    };
+
+                    let ret = msg_proxy.send_async(Message::DataPlaneClosed{ reason }).await;
                     if let Err(err) = ret {
-                        warn!("ClosedTask task ended with error {err:?}");
+                        warn!("Fail to send DataPlaneClosed: {err:?}");
                     }
                 }
             }
@@ -291,10 +293,7 @@ impl KymuxBackend {
 
         // Monitor connection closed
         let kymux = Arc::new(kymux);
-        let closed_task = KymuxClosedTask::new(super::kymux_closed_task(
-            kymux.clone(),
-            backend_config.msg_proxy.clone(),
-        ));
+        let closed_task = KymuxClosedTask::new(kymux.clone(), backend_config.msg_proxy.clone());
 
         Ok(Self {
             kymux,
