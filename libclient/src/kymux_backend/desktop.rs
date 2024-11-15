@@ -6,43 +6,45 @@ use std::sync::{
     Arc,
 };
 
+use async_trait::async_trait;
 use log::{error, info, warn};
 use tokio::sync::oneshot;
 use tokio::task::{self, JoinHandle};
 
 use kymux::{AudioProtocol, VideoProtocol};
 
-use super::KymuxBackendConfig;
+use super::{KymuxBackendConfig, KymuxTransportBackend};
+use crate::kymux_backend::host_service;
 use crate::kymux_backend::host_service::{
     StartSessionAudioResponse, StartSessionResponse, StartSessionVideoResponse,
 };
 use crate::platform::player;
 use crate::platform::{InputClient, InputPipeline};
-use crate::{ConnectionParams, InputSessionConfig, MessageProxy};
+use crate::{BackendDriver, ConnectionParams, DataPlaneCloseReason, MessageProxy};
 use crate::{Error, Result};
 
 #[derive(Clone)]
-pub(super) struct CloseRequestState(Arc<AtomicBool>);
+struct CloseRequestState(Arc<AtomicBool>);
 
 #[allow(dead_code)]
 impl CloseRequestState {
-    pub(super) fn new() -> Self {
+    fn new() -> Self {
         Self(Arc::new(AtomicBool::new(false)))
     }
 
-    pub(super) fn close(&self) {
+    fn close(&self) {
         self.0.store(true, Ordering::Relaxed)
     }
 
-    pub(super) fn is_closed(&self) -> bool {
+    fn is_closed(&self) -> bool {
         self.0.load(Ordering::Relaxed)
     }
 }
 
-pub(super) struct Player(player::Player);
+struct Player(player::Player);
 
 impl Player {
-    pub(super) async fn stop(mut self) -> Result<()> {
+    async fn stop(mut self) -> Result<()> {
         info!("Stop player");
         self.0.stop_async().await?;
         info!("Player stopped");
@@ -51,13 +53,13 @@ impl Player {
     }
 }
 
-pub(super) struct KymuxClosedTask {
+struct KymuxClosedTask {
     stop_tx: oneshot::Sender<()>,
     join_handle: JoinHandle<()>,
 }
 
 impl KymuxClosedTask {
-    pub(super) fn new<F>(task_entry: F) -> Self
+    fn new<F>(task_entry: F) -> Self
     where
         F: Future<Output = Result<()>> + Send + 'static,
     {
@@ -94,10 +96,7 @@ impl KymuxClosedTask {
     }
 }
 
-pub(super) async fn connect_quinn(
-    conn_params: &ConnectionParams,
-    port: u16,
-) -> Result<kymux::Connection> {
+async fn connect_quinn(conn_params: &ConnectionParams, port: u16) -> Result<kymux::Connection> {
     let roots = if let Some(tls_config) = &conn_params.tls_config {
         let mut roots = rustls::RootCertStore::empty();
         roots
@@ -196,7 +195,7 @@ fn create_audio_config(
     Ok(Some(player::AudioConfig { uri }))
 }
 
-pub(super) async fn create_player(
+async fn create_player(
     kymux: &mut kymux::Connection,
     backend_config: &KymuxBackendConfig<'_>,
     host_config: &StartSessionResponse,
@@ -218,13 +217,25 @@ pub(super) async fn create_player(
     Ok(player)
 }
 
-pub(super) async fn start_input(
+async fn start_input(
     kymux: &kymux::Connection,
-    config: &InputSessionConfig,
-    endpoint: u16,
+    backend_config: &KymuxBackendConfig<'_>,
+    host_config: &StartSessionResponse,
     msg_proxy: MessageProxy,
 ) -> Result<Option<InputService>> {
-    let input_uri = kymux.connect_input_endpoint_with_ipc_forward(endpoint)?;
+    let (input_config, host_config) = match (
+        &backend_config.streaming_config.input,
+        &host_config.input,
+    ) {
+        (Some(input_config), Some(host_config)) => (input_config, host_config),
+        (None, None) => return Ok(None),
+        _ => {
+            error!("Invalid Input config. Should either get a config and an endpoint, or none of them.");
+            return Err(Error::InvalidState);
+        }
+    };
+
+    let input_uri = kymux.connect_input_endpoint_with_ipc_forward(host_config.endpoint)?;
 
     info!("Start input. URI: {input_uri}");
 
@@ -233,29 +244,95 @@ pub(super) async fn start_input(
 
     let client = InputClient::new(
         msg_proxy,
-        config.pipeline.get_input_sink(),
+        input_config.pipeline.get_input_sink(),
         create_stream_cb,
     )?;
 
     Ok(Some(InputService {
         client,
-        pipeline: config.pipeline.clone(),
+        pipeline: input_config.pipeline.clone(),
     }))
 }
 
-pub(super) struct InputService {
-    pub(super) pipeline: InputPipeline,
-    pub(super) client: InputClient,
+struct InputService {
+    pipeline: InputPipeline,
+    client: InputClient,
 }
 
-pub(super) struct Inner {
-    pub(super) player: Option<Player>,
-    pub(super) input_service: Option<InputService>,
-    pub(super) closed_task: Option<KymuxClosedTask>,
+async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kymux::Connection> {
+    // Request remote Kymux start
+    let start_response = host_service::start_kymux(
+        backend_config.http_client,
+        backend_config.kymux_config.backend,
+        backend_config.conn_params.port,
+    )
+    .await?;
+
+    // Start Kymux connection
+    let ret = match backend_config.kymux_config.backend {
+        KymuxTransportBackend::Quic => {
+            info!(
+                "Connect using Quic backend. Port: {port}",
+                port = start_response.port
+            );
+            connect_quinn(backend_config.conn_params, start_response.port).await
+        }
+    };
+
+    ret.map_err(|err| {
+        warn!("Failed to connect to DataPlane: {err:?}");
+        Error::DataPlaneConnectFailed
+    })
 }
 
-impl Inner {
-    pub(super) fn audio_set_volume(&self, volume: f32) -> Result<()> {
+pub(super) struct KymuxBackend {
+    kymux: Arc<kymux::Connection>,
+    player: Option<Player>,
+    input_service: Option<InputService>,
+    closed_task: Option<KymuxClosedTask>,
+}
+
+impl KymuxBackend {
+    pub(super) async fn new(backend_config: KymuxBackendConfig<'_>) -> Result<Self> {
+        let mut kymux = start_kymux(&backend_config).await?;
+
+        // Start stream
+        let host_config = host_service::start_stream(&backend_config).await?;
+
+        let close_requested = CloseRequestState::new();
+
+        // Play Video and Audio
+        let player =
+            create_player(&mut kymux, &backend_config, &host_config, &close_requested).await?;
+
+        // Start input
+        let input_service = start_input(
+            &kymux,
+            &backend_config,
+            &host_config,
+            backend_config.msg_proxy.clone(),
+        )
+        .await?;
+
+        // Monitor connection closed
+        let kymux = Arc::new(kymux);
+        let closed_task = KymuxClosedTask::new(super::kymux_closed_task(
+            kymux.clone(),
+            backend_config.msg_proxy.clone(),
+        ));
+
+        Ok(Self {
+            kymux,
+            player,
+            input_service,
+            closed_task: Some(closed_task),
+        })
+    }
+}
+
+#[async_trait]
+impl BackendDriver for KymuxBackend {
+    fn audio_set_volume(&self, volume: f32) -> Result<()> {
         let player = self.player.as_ref().ok_or(Error::NoAudioPlayer)?;
 
         player.0.audio_set_volume(volume)?;
@@ -263,7 +340,7 @@ impl Inner {
         Ok(())
     }
 
-    pub(super) fn audio_set_mute(&self, mute: bool) -> Result<()> {
+    fn audio_set_mute(&self, mute: bool) -> Result<()> {
         let player = self.player.as_ref().ok_or(Error::NoAudioPlayer)?;
 
         player.0.audio_set_mute(mute)?;
@@ -271,7 +348,7 @@ impl Inner {
         Ok(())
     }
 
-    pub(super) async fn input_service_connected(&mut self) -> Result<()> {
+    async fn input_service_connected(&mut self) -> Result<()> {
         let input_service = self.input_service.as_mut().ok_or(Error::NoInputService)?;
 
         input_service
@@ -282,7 +359,7 @@ impl Inner {
         Ok(())
     }
 
-    pub(super) async fn input_service_disconnected(&mut self) -> Result<()> {
+    async fn input_service_disconnected(&mut self) -> Result<()> {
         let input_service = self.input_service.as_mut().ok_or(Error::NoInputService)?;
 
         input_service.pipeline.stop()?;
@@ -292,7 +369,7 @@ impl Inner {
         Ok(())
     }
 
-    pub(super) async fn stop(&mut self) -> Result<()> {
+    async fn stop(&mut self) -> Result<()> {
         if let Some(closed_task) = self.closed_task.take() {
             let ret = closed_task.stop().await;
             if let Err(err) = ret {

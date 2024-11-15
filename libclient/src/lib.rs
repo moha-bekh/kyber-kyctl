@@ -248,8 +248,7 @@ impl Handler {
                     msg_proxy,
                 };
 
-                let backend = Box::new(kymux_backend::KymuxBackend::new(config).await?);
-                self.backend = Some(backend);
+                self.backend = Some(kymux_backend::new(config).await?);
             }
             #[cfg(feature = "rtp")]
             StreamingProtocol::Rtp => {

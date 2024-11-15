@@ -4,6 +4,7 @@ use std::future::Future;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use log::{error, info, warn};
 use tokio::sync::oneshot;
 use wasm_bindgen_futures::spawn_local;
@@ -15,7 +16,8 @@ use kymux::{
 use libkynput::bufferproxy::{BufferProxy, BufferProxyReceiver, BufferProxySender};
 use libkynput::{InputNetworkStream, InputNetworkStreamMsg, InputNetworkStreamObserver};
 
-use super::KymuxBackendConfig;
+use super::{KymuxBackendConfig, KymuxTransportBackend};
+use crate::kymux_backend::host_service;
 use crate::kymux_backend::host_service::{
     StartKymuxCertificateHash, StartSessionAudioResponse, StartSessionResponse,
     StartSessionVideoResponse,
@@ -24,40 +26,40 @@ use crate::platform::player::{
     AudioPlayer, AudioPlayerHandle, PacketSink, VideoDecoderConfig, VideoPlayer, VideoPlayerHandle,
 };
 use crate::platform::InputMsgSink;
+use crate::{BackendDriver, DataPlaneCloseReason, MessageProxy, VideoSessionConfig};
 use crate::{Error, Result};
-use crate::{InputSessionConfig, MessageProxy, VideoSessionConfig};
 
 #[derive(Clone)]
-pub(super) struct CloseRequestState(Rc<RefCell<bool>>);
+struct CloseRequestState(Rc<RefCell<bool>>);
 
 impl CloseRequestState {
-    pub(super) fn new() -> Self {
+    fn new() -> Self {
         Self(Rc::new(RefCell::new(false)))
     }
 
-    pub(super) fn close(&self) {
+    fn close(&self) {
         let mut value = self.0.borrow_mut();
         *value = true;
     }
 
-    pub(super) fn is_closed(&self) -> bool {
+    fn is_closed(&self) -> bool {
         let value = self.0.borrow();
         *value
     }
 }
 
-pub(super) struct InputService {
-    pub(super) proxy: Arc<BufferProxy>,
-    pub(super) pipeline: Arc<libkynput::InputPipeline>,
+struct InputService {
+    proxy: Arc<BufferProxy>,
+    pipeline: Arc<libkynput::InputPipeline>,
 }
 
-pub(super) struct Player {
-    pub(super) video: Vec<VideoPlayerHandle>,
-    pub(super) audio: Option<AudioPlayerHandle>,
+struct Player {
+    video: Vec<VideoPlayerHandle>,
+    audio: Option<AudioPlayerHandle>,
 }
 
 impl Player {
-    pub(super) async fn stop(self) -> Result<()> {
+    async fn stop(self) -> Result<()> {
         for mut video_player in self.video {
             info!("Stop video player");
             let ret = video_player.stop().await;
@@ -78,12 +80,12 @@ impl Player {
     }
 }
 
-pub(super) struct KymuxClosedTask {
+struct KymuxClosedTask {
     stop_tx: oneshot::Sender<()>,
 }
 
 impl KymuxClosedTask {
-    pub(super) fn new<F>(task_entry: F) -> Self
+    fn new<F>(task_entry: F) -> Self
     where
         F: Future<Output = Result<()>> + 'static,
     {
@@ -114,7 +116,7 @@ impl KymuxClosedTask {
     }
 }
 
-pub(super) async fn connect_webtransport(
+async fn connect_webtransport(
     url: String,
     certificate_hash: Option<StartKymuxCertificateHash>,
 ) -> Result<kymux::Connection> {
@@ -280,7 +282,7 @@ async fn create_audioplayer(
     Ok(Some(audio_player_handle))
 }
 
-pub(super) async fn create_player(
+async fn create_player(
     kymux: &mut kymux::Connection,
     backend_config: &KymuxBackendConfig<'_>,
     host_config: &StartSessionResponse,
@@ -347,14 +349,26 @@ async fn input_tx_task(
     Ok(())
 }
 
-pub(super) async fn start_input(
+async fn start_input(
     kymux: &kymux::Connection,
-    config: &InputSessionConfig,
-    endpoint: u16,
+    backend_config: &KymuxBackendConfig<'_>,
+    host_config: &StartSessionResponse,
     msg_proxy: MessageProxy,
 ) -> Result<Option<InputService>> {
+    let (input_config, host_config) = match (
+        &backend_config.streaming_config.input,
+        &host_config.input,
+    ) {
+        (Some(input_config), Some(host_config)) => (input_config, host_config),
+        (None, None) => return Ok(None),
+        _ => {
+            error!("Invalid Input config. Should either get a config and an endpoint, or none of them.");
+            return Err(Error::InvalidState);
+        }
+    };
+
     // Open endpoint
-    let endpoint = kymux.connect_input_endpoint(endpoint)?;
+    let endpoint = kymux.connect_input_endpoint(host_config.endpoint)?;
     let (endpoint_tx, endpoint_rx) = endpoint
         .ready()
         .await
@@ -366,7 +380,7 @@ pub(super) async fn start_input(
     #[allow(clippy::arc_with_non_send_sync)]
     let input_proxy = Arc::new(input_proxy);
 
-    input_proxy.plug_consumer(Arc::downgrade(&config.pipeline.get_input_sink()))?;
+    input_proxy.plug_consumer(Arc::downgrade(&input_config.pipeline.get_input_sink()))?;
     input_proxy.run()?;
 
     let msg_sink = InputMsgSink::new(msg_proxy);
@@ -385,18 +399,91 @@ pub(super) async fn start_input(
 
     Ok(Some(InputService {
         proxy: input_proxy,
-        pipeline: config.pipeline.clone(),
+        pipeline: input_config.pipeline.clone(),
     }))
 }
 
-pub(super) struct Inner {
-    pub(super) player: Option<Player>,
-    pub(super) input_service: Option<InputService>,
-    pub(super) closed_task: Option<KymuxClosedTask>,
+async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kymux::Connection> {
+    // Request remote Kymux start
+    let start_response = host_service::start_kymux(
+        backend_config.http_client,
+        backend_config.kymux_config.backend,
+        backend_config.conn_params.port,
+    )
+    .await?;
+
+    // Start Kymux connection
+    let ret = match backend_config.kymux_config.backend {
+        KymuxTransportBackend::Webtransport => {
+            info!(
+                "Connect using Webtransport backend. Port: {port}",
+                port = start_response.port
+            );
+
+            let url = format!(
+                "https://{host}:{port}",
+                host = backend_config.conn_params.host,
+                port = start_response.port
+            );
+
+            connect_webtransport(url, start_response.certificate_hash).await
+        }
+    };
+
+    ret.map_err(|err| {
+        warn!("Failed to connect to DataPlane: {err:?}");
+        Error::DataPlaneConnectFailed
+    })
 }
 
-impl Inner {
-    pub(super) fn audio_set_volume(&self, volume: f32) -> Result<()> {
+pub(super) struct KymuxBackend {
+    player: Option<Player>,
+    input_service: Option<InputService>,
+    closed_task: Option<KymuxClosedTask>,
+    close_requested: CloseRequestState,
+}
+
+impl KymuxBackend {
+    pub(super) async fn new(backend_config: KymuxBackendConfig<'_>) -> Result<Self> {
+        let mut kymux = start_kymux(&backend_config).await?;
+
+        // Start stream
+        let host_config = host_service::start_stream(&backend_config).await?;
+
+        let close_requested = CloseRequestState::new();
+
+        // Play Video and Audio
+        let player =
+            create_player(&mut kymux, &backend_config, &host_config, &close_requested).await?;
+
+        // Start input
+        let input_service = start_input(
+            &kymux,
+            &backend_config,
+            &host_config,
+            backend_config.msg_proxy.clone(),
+        )
+        .await?;
+
+        // Monitor connection closed
+        let kymux = Rc::new(kymux);
+        let closed_task = KymuxClosedTask::new(super::kymux_closed_task(
+            kymux.clone(),
+            backend_config.msg_proxy.clone(),
+        ));
+
+        Ok(Self {
+            player,
+            input_service,
+            closed_task: Some(closed_task),
+            close_requested,
+        })
+    }
+}
+
+#[async_trait(?Send)]
+impl BackendDriver for KymuxBackend {
+    fn audio_set_volume(&self, volume: f32) -> Result<()> {
         let audio_player = self
             .player
             .as_ref()
@@ -410,7 +497,7 @@ impl Inner {
         Ok(())
     }
 
-    pub(super) fn audio_set_mute(&self, mute: bool) -> Result<()> {
+    fn audio_set_mute(&self, mute: bool) -> Result<()> {
         let audio_player = self
             .player
             .as_ref()
@@ -424,7 +511,7 @@ impl Inner {
         Ok(())
     }
 
-    pub(super) async fn input_service_connected(&mut self) -> Result<()> {
+    async fn input_service_connected(&mut self) -> Result<()> {
         let input_service = self.input_service.as_mut().ok_or(Error::NoInputService)?;
 
         input_service
@@ -435,11 +522,11 @@ impl Inner {
         Ok(())
     }
 
-    pub(super) async fn input_service_disconnected(&mut self) -> Result<()> {
+    async fn input_service_disconnected(&mut self) -> Result<()> {
         Ok(())
     }
 
-    pub(super) async fn stop(&mut self) -> Result<()> {
+    async fn stop(&mut self) -> Result<()> {
         if let Some(closed_task) = self.closed_task.take() {
             let ret = closed_task.stop().await;
             if let Err(err) = ret {
