@@ -1,10 +1,7 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::net::SocketAddr;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use log::{error, info, warn};
@@ -22,24 +19,6 @@ use crate::platform::player;
 use crate::platform::{InputClient, InputPipeline};
 use crate::{BackendDriver, ConnectionParams, DataPlaneCloseReason, MessageProxy};
 use crate::{Error, Result};
-
-#[derive(Clone)]
-struct CloseRequestState(Arc<AtomicBool>);
-
-#[allow(dead_code)]
-impl CloseRequestState {
-    fn new() -> Self {
-        Self(Arc::new(AtomicBool::new(false)))
-    }
-
-    fn close(&self) {
-        self.0.store(true, Ordering::Relaxed)
-    }
-
-    fn is_closed(&self) -> bool {
-        self.0.load(Ordering::Relaxed)
-    }
-}
 
 struct Player(player::Player);
 
@@ -199,7 +178,6 @@ async fn create_player(
     kymux: &mut kymux::Connection,
     backend_config: &KymuxBackendConfig<'_>,
     host_config: &StartSessionResponse,
-    _close_requested: &CloseRequestState,
 ) -> Result<Option<Player>> {
     let video_config = create_video_config(kymux, backend_config, &host_config.video)?;
 
@@ -299,11 +277,8 @@ impl KymuxBackend {
         // Start stream
         let host_config = host_service::start_stream(&backend_config).await?;
 
-        let close_requested = CloseRequestState::new();
-
         // Play Video and Audio
-        let player =
-            create_player(&mut kymux, &backend_config, &host_config, &close_requested).await?;
+        let player = create_player(&mut kymux, &backend_config, &host_config).await?;
 
         // Start input
         let input_service = start_input(
