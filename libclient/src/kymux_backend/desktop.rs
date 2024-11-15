@@ -38,7 +38,7 @@ struct KymuxClosedTask {
 }
 
 impl KymuxClosedTask {
-    fn new(connection: Arc<kymux::Connection>, msg_proxy: MessageProxy) -> Self {
+    fn new(connection: Arc<kymux::ipc::IPCForwardableConnection>, msg_proxy: MessageProxy) -> Self {
         let (stop_tx, stop_rx) = oneshot::channel();
 
         let join_handle = task::spawn(async move {
@@ -107,7 +107,7 @@ async fn connect_quinn(conn_params: &ConnectionParams, port: u16) -> Result<kymu
 }
 
 fn create_video_config(
-    kymux: &mut kymux::Connection,
+    kymux: &mut kymux::ipc::IPCForwardableConnection,
     backend_config: &KymuxBackendConfig<'_>,
     host_config: &Option<Vec<StartSessionVideoResponse>>,
 ) -> Result<Option<Vec<player::VideoConfig>>> {
@@ -138,7 +138,7 @@ fn create_video_config(
             Error::Rejected
         })?;
 
-        let uri = kymux.connect_video_endpoint_with_ipc_forward(*endpoint, video_protocol)?;
+        let uri = kymux.connect_and_forward_video_endpoint(*endpoint, video_protocol)?;
 
         let player_config = player::VideoConfig {
             software_decode: config.player.software_decode,
@@ -153,7 +153,7 @@ fn create_video_config(
 }
 
 fn create_audio_config(
-    kymux: &mut kymux::Connection,
+    kymux: &mut kymux::ipc::IPCForwardableConnection,
     backend_config: &KymuxBackendConfig<'_>,
     host_config: &Option<StartSessionAudioResponse>,
 ) -> Result<Option<player::AudioConfig>> {
@@ -170,14 +170,13 @@ fn create_audio_config(
         .kymux_config
         .audio_protocol
         .unwrap_or(AudioProtocol::Reliable);
-    let uri =
-        kymux.connect_audio_endpoint_with_ipc_forward(host_config.endpoint, audio_protocol)?;
+    let uri = kymux.connect_and_forward_audio_endpoint(host_config.endpoint, audio_protocol)?;
 
     Ok(Some(player::AudioConfig { uri }))
 }
 
 async fn create_player(
-    kymux: &mut kymux::Connection,
+    kymux: &mut kymux::ipc::IPCForwardableConnection,
     backend_config: &KymuxBackendConfig<'_>,
     host_config: &StartSessionResponse,
 ) -> Result<Option<Player>> {
@@ -198,7 +197,7 @@ async fn create_player(
 }
 
 async fn start_input(
-    kymux: &kymux::Connection,
+    kymux: &kymux::ipc::IPCForwardableConnection,
     backend_config: &KymuxBackendConfig<'_>,
     host_config: &StartSessionResponse,
     msg_proxy: MessageProxy,
@@ -215,7 +214,7 @@ async fn start_input(
         }
     };
 
-    let input_uri = kymux.connect_input_endpoint_with_ipc_forward(host_config.endpoint)?;
+    let input_uri = kymux.connect_and_forward_input_endpoint(host_config.endpoint)?;
 
     info!("Start input. URI: {input_uri}");
 
@@ -266,7 +265,7 @@ async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kymux::C
 }
 
 pub(super) struct KymuxBackend {
-    kymux: Arc<kymux::Connection>,
+    kymux: Arc<kymux::ipc::IPCForwardableConnection>,
     player: Option<Player>,
     input_service: Option<InputService>,
     closed_task: Option<KymuxClosedTask>,
@@ -274,7 +273,10 @@ pub(super) struct KymuxBackend {
 
 impl KymuxBackend {
     pub(super) async fn new(backend_config: KymuxBackendConfig<'_>) -> Result<Self> {
-        let mut kymux = start_kymux(&backend_config).await?;
+        let kymux = start_kymux(&backend_config).await?;
+
+        const IPC_PORT: u16 = 9090;
+        let mut kymux = kymux::ipc::IPCForwardableConnection::new(kymux, IPC_PORT).await?;
 
         // Start stream
         let host_config = host_service::start_stream(&backend_config).await?;
@@ -358,6 +360,8 @@ impl BackendDriver for KymuxBackend {
         if let Some(input_service) = self.input_service.take() {
             input_service.pipeline.stop()?;
         }
+
+        self.kymux.stop().await?;
 
         Ok(())
     }
