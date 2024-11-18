@@ -241,9 +241,11 @@ impl HostEventSender {
             _ = stop_rx => {
             }
             _ = Self::process_rx_events(msg_stream, ping_task_tx, statemachine_proxy.clone()) => {}
-            _ = Self::process_tx_events(session, events_rx, statemachine_proxy) => {}
+            _ = Self::process_tx_events(session.clone(), events_rx, statemachine_proxy) => {}
             _ = ping_task.run() => {}
         }
+
+        let _ = session.close(None).await;
     }
 
     async fn process_rx_events(
