@@ -219,8 +219,10 @@ impl Player {
             .attach(vlc::EventType::MediaPlayerStopped, cb)
             .map_err(|_| PlayerError::EvtRegisterFailed)?;
 
-        mdp.stop();
-        let _ = rx.recv().await;
+        let ret = mdp.stop();
+        if ret.is_ok() {
+            let _ = rx.recv().await;
+        }
 
         Ok(())
     }
