@@ -1,4 +1,5 @@
 use std::ptr;
+use std::sync::Arc;
 
 use log::warn;
 use windows_sys::Win32::{Foundation::*, Security::*, System::Threading::*};
@@ -6,9 +7,10 @@ use windows_sys::Win32::{Foundation::*, Security::*, System::Threading::*};
 use super::error::{check_win32_error, last_win32_error, Result};
 use super::Handle;
 
+#[derive(Clone)]
 pub struct Event {
     name: String,
-    handle: Handle,
+    handle: Arc<Handle>,
 }
 
 impl Event {
@@ -24,7 +26,7 @@ impl Event {
 
         Ok(Self {
             name: name.into(),
-            handle: Handle::new(handle),
+            handle: Arc::new(Handle::new(handle)),
         })
     }
 
