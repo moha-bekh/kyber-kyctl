@@ -95,6 +95,7 @@ pub(crate) use check_win32_error;
 #[derive(Debug)]
 pub enum Error {
     Rejected,
+    InvalidUnicodeData,
 
     ConfigParseFail,
     ConfigLoadFail { reason: toml::de::Error },
