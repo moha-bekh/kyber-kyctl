@@ -97,14 +97,9 @@ pub enum Error {
     Rejected,
 
     ConfigParseFail,
-    ConfigLoadFail {
-        reason: toml::de::Error,
-    },
+    ConfigLoadFail { reason: toml::de::Error },
 
-    #[cfg(target_os = "windows")]
     Win32(Win32Error),
-
-    #[cfg(target_os = "windows")]
     Idd(kidd_client::Error),
 }
 
