@@ -97,6 +97,9 @@ pub enum Error {
     Rejected,
     InvalidUnicodeData,
 
+    MpscChannelClosed { channel_name: String },
+    MpscChannelEmpty,
+
     ConfigParseFail,
     ConfigLoadFail { reason: toml::de::Error },
 

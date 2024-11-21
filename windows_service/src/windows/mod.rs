@@ -5,6 +5,7 @@ mod handle;
 mod monitors;
 mod process;
 mod sas;
+mod servicecontrol_forwarder;
 mod utils;
 
 use std::env::current_exe;
@@ -42,10 +43,14 @@ struct ServiceContext {
     _kidd_interface: Option<kidd_client::DeviceInterface>,
     sas_event: Event,
     controller_path: String,
+    sc_forwarder_rx: servicecontrol_forwarder::Receiver,
 }
 
 impl ServiceContext {
-    fn new(stop: Arc<AtomicBool>) -> Result<Self> {
+    fn new(
+        stop: Arc<AtomicBool>,
+        sc_forwarder_rx: servicecontrol_forwarder::Receiver,
+    ) -> Result<Self> {
         let config = config::load()?;
 
         // Plug monitor if required
@@ -60,6 +65,7 @@ impl ServiceContext {
             _kidd_interface,
             sas_event: Event::new("KYBER_SAS_EVENT", true)?,
             controller_path: Self::get_controller_path()?,
+            sc_forwarder_rx,
         })
     }
 
@@ -114,9 +120,14 @@ impl ServiceContext {
         let mut process = self.start_subprocess(&inherited_events)?;
 
         const WAIT_OBJECT_1: u32 = WAIT_OBJECT_0 + 1;
+        const WAIT_OBJECT_2: u32 = WAIT_OBJECT_0 + 2;
 
         while !self.stop.load(Ordering::Relaxed) {
-            let events = [process.handle(), self.sas_event.handle()];
+            let events = [
+                process.handle(),
+                self.sas_event.handle(),
+                self.sc_forwarder_rx.handle(),
+            ];
 
             let ret = unsafe {
                 WaitForMultipleObjects(events.len() as u32, events.as_ptr(), FALSE, 1000)
@@ -138,6 +149,11 @@ impl ServiceContext {
                 WAIT_OBJECT_1 => {
                     unsafe { ResetEvent(self.sas_event.handle()) };
                     sas::send();
+                }
+                WAIT_OBJECT_2 => {
+                    while let Ok(param) = self.sc_forwarder_rx.recv() {
+                        info!("Got {param:?}");
+                    }
                 }
                 WAIT_TIMEOUT => {}
                 WAIT_FAILED => {
@@ -188,6 +204,8 @@ fn service_handler(_arguments: Vec<OsString>) -> Result<()> {
     let stop_evt_handler = stop.clone();
 
     // Register Control callback
+    let (sc_forwarder_tx, sc_forwarder_rx) = servicecontrol_forwarder::create()?;
+
     let event_handler = move |control_event| -> ServiceControlHandlerResult {
         match control_event {
             ServiceControl::Stop => {
@@ -197,6 +215,11 @@ fn service_handler(_arguments: Vec<OsString>) -> Result<()> {
             }
             ServiceControl::SessionChange(param) => {
                 info!("Session changed: {param:?}");
+                let ret = sc_forwarder_tx.send(param);
+                if let Err(err) = ret {
+                    warn!("Fail to forward SessionChange: {err:?}");
+                }
+
                 ServiceControlHandlerResult::NoError
             }
             ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
@@ -214,7 +237,7 @@ fn service_handler(_arguments: Vec<OsString>) -> Result<()> {
     info!("Service started");
 
     // Run real main function
-    let ctx = ServiceContext::new(stop)?;
+    let ctx = ServiceContext::new(stop, sc_forwarder_rx)?;
     let ret = ctx.run();
     if ret.is_err() {
         warn!("Service exited with error: '{:?}'", ret);
