@@ -33,7 +33,7 @@ use error::{last_win32_error, Error, Result};
 use event::Event;
 use handle::Handle;
 
-windows_service::define_windows_service!(ffi_service_main, service_handler);
+windows_service::define_windows_service!(ffi_service_main, service_handler_wrapper);
 
 const SERVICE_NAME: &str = "kyber";
 
@@ -144,10 +144,7 @@ fn service_main(stop: Arc<AtomicBool>) -> Result<()> {
     Ok(())
 }
 
-fn notify_state(
-    status_handle: &ServiceStatusHandle,
-    current_state: ServiceState,
-) -> std::result::Result<(), windows_service::Error> {
+fn notify_state(status_handle: &ServiceStatusHandle, current_state: ServiceState) -> Result<()> {
     let status = ServiceStatus {
         service_type: ServiceType::OWN_PROCESS,
         current_state,
@@ -162,10 +159,12 @@ fn notify_state(
         process_id: None,
     };
 
-    status_handle.set_service_status(status)
+    status_handle.set_service_status(status)?;
+
+    Ok(())
 }
 
-fn service_handler(_arguments: Vec<OsString>) {
+fn service_handler(_arguments: Vec<OsString>) -> Result<()> {
     let stop = Arc::new(AtomicBool::new(false));
     let stop_evt_handler = stop.clone();
 
@@ -189,10 +188,10 @@ fn service_handler(_arguments: Vec<OsString>) {
         }
     };
 
-    let status_handle = service_control_handler::register(SERVICE_NAME, event_handler).unwrap();
+    let status_handle = service_control_handler::register(SERVICE_NAME, event_handler)?;
 
     // Notify that the service is running
-    notify_state(&status_handle, ServiceState::Running).unwrap();
+    notify_state(&status_handle, ServiceState::Running)?;
     info!("Service started");
 
     // Run real main function
@@ -202,7 +201,16 @@ fn service_handler(_arguments: Vec<OsString>) {
     }
 
     info!("Service stopped");
-    notify_state(&status_handle, ServiceState::Stopped).unwrap();
+    notify_state(&status_handle, ServiceState::Stopped)?;
+
+    Ok(())
+}
+
+fn service_handler_wrapper(arguments: Vec<OsString>) {
+    let ret = service_handler(arguments);
+    if let Err(err) = ret {
+        warn!("Service handler ended with error {err:?}");
+    }
 }
 
 pub fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {

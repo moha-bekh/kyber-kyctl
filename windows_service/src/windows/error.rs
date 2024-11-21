@@ -101,11 +101,18 @@ pub enum Error {
 
     Win32(Win32Error),
     Idd(kidd_client::Error),
+    WindowService(windows_service::Error),
 }
 
 impl From<kidd_client::Error> for Error {
     fn from(err: kidd_client::Error) -> Self {
         Self::Idd(err)
+    }
+}
+
+impl From<windows_service::Error> for Error {
+    fn from(err: windows_service::Error) -> Self {
+        Self::WindowService(err)
     }
 }
 
