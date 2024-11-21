@@ -53,6 +53,73 @@ pub unsafe fn get_subprocess_token(mut session_id: u32) -> Result<Handle> {
     Ok(child_token)
 }
 
+struct ProcThreadAttributeList {
+    attributes: LPPROC_THREAD_ATTRIBUTE_LIST,
+    _buffer: Vec<u8>,
+}
+
+impl ProcThreadAttributeList {
+    fn new(inherited: &[&Event]) -> Result<Self> {
+        const ATTRIBUTES_COUNT: u32 = 1;
+
+        // Allocate the buffer with the required size to store ATTRIBUTES_COUNT attributes
+        let mut attributes_size = 0;
+        unsafe {
+            InitializeProcThreadAttributeList(
+                ptr::null_mut(),
+                ATTRIBUTES_COUNT,
+                0,
+                &mut attributes_size,
+            )
+        };
+        if attributes_size == 0 {
+            warn!("InitializeProcThreadAttributeList() returned an empty size");
+            return Err(Error::Rejected);
+        }
+
+        let mut buffer = vec![0; attributes_size];
+        let attributes = buffer.as_mut_ptr() as *mut _;
+
+        let b = unsafe {
+            InitializeProcThreadAttributeList(attributes, ATTRIBUTES_COUNT, 0, &mut attributes_size)
+        };
+        check_win32_error!(InitializeProcThreadAttributeList, b != 0)?;
+
+        let attributes = Self {
+            attributes,
+            _buffer: buffer,
+        };
+
+        // Fill the attribute list with the inherited handles
+        let events: Vec<HANDLE> = inherited.iter().map(|e| e.handle()).collect();
+
+        let b = unsafe {
+            UpdateProcThreadAttribute(
+                attributes.as_ptr(),
+                0,
+                PROC_THREAD_ATTRIBUTE_HANDLE_LIST as _,
+                events.as_ptr() as *const _,
+                events.len() * mem::size_of::<HANDLE>(),
+                ptr::null_mut(),
+                ptr::null(),
+            )
+        };
+        check_win32_error!(UpdateProcThreadAttribute, b != 0)?;
+
+        Ok(attributes)
+    }
+
+    fn as_ptr(&self) -> LPPROC_THREAD_ATTRIBUTE_LIST {
+        self.attributes
+    }
+}
+
+impl Drop for ProcThreadAttributeList {
+    fn drop(&mut self) {
+        unsafe { DeleteProcThreadAttributeList(self.attributes) };
+    }
+}
+
 fn create_win32_env(env: Vec<(String, String)>) -> Vec<u8> {
     env.iter()
         .filter_map(|(k, v)| {
@@ -68,46 +135,6 @@ fn create_win32_env(env: Vec<(String, String)>) -> Vec<u8> {
         // one for the last string, one more to terminate the block".
         .chain(std::iter::once(0))
         .collect()
-}
-
-unsafe fn create_attribute_list(
-    inherited: &[&Event],
-) -> Result<(Vec<u8>, LPPROC_THREAD_ATTRIBUTE_LIST)> {
-    const ATTRIBUTES_COUNT: u32 = 1;
-
-    // Allocate the buffer with the required size to store ATTRIBUTES_COUNT attributes
-    let mut attributes_size = 0;
-    InitializeProcThreadAttributeList(ptr::null_mut(), ATTRIBUTES_COUNT, 0, &mut attributes_size);
-    if attributes_size == 0 {
-        warn!("InitializeProcThreadAttributeList() returned an empty size");
-        return Err(Error::Rejected);
-    }
-
-    let mut buffer = vec![0; attributes_size];
-    let attributes = buffer.as_mut_ptr() as *mut _;
-
-    // Create a fill the attribute list with the inherited handles
-    let b =
-        InitializeProcThreadAttributeList(attributes, ATTRIBUTES_COUNT, 0, &mut attributes_size);
-    check_win32_error!(InitializeProcThreadAttributeList, b != 0)?;
-
-    let events: Vec<HANDLE> = inherited.iter().map(|e| e.handle()).collect();
-
-    let b = UpdateProcThreadAttribute(
-        attributes,
-        0,
-        PROC_THREAD_ATTRIBUTE_HANDLE_LIST as _,
-        events.as_ptr() as *const _,
-        events.len() * mem::size_of::<HANDLE>(),
-        ptr::null_mut(),
-        ptr::null(),
-    );
-    if b == 0 {
-        DeleteProcThreadAttributeList(attributes);
-        check_win32_error!(UpdateProcThreadAttribute, b != 0)?;
-    }
-
-    Ok((buffer, attributes))
 }
 
 pub unsafe fn start_subprocess(path: &str, token: Handle, inherited: &[&Event]) -> Result<Handle> {
@@ -126,8 +153,8 @@ pub unsafe fn start_subprocess(path: &str, token: Handle, inherited: &[&Event]) 
     let env = create_win32_env(env);
 
     // Create attribute list. It will contain the list of inherited handles
-    let (_attributes_buf, attributes_ptr) = create_attribute_list(inherited)?;
-    si.lpAttributeList = attributes_ptr;
+    let attribute_list = ProcThreadAttributeList::new(inherited)?;
+    si.lpAttributeList = attribute_list.as_ptr();
 
     // Spawn process
     let mut wide_path: Vec<u16> = OsStr::new(path)
@@ -160,7 +187,6 @@ pub unsafe fn start_subprocess(path: &str, token: Handle, inherited: &[&Event]) 
     }
 
     CloseHandle(pi.hThread);
-    DeleteProcThreadAttributeList(attributes_ptr);
 
     Ok(Handle::new(pi.hProcess))
 }
