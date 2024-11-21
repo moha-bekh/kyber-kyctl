@@ -63,10 +63,8 @@ fn start_subprocess(controller_path: &str, inherited: &[&Event]) -> Result<Handl
         return Err(Error::Rejected);
     };
 
-    unsafe {
-        let token = process::get_subprocess_token(session_id)?;
-        process::start_subprocess(controller_path, token, inherited)
-    }
+    let token = process::get_subprocess_token(session_id)?;
+    process::start_subprocess(controller_path, token, inherited)
 }
 
 #[allow(non_snake_case)]
