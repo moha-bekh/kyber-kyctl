@@ -96,7 +96,6 @@ pub(crate) use check_win32_error;
 pub enum Error {
     Rejected,
     InvalidUnicodeData,
-    NoActiveConsoleSession,
 
     MpscChannelClosed { channel_name: String },
     MpscChannelEmpty,

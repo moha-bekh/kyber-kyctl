@@ -21,7 +21,7 @@ use log4rs::append::file::FileAppender;
 use windows_service::{
     service::{
         ServiceControl, ServiceControlAccept, ServiceExitCode, ServiceState, ServiceStatus,
-        ServiceType,
+        ServiceType, SessionChangeParam, SessionChangeReason, SessionNotification,
     },
     service_control_handler::{self, ServiceControlHandlerResult, ServiceStatusHandle},
 };
@@ -70,7 +70,7 @@ impl ServiceContext {
         })
     }
 
-    fn find_active_console_session() -> Result<u32> {
+    fn find_active_console_session() -> Option<u32> {
         let mut session_id = None;
 
         // At Windows startup, we can be started before WTSGetActiveConsoleSessionId()
@@ -91,14 +91,11 @@ impl ServiceContext {
             i += 1;
         }
 
-        session_id.ok_or_else(|| {
-            warn!("No session attached (WTSGetActiveConsoleSessionId() failed");
-            Error::NoActiveConsoleSession
-        })
+        session_id
     }
 
-    fn start_controller(&self, inherited: &[&Event]) -> Result<Process> {
-        let session_id = Self::find_active_console_session()?;
+    fn start_controller(&self, session_id: u32, inherited: &[&Event]) -> Result<Process> {
+        info!("Start controller.exe in session {session_id}");
         Process::new(&self.controller_path, session_id, inherited)
     }
 
@@ -120,24 +117,99 @@ impl ServiceContext {
 
     fn run(&self) -> Result<()> {
         let inherited_events = vec![&self.sas_event];
-        let mut process = self.start_controller(&inherited_events)?;
+        let mut restart_controller = false;
+
+        let mut active_session_id = Self::find_active_console_session();
+
+        let mut process = match active_session_id {
+            Some(session_id) => {
+                info!("Session {session_id} already active");
+                Some(self.start_controller(session_id, &inherited_events)?)
+            }
+            None => {
+                info!("No active Console session found");
+                None
+            }
+        };
 
         const WAIT_OBJECT_1: u32 = WAIT_OBJECT_0 + 1;
         const WAIT_OBJECT_2: u32 = WAIT_OBJECT_0 + 2;
 
+        const DEFAULT_TIMEOUT: Duration = Duration::from_secs(1);
+        const RESTART_CONTROLLER_TIMEOUT: Duration = Duration::from_millis(500);
+
+        let mut timeout = DEFAULT_TIMEOUT;
+
         while !self.stop.load(Ordering::Relaxed) {
-            let events = [
-                process.handle(),
-                self.sas_event.handle(),
-                self.sc_forwarder_rx.handle(),
-            ];
+            let events = if let Some(process) = &process {
+                vec![
+                    self.sas_event.handle(),
+                    self.sc_forwarder_rx.handle(),
+                    process.handle(),
+                ]
+            } else {
+                vec![self.sas_event.handle(), self.sc_forwarder_rx.handle()]
+            };
 
             let ret = unsafe {
-                WaitForMultipleObjects(events.len() as u32, events.as_ptr(), FALSE, 1000)
+                WaitForMultipleObjects(
+                    events.len() as u32,
+                    events.as_ptr(),
+                    FALSE,
+                    timeout.as_millis() as _,
+                )
             };
 
             match ret {
                 WAIT_OBJECT_0 => {
+                    unsafe { ResetEvent(self.sas_event.handle()) };
+                    sas::send();
+                }
+                WAIT_OBJECT_1 => {
+                    while let Ok(param) = self.sc_forwarder_rx.recv() {
+                        match param {
+                            SessionChangeParam {
+                                reason: SessionChangeReason::ConsoleConnect,
+                                notification: SessionNotification { session_id, .. },
+                            } => {
+                                if let Some(process) = process.take() {
+                                    warn!("Console connected. Kill existing controller.exe");
+                                    let ret = process.kill();
+                                    if let Err(err) = ret {
+                                        warn!("Failed to kill controller.exe: {err:?}");
+                                    }
+                                }
+
+                                process =
+                                    Some(self.start_controller(session_id, &inherited_events)?);
+                                active_session_id = Some(session_id);
+
+                                restart_controller = false;
+                                timeout = DEFAULT_TIMEOUT;
+                            }
+                            SessionChangeParam {
+                                reason: SessionChangeReason::ConsoleDisconnect,
+                                notification: SessionNotification { session_id, .. },
+                            } => {
+                                match active_session_id.take() {
+                                    Some(active_session_id) => {
+                                        if active_session_id != session_id {
+                                            warn!("ConsoleDisconnect received on session {session_id} while we though that the active one was session {active_session_id}")
+                                        }
+                                    }
+                                    None => {
+                                        warn!("ConsoleDisconnect received on session {session_id} while we though that no session was active")
+                                    }
+                                }
+
+                                restart_controller = false;
+                                timeout = DEFAULT_TIMEOUT;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                WAIT_OBJECT_2 => {
                     // On log out, all the process from the current session are
                     // stopped. Because we attach controller.exe to the current
                     // interactive session, it is killed. On restart, controller.exe
@@ -146,19 +218,27 @@ impl ServiceContext {
                     // The current service isn't killed because it is attached to
                     // the special Session 0.
                     info!("controller.exe stopped");
-                    process = self.start_controller(&inherited_events)?;
-                    info!("controller.exe started again");
-                }
-                WAIT_OBJECT_1 => {
-                    unsafe { ResetEvent(self.sas_event.handle()) };
-                    sas::send();
-                }
-                WAIT_OBJECT_2 => {
-                    while let Ok(param) = self.sc_forwarder_rx.recv() {
-                        info!("Got {param:?}");
+
+                    if active_session_id.is_some() {
+                        restart_controller = true;
+                        process = None;
+                        timeout = RESTART_CONTROLLER_TIMEOUT;
                     }
                 }
-                WAIT_TIMEOUT => {}
+                WAIT_TIMEOUT => {
+                    if restart_controller {
+                        if let Some(session_id) = &active_session_id {
+                            process = Some(self.start_controller(*session_id, &inherited_events)?);
+                        } else {
+                            info!(
+                                "controller.exe restart requested, but there is no active session"
+                            );
+                        }
+
+                        restart_controller = false;
+                        timeout = DEFAULT_TIMEOUT;
+                    }
+                }
                 WAIT_FAILED => {
                     let err =
                         last_win32_error("WaitForMultipleObjects", std::file!(), std::line!());
@@ -172,9 +252,15 @@ impl ServiceContext {
         }
 
         if self.stop.load(Ordering::Relaxed) {
-            info!("Service stop requested, kill controller.exe");
-            process.kill()?;
-            info!("controller.exe killed");
+            if let Some(process) = process.take() {
+                info!("Service stop requested, kill controller.exe");
+                let ret = process.kill();
+                if let Err(err) = ret {
+                    warn!("Failed to kill controller.exe: {err:?}");
+                }
+
+                info!("controller.exe killed");
+            }
         }
 
         Ok(())
