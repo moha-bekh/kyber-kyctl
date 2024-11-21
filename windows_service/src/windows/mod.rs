@@ -1,6 +1,7 @@
 mod config;
 mod error;
 mod event;
+mod handle;
 mod monitors;
 mod process;
 mod sas;
@@ -30,6 +31,7 @@ use windows_sys::Win32::{
 
 use error::{last_win32_error, Error, Result};
 use event::Event;
+use handle::Handle;
 
 windows_service::define_windows_service!(ffi_service_main, service_handler);
 
