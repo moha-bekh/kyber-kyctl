@@ -4,10 +4,11 @@ use log::warn;
 use windows_sys::Win32::{Foundation::*, Security::*, System::Threading::*};
 
 use super::error::{check_win32_error, last_win32_error, Result};
+use super::Handle;
 
 pub struct Event {
     name: String,
-    handle: HANDLE,
+    handle: Handle,
 }
 
 impl Event {
@@ -23,7 +24,7 @@ impl Event {
 
         Ok(Self {
             name: name.into(),
-            handle,
+            handle: Handle::new(handle),
         })
     }
 
@@ -32,12 +33,6 @@ impl Event {
     }
 
     pub fn handle(&self) -> HANDLE {
-        self.handle
-    }
-}
-
-impl Drop for Event {
-    fn drop(&mut self) {
-        unsafe { CloseHandle(self.handle) };
+        self.handle.handle()
     }
 }

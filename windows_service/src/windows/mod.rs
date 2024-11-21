@@ -37,7 +37,7 @@ windows_service::define_windows_service!(ffi_service_main, service_handler);
 
 const SERVICE_NAME: &str = "kyber";
 
-fn start_subprocess(controller_path: &str, inherited: &[&Event]) -> Result<HANDLE> {
+fn start_subprocess(controller_path: &str, inherited: &[&Event]) -> Result<Handle> {
     let mut session_id = None;
 
     // At Windows startup, we can be started before WTSGetActiveConsoleSessionId()
@@ -102,7 +102,7 @@ fn service_main(stop: Arc<AtomicBool>) -> Result<()> {
     const WAIT_OBJECT_1: u32 = WAIT_OBJECT_0 + 1;
 
     while !stop.load(Ordering::Relaxed) {
-        let events = [process, sas_event.handle()];
+        let events = [process.handle(), sas_event.handle()];
 
         let ret =
             unsafe { WaitForMultipleObjects(events.len() as u32, events.as_ptr(), FALSE, 1000) };
@@ -138,12 +138,10 @@ fn service_main(stop: Arc<AtomicBool>) -> Result<()> {
 
     if stop.load(Ordering::Relaxed) {
         info!("Service stop requested, kill child");
-        unsafe { TerminateProcess(process, 0) };
-        unsafe { WaitForSingleObject(process, 1000) };
+        unsafe { TerminateProcess(process.handle(), 0) };
+        unsafe { WaitForSingleObject(process.handle(), 1000) };
         info!("Child killed");
     }
-
-    unsafe { CloseHandle(process) };
 
     Ok(())
 }

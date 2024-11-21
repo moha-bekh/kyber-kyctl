@@ -12,18 +12,27 @@ use windows_sys::Win32::{
 };
 
 use super::error::{check_win32_error, last_win32_error, Error, Result};
-use super::Event;
+use super::{Event, Handle};
 
-pub unsafe fn get_subprocess_token(mut session_id: u32) -> Result<HANDLE> {
-    let process = GetCurrentProcess();
+fn open_process_token() -> Result<Handle> {
+    // MSDN
+    // * Retrieves a pseudo handle for the current process.
+    // * Calling the CloseHandle function with a pseudo handle has no effect
+    let process = unsafe { GetCurrentProcess() };
 
     let mut process_token: HANDLE = 0;
-    let mut b = OpenProcessToken(process, TOKEN_DUPLICATE, &mut process_token);
+    let b = unsafe { OpenProcessToken(process, TOKEN_DUPLICATE, &mut process_token) };
     check_win32_error!(OpenProcessToken, b == 1)?;
 
+    Ok(Handle::new(process_token))
+}
+
+pub unsafe fn get_subprocess_token(mut session_id: u32) -> Result<Handle> {
+    let process_token = open_process_token()?;
+
     let mut child_token: HANDLE = 0;
-    b = DuplicateTokenEx(
-        process_token,
+    let b = DuplicateTokenEx(
+        process_token.handle(),
         MAXIMUM_ALLOWED,
         ptr::null_mut(),
         SecurityImpersonation,
@@ -31,9 +40,10 @@ pub unsafe fn get_subprocess_token(mut session_id: u32) -> Result<HANDLE> {
         &mut child_token,
     );
     check_win32_error!(DuplicateTokenEx, b == 1)?;
+    let child_token = Handle::new(child_token);
 
-    b = SetTokenInformation(
-        child_token,
+    let b = SetTokenInformation(
+        child_token.handle(),
         TokenSessionId,
         (&mut session_id as *mut _) as *const _,
         mem::size_of::<u32>() as u32,
@@ -100,7 +110,7 @@ unsafe fn create_attribute_list(
     Ok((buffer, attributes))
 }
 
-pub unsafe fn start_subprocess(path: &str, token: HANDLE, inherited: &[&Event]) -> Result<HANDLE> {
+pub unsafe fn start_subprocess(path: &str, token: Handle, inherited: &[&Event]) -> Result<Handle> {
     let mut si: STARTUPINFOEXW = mem::zeroed();
     si.StartupInfo.cb = mem::size_of::<STARTUPINFOEXW>() as u32;
 
@@ -126,7 +136,7 @@ pub unsafe fn start_subprocess(path: &str, token: HANDLE, inherited: &[&Event]) 
         .collect();
 
     let b = CreateProcessAsUserW(
-        token,
+        token.handle(),
         ptr::null_mut(),
         wide_path.as_mut_ptr(),
         ptr::null_mut(),
@@ -152,5 +162,5 @@ pub unsafe fn start_subprocess(path: &str, token: HANDLE, inherited: &[&Event]) 
     CloseHandle(pi.hThread);
     DeleteProcThreadAttributeList(attributes_ptr);
 
-    Ok(pi.hProcess)
+    Ok(Handle::new(pi.hProcess))
 }
