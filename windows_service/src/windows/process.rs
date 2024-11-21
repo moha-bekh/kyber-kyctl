@@ -27,7 +27,7 @@ fn open_process_token() -> Result<Handle> {
     Ok(Handle::new(process_token))
 }
 
-pub fn get_subprocess_token(mut session_id: u32) -> Result<Handle> {
+fn get_subprocess_token_for_session(mut session_id: u32) -> Result<Handle> {
     let process_token = open_process_token()?;
 
     let mut child_token: HANDLE = 0;
@@ -141,58 +141,90 @@ fn create_win32_env(env: Vec<(String, String)>) -> Vec<u8> {
         .collect()
 }
 
-pub fn start_subprocess(path: &str, token: Handle, inherited: &[&Event]) -> Result<Handle> {
-    let mut si: STARTUPINFOEXW = unsafe { mem::zeroed() };
-    si.StartupInfo.cb = mem::size_of::<STARTUPINFOEXW>() as u32;
+#[derive(Debug)]
+pub struct Process {
+    handle: Handle,
+}
 
-    let mut pi: PROCESS_INFORMATION = unsafe { mem::zeroed() };
+impl Process {
+    pub fn new(path: &str, session_id: u32, inherited: &[&Event]) -> Result<Self> {
+        let token = get_subprocess_token_for_session(session_id)?;
 
-    // Create subprocess env
-    // Duplicate current process env + export inherited handles
-    let mut env: Vec<(String, String)> = env::vars().collect();
-    for event in inherited {
-        env.push((event.name().into(), format!("{}", event.handle())));
-    }
+        let mut si: STARTUPINFOEXW = unsafe { mem::zeroed() };
+        si.StartupInfo.cb = mem::size_of::<STARTUPINFOEXW>() as u32;
 
-    let env = create_win32_env(env);
+        let mut pi: PROCESS_INFORMATION = unsafe { mem::zeroed() };
 
-    // Create attribute list. It will contain the list of inherited handles
-    let attribute_list = ProcThreadAttributeList::new(inherited)?;
-    si.lpAttributeList = attribute_list.as_ptr();
+        // Create subprocess env
+        // Duplicate current process env + export inherited handles
+        let mut env: Vec<(String, String)> = env::vars().collect();
+        for event in inherited {
+            env.push((event.name().into(), format!("{}", event.handle())));
+        }
 
-    // Spawn process
-    let mut wide_path: Vec<u16> = OsStr::new(path)
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
+        let env = create_win32_env(env);
 
-    let b = unsafe {
-        CreateProcessAsUserW(
-            token.handle(),
-            ptr::null_mut(),
-            wide_path.as_mut_ptr(),
-            ptr::null_mut(),
-            ptr::null_mut(),
-            TRUE,
-            NORMAL_PRIORITY_CLASS | EXTENDED_STARTUPINFO_PRESENT,
-            env.as_ptr() as *const _,
-            ptr::null_mut(),
-            &si.StartupInfo,
-            &mut pi,
-        )
-    };
-    if b == 0 {
-        let err = last_win32_error("CreateProcessAsUserW", std::file!(), std::line!());
-        let err = match err {
-            Ok(_) => Err(Error::Rejected),
-            Err(err) => Err(err),
+        // Create attribute list. It will contain the list of inherited handles
+        let attribute_list = ProcThreadAttributeList::new(inherited)?;
+        si.lpAttributeList = attribute_list.as_ptr();
+
+        // Spawn process
+        let mut wide_path: Vec<u16> = OsStr::new(path)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+
+        let b = unsafe {
+            CreateProcessAsUserW(
+                token.handle(),
+                ptr::null_mut(),
+                wide_path.as_mut_ptr(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                TRUE,
+                NORMAL_PRIORITY_CLASS | EXTENDED_STARTUPINFO_PRESENT,
+                env.as_ptr() as *const _,
+                ptr::null_mut(),
+                &si.StartupInfo,
+                &mut pi,
+            )
         };
+        if b == 0 {
+            let err = last_win32_error("CreateProcessAsUserW", std::file!(), std::line!());
+            let err = match err {
+                Ok(_) => Err(Error::Rejected),
+                Err(err) => Err(err),
+            };
 
-        warn!("Fail to spawn executable '{path}': {err:?}");
-        return err;
+            warn!("Fail to spawn executable '{path}': {err:?}");
+            return err;
+        }
+
+        unsafe { CloseHandle(pi.hThread) };
+
+        Ok(Self {
+            handle: Handle::new(pi.hProcess),
+        })
     }
 
-    unsafe { CloseHandle(pi.hThread) };
+    pub fn handle(&self) -> HANDLE {
+        self.handle.handle()
+    }
 
-    Ok(Handle::new(pi.hProcess))
+    pub fn kill(mut self) -> Result<()> {
+        self.kill_internal();
+
+        Ok(())
+    }
+
+    fn kill_internal(&mut self) {
+        unsafe { TerminateProcess(self.handle(), 0) };
+        unsafe { WaitForSingleObject(self.handle(), 1000) };
+    }
+}
+
+impl Drop for Process {
+    fn drop(&mut self) {
+        self.kill_internal();
+    }
 }

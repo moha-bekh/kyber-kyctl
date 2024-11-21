@@ -33,6 +33,7 @@ use windows_sys::Win32::{
 use error::{last_win32_error, Error, Result};
 use event::Event;
 use handle::Handle;
+use process::Process;
 
 windows_service::define_windows_service!(ffi_service_main, service_handler_wrapper);
 
@@ -69,7 +70,7 @@ impl ServiceContext {
         })
     }
 
-    fn start_subprocess(&self, inherited: &[&Event]) -> Result<Handle> {
+    fn find_active_console_session() -> Result<u32> {
         let mut session_id = None;
 
         // At Windows startup, we can be started before WTSGetActiveConsoleSessionId()
@@ -90,13 +91,15 @@ impl ServiceContext {
             i += 1;
         }
 
-        let Some(session_id) = session_id else {
+        session_id.ok_or_else(|| {
             warn!("No session attached (WTSGetActiveConsoleSessionId() failed");
-            return Err(Error::Rejected);
-        };
+            Error::NoActiveConsoleSession
+        })
+    }
 
-        let token = process::get_subprocess_token(session_id)?;
-        process::start_subprocess(&self.controller_path, token, inherited)
+    fn start_controller(&self, inherited: &[&Event]) -> Result<Process> {
+        let session_id = Self::find_active_console_session()?;
+        Process::new(&self.controller_path, session_id, inherited)
     }
 
     fn get_controller_path() -> Result<String> {
@@ -117,7 +120,7 @@ impl ServiceContext {
 
     fn run(&self) -> Result<()> {
         let inherited_events = vec![&self.sas_event];
-        let mut process = self.start_subprocess(&inherited_events)?;
+        let mut process = self.start_controller(&inherited_events)?;
 
         const WAIT_OBJECT_1: u32 = WAIT_OBJECT_0 + 1;
         const WAIT_OBJECT_2: u32 = WAIT_OBJECT_0 + 2;
@@ -142,9 +145,9 @@ impl ServiceContext {
                     //
                     // The current service isn't killed because it is attached to
                     // the special Session 0.
-                    info!("Process stopped");
-                    process = self.start_subprocess(&inherited_events)?;
-                    info!("Process started again");
+                    info!("controller.exe stopped");
+                    process = self.start_controller(&inherited_events)?;
+                    info!("controller.exe started again");
                 }
                 WAIT_OBJECT_1 => {
                     unsafe { ResetEvent(self.sas_event.handle()) };
@@ -169,10 +172,9 @@ impl ServiceContext {
         }
 
         if self.stop.load(Ordering::Relaxed) {
-            info!("Service stop requested, kill child");
-            unsafe { TerminateProcess(process.handle(), 0) };
-            unsafe { WaitForSingleObject(process.handle(), 1000) };
-            info!("Child killed");
+            info!("Service stop requested, kill controller.exe");
+            process.kill()?;
+            info!("controller.exe killed");
         }
 
         Ok(())
