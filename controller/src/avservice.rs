@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 
 use log::{debug, info, warn};
 use tokio::{sync::oneshot, task};
@@ -311,38 +310,8 @@ impl Handler {
             let _ = receiver_task.stop().await;
         }
 
-        const STOP_TIMEOUT: Duration = Duration::from_secs(3);
-
-        info!("Send stop request to {type_:?}");
-        let wait_process = match inner
-            .sender
-            .send_with_timeout(Command::Stop, STOP_TIMEOUT)
-            .await
-        {
-            Ok(_) => true,
-            Err(err) => {
-                warn!("Stop request send failed: {err:?}");
-                false
-            }
-        };
-
-        // At first, wait for the process if requested
-        let kill_process = if wait_process {
-            match tokio::time::timeout(STOP_TIMEOUT, inner.child.stop()).await {
-                Ok(_) => false,
-                Err(_) => {
-                    warn!("{type_:?} didn't stop after {STOP_TIMEOUT:?}",);
-                    true
-                }
-            }
-        } else {
-            true
-        };
-
         // A command send failure or a process that doesn't stop lead to a process kill
-        if kill_process {
-            inner.child.kill().await?;
-        }
+        inner.child.kill().await?;
 
         inner.commander.stop().await?;
         debug!("Commander {type_:?} stopped");
