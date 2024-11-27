@@ -27,7 +27,10 @@ pub(crate) fn plug_event_manager_to_player(
         };
 
         if let Some(msg) = msg {
-            message_proxy.send(msg).unwrap();
+            let ret = message_proxy.send(msg);
+            if ret.is_err() {
+                warn!("Failed to send vlc::Event to MessageProxy");
+            }
         }
     };
 
@@ -201,7 +204,10 @@ impl Player {
 
         let cb = move |event, _| match event {
             vlc::Event::MediaPlayerStopped => {
-                tx.blocking_send(()).unwrap();
+                let ret = tx.blocking_send(());
+                if ret.is_err() {
+                    warn!("Failed to send vlc::Event::MediaPlayerStopped ack");
+                }
             }
             _ => {
                 warn!("Unexpected event during stop");

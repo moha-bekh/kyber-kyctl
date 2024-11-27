@@ -1,4 +1,4 @@
-use log::info;
+use log::{info, warn};
 
 use libkynput_rs::{
     Consumer, InputTarget, InputType, InputTypeMetadata, NetworkStream, NetworkStreamMsg,
@@ -27,7 +27,10 @@ impl NetworkStreamObserver for InputMsgSink {
         };
 
         if let Some(service_msg) = service_msg {
-            self.message_proxy.send(service_msg).unwrap();
+            let ret = self.message_proxy.send(service_msg);
+            if ret.is_err() {
+                warn!("Failed to send NetworkStreamMsg to MessageProxy");
+            }
         }
     }
 }
