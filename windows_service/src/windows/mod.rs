@@ -44,10 +44,20 @@ struct ServiceContext {
     _kidd_interface: Option<kidd_client::DeviceInterface>,
     sas_event: Event,
     controller_path: String,
+    process: Option<Process>,
+    restart_controller: bool,
+    timeout: Duration,
+    active_session_id: Option<u32>,
     sc_forwarder_rx: servicecontrol_forwarder::Receiver,
 }
 
 impl ServiceContext {
+    const WAIT_OBJECT_1: u32 = WAIT_OBJECT_0 + 1;
+    const WAIT_OBJECT_2: u32 = WAIT_OBJECT_0 + 2;
+
+    const DEFAULT_TIMEOUT: Duration = Duration::from_secs(1);
+    const RESTART_CONTROLLER_TIMEOUT: Duration = Duration::from_millis(500);
+
     fn new(
         stop: Arc<AtomicBool>,
         sc_forwarder_rx: servicecontrol_forwarder::Receiver,
@@ -66,6 +76,10 @@ impl ServiceContext {
             _kidd_interface,
             sas_event: Event::new("KYBER_SAS_EVENT", true)?,
             controller_path: Self::get_controller_path()?,
+            process: None,
+            restart_controller: false,
+            timeout: Self::DEFAULT_TIMEOUT,
+            active_session_id: None,
             sc_forwarder_rx,
         })
     }
@@ -94,9 +108,15 @@ impl ServiceContext {
         session_id
     }
 
-    fn start_controller(&self, session_id: u32, inherited: &[&Event]) -> Result<Process> {
+    fn inherited_events(&self) -> Vec<&Event> {
+        vec![&self.sas_event]
+    }
+
+    fn start_controller(&self, session_id: u32) -> Result<Process> {
+        let inherited_events = self.inherited_events();
+
         info!("Start controller.exe in session {session_id}");
-        Process::new(&self.controller_path, session_id, inherited)
+        Process::new(&self.controller_path, session_id, &inherited_events)
     }
 
     fn get_controller_path() -> Result<String> {
@@ -115,16 +135,98 @@ impl ServiceContext {
         })
     }
 
-    fn run(&self) -> Result<()> {
-        let inherited_events = vec![&self.sas_event];
-        let mut restart_controller = false;
+    fn handle_sas(&self) {
+        unsafe { ResetEvent(self.sas_event.handle()) };
+        sas::send();
+    }
 
-        let mut active_session_id = Self::find_active_console_session();
+    fn handle_sc_forwarder(&mut self) -> Result<()> {
+        while let Ok(param) = self.sc_forwarder_rx.recv() {
+            match param {
+                SessionChangeParam {
+                    reason: SessionChangeReason::ConsoleConnect,
+                    notification: SessionNotification { session_id, .. },
+                } => {
+                    if let Some(process) = self.process.take() {
+                        warn!("Console connected. Kill existing controller.exe");
+                        let ret = process.kill();
+                        if let Err(err) = ret {
+                            warn!("Failed to kill controller.exe: {err:?}");
+                        }
+                    }
 
-        let mut process = match active_session_id {
+                    self.process = Some(self.start_controller(session_id)?);
+                    self.active_session_id = Some(session_id);
+
+                    self.restart_controller = false;
+                    self.timeout = Self::DEFAULT_TIMEOUT;
+                }
+                SessionChangeParam {
+                    reason: SessionChangeReason::ConsoleDisconnect,
+                    notification: SessionNotification { session_id, .. },
+                } => {
+                    match self.active_session_id.take() {
+                        Some(active_session_id) => {
+                            if active_session_id != session_id {
+                                warn!("ConsoleDisconnect received on session {session_id} while we though that the active one was session {active_session_id}")
+                            }
+                        }
+                        None => {
+                            warn!("ConsoleDisconnect received on session {session_id} while we though that no session was active")
+                        }
+                    }
+
+                    self.restart_controller = false;
+                    self.timeout = Self::DEFAULT_TIMEOUT;
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+
+    fn handle_controller_stopped(&mut self) -> Result<()> {
+        // On log out, all the process from the current session are
+        // stopped. Because we attach controller.exe to the current
+        // interactive session, it is killed. On restart, controller.exe
+        // will be attached to the new session login screen.
+        //
+        // The current service isn't killed because it is attached to
+        // the special Session 0.
+        info!("controller.exe stopped");
+
+        if self.active_session_id.is_some() {
+            self.restart_controller = true;
+            self.process = None;
+            self.timeout = Self::RESTART_CONTROLLER_TIMEOUT;
+        }
+
+        Ok(())
+    }
+
+    fn handle_timeout(&mut self) -> Result<()> {
+        if self.restart_controller {
+            if let Some(session_id) = &self.active_session_id {
+                self.process = Some(self.start_controller(*session_id)?);
+            } else {
+                info!("controller.exe restart requested, but there is no active session");
+            }
+
+            self.restart_controller = false;
+            self.timeout = Self::DEFAULT_TIMEOUT;
+        }
+
+        Ok(())
+    }
+
+    fn run(&mut self) -> Result<()> {
+        self.active_session_id = Self::find_active_console_session();
+
+        self.process = match self.active_session_id {
             Some(session_id) => {
                 info!("Session {session_id} already active");
-                Some(self.start_controller(session_id, &inherited_events)?)
+                Some(self.start_controller(session_id)?)
             }
             None => {
                 info!("No active Console session found");
@@ -132,16 +234,8 @@ impl ServiceContext {
             }
         };
 
-        const WAIT_OBJECT_1: u32 = WAIT_OBJECT_0 + 1;
-        const WAIT_OBJECT_2: u32 = WAIT_OBJECT_0 + 2;
-
-        const DEFAULT_TIMEOUT: Duration = Duration::from_secs(1);
-        const RESTART_CONTROLLER_TIMEOUT: Duration = Duration::from_millis(500);
-
-        let mut timeout = DEFAULT_TIMEOUT;
-
         while !self.stop.load(Ordering::Relaxed) {
-            let events = if let Some(process) = &process {
+            let events = if let Some(process) = &self.process {
                 vec![
                     self.sas_event.handle(),
                     self.sc_forwarder_rx.handle(),
@@ -156,87 +250,30 @@ impl ServiceContext {
                     events.len() as u32,
                     events.as_ptr(),
                     FALSE,
-                    timeout.as_millis() as _,
+                    self.timeout.as_millis() as _,
                 )
             };
 
             match ret {
                 WAIT_OBJECT_0 => {
-                    unsafe { ResetEvent(self.sas_event.handle()) };
-                    sas::send();
+                    self.handle_sas();
                 }
-                WAIT_OBJECT_1 => {
-                    while let Ok(param) = self.sc_forwarder_rx.recv() {
-                        match param {
-                            SessionChangeParam {
-                                reason: SessionChangeReason::ConsoleConnect,
-                                notification: SessionNotification { session_id, .. },
-                            } => {
-                                if let Some(process) = process.take() {
-                                    warn!("Console connected. Kill existing controller.exe");
-                                    let ret = process.kill();
-                                    if let Err(err) = ret {
-                                        warn!("Failed to kill controller.exe: {err:?}");
-                                    }
-                                }
-
-                                process =
-                                    Some(self.start_controller(session_id, &inherited_events)?);
-                                active_session_id = Some(session_id);
-
-                                restart_controller = false;
-                                timeout = DEFAULT_TIMEOUT;
-                            }
-                            SessionChangeParam {
-                                reason: SessionChangeReason::ConsoleDisconnect,
-                                notification: SessionNotification { session_id, .. },
-                            } => {
-                                match active_session_id.take() {
-                                    Some(active_session_id) => {
-                                        if active_session_id != session_id {
-                                            warn!("ConsoleDisconnect received on session {session_id} while we though that the active one was session {active_session_id}")
-                                        }
-                                    }
-                                    None => {
-                                        warn!("ConsoleDisconnect received on session {session_id} while we though that no session was active")
-                                    }
-                                }
-
-                                restart_controller = false;
-                                timeout = DEFAULT_TIMEOUT;
-                            }
-                            _ => {}
-                        }
+                Self::WAIT_OBJECT_1 => {
+                    let ret = self.handle_sc_forwarder();
+                    if let Err(err) = ret {
+                        warn!("handle_sc_forwarder() failed: {err:?}");
                     }
                 }
-                WAIT_OBJECT_2 => {
-                    // On log out, all the process from the current session are
-                    // stopped. Because we attach controller.exe to the current
-                    // interactive session, it is killed. On restart, controller.exe
-                    // will be attached to the new session login screen.
-                    //
-                    // The current service isn't killed because it is attached to
-                    // the special Session 0.
-                    info!("controller.exe stopped");
-
-                    if active_session_id.is_some() {
-                        restart_controller = true;
-                        process = None;
-                        timeout = RESTART_CONTROLLER_TIMEOUT;
+                Self::WAIT_OBJECT_2 => {
+                    let ret = self.handle_controller_stopped();
+                    if let Err(err) = ret {
+                        warn!("handle_controller_stopped() failed: {err:?}");
                     }
                 }
                 WAIT_TIMEOUT => {
-                    if restart_controller {
-                        if let Some(session_id) = &active_session_id {
-                            process = Some(self.start_controller(*session_id, &inherited_events)?);
-                        } else {
-                            info!(
-                                "controller.exe restart requested, but there is no active session"
-                            );
-                        }
-
-                        restart_controller = false;
-                        timeout = DEFAULT_TIMEOUT;
+                    let ret = self.handle_timeout();
+                    if let Err(err) = ret {
+                        warn!("handle_timeout() failed: {err:?}");
                     }
                 }
                 WAIT_FAILED => {
@@ -248,18 +285,6 @@ impl ServiceContext {
                     warn!("WaitForMultipleObjects() unexpected value {}", ret);
                     break;
                 }
-            }
-        }
-
-        if self.stop.load(Ordering::Relaxed) {
-            if let Some(process) = process.take() {
-                info!("Service stop requested, kill controller.exe");
-                let ret = process.kill();
-                if let Err(err) = ret {
-                    warn!("Failed to kill controller.exe: {err:?}");
-                }
-
-                info!("controller.exe killed");
             }
         }
 
@@ -325,10 +350,21 @@ fn service_handler(_arguments: Vec<OsString>) -> Result<()> {
     info!("Service started");
 
     // Run real main function
-    let ctx = ServiceContext::new(stop, sc_forwarder_rx)?;
+    let mut ctx = ServiceContext::new(stop, sc_forwarder_rx)?;
     let ret = ctx.run();
     if ret.is_err() {
         warn!("Service exited with error: '{:?}'", ret);
+    }
+
+    // Stop any running controller.exe
+    if let Some(process) = ctx.process.take() {
+        info!("Service stop requested, kill controller.exe");
+        let ret = process.kill();
+        if let Err(err) = ret {
+            warn!("Failed to kill controller.exe: {err:?}");
+        }
+
+        info!("controller.exe killed");
     }
 
     info!("Service stopped");
