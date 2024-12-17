@@ -152,7 +152,7 @@ impl VideoRendererWorkerCtx {
         canvas: web_sys::OffscreenCanvas,
         consumer: CellBufConsumer<VideoFrameWrapper>,
     ) -> Result<(), JsValue> {
-        let js_self = js_sys::eval("self")?.dyn_into::<web_sys::DedicatedWorkerGlobalScope>()?;
+        let js_self = js_sys::global().dyn_into::<web_sys::DedicatedWorkerGlobalScope>()?;
 
         let mut first_frame = true;
         let renderer = Renderer::new(canvas)?;
