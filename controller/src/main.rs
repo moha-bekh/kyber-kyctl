@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use actix_web::{get, middleware, post, web, App, HttpRequest, HttpResponse, HttpServer};
 use log::{info, warn, LevelFilter};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 mod avservice;
@@ -130,6 +130,47 @@ async fn stop_session(ctrl: web::Data<Mutex<Controller>>) -> HttpResponse {
             HttpResponse::Forbidden().finish()
         }
     }
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct SetBitrate {
+    // Global bitrate for the whole Quic connection. Unit: bits/sec
+    pub(crate) bitrate: u32,
+}
+
+#[post("/set_bitrate")]
+pub(crate) async fn set_bitrate(
+    ctrl: web::Data<Mutex<Controller>>,
+    request: web::Json<SetBitrate>,
+) -> HttpResponse {
+    info!("Set bitrate: {}", request.bitrate);
+
+    let mut ctrl = ctrl.lock().await;
+
+    if ctrl.services.video.is_empty() {
+        warn!("No video streaming started");
+        return HttpResponse::Forbidden().finish();
+    }
+
+    let splitted_bitrate = request.bitrate / ctrl.services.video.len() as u32;
+
+    for avserver in &mut ctrl.services.video {
+        let ret = avserver.video_set_bitrate(splitted_bitrate as _).await;
+        if let Err(err) = ret {
+            warn!("Failed to set bitrate for one video avserver: {err:?}");
+        }
+    }
+
+    if let Some(client_session) = &ctrl.client_session {
+        client_session
+            .host_event_sender
+            .send(HostEvent::BitrateChanged {
+                bitrate: request.bitrate,
+            })
+            .await;
+    }
+
+    HttpResponse::Ok().finish()
 }
 
 fn build_serverconfig(tls_config: &tls::Config) -> Result<rustls::ServerConfig> {
@@ -286,7 +327,8 @@ async fn real_main() -> Result<()> {
             .service(websocket_service)
             .service(enumerate_displays)
             .service(stop_streaming)
-            .service(stop_session);
+            .service(stop_session)
+            .service(set_bitrate);
 
         if let Some(webclient_root) = &webclient_root {
             app.service(
