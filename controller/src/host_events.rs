@@ -155,6 +155,7 @@ impl From<avservice_types::PipelineEvent> for StreamerPipelineEvent {
 pub(crate) enum HostEvent {
     DisplayList { displays: Vec<Display> },
     StreamerPipelineEvent(StreamerPipelineEvent),
+    BitrateChanged { bitrate: u32 },
 }
 
 #[derive(Debug, Deserialize, Serialize)]
