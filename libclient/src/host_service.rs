@@ -3,10 +3,10 @@ use std::time::Duration;
 use log::warn;
 use reqwest::{self, StatusCode};
 
+#[cfg(target_family = "wasm")]
+use kywasmtime::timeout;
 #[cfg(not(target_family = "wasm"))]
 use tokio::time::timeout;
-#[cfg(target_family = "wasm")]
-use wasmtimer::tokio::timeout;
 
 use crate::error::{Error, Result};
 use crate::http::HttpClient;
