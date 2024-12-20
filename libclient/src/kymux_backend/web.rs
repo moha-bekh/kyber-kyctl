@@ -271,7 +271,11 @@ async fn create_audioplayer(
     let audio_player_config = AudioPlayerConfig { audio_buffer };
 
     let (audio_player, audio_player_handle) =
-        AudioPlayer::create(backend_config.msg_proxy.clone(), &audio_player_config).await?;
+        match AudioPlayer::create(backend_config.msg_proxy.clone(), &audio_player_config).await {
+            Ok((audio_player, audio_player_handle)) => (audio_player, audio_player_handle),
+            Err(Error::SharedArrayBufferUndefined) => return Ok(None),
+            Err(err) => return Err(err),
+        };
 
     let audio_protocol = backend_config
         .kymux_config
@@ -451,8 +455,14 @@ pub(super) struct KymuxBackend {
 }
 
 impl KymuxBackend {
-    pub(super) async fn new(backend_config: KymuxBackendConfig<'_>) -> Result<Self> {
+    pub(super) async fn new(mut backend_config: KymuxBackendConfig<'_>) -> Result<Self> {
         let mut kymux = start_kymux(&backend_config).await?;
+
+        // Tweak configuration in function of local capabilities
+        if !AudioPlayer::available() {
+            warn!("Disable audio. SharedArrayBuffer not available.");
+            backend_config.streaming_config.audio = None;
+        }
 
         // Start stream
         let host_config = host_service::start_stream(&backend_config).await?;

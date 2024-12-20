@@ -62,6 +62,8 @@ pub enum Error {
     JsDomInvalid,
     #[cfg(feature = "web")]
     NoValidVideoDecoderConfig,
+    #[cfg(feature = "web")]
+    SharedArrayBufferUndefined,
 
     // Player errors
     Player(PlayerError),

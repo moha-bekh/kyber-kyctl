@@ -2,7 +2,7 @@ use crate::platform::player::audio::decoder::{AudioDecoder, AudioDecoderCallback
 use crate::platform::player::packet::{CodecPacket, HolePacket, Packet};
 use crate::platform::player::PacketSink;
 use crate::platform::AudioPlayerConfig;
-use crate::{Message, MessageProxy, Result};
+use crate::{Error, Message, MessageProxy, Result};
 
 use super::worklet::AudioWorklet;
 use super::{CHANNELS, SAMPLE_RATE, SAMPLE_SIZE};
@@ -29,6 +29,10 @@ pub struct AudioPlayer {
 }
 
 impl AudioPlayer {
+    pub fn available() -> bool {
+        AudioRegulatorSharedMemory::available()
+    }
+
     pub async fn create(
         message_proxy: MessageProxy,
         audio_player_config: &AudioPlayerConfig,
@@ -39,7 +43,8 @@ impl AudioPlayer {
             (audio_player_config.audio_buffer as u64 * SAMPLE_RATE as u64 / 1000u64) as u32;
         let alloc_size = 2 * SAMPLE_RATE + target_buffering;
 
-        let sab = AudioRegulatorSharedMemory::create_sab(alloc_size, sample_size);
+        let sab = AudioRegulatorSharedMemory::create_sab(alloc_size, sample_size)
+            .map_err(|_| Error::SharedArrayBufferUndefined)?;
 
         let memory = AudioRegulatorSharedMemory::js(sab.clone(), alloc_size, sample_size);
         let mut reg = AudioRegulatorPush::new(memory, SAMPLE_RATE, target_buffering);
