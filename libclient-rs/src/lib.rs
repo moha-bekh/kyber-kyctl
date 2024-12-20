@@ -194,6 +194,9 @@ pub enum Event {
     AudioMuteChanged {
         mute: bool,
     },
+    BitrateChanged {
+        bitrate: u32,
+    },
 }
 
 pub trait EventSink {
@@ -419,6 +422,20 @@ impl EventSinkData {
                 let mute = mute.assume_init();
                 data.sink.on_event(Event::AudioMuteChanged { mute });
             }
+            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_BITRATE_CHANGED => {
+                let mut bitrate = mem::MaybeUninit::uninit();
+
+                let ret = unsafe {
+                    sys::libclient_event_unpack_bitrate_changed(event, bitrate.as_mut_ptr())
+                };
+                if ret != 0 {
+                    warn!("Fail to unpack EventType::BitrateChanged");
+                    return;
+                }
+
+                let bitrate = bitrate.assume_init();
+                data.sink.on_event(Event::BitrateChanged { bitrate });
+            }
             _ => {
                 error!("Invalid libclient_EventType {}", event_type)
             }
@@ -584,6 +601,10 @@ impl StreamingSessionConfig {
         }
     }
 
+    pub fn get_bitrate(&self) -> u32 {
+        unsafe { sys::libclient_streaming_session_config_get_bitrate(self.ptr) }
+    }
+
     pub fn set_bitrate(&self, bitrate: u32) {
         unsafe { sys::libclient_streaming_session_config_set_bitrate(self.ptr, bitrate) }
     }
@@ -736,6 +757,15 @@ impl Client {
 
     pub fn audio_set_mute(&self, mute: bool) -> Result<()> {
         let ret = unsafe { sys::libclient_client_audio_set_mute(self.ptr, mute) };
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err(Error::Generic)
+        }
+    }
+
+    pub fn set_bitrate(&self, bitrate: u32) -> Result<()> {
+        let ret = unsafe { sys::libclient_client_set_bitrate(self.ptr, bitrate) };
         if ret == 0 {
             Ok(())
         } else {

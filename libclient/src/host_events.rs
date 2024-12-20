@@ -57,6 +57,7 @@ pub struct StreamerPipelineEvent {
 pub(crate) enum HostEvent {
     DisplayList { displays: Vec<Display> },
     StreamerPipelineEvent(StreamerPipelineEvent),
+    BitrateChanged { bitrate: u32 },
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -79,6 +80,7 @@ impl HostEventSink {
         match event {
             HostEvent::DisplayList { displays } => Message::DisplayListUpdated { displays },
             HostEvent::StreamerPipelineEvent(event) => Message::StreamerPipelineEvent(event),
+            HostEvent::BitrateChanged { bitrate } => Message::BitrateChanged { bitrate },
         }
     }
 

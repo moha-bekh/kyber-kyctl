@@ -486,6 +486,13 @@ pub unsafe extern "C" fn libclient_streaming_session_config_set_bitrate(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn libclient_streaming_session_config_get_bitrate(
+    config: *mut libclient_StreamingSessionConfig,
+) -> u32 {
+    (*config).config.bitrate
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn libclient_streaming_session_config_set_audio(
     config: *mut libclient_StreamingSessionConfig,
     audio: *mut libclient_AudioSessionConfig,
@@ -590,6 +597,15 @@ pub unsafe extern "C" fn libclient_client_audio_set_mute(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn libclient_client_set_bitrate(
+    client: *mut libclient_Client,
+    bitrate: u32,
+) -> c_int {
+    let ret = (*client).client.set_bitrate(bitrate);
+    result_to_c_int(ret)
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn libclient_client_ref(
     client: *mut libclient_Client,
 ) -> *mut libclient_Client {
@@ -622,6 +638,7 @@ pub enum libclient_EventType {
     StreamerPipelineEvent,
     AudioVolumeChanged,
     AudioMuteChanged,
+    BitrateChanged,
 }
 
 #[repr(C)]
@@ -671,6 +688,7 @@ pub unsafe extern "C" fn libclient_event_get_type(event: *const Event) -> libcli
         Event::StreamerPipelineEvent { .. } => libclient_EventType::StreamerPipelineEvent,
         Event::AudioVolumeChanged { .. } => libclient_EventType::AudioVolumeChanged,
         Event::AudioMuteChanged { .. } => libclient_EventType::AudioMuteChanged,
+        Event::BitrateChanged { .. } => libclient_EventType::BitrateChanged,
     }
 }
 
@@ -808,6 +826,20 @@ pub unsafe extern "C" fn libclient_event_unpack_audio_mute_changed(
     };
 
     *out_mute = *mute;
+
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_event_unpack_bitrate_changed(
+    event: *const Event,
+    out_bitrate: *mut u32,
+) -> c_int {
+    let Event::BitrateChanged { bitrate } = &*event else {
+        return -1;
+    };
+
+    *out_bitrate = *bitrate;
 
     0
 }

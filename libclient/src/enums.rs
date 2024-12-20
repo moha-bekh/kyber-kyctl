@@ -64,6 +64,13 @@ pub(crate) enum Message {
         mute: bool,
     },
 
+    SetBitrate {
+        bitrate: u32,
+    },
+    BitrateChanged {
+        bitrate: u32,
+    },
+
     PlayerStarted,
     PlayerStopped,
 
@@ -121,6 +128,9 @@ pub enum Event {
     },
     AudioMuteChanged {
         mute: bool,
+    },
+    BitrateChanged {
+        bitrate: u32,
     },
     #[cfg(feature = "web")]
     CanvasResized {

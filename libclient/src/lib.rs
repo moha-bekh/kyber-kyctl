@@ -406,6 +406,20 @@ impl Handler {
 
                 Ok(())
             }
+            Message::SetBitrate { bitrate } => {
+                host_service::set_bitrate(&self.http_client, *bitrate).await
+            }
+            Message::BitrateChanged { bitrate } => {
+                {
+                    let mut state = self.state.lock().unwrap();
+                    state.bitrate = Some(*bitrate);
+                }
+
+                self.event_manager
+                    .send_event(Event::BitrateChanged { bitrate: *bitrate });
+
+                Ok(())
+            }
             Message::PlayerStarted => {
                 info!("Player started");
                 Ok(())
@@ -652,6 +666,7 @@ impl MainLoop {
 pub struct State {
     pub volume: Option<f32>,
     pub mute: Option<bool>,
+    pub bitrate: Option<u32>,
 }
 
 use std::sync::{Arc, Mutex};
@@ -731,6 +746,11 @@ impl Client {
 
     pub fn audio_set_mute(&self, mute: bool) -> Result<()> {
         self.send_message(Message::AudioSetMute { mute })?;
+        Ok(())
+    }
+
+    pub fn set_bitrate(&self, bitrate: u32) -> Result<()> {
+        self.send_message(Message::SetBitrate { bitrate })?;
         Ok(())
     }
 

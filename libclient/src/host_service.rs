@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use log::warn;
 use reqwest::{self, StatusCode};
+use serde::Serialize;
 
 #[cfg(target_family = "wasm")]
 use kywasmtime::timeout;
@@ -11,6 +12,11 @@ use tokio::time::timeout;
 use crate::error::{Error, Result};
 use crate::http::HttpClient;
 use crate::{Capabilities, Display};
+
+#[derive(Debug, Serialize)]
+pub(crate) struct SetBitrateRequest {
+    pub(crate) bitrate: u32,
+}
 
 pub(crate) async fn capabilities(client: &HttpClient) -> Result<Capabilities> {
     const HTTP_TIMEOUT: Duration = Duration::from_secs(5);
@@ -73,6 +79,22 @@ pub(crate) async fn stop_session(client: &HttpClient) -> Result<()> {
     let response = client.post(&url).send().await?;
     if response.status() != StatusCode::OK {
         warn!("POST /stop_session failed: {}", response.status());
+        return Err(Error::HttpQueryFailed {
+            status: response.status().into(),
+        });
+    }
+
+    Ok(())
+}
+
+pub(crate) async fn set_bitrate(http_client: &HttpClient, bitrate: u32) -> Result<()> {
+    let url = format!("{base_url}/set_bitrate", base_url = http_client.base_url());
+
+    let body = SetBitrateRequest { bitrate };
+
+    let response = http_client.post(&url).json(&body).send().await?;
+    if response.status() != StatusCode::OK {
+        warn!("POST /set_bitrate failed: {}", response.status());
         return Err(Error::HttpQueryFailed {
             status: response.status().into(),
         });
