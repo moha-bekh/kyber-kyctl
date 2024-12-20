@@ -219,14 +219,14 @@ impl Handler {
 
     async fn start_streaming_session(
         &mut self,
-        streaming_config: &StreamingSessionConfig,
+        streaming_config: StreamingSessionConfig,
     ) -> Result<()> {
         let msg_proxy = self.create_message_proxy();
 
         info!("Start streaming session");
         streaming_config.print();
 
-        match &streaming_config.protocol {
+        match streaming_config.protocol.clone() {
             #[cfg(feature = "websocket")]
             StreamingProtocol::Websocket => {
                 let config = ws_backend::WsBackendConfig {
@@ -339,7 +339,7 @@ impl Handler {
                 ret
             }
             Message::StartStreamingSession { config } => {
-                let ret = self.start_streaming_session(config).await;
+                let ret = self.start_streaming_session(config.clone()).await;
                 let (event, stop) = match ret {
                     Ok(()) => (Event::StreamingStarted, false),
                     Err(Error::DataPlaneConnectFailed) => {

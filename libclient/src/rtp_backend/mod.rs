@@ -99,7 +99,7 @@ struct InputService {
 pub(crate) struct RtpBackendConfig<'a> {
     pub(crate) conn_params: &'a ConnectionParams,
     pub(crate) http_client: &'a HttpClient,
-    pub(crate) streaming_config: &'a StreamingSessionConfig,
+    pub(crate) streaming_config: StreamingSessionConfig,
     pub(crate) msg_proxy: MessageProxy,
 }
 

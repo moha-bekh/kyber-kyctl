@@ -92,7 +92,7 @@ impl InputService {
 
 pub(crate) struct WsBackendConfig<'a> {
     pub(crate) http_client: &'a HttpClient,
-    pub(crate) streaming_config: &'a StreamingSessionConfig,
+    pub(crate) streaming_config: StreamingSessionConfig,
     pub(crate) msg_proxy: MessageProxy,
 }
 
