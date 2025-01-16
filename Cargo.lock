@@ -985,8 +985,9 @@ name = "kyaudioreg"
 version = "0.1.0"
 dependencies = [
  "js-sys",
+ "kywasmtime",
  "log",
- "wasmtimer",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -1062,6 +1063,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "kywasmtime"
+version = "0.1.0"
+source = "git+https://github.com/rom1v/kywasmtime.git?tag=0.1#3f6e9a7306ab5e8abb9e292a8b1a9b883e897021"
+dependencies = [
+ "js-sys",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1090,6 +1101,7 @@ dependencies = [
  "js-sys",
  "kyaudioreg",
  "kymux",
+ "kywasmtime",
  "libc",
  "libkynput",
  "libkynput-rs",
@@ -1105,7 +1117,6 @@ dependencies = [
  "vlc-rs",
  "wasm-bindgen",
  "wasm-bindgen-futures",
- "wasmtimer",
  "web-sys",
 ]
 
