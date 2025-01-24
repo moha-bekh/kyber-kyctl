@@ -22,6 +22,8 @@ mod rtp_backend;
 #[cfg(feature = "websocket")]
 mod ws_backend;
 
+use std::sync::{Arc, Mutex};
+
 use async_trait::async_trait;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
@@ -650,8 +652,6 @@ pub struct State {
     pub mute: Option<bool>,
     pub bitrate: Option<u32>,
 }
-
-use std::sync::{Arc, Mutex};
 
 pub struct Client {
     event_manager: EventManager,
