@@ -540,13 +540,6 @@ impl BackendDriver for KymuxBackend {
     }
 
     async fn stop(&mut self) -> Result<()> {
-        if let Some(closed_task) = self.closed_task.take() {
-            let ret = closed_task.stop().await;
-            if let Err(err) = ret {
-                warn!("Failed to stop KymuxClosedTask: {err:?}");
-            }
-        }
-
         if let Some(player) = self.player.take() {
             player.stop().await?;
         }
@@ -557,6 +550,13 @@ impl BackendDriver for KymuxBackend {
         }
 
         self.close_requested.close();
+
+        if let Some(closed_task) = self.closed_task.take() {
+            let ret = closed_task.stop().await;
+            if let Err(err) = ret {
+                warn!("Failed to stop KymuxClosedTask: {err:?}");
+            }
+        }
 
         Ok(())
     }
