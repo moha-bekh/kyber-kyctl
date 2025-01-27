@@ -714,6 +714,15 @@ impl Client {
         }
     }
 
+    pub fn disconnect_and_stop(&self, stop_session: bool) -> Result<()> {
+        let ret = unsafe { sys::libclient_client_disconnect_and_stop(self.ptr, stop_session) };
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err(Error::Generic)
+        }
+    }
+
     pub fn connect(&self) -> Result<()> {
         let ret = unsafe { sys::libclient_client_connect(self.ptr) };
         if ret == 0 {

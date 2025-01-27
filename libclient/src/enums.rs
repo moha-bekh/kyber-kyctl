@@ -36,7 +36,9 @@ pub enum DataPlaneCloseReason {
 #[allow(dead_code)]
 pub(crate) enum Message {
     Connect,
-    Disconnect,
+    Disconnect {
+        stop_session: bool,
+    },
 
     ControlPlaneClosed {
         reason: ControlPlaneCloseReason,

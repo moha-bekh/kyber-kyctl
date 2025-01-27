@@ -559,6 +559,15 @@ pub unsafe extern "C" fn libclient_client_stop(client: *mut libclient_Client) ->
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn libclient_client_disconnect_and_stop(
+    client: *mut libclient_Client,
+    stop_session: bool,
+) -> c_int {
+    let ret = (*client).client.disconnect_and_stop(stop_session);
+    result_to_c_int(ret)
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn libclient_client_connect(client: *mut libclient_Client) -> c_int {
     let ret = (*client).client.connect();
     result_to_c_int(ret)

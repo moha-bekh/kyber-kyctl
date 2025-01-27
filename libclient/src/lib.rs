@@ -170,19 +170,21 @@ impl Handler {
         Ok(())
     }
 
-    async fn stop(&mut self) -> Result<()> {
+    async fn disconnect(&mut self, stop_session: bool) -> Result<()> {
         info!("Stop backend");
         self.stop_backend().await?;
 
-        info!("Request to stop host session");
-        let ret = host_service::stop_session(&self.http_client).await;
-        if let Err(err) = ret {
-            warn!(
-                "Stop session rejected by controller ({:?}). Stop client anyway.",
-                err
-            );
-        } else {
-            info!("Host session stopped");
+        if stop_session {
+            info!("Request to stop host session");
+            let ret = host_service::stop_session(&self.http_client).await;
+            if let Err(err) = ret {
+                warn!(
+                    "Stop session rejected by controller ({:?}). Stop client anyway.",
+                    err
+                );
+            } else {
+                info!("Host session stopped");
+            }
         }
 
         self.stop_hostevents().await?;
@@ -275,9 +277,9 @@ impl Handler {
 
                 Ok(())
             }
-            Message::Disconnect => {
+            Message::Disconnect { stop_session } => {
                 info!("Disconnect requested by user");
-                let ret = self.stop().await;
+                let ret = self.disconnect(*stop_session).await;
 
                 self.event_manager.send_event(Event::Stopped {
                     reason: StopReason::Requested,
@@ -326,9 +328,9 @@ impl Handler {
                 };
 
                 if stop {
-                    let ret = self.stop().await;
+                    let ret = self.disconnect(true).await;
                     if let Err(err) = ret {
-                        warn!("Fail to stop client: {err:?}");
+                        warn!("Fail to disconnect client: {err:?}");
                     }
                 }
 
@@ -443,7 +445,7 @@ impl Handler {
                 Ok(())
             }
             Message::VideoDecodeError => {
-                let ret = self.stop().await;
+                let ret = self.disconnect(true).await;
 
                 self.event_manager.send_event(Event::Stopped {
                     reason: StopReason::DecodeError,
@@ -704,13 +706,33 @@ impl Client {
         self.mainloop_engine.stop()
     }
 
+    #[cfg(target_arch = "wasm32")]
+    pub async fn disconnect_and_stop(self, stop_session: bool) -> Result<()> {
+        self.msg_sender
+            .send_async_and_wait_completion(Message::Disconnect { stop_session })
+            .await?;
+
+        self.mainloop_engine.stop().await;
+
+        Ok(())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn disconnect_and_stop(&self, stop_session: bool) -> Result<()> {
+        self.msg_sender
+            .send_and_wait_completion(Message::Disconnect { stop_session })?;
+
+        self.mainloop_engine.stop()
+    }
+
     pub fn connect(&self) -> Result<()> {
         self.msg_sender.send(Message::Connect)?;
         Ok(())
     }
 
     pub fn disconnect(&self) -> Result<()> {
-        self.msg_sender.send(Message::Disconnect)?;
+        self.msg_sender
+            .send(Message::Disconnect { stop_session: true })?;
         Ok(())
     }
 
