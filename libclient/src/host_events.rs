@@ -5,7 +5,7 @@ use log::warn;
 use serde::{Deserialize, Serialize};
 
 use crate::platform;
-use crate::{ConnectionParams, ControlPlaneCapabilities, Display, Message, MessageProxy, Result};
+use crate::{ConnectionParams, ControlPlaneCapabilities, Display, Message, MessageSender, Result};
 
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
@@ -68,12 +68,12 @@ pub(crate) enum HostEventFrame {
 }
 
 pub(crate) struct HostEventSink {
-    msg_proxy: MessageProxy,
+    msg_sender: MessageSender,
 }
 
 impl HostEventSink {
-    fn new(msg_proxy: MessageProxy) -> Self {
-        Self { msg_proxy }
+    fn new(msg_sender: MessageSender) -> Self {
+        Self { msg_sender }
     }
 
     fn convert_event(event: HostEvent) -> Message {
@@ -86,7 +86,7 @@ impl HostEventSink {
 
     #[allow(dead_code)]
     pub(crate) async fn push_msg(&self, msg: Message) {
-        let ret = self.msg_proxy.send_async(msg).await;
+        let ret = self.msg_sender.send_async(msg).await;
         if let Err(err) = ret {
             warn!("Fail to send HostEvent: {err:?}");
         }
@@ -94,7 +94,7 @@ impl HostEventSink {
 
     #[allow(dead_code)]
     pub(crate) fn blocking_push_msg(&self, msg: Message) {
-        let ret = self.msg_proxy.send(msg);
+        let ret = self.msg_sender.send(msg);
         if let Err(err) = ret {
             warn!("Fail to send HostEvent: {err:?}");
         }
@@ -102,7 +102,7 @@ impl HostEventSink {
 
     #[allow(dead_code)]
     pub(crate) async fn push(&self, event: HostEvent) {
-        let ret = self.msg_proxy.send_async(Self::convert_event(event)).await;
+        let ret = self.msg_sender.send_async(Self::convert_event(event)).await;
         if let Err(err) = ret {
             warn!("Fail to send HostEvent: {err:?}");
         }
@@ -110,7 +110,7 @@ impl HostEventSink {
 
     #[allow(dead_code)]
     pub(crate) fn blocking_push(&self, event: HostEvent) {
-        let ret = self.msg_proxy.send(Self::convert_event(event));
+        let ret = self.msg_sender.send(Self::convert_event(event));
         if let Err(err) = ret {
             warn!("Fail to send HostEvent: {err:?}");
         }
@@ -125,9 +125,9 @@ impl HostEventReceiver {
     pub(crate) async fn new(
         conn_params: &ConnectionParams,
         capabilities: &ControlPlaneCapabilities,
-        msg_proxy: MessageProxy,
+        msg_sender: MessageSender,
     ) -> Result<Self> {
-        let event_sink = HostEventSink::new(msg_proxy);
+        let event_sink = HostEventSink::new(msg_sender);
 
         let client = platform::WsClientBuilder::new(conn_params, capabilities, event_sink).await?;
 

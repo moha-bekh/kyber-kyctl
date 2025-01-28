@@ -2,7 +2,7 @@ use crate::platform::player::audio::decoder::{AudioDecoder, AudioDecoderCallback
 use crate::platform::player::packet::{CodecPacket, HolePacket, Packet};
 use crate::platform::player::PacketSink;
 use crate::platform::AudioPlayerConfig;
-use crate::{Error, Message, MessageProxy, Result};
+use crate::{Error, Message, MessageSender, Result};
 
 use super::worklet::AudioWorklet;
 use super::{CHANNELS, SAMPLE_RATE, SAMPLE_SIZE};
@@ -20,7 +20,7 @@ use wasm_bindgen::prelude::*;
 use log::{debug, error, info, warn};
 
 pub struct AudioPlayer {
-    message_proxy: MessageProxy,
+    message_sender: MessageSender,
     cbs: Option<AudioDecoderCallbacks>,
     audio_decoder: Option<AudioDecoder>,
     push_seq: u64,
@@ -34,7 +34,7 @@ impl AudioPlayer {
     }
 
     pub async fn create(
-        message_proxy: MessageProxy,
+        message_sender: MessageSender,
         audio_player_config: &AudioPlayerConfig,
     ) -> Result<(Self, AudioPlayerHandle)> {
         let sample_size = SAMPLE_SIZE * CHANNELS;
@@ -53,7 +53,7 @@ impl AudioPlayer {
         let holes2 = holes.clone();
         let mut push_seq = 0u64;
 
-        let message_proxy2 = message_proxy.clone();
+        let message_sender2 = message_sender.clone();
         let cbs = AudioDecoderCallbacks {
             output: Box::new(move |frame: web_sys::AudioData| {
                 let Some(format) = frame.format() else {
@@ -98,17 +98,17 @@ impl AudioPlayer {
             error: Box::new(move |error| {
                 info!("audio decoding error: {error:?}");
 
-                Self::message_proxy_send(&message_proxy2, Message::AudioDecodeError);
+                Self::message_sender_send(&message_sender2, Message::AudioDecodeError);
 
                 Ok(())
             }),
         };
 
         let audio_worklet =
-            AudioWorklet::start(sab, message_proxy.clone(), alloc_size, target_buffering).await?;
+            AudioWorklet::start(sab, message_sender.clone(), alloc_size, target_buffering).await?;
 
         let player = Self {
-            message_proxy,
+            message_sender,
             cbs: Some(cbs),
             audio_decoder: None,
             push_seq: 0,
@@ -164,8 +164,8 @@ impl AudioPlayer {
         Ok(())
     }
 
-    fn message_proxy_send(message_proxy: &MessageProxy, msg: Message) {
-        let ret = message_proxy.send(msg.clone());
+    fn message_sender_send(message_sender: &MessageSender, msg: Message) {
+        let ret = message_sender.send(msg.clone());
         if let Err(err) = ret {
             warn!("Failed to send {msg:?}: {err:?}");
         }
@@ -175,7 +175,7 @@ impl AudioPlayer {
 impl PacketSink for AudioPlayer {
     fn send_packet(&mut self, packet: Packet) -> Result<()> {
         if let Err(err) = self.process_packet(packet) {
-            Self::message_proxy_send(&self.message_proxy, Message::AudioDecodeError);
+            Self::message_sender_send(&self.message_sender, Message::AudioDecodeError);
             Err(err)?;
         }
 

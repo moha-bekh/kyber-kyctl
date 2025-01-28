@@ -4,15 +4,15 @@ use log::warn;
 
 use libkynput::{InputNetworkStreamMsg, InputNetworkStreamObserver, InputType, InputTypeMetadata};
 
-use crate::{CursorFormat, Message, MessageProxy};
+use crate::{CursorFormat, Message, MessageSender};
 
 pub(crate) struct InputMsgSink {
-    message_proxy: MessageProxy,
+    message_sender: MessageSender,
 }
 
 impl InputMsgSink {
-    pub(crate) fn new(message_proxy: MessageProxy) -> Self {
-        Self { message_proxy }
+    pub(crate) fn new(message_sender: MessageSender) -> Self {
+        Self { message_sender }
     }
 }
 
@@ -25,7 +25,7 @@ impl InputNetworkStreamObserver for InputMsgSink {
         };
 
         if let Some(service_msg) = service_msg {
-            let ret = self.message_proxy.send(service_msg);
+            let ret = self.message_sender.send(service_msg);
             if let Err(err) = ret {
                 warn!("Failed to send message {msg:?}: {err:?}");
             }

@@ -4,7 +4,7 @@ use crate::platform::player::video::decoder::{VideoDecoder, VideoDecoderCallback
 use crate::platform::player::video::renderer_worker::{RendererWorker, RendererWorkerHandle};
 use crate::platform::player::PacketSink;
 use crate::platform::VideoPlayerConfig;
-use crate::{Message, MessageProxy, Result};
+use crate::{Message, MessageSender, Result};
 
 use super::VideoDecoderConfig;
 
@@ -20,7 +20,7 @@ use wasm_bindgen::prelude::*;
 use log::{debug, error, info, warn};
 
 pub struct VideoPlayer {
-    message_proxy: MessageProxy,
+    message_sender: MessageSender,
     cbs: Option<VideoDecoderCallbacks>,
     video_decoder: Option<VideoDecoder>,
     codec: String,
@@ -31,7 +31,7 @@ pub struct VideoPlayer {
 
 impl VideoPlayer {
     pub fn create(
-        message_proxy: MessageProxy,
+        message_sender: MessageSender,
         player_config: &VideoPlayerConfig,
         decoder_config: VideoDecoderConfig,
         notify_decoded: bool,
@@ -41,7 +41,7 @@ impl VideoPlayer {
         let offscreen_canvas = canvas.transfer_control_to_offscreen()?;
 
         let (renderer_worker, renderer_worker_handle) =
-            RendererWorker::create(message_proxy.clone())?;
+            RendererWorker::create(message_sender.clone())?;
         renderer_worker.start(offscreen_canvas, player_config.video_buffer)?;
 
         let video_rotation = Rc::new(AtomicU8::new(0));
@@ -63,8 +63,8 @@ impl VideoPlayer {
         let recv_dates = Rc::new(RefCell::new(VecDeque::new()));
         let recv_dates2 = recv_dates.clone();
 
-        let message_proxy2 = message_proxy.clone();
-        let message_proxy3 = message_proxy.clone();
+        let message_sender2 = message_sender.clone();
+        let message_sender3 = message_sender.clone();
         let cbs = VideoDecoderCallbacks {
             output: Box::new(move |frame| {
                 let rotation = video_rotation_ref.load(Ordering::Relaxed);
@@ -73,8 +73,8 @@ impl VideoPlayer {
                 renderer_worker.send_frame(frame, rotation, recv_date)?;
 
                 if notify_decoded {
-                    Self::message_proxy_send(
-                        &message_proxy3,
+                    Self::message_sender_send(
+                        &message_sender3,
                         Message::ImageDecoded { pts: pts as u64 },
                     );
                 }
@@ -84,14 +84,14 @@ impl VideoPlayer {
             error: Box::new(move |error| {
                 info!("video decoding error: {error:?}");
 
-                Self::message_proxy_send(&message_proxy2, Message::VideoDecodeError);
+                Self::message_sender_send(&message_sender2, Message::VideoDecodeError);
 
                 Ok(())
             }),
         };
 
         let player = Self {
-            message_proxy,
+            message_sender,
             cbs: Some(cbs),
             video_decoder: None,
             codec,
@@ -145,8 +145,8 @@ impl VideoPlayer {
         Ok(())
     }
 
-    fn message_proxy_send(message_proxy: &MessageProxy, msg: Message) {
-        let ret = message_proxy.send(msg.clone());
+    fn message_sender_send(message_sender: &MessageSender, msg: Message) {
+        let ret = message_sender.send(msg.clone());
         if let Err(err) = ret {
             warn!("Failed to send {msg:?}: {err:?}");
         }
@@ -156,7 +156,7 @@ impl VideoPlayer {
 impl PacketSink for VideoPlayer {
     fn send_packet(&mut self, packet: Packet) -> Result<()> {
         if let Err(err) = self.process_packet(packet) {
-            Self::message_proxy_send(&self.message_proxy, Message::VideoDecodeError);
+            Self::message_sender_send(&self.message_sender, Message::VideoDecodeError);
             Err(err)?;
         }
 

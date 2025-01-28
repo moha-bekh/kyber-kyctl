@@ -10,7 +10,9 @@ use log::{debug, info};
 use crate::http::HttpClient;
 use crate::platform::player;
 use crate::platform::{InputClient, InputPipeline};
-use crate::{BackendDriver, ConnectionParams, Error, MessageProxy, Result, StreamingSessionConfig};
+use crate::{
+    BackendDriver, ConnectionParams, Error, MessageSender, Result, StreamingSessionConfig,
+};
 
 const RTP_VIDEO_PORT: u16 = 30000;
 
@@ -100,7 +102,7 @@ pub(crate) struct RtpBackendConfig<'a> {
     pub(crate) conn_params: &'a ConnectionParams,
     pub(crate) http_client: &'a HttpClient,
     pub(crate) streaming_config: StreamingSessionConfig,
-    pub(crate) msg_proxy: MessageProxy,
+    pub(crate) msg_sender: MessageSender,
 }
 
 pub(crate) struct RtpBackend {
@@ -147,8 +149,11 @@ impl RtpBackend {
                 None
             };
 
-            let mut player =
-                player::Player::new(backend_config.msg_proxy.clone(), video_buffer, audio_buffer)?;
+            let mut player = player::Player::new(
+                backend_config.msg_sender.clone(),
+                video_buffer,
+                audio_buffer,
+            )?;
             player.play(vlc_videoconfig, vlc_audioconfig)?;
 
             Some(player)
@@ -233,7 +238,7 @@ impl RtpBackend {
             |_target, msg_sink| libkynput_rs::tcp::new_client(&streamer_ip, msg_sink);
 
         let client = InputClient::new(
-            backend_config.msg_proxy.clone(),
+            backend_config.msg_sender.clone(),
             config.pipeline.get_input_sink(),
             create_stream_cb,
         )?;

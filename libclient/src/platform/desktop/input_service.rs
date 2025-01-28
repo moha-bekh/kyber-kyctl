@@ -6,15 +6,15 @@ use libkynput_rs::{
 };
 
 use crate::error::Result;
-use crate::{CursorFormat, Message, MessageProxy};
+use crate::{CursorFormat, Message, MessageSender};
 
 pub(crate) struct InputMsgSink {
-    message_proxy: MessageProxy,
+    message_sender: MessageSender,
 }
 
 impl InputMsgSink {
-    pub(crate) fn new(message_proxy: MessageProxy) -> Self {
-        Self { message_proxy }
+    pub(crate) fn new(message_sender: MessageSender) -> Self {
+        Self { message_sender }
     }
 }
 
@@ -27,36 +27,36 @@ impl NetworkStreamObserver for InputMsgSink {
         };
 
         if let Some(service_msg) = service_msg {
-            let ret = self.message_proxy.send(service_msg);
+            let ret = self.message_sender.send(service_msg);
             if ret.is_err() {
-                warn!("Failed to send NetworkStreamMsg to MessageProxy");
+                warn!("Failed to send NetworkStreamMsg to MessageSender");
             }
         }
     }
 }
 
 pub(crate) struct InputClient {
-    _message_proxy: MessageProxy,
+    _message_sender: MessageSender,
     stream: NetworkStream,
 }
 
 impl InputClient {
     pub(crate) fn new<F>(
-        message_proxy: MessageProxy,
+        message_sender: MessageSender,
         rx_consumer: Consumer,
         stream_factory: F,
     ) -> Result<Self>
     where
         F: FnOnce(InputTarget, Box<dyn NetworkStreamObserver>) -> NetworkStream,
     {
-        let msg_sink = Box::new(InputMsgSink::new(message_proxy.clone()));
+        let msg_sink = Box::new(InputMsgSink::new(message_sender.clone()));
         let stream = stream_factory(InputTarget::Client, msg_sink);
         stream.plug_consumer(&rx_consumer)?;
         info!("run_client");
         stream.run()?;
 
         Ok(Self {
-            _message_proxy: message_proxy,
+            _message_sender: message_sender,
             stream,
         })
     }

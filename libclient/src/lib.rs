@@ -4,6 +4,7 @@ pub mod event_manager;
 mod host_events;
 mod host_service;
 pub(crate) mod http;
+mod message_bus;
 
 #[cfg_attr(feature = "desktop", path = "./platform/desktop/mod.rs")]
 #[cfg_attr(feature = "web", path = "./platform/web/mod.rs")]
@@ -24,7 +25,6 @@ mod ws_backend;
 use async_trait::async_trait;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc::{self, error::TrySendError, Sender};
 
 pub use crate::error::{Error, Result};
 use enums::Message;
@@ -34,6 +34,7 @@ pub use event_manager::EventSink;
 use host_events::HostEventReceiver;
 pub use host_events::{StreamerPipelineEventType, StreamerPipelineStage, StreamerPipelineType};
 use http::HttpClient;
+pub(crate) use message_bus::{MessageReceiver, MessageSender};
 pub use platform::{ConnectConfig, VideoPlayerConfig};
 pub(crate) use platform::{ConnectionParams, InputPipeline, MainLoopEngine};
 
@@ -58,30 +59,6 @@ pub(crate) struct Capabilities {
     pub(crate) control_plane: ControlPlaneCapabilities,
 }
 
-#[derive(Clone)]
-pub struct MessageProxy {
-    sender: Sender<Message>,
-}
-
-impl MessageProxy {
-    pub(crate) fn send(&self, msg: Message) -> Result<()> {
-        match self.sender.try_send(msg) {
-            Ok(_) => Ok(()),
-            Err(TrySendError::Closed(_)) => Err(Error::ChannelSend),
-            Err(TrySendError::Full(_)) => {
-                warn!("MessageProxy: Channel full: message dropped");
-
-                Ok(())
-            }
-        }
-    }
-
-    pub(crate) async fn send_async(&self, msg: Message) -> Result<()> {
-        self.sender.send(msg).await?;
-        Ok(())
-    }
-}
-
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
 trait BackendDriver {
@@ -100,7 +77,7 @@ struct Handler {
     conn_params: ConnectionParams,
     http_client: HttpClient,
     event_manager: EventManager,
-    sender: Sender<Message>,
+    message_sender: MessageSender,
 
     host_events: Option<HostEventReceiver>,
 
@@ -117,7 +94,7 @@ impl Handler {
     fn new(
         connect_config: ConnectConfig,
         event_manager: EventManager,
-        sender: Sender<Message>,
+        message_sender: MessageSender,
         state: Arc<Mutex<State>>,
     ) -> Result<Self> {
         let conn_params = ConnectionParams::new(connect_config)?;
@@ -127,18 +104,12 @@ impl Handler {
             conn_params,
             http_client,
             event_manager,
-            sender,
+            message_sender,
             host_events: None,
             state,
             displays: vec![],
             backend: None,
         })
-    }
-
-    fn create_message_proxy(&self) -> MessageProxy {
-        MessageProxy {
-            sender: self.sender.clone(),
-        }
     }
 
     async fn connect(&mut self) -> Result<()> {
@@ -157,7 +128,7 @@ impl Handler {
         let host_events = HostEventReceiver::new(
             &self.conn_params,
             &capabilities.control_plane,
-            self.create_message_proxy(),
+            self.message_sender.clone(),
         )
         .await?;
 
@@ -221,7 +192,7 @@ impl Handler {
         &mut self,
         streaming_config: StreamingSessionConfig,
     ) -> Result<()> {
-        let msg_proxy = self.create_message_proxy();
+        let msg_sender = self.message_sender.clone();
 
         info!("Start streaming session");
         streaming_config.print();
@@ -232,7 +203,7 @@ impl Handler {
                 let config = ws_backend::WsBackendConfig {
                     http_client: &self.http_client,
                     streaming_config,
-                    msg_proxy,
+                    msg_sender,
                 };
 
                 let backend = Box::new(ws_backend::WsBackend::new(config).await?);
@@ -245,7 +216,7 @@ impl Handler {
                     http_client: &self.http_client,
                     streaming_config,
                     kymux_config: kymux_config.clone(),
-                    msg_proxy,
+                    msg_sender,
                 };
 
                 self.backend = Some(kymux_backend::new(config).await?);
@@ -256,7 +227,7 @@ impl Handler {
                     conn_params: &self.conn_params,
                     http_client: &self.http_client,
                     streaming_config,
-                    msg_proxy,
+                    msg_sender,
                 };
 
                 let backend = Box::new(rtp_backend::RtpBackend::new(config).await?);
@@ -643,18 +614,21 @@ impl std::fmt::Debug for StreamingSessionConfig {
 }
 
 struct MainLoop {
-    receiver: mpsc::Receiver<Message>,
+    msg_receiver: MessageReceiver,
     handler: Handler,
 }
 
 impl MainLoop {
-    fn new(receiver: mpsc::Receiver<Message>, handler: Handler) -> Self {
-        Self { receiver, handler }
+    fn new(msg_receiver: MessageReceiver, handler: Handler) -> Self {
+        Self {
+            msg_receiver,
+            handler,
+        }
     }
 
     async fn run(mut self) {
         loop {
-            let msg = self.receiver.recv().await;
+            let msg = self.msg_receiver.recv().await;
             if let Some(msg) = msg.as_ref() {
                 let ret = self.handler.handle_message(msg).await;
                 if let Err(err) = ret {
@@ -681,7 +655,7 @@ use std::sync::{Arc, Mutex};
 
 pub struct Client {
     event_manager: EventManager,
-    sender: Sender<Message>,
+    msg_sender: MessageSender,
 
     mainloop_engine: MainLoopEngine,
     state: Arc<Mutex<State>>,
@@ -691,25 +665,25 @@ impl Client {
     pub fn new(connect_config: ConnectConfig) -> Result<Self> {
         let event_manager = EventManager::new();
 
-        let (sender, receiver) = mpsc::channel(32);
+        let (msg_sender, msg_receiver) = message_bus::create();
         let event_manager_handler = event_manager.clone();
-        let sender_handler = sender.clone();
+        let msg_sender_handler = msg_sender.clone();
 
         let state = Arc::new(Mutex::new(State::default()));
 
         let handler = Handler::new(
             connect_config,
             event_manager_handler,
-            sender_handler,
+            msg_sender_handler,
             state.clone(),
         )?;
-        let mainloop = MainLoop::new(receiver, handler);
+        let mainloop = MainLoop::new(msg_receiver, handler);
 
         let mainloop_engine = MainLoopEngine::new(mainloop);
 
         Ok(Self {
             event_manager,
-            sender,
+            msg_sender,
             mainloop_engine,
             state,
         })
@@ -728,50 +702,39 @@ impl Client {
     }
 
     pub fn connect(&self) -> Result<()> {
-        self.send_message(Message::Connect)?;
+        self.msg_sender.send(Message::Connect)?;
         Ok(())
     }
 
     pub fn disconnect(&self) -> Result<()> {
-        self.send_message(Message::Disconnect)?;
+        self.msg_sender.send(Message::Disconnect)?;
         Ok(())
     }
 
     pub fn start_streaming(&self, config: StreamingSessionConfig) -> Result<()> {
-        self.send_message(Message::StartStreamingSession { config })?;
+        self.msg_sender
+            .send(Message::StartStreamingSession { config })?;
         Ok(())
     }
 
     pub fn stop_streaming(&self) -> Result<()> {
-        self.send_message(Message::StopStreamingSession)?;
+        self.msg_sender.send(Message::StopStreamingSession)?;
         Ok(())
     }
 
     pub fn audio_set_volume(&self, volume: f32) -> Result<()> {
-        self.send_message(Message::AudioSetVolume { volume })?;
+        self.msg_sender.send(Message::AudioSetVolume { volume })?;
         Ok(())
     }
 
     pub fn audio_set_mute(&self, mute: bool) -> Result<()> {
-        self.send_message(Message::AudioSetMute { mute })?;
+        self.msg_sender.send(Message::AudioSetMute { mute })?;
         Ok(())
     }
 
     pub fn set_bitrate(&self, bitrate: u32) -> Result<()> {
-        self.send_message(Message::SetBitrate { bitrate })?;
+        self.msg_sender.send(Message::SetBitrate { bitrate })?;
         Ok(())
-    }
-
-    fn send_message(&self, msg: Message) -> Result<()> {
-        match self.sender.try_send(msg) {
-            Ok(_) => Ok(()),
-            Err(TrySendError::Closed(_)) => Err(Error::ChannelSend),
-            Err(TrySendError::Full(_)) => {
-                warn!("MessageProxy: Channel full: message dropped");
-
-                Ok(())
-            }
-        }
     }
 
     pub fn get_event_manager(&self) -> EventManager {

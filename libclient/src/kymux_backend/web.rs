@@ -27,7 +27,7 @@ use crate::platform::player::{
 };
 use crate::platform::AudioPlayerConfig;
 use crate::platform::InputMsgSink;
-use crate::{BackendDriver, DataPlaneCloseReason, MessageProxy, VideoSessionConfig};
+use crate::{BackendDriver, DataPlaneCloseReason, MessageSender, VideoSessionConfig};
 use crate::{Error, Result};
 
 #[derive(Clone)]
@@ -86,7 +86,7 @@ struct KymuxClosedTask {
 }
 
 impl KymuxClosedTask {
-    fn new(connection: kymux::Connection, msg_proxy: MessageProxy) -> Self {
+    fn new(connection: kymux::Connection, msg_sender: MessageSender) -> Self {
         let (stop_tx, stop_rx) = oneshot::channel();
 
         spawn_local(async move {
@@ -98,7 +98,7 @@ impl KymuxClosedTask {
                         Err(_) => DataPlaneCloseReason::Error,
                     };
 
-                    let ret = msg_proxy.send_async(Message::DataPlaneClosed{ reason }).await;
+                    let ret = msg_sender.send_async(Message::DataPlaneClosed{ reason }).await;
                     if let Err(err) = ret {
                         warn!("Fail to send DataPlaneClosed: {err:?}");
                     }
@@ -229,7 +229,7 @@ async fn create_videoplayer(
         })?;
 
         let (video_player, video_player_handle) = VideoPlayer::create(
-            backend_config.msg_proxy.clone(),
+            backend_config.msg_sender.clone(),
             &config.player,
             video_config,
             config.player.notify_decoded,
@@ -271,7 +271,7 @@ async fn create_audioplayer(
     let audio_player_config = AudioPlayerConfig { audio_buffer };
 
     let (audio_player, audio_player_handle) =
-        match AudioPlayer::create(backend_config.msg_proxy.clone(), &audio_player_config).await {
+        match AudioPlayer::create(backend_config.msg_sender.clone(), &audio_player_config).await {
             Ok((audio_player, audio_player_handle)) => (audio_player, audio_player_handle),
             Err(Error::SharedArrayBufferUndefined) => return Ok(None),
             Err(err) => return Err(err),
@@ -364,7 +364,7 @@ async fn start_input(
     kymux: &kymux::Connection,
     backend_config: &KymuxBackendConfig<'_>,
     host_config: &StartSessionResponse,
-    msg_proxy: MessageProxy,
+    msg_sender: MessageSender,
 ) -> Result<Option<InputService>> {
     let (input_config, host_config) = match (
         &backend_config.streaming_config.input,
@@ -394,7 +394,7 @@ async fn start_input(
     input_proxy.plug_consumer(Arc::downgrade(&input_config.pipeline.get_input_sink()))?;
     input_proxy.run()?;
 
-    let msg_sink = InputMsgSink::new(msg_proxy);
+    let msg_sink = InputMsgSink::new(msg_sender);
     msg_sink.on_message(InputNetworkStreamMsg::ClientConnected);
 
     wasm_bindgen_futures::spawn_local(async move {
@@ -478,12 +478,12 @@ impl KymuxBackend {
             &kymux,
             &backend_config,
             &host_config,
-            backend_config.msg_proxy.clone(),
+            backend_config.msg_sender.clone(),
         )
         .await?;
 
         // Monitor connection closed
-        let closed_task = KymuxClosedTask::new(kymux, backend_config.msg_proxy.clone());
+        let closed_task = KymuxClosedTask::new(kymux, backend_config.msg_sender.clone());
 
         Ok(Self {
             player,

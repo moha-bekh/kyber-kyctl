@@ -4,7 +4,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
 
 use crate::platform::reflect;
-use crate::{Error, Message, MessageProxy};
+use crate::{Error, Message, MessageSender};
 
 struct GainNodeConfig {
     gain: f32,
@@ -16,13 +16,13 @@ pub(crate) struct AudioWorklet {
     gain_node: web_sys::GainNode,
     gain_cfg: RefCell<GainNodeConfig>,
     node: web_sys::AudioWorkletNode,
-    message_proxy: MessageProxy,
+    message_sender: MessageSender,
 }
 
 impl AudioWorklet {
     pub async fn start(
         sab: js_sys::SharedArrayBuffer,
-        message_proxy: MessageProxy,
+        message_sender: MessageSender,
         alloc_size: u32,
         target_buffering: u32,
     ) -> Result<Self, Error> {
@@ -64,10 +64,10 @@ impl AudioWorklet {
         let gain_node: web_sys::GainNode = ctx.create_gain()?;
 
         let gain = gain_node.gain().value();
-        message_proxy.send(Message::AudioVolumeChanged { volume: gain })?;
+        message_sender.send(Message::AudioVolumeChanged { volume: gain })?;
 
         let mute = gain <= 0.0;
-        message_proxy.send(Message::AudioMuteChanged { mute })?;
+        message_sender.send(Message::AudioMuteChanged { mute })?;
 
         // Link everything
         node.connect_with_audio_node(&gain_node)?;
@@ -82,7 +82,7 @@ impl AudioWorklet {
             gain_node,
             gain_cfg: RefCell::new(GainNodeConfig { gain, mute }),
             node,
-            message_proxy,
+            message_sender,
         })
     }
 
@@ -95,7 +95,7 @@ impl AudioWorklet {
 
         gain_cfg.gain = volume;
 
-        self.message_proxy
+        self.message_sender
             .send(Message::AudioVolumeChanged { volume })?;
 
         Ok(())
@@ -112,7 +112,7 @@ impl AudioWorklet {
 
         gain_cfg.mute = mute;
 
-        self.message_proxy
+        self.message_sender
             .send(Message::AudioMuteChanged { mute })?;
 
         Ok(())

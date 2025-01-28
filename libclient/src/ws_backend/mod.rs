@@ -24,7 +24,7 @@ use crate::platform::AudioPlayerConfig;
 use crate::platform::InputMsgSink;
 
 use crate::http::HttpClient;
-use crate::{BackendDriver, MessageProxy, StreamingSessionConfig};
+use crate::{BackendDriver, MessageSender, StreamingSessionConfig};
 use crate::{Error, Result};
 
 struct VideoService {
@@ -93,7 +93,7 @@ impl InputService {
 pub(crate) struct WsBackendConfig<'a> {
     pub(crate) http_client: &'a HttpClient,
     pub(crate) streaming_config: StreamingSessionConfig,
-    pub(crate) msg_proxy: MessageProxy,
+    pub(crate) msg_sender: MessageSender,
 }
 
 pub(crate) struct WsBackend {
@@ -134,7 +134,7 @@ impl WsBackend {
         let video_decoder_config = get_video_decoder_config(video_config).await?;
 
         let (player, player_handle) = VideoPlayer::create(
-            backend_config.msg_proxy.clone(),
+            backend_config.msg_sender.clone(),
             &video_config.player,
             video_decoder_config,
             video_config.player.notify_decoded,
@@ -160,7 +160,7 @@ impl WsBackend {
         let audio_player_config = AudioPlayerConfig { audio_buffer };
 
         let (player, player_handle) =
-            AudioPlayer::create(backend_config.msg_proxy.clone(), &audio_player_config).await?;
+            AudioPlayer::create(backend_config.msg_sender.clone(), &audio_player_config).await?;
 
         let url = format!(
             "wss://{host}/websocket/audio",
@@ -187,7 +187,7 @@ impl WsBackend {
 
         // Spawn websocket
         #[allow(clippy::arc_with_non_send_sync)]
-        let msg_sink = Arc::new(InputMsgSink::new(backend_config.msg_proxy.clone()));
+        let msg_sink = Arc::new(InputMsgSink::new(backend_config.msg_sender.clone()));
         let inputs_url = format!(
             "wss://{host}/websocket/inputs",
             host = backend_config.http_client.host()

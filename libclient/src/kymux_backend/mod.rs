@@ -6,7 +6,7 @@ use serde::Serialize;
 
 use crate::error::Result;
 use crate::http::HttpClient;
-use crate::{BackendDriver, ConnectionParams, MessageProxy, StreamingSessionConfig};
+use crate::{BackendDriver, ConnectionParams, MessageSender, StreamingSessionConfig};
 
 pub(crate) mod host_service;
 
@@ -30,7 +30,7 @@ pub(crate) struct KymuxBackendConfig<'a> {
     pub(crate) http_client: &'a HttpClient,
     pub(crate) streaming_config: StreamingSessionConfig,
     pub(crate) kymux_config: KymuxConfig,
-    pub(crate) msg_proxy: MessageProxy,
+    pub(crate) msg_sender: MessageSender,
 }
 
 #[cfg(feature = "desktop")]

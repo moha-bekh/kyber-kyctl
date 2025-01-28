@@ -5,7 +5,7 @@ use wasm_bindgen_futures::spawn_local;
 use web_sys::MessageEvent;
 
 use crate::platform::reflect;
-use crate::{Message, MessageProxy};
+use crate::{Message, MessageSender};
 
 use super::cell_buf::{self, CellBufConsumer, CellBufProducer};
 use super::regulator::{self, VideoRegulatorPull, VideoRegulatorPush};
@@ -198,7 +198,7 @@ impl RendererWorker {
     const TYPE_FRAME: &'static str = "frame";
 
     pub fn create(
-        message_proxy: MessageProxy,
+        message_sender: MessageSender,
     ) -> Result<(RendererWorker, RendererWorkerHandle), JsValue> {
         let options = web_sys::WorkerOptions::new();
         options.set_type(web_sys::WorkerType::Module);
@@ -210,7 +210,7 @@ impl RendererWorker {
 
         let worker_message_cb =
             Closure::<dyn FnMut(_)>::new(move |event: web_sys::MessageEvent| {
-                let ret = Self::handle_worker_message(event, &message_proxy);
+                let ret = Self::handle_worker_message(event, &message_sender);
                 if let Err(err) = ret {
                     warn!("VideoDemuxerWorker failed to process message: {err:?}");
                 }
@@ -228,7 +228,7 @@ impl RendererWorker {
 
     fn handle_worker_message(
         event: web_sys::MessageEvent,
-        message_proxy: &MessageProxy,
+        message_sender: &MessageSender,
     ) -> Result<(), JsValue> {
         let msg = &event.data().dyn_into::<js_sys::Object>()?;
         let msg_type = reflect::get_string(msg, "type")?;
@@ -240,8 +240,8 @@ impl RendererWorker {
                 let frame_coded_width = reflect::get_f64(msg, "frame_coded_width")?;
                 let frame_coded_height = reflect::get_f64(msg, "frame_coded_height")?;
 
-                Self::message_proxy_send(
-                    message_proxy,
+                Self::message_sender_send(
+                    message_sender,
                     Message::CanvasResized {
                         width: width as _,
                         height: height as _,
@@ -301,8 +301,8 @@ impl RendererWorker {
         Ok(())
     }
 
-    fn message_proxy_send(message_proxy: &MessageProxy, msg: Message) {
-        let ret = message_proxy.send(msg.clone());
+    fn message_sender_send(message_sender: &MessageSender, msg: Message) {
+        let ret = message_sender.send(msg.clone());
         if let Err(err) = ret {
             warn!("Failed to send {msg:?}: {err:?}");
         }

@@ -5,11 +5,11 @@ use vlc::MediaPlayerAudioEx;
 
 use crate::error::{Error, PlayerError, Result};
 use crate::platform::WindowHandle;
-use crate::{Message, MessageProxy};
+use crate::{Message, MessageSender};
 
 pub(crate) fn plug_event_manager_to_player(
     mp: &vlc::MediaPlayer,
-    message_proxy: MessageProxy,
+    message_sender: MessageSender,
 ) -> Result<()> {
     // Register to libvlc's event manager
     let event_manager = mp.event_manager();
@@ -27,9 +27,9 @@ pub(crate) fn plug_event_manager_to_player(
         };
 
         if let Some(msg) = msg {
-            let ret = message_proxy.send(msg);
+            let ret = message_sender.send(msg);
             if ret.is_err() {
-                warn!("Failed to send vlc::Event to MessageProxy");
+                warn!("Failed to send vlc::Event to MessageSender");
             }
         }
     };
@@ -66,12 +66,12 @@ pub(crate) struct Player {
     instance: vlc::Instance,
     video_mediaplayer: Vec<vlc::MediaPlayer>,
     audio_mediaplayer: Option<vlc::MediaPlayer>,
-    message_proxy: MessageProxy,
+    message_sender: MessageSender,
 }
 
 impl Player {
     pub(crate) fn new(
-        message_proxy: MessageProxy,
+        message_sender: MessageSender,
         video_buffer: Option<u32>,
         audio_buffer: Option<u32>,
     ) -> Result<Self> {
@@ -110,7 +110,7 @@ impl Player {
             instance,
             video_mediaplayer: vec![],
             audio_mediaplayer: None,
-            message_proxy,
+            message_sender,
         })
     }
 
@@ -145,7 +145,7 @@ impl Player {
             }
         }
 
-        plug_event_manager_to_player(&mp, self.message_proxy.clone())?;
+        plug_event_manager_to_player(&mp, self.message_sender.clone())?;
 
         // Play
         mp.play().or(Err(PlayerError::PlayFailed))?;
@@ -165,7 +165,7 @@ impl Player {
             vlc::MediaPlayer::new(&self.instance).ok_or(PlayerError::MediaPlayerCreateFailed)?;
         mp.set_media(&media);
 
-        plug_event_manager_to_player(&mp, self.message_proxy.clone())?;
+        plug_event_manager_to_player(&mp, self.message_sender.clone())?;
 
         // Play
         mp.play().or(Err(PlayerError::PlayFailed))?;
