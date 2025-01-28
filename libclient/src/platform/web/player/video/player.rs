@@ -6,7 +6,6 @@ use crate::platform::player::PacketSink;
 use crate::platform::VideoPlayerConfig;
 use crate::{Message, MessageProxy, Result};
 
-use super::regulator::jstime;
 use super::VideoDecoderConfig;
 
 use std::cell::RefCell;
@@ -14,6 +13,7 @@ use std::collections::VecDeque;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU8, Ordering};
 
+use kywasmtime::Instant;
 use wasm_bindgen::prelude::*;
 
 #[allow(unused)]
@@ -112,7 +112,7 @@ impl VideoPlayer {
                 assert!(self.video_decoder.is_some());
                 if let Some(video_decoder) = &mut self.video_decoder {
                     if !packet.header.is_config {
-                        let recv_date = jstime::now_us();
+                        let recv_date = Instant::now().raw_us();
                         self.recv_dates.borrow_mut().push_back(recv_date);
                     }
                     video_decoder.send_packet(packet)?;

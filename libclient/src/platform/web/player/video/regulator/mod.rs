@@ -1,10 +1,8 @@
 mod clock;
-pub(crate) mod jstime;
 
 use clock::Clock;
 
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use kywasmtime::{sleep_until, Instant};
 use tokio::sync::{mpsc, Notify};
@@ -72,7 +70,7 @@ impl<T> VideoRegulatorPush<T> {
         Self { tx, shared_data }
     }
 
-    // recv_date retrieved by jstime::now_us()
+    // recv_date retrieved by Instant::raw_us()
     pub fn push(&self, object: T, recv_date: u64, pts: u64) -> Result<(), JsValue> {
         {
             let mut clock = self.shared_data.clock.lock().unwrap();
@@ -122,7 +120,7 @@ impl<T> VideoRegulatorPull<T> {
         assert!(clock_range > 0);
         // if clock.range == 1, then do not wait, pop the first object ASAP
         if clock_range > 1 {
-            let (call_instant, call_us) = (Instant::now(), jstime::now_us());
+            let call_us = Instant::now().raw_us();
             let max_deadline = call_us + self.delay;
 
             let mut timed_out = false;
@@ -135,8 +133,7 @@ impl<T> VideoRegulatorPull<T> {
                 if deadline_us <= call_us {
                     timed_out = true;
                 } else {
-                    let deadline_instant =
-                        call_instant + Duration::from_micros(deadline_us - call_us);
+                    let deadline_instant = Instant::from_raw_us(deadline_us);
                     timed_out = !Self::timed_wait(deadline_instant, &self.shared_data.notify).await;
                 }
             }
