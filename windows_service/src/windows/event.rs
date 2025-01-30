@@ -37,4 +37,11 @@ impl Event {
     pub fn handle(&self) -> HANDLE {
         self.handle.handle()
     }
+
+    pub fn set(&self) -> Result<()> {
+        let ret = unsafe { SetEvent(self.handle.handle()) };
+        check_win32_error!(SetEvent, ret != 0)?;
+
+        Ok(())
+    }
 }
