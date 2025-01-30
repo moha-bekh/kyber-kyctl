@@ -630,8 +630,9 @@ impl MainLoop {
 
     async fn run(mut self) {
         loop {
-            let msg = self.msg_receiver.recv().await;
-            if let Some(msg) = msg.as_ref() {
+            let wrapper = self.msg_receiver.recv().await;
+            if let Some(wrapper) = wrapper {
+                let msg = wrapper.msg();
                 let ret = self.handler.handle_message(msg).await;
                 if let Err(err) = ret {
                     warn!(
