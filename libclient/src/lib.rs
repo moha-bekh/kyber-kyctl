@@ -640,6 +640,8 @@ impl MainLoop {
                         msg, err
                     );
                 }
+
+                wrapper.complete();
             } else {
                 break;
             }
