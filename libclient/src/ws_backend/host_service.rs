@@ -1,6 +1,6 @@
-use log::warn;
+use log::{info, warn};
 use reqwest::StatusCode;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::platform::get_cursor_format;
 use crate::ws_backend::WsBackendConfig;
@@ -27,6 +27,11 @@ struct StartRequest {
     video: Option<StartRequestVideo>,
     audio: bool,
     inputs: Option<StartRequestInput>,
+}
+
+#[derive(Debug, Deserialize)]
+struct StartResponse {
+    session_id: Option<u32>,
 }
 
 pub(super) async fn start_stream(backend_config: &WsBackendConfig<'_>) -> Result<()> {
@@ -76,6 +81,15 @@ pub(super) async fn start_stream(backend_config: &WsBackendConfig<'_>) -> Result
             status: response.status().into(),
         });
     }
+
+    let response = response.json::<StartResponse>().await?;
+    info!(
+        "Session started. SessionId: {}",
+        response
+            .session_id
+            .map(|v| v.to_string())
+            .unwrap_or("None".to_string())
+    );
 
     Ok(())
 }
