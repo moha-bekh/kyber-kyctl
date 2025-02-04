@@ -7,6 +7,7 @@ use avservice_types::VideoCodec;
 use inputservice_types::CursorFormat;
 
 use crate::controller::Controller;
+use crate::utils::generate_session_id;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 pub(crate) enum KymuxTransportBackend {
@@ -115,6 +116,7 @@ pub(crate) struct StartSessionInputResponse {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct StartSessionResponse {
+    pub(crate) session_id: Option<u32>,
     pub(crate) video: Option<Vec<StartSessionVideoResponse>>,
     pub(crate) audio: Option<StartSessionAudioResponse>,
     pub(crate) input: Option<StartSessionInputResponse>,
@@ -141,7 +143,8 @@ pub(crate) async fn start_session(
     let ret = super::start_session(&mut ctrl, request.into_inner()).await;
     match ret {
         Ok(response) => {
-            info!("Stream started");
+            let session_id = generate_session_id();
+            info!("Session started. SessionId: {session_id}");
 
             let video = response.video.map(|video| {
                 video
@@ -178,6 +181,7 @@ pub(crate) async fn start_session(
             };
 
             HttpResponse::Ok().json(StartSessionResponse {
+                session_id: Some(session_id),
                 video,
                 audio,
                 input,
