@@ -39,7 +39,7 @@ struct StartRequest {
 }
 
 #[derive(Debug, Deserialize)]
-struct StartResponse {
+struct HelloResponse {
     ip: String,
 }
 
@@ -64,7 +64,7 @@ pub(crate) async fn hello(client: &HttpClient) -> Result<String> {
         });
     }
 
-    let response = response.json::<StartResponse>().await?;
+    let response = response.json::<HelloResponse>().await?;
     info!("Hello response: {:?}", response);
 
     Ok(response.ip)
