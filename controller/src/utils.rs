@@ -2,6 +2,11 @@ use std::path::PathBuf;
 
 use crate::host_events;
 
+pub(crate) fn generate_session_id() -> u32 {
+    use rand::prelude::*;
+    rand::rng().random()
+}
+
 pub(crate) fn get_resource_path(resource_name: &str) -> PathBuf {
     if let Ok(mut path) = std::env::current_exe() {
         path.pop();
