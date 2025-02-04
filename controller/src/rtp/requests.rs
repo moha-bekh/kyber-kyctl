@@ -7,14 +7,14 @@ use inputservice_types::CursorFormat;
 
 use crate::controller::Controller;
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize)]
 pub struct GenerateSdpRequest {
     pub yuv444: bool,
     pub display_id: u32,
     pub intra_refresh: Option<bool>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct GenerateSdpResponse {
     pub params: String,
 }
@@ -47,7 +47,7 @@ pub struct StartRequest {
     pub(crate) inputs: Option<StartRequestInput>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct StartResponse {
     pub ip: String,
 }
