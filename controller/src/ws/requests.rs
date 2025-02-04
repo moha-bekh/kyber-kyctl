@@ -1,11 +1,12 @@
 use actix_web::{get, post, web, HttpRequest, HttpResponse};
 use log::info;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use avservice_types::VideoCodec;
 use inputservice_types::CursorFormat;
 
+use crate::utils::generate_session_id;
 use crate::Controller;
 
 #[derive(Debug, Deserialize)]
@@ -30,6 +31,11 @@ pub(crate) struct StartRequest {
     pub(crate) inputs: Option<StartRequestInput>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct StartResponse {
+    pub session_id: Option<u32>,
+}
+
 #[post("/start")]
 async fn start_handler(
     ctrl: web::Data<Mutex<Controller>>,
@@ -38,8 +44,12 @@ async fn start_handler(
     let ret = super::start_handler(ctrl, request).await;
     match ret {
         Ok(_) => {
-            info!("Websocket backend started");
-            HttpResponse::Ok().finish()
+            let session_id = generate_session_id();
+
+            info!("Websocket backend started. SessionId: {session_id}");
+            HttpResponse::Ok().json(StartResponse {
+                session_id: Some(session_id),
+            })
         }
         Err(err) => {
             info!("Websocket start backend rejected: {:?}", err);
