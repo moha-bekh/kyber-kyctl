@@ -6,6 +6,7 @@ use tokio::sync::Mutex;
 use inputservice_types::CursorFormat;
 
 use crate::controller::Controller;
+use crate::utils::generate_session_id;
 
 #[derive(Debug, Serialize)]
 pub struct HelloResponse {
@@ -50,6 +51,11 @@ pub struct StartRequest {
     pub video: Option<StartRequestVideo>,
     pub audio: Option<StartRequestAudio>,
     pub(crate) inputs: Option<StartRequestInput>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct StartResponse {
+    pub session_id: Option<u32>,
 }
 
 #[get("/hello")]
@@ -110,9 +116,12 @@ async fn start(
     let ret = super::start(&mut ctrl, request.into_inner()).await;
     match ret {
         Ok(_) => {
-            info!("Stream started");
+            let session_id = generate_session_id();
+            info!("Stream started. SessionId: {session_id}");
 
-            HttpResponse::Ok().finish()
+            HttpResponse::Ok().json(StartResponse {
+                session_id: Some(session_id),
+            })
         }
         Err(err) => {
             info!("Stream start rejected: {:?}", err);
