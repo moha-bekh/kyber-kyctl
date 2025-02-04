@@ -39,6 +39,11 @@ struct StartRequest {
 }
 
 #[derive(Debug, Deserialize)]
+struct StartResponse {
+    session_id: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
 struct HelloResponse {
     ip: String,
 }
@@ -143,6 +148,15 @@ pub(super) async fn start_stream(
             status: response.status().into(),
         });
     }
+
+    let response = response.json::<StartResponse>().await?;
+    info!(
+        "Session started. SessionId: {}",
+        response
+            .session_id
+            .map(|v| v.to_string())
+            .unwrap_or("None".to_string())
+    );
 
     Ok(())
 }
