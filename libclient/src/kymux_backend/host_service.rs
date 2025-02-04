@@ -1,4 +1,4 @@
-use log::warn;
+use log::{info, warn};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -89,6 +89,7 @@ pub(crate) struct StartSessionInputResponse {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct StartSessionResponse {
+    pub(crate) session_id: Option<u32>,
     pub(crate) video: Option<Vec<StartSessionVideoResponse>>,
     pub(crate) audio: Option<StartSessionAudioResponse>,
     pub(crate) input: Option<StartSessionInputResponse>,
@@ -150,5 +151,14 @@ pub(crate) async fn start_stream(
         });
     }
 
-    Ok(response.json::<_>().await?)
+    let response = response.json::<StartSessionResponse>().await?;
+    info!(
+        "Session started. SessionId: {}",
+        response
+            .session_id
+            .map(|v| v.to_string())
+            .unwrap_or("None".to_string())
+    );
+
+    Ok(response)
 }
