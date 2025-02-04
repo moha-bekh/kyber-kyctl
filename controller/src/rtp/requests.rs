@@ -7,6 +7,11 @@ use inputservice_types::CursorFormat;
 
 use crate::controller::Controller;
 
+#[derive(Debug, Serialize)]
+pub struct HelloResponse {
+    pub ip: String,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct GenerateSdpRequest {
     pub yuv444: bool,
@@ -47,11 +52,6 @@ pub struct StartRequest {
     pub(crate) inputs: Option<StartRequestInput>,
 }
 
-#[derive(Debug, Serialize)]
-pub struct StartResponse {
-    pub ip: String,
-}
-
 #[get("/hello")]
 async fn hello(req: HttpRequest) -> HttpResponse {
     let peer_addr = if let Some(peer_addr) = req.peer_addr() {
@@ -60,7 +60,7 @@ async fn hello(req: HttpRequest) -> HttpResponse {
         return HttpResponse::Forbidden().finish();
     };
 
-    HttpResponse::Ok().json(StartResponse {
+    HttpResponse::Ok().json(HelloResponse {
         ip: peer_addr.ip().to_string(),
     })
 }
