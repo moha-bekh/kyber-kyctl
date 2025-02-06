@@ -5,6 +5,8 @@ mod host_events;
 mod host_service;
 pub(crate) mod http;
 mod message_bus;
+pub(crate) mod metrics;
+pub(crate) mod runtime;
 
 #[cfg_attr(feature = "desktop", path = "./platform/desktop/mod.rs")]
 #[cfg_attr(feature = "web", path = "./platform/web/mod.rs")]
@@ -37,6 +39,7 @@ use host_events::HostEventReceiver;
 pub use host_events::{StreamerPipelineEventType, StreamerPipelineStage, StreamerPipelineType};
 use http::HttpClient;
 pub(crate) use message_bus::{MessageReceiver, MessageSender};
+use metrics::{MetricsCollector, MetricsProducer};
 pub use platform::{ConnectConfig, VideoPlayerConfig};
 pub(crate) use platform::{ConnectionParams, InputPipeline, MainLoopEngine};
 
@@ -80,6 +83,7 @@ struct Handler {
     http_client: HttpClient,
     event_manager: EventManager,
     message_sender: MessageSender,
+    metrics: MetricsProducer,
 
     host_events: Option<HostEventReceiver>,
 
@@ -97,6 +101,7 @@ impl Handler {
         connect_config: ConnectConfig,
         event_manager: EventManager,
         message_sender: MessageSender,
+        metrics: MetricsProducer,
         state: Arc<Mutex<State>>,
     ) -> Result<Self> {
         let conn_params = ConnectionParams::new(connect_config)?;
@@ -107,6 +112,7 @@ impl Handler {
             http_client,
             event_manager,
             message_sender,
+            metrics,
             host_events: None,
             state,
             displays: vec![],
@@ -469,6 +475,12 @@ impl Handler {
 
                 Ok(())
             }
+            Message::Metric(metric) => {
+                if let Err(err) = self.metrics.send(metric.clone()) {
+                    warn!("Metric discarded: {err}");
+                }
+                Ok(())
+            }
         }
     }
 
@@ -626,17 +638,34 @@ impl std::fmt::Debug for StreamingSessionConfig {
 struct MainLoop {
     msg_receiver: MessageReceiver,
     handler: Handler,
+    metrics_collector: Option<MetricsCollector>,
 }
 
 impl MainLoop {
-    fn new(msg_receiver: MessageReceiver, handler: Handler) -> Self {
+    fn new(
+        msg_receiver: MessageReceiver,
+        handler: Handler,
+        metrics_collector: MetricsCollector,
+    ) -> Self {
         Self {
             msg_receiver,
             handler,
+            metrics_collector: Some(metrics_collector),
+        }
+    }
+
+    async fn process_metrics(metrics_collector: &mut MetricsCollector) {
+        while let Some(metric) = metrics_collector.recv().await {
+            log::info!("metric: {metric:?}");
         }
     }
 
     async fn run(mut self) {
+        let mut metrics_collector = self.metrics_collector.take().unwrap();
+        runtime::spawn(async move {
+            Self::process_metrics(&mut metrics_collector).await;
+        });
+
         loop {
             let wrapper = self.msg_receiver.recv().await;
             if let Some(wrapper) = wrapper {
@@ -680,15 +709,19 @@ impl Client {
         let event_manager_handler = event_manager.clone();
         let msg_sender_handler = msg_sender.clone();
 
+        let metrics_collector = MetricsCollector::new();
+        let metrics_producer = metrics_collector.producer();
+
         let state = Arc::new(Mutex::new(State::default()));
 
         let handler = Handler::new(
             connect_config,
             event_manager_handler,
             msg_sender_handler,
+            metrics_producer,
             state.clone(),
         )?;
-        let mainloop = MainLoop::new(msg_receiver, handler);
+        let mainloop = MainLoop::new(msg_receiver, handler, metrics_collector);
 
         let mainloop_engine = MainLoopEngine::new(mainloop);
 

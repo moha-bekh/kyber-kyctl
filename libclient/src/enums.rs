@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::host_events;
+use crate::metrics::Metric;
 use crate::{
     StreamerPipelineEventType, StreamerPipelineStage, StreamerPipelineType, StreamingSessionConfig,
 };
@@ -100,6 +101,8 @@ pub(crate) enum Message {
         frame_coded_width: i32,
         frame_coded_height: i32,
     },
+
+    Metric(Metric),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
