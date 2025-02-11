@@ -9,14 +9,17 @@ use tokio::task::{self, JoinHandle};
 
 use kymux::{AudioProtocol, VideoProtocol};
 
+use super::metrics;
 use super::{KymuxBackendConfig, KymuxTransportBackend};
 use crate::enums::Message;
 use crate::kymux_backend::host_service;
 use crate::kymux_backend::host_service::{
     StartSessionAudioResponse, StartSessionResponse, StartSessionVideoResponse,
 };
+use crate::metrics::MetricsProducer;
 use crate::platform::player;
 use crate::platform::{InputClient, InputPipeline};
+use crate::runtime::Duration;
 use crate::{BackendDriver, ConnectionParams, DataPlaneCloseReason, MessageSender};
 use crate::{Error, Result};
 
@@ -294,7 +297,10 @@ pub(super) struct KymuxBackend {
 }
 
 impl KymuxBackend {
-    pub(super) async fn new(backend_config: KymuxBackendConfig<'_>) -> Result<Self> {
+    pub(super) async fn new(
+        backend_config: KymuxBackendConfig<'_>,
+        metrics: MetricsProducer,
+    ) -> Result<Self> {
         let kymux = start_kymux(&backend_config).await?;
 
         const IPC_PORT: u16 = 9090;
@@ -302,6 +308,8 @@ impl KymuxBackend {
 
         // Start stream
         let host_config = host_service::start_stream(&backend_config).await?;
+
+        metrics::start_connection_stats_poller(&kymux, metrics, Duration::from_secs(5)).await;
 
         // Play Video and Audio
         let player = create_player(&mut kymux, &backend_config, &host_config).await?;

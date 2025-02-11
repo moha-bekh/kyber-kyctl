@@ -6,9 +6,11 @@ use serde::Serialize;
 
 use crate::error::Result;
 use crate::http::HttpClient;
+use crate::metrics::MetricsProducer;
 use crate::{BackendDriver, ConnectionParams, MessageSender, StreamingSessionConfig};
 
 pub(crate) mod host_service;
+pub(crate) mod metrics;
 
 #[derive(Clone, Copy, Debug, Serialize)]
 pub enum KymuxTransportBackend {
@@ -38,7 +40,10 @@ pub type BoxedKymuxBackend = Box<dyn BackendDriver + Send>;
 #[cfg(feature = "web")]
 pub type BoxedKymuxBackend = Box<dyn BackendDriver>;
 
-pub(crate) async fn new(config: KymuxBackendConfig<'_>) -> Result<BoxedKymuxBackend> {
-    let backend = platform::KymuxBackend::new(config).await?;
+pub(crate) async fn new(
+    config: KymuxBackendConfig<'_>,
+    metrics: MetricsProducer,
+) -> Result<BoxedKymuxBackend> {
+    let backend = platform::KymuxBackend::new(config, metrics).await?;
     Ok(Box::new(backend))
 }

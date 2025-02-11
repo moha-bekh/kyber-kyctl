@@ -15,6 +15,7 @@ use kymux::{
 use libkynput::bufferproxy::{BufferProxy, BufferProxyReceiver, BufferProxySender};
 use libkynput::{InputNetworkStream, InputNetworkStreamMsg, InputNetworkStreamObserver};
 
+use super::metrics;
 use super::{KymuxBackendConfig, KymuxTransportBackend};
 use crate::enums::Message;
 use crate::kymux_backend::host_service;
@@ -22,11 +23,13 @@ use crate::kymux_backend::host_service::{
     StartKymuxCertificateHash, StartSessionAudioResponse, StartSessionResponse,
     StartSessionVideoResponse,
 };
+use crate::metrics::MetricsProducer;
 use crate::platform::player::{
     AudioPlayer, AudioPlayerHandle, PacketSink, VideoDecoderConfig, VideoPlayer, VideoPlayerHandle,
 };
 use crate::platform::AudioPlayerConfig;
 use crate::platform::InputMsgSink;
+use crate::runtime::Duration;
 use crate::{BackendDriver, DataPlaneCloseReason, MessageSender, VideoSessionConfig};
 use crate::{Error, Result};
 
@@ -455,7 +458,10 @@ pub(super) struct KymuxBackend {
 }
 
 impl KymuxBackend {
-    pub(super) async fn new(mut backend_config: KymuxBackendConfig<'_>) -> Result<Self> {
+    pub(super) async fn new(
+        mut backend_config: KymuxBackendConfig<'_>,
+        metrics: MetricsProducer,
+    ) -> Result<Self> {
         let mut kymux = start_kymux(&backend_config).await?;
 
         // Tweak configuration in function of local capabilities
@@ -466,6 +472,8 @@ impl KymuxBackend {
 
         // Start stream
         let host_config = host_service::start_stream(&backend_config).await?;
+
+        metrics::start_connection_stats_poller(&kymux, metrics, Duration::from_secs(5)).await;
 
         let close_requested = CloseRequestState::new();
 

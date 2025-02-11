@@ -229,7 +229,7 @@ impl Handler {
                     msg_sender,
                 };
 
-                self.backend = Some(kymux_backend::new(config).await?);
+                self.backend = Some(kymux_backend::new(config, self.metrics.clone()).await?);
             }
             #[cfg(feature = "rtp")]
             StreamingProtocol::Rtp => {

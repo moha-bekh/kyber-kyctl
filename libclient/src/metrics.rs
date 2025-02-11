@@ -4,6 +4,7 @@ use tokio::sync::mpsc::error::{SendError, TrySendError};
 #[derive(Debug, Clone)]
 pub enum Metric {
     Video(VideoMetric),
+    NetworkLocal(NetworkStats),
 }
 
 #[derive(Debug, Clone)]
@@ -20,6 +21,13 @@ pub enum VideoMetricData {
     FrameDecoded,
     FrameDisplayed,
     FrameSkipped,
+}
+
+// like kymux::ConnectionStats, but a struct local and serializable
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NetworkStats {
+    pub rtt_micros: Option<u64>,
+    pub packets_lost: Option<u64>,
 }
 
 #[derive(Debug)]
