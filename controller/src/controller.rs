@@ -65,6 +65,7 @@ pub(crate) struct StreamingServices {
     pub(crate) video: Vec<avservice::Handler>,
     pub(crate) audio: Option<avservice::Handler>,
     pub(crate) input: Option<inputservice::Handler>,
+    pub(crate) clock_sync: Option<crate::kymux_controller::ClockSyncTask>,
 }
 
 impl StreamingServices {
@@ -105,6 +106,10 @@ impl StreamingServices {
 
         Self::stop_avservice(self.audio.take()).await?;
         Self::stop_input(self.input.take()).await?;
+
+        if let Some(clock_sync) = self.clock_sync.take() {
+            clock_sync.stop().await;
+        }
 
         Ok(())
     }

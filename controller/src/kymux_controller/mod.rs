@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use actix_web::web;
-use kymux::ProtocolEndpoint;
+use kymux::{ClockSyncServerEndpoint, ProtocolEndpoint};
 use log::{info, warn};
 use tokio::sync::{oneshot, Mutex};
 use tokio::task::{self, JoinHandle};
@@ -372,10 +372,49 @@ pub(crate) struct StartSessionInputResponse {
     clipboard: bool,
 }
 
+pub(crate) struct StartSessionClockSyncResponse {
+    task: ClockSyncTask,
+    endpoint: u16,
+}
+
 pub(crate) struct StartSessionResponse {
     pub(crate) video: Option<Vec<StartSessionVideoResponse>>,
     pub(crate) audio: Option<StartSessionAudioResponse>,
     pub(crate) input: Option<StartSessionInputResponse>,
+    pub(crate) clock_sync: Option<StartSessionClockSyncResponse>,
+}
+
+pub(crate) struct ClockSyncTask {
+    stop_tx: oneshot::Sender<()>,
+    handle: tokio::task::JoinHandle<()>,
+}
+
+impl ClockSyncTask {
+    fn new(endpoint: ClockSyncServerEndpoint) -> Self {
+        let (stop_tx, stop_rx) = oneshot::channel();
+
+        let handle = task::spawn(async move {
+            tokio::select! {
+                _ = stop_rx => {
+                }
+                _ = Self::clock_sync_task(endpoint) => {
+                }
+
+            }
+        });
+
+        Self { stop_tx, handle }
+    }
+
+    pub(crate) async fn stop(self) {
+        let _ = self.stop_tx.send(());
+        let _ = self.handle.await;
+    }
+
+    async fn clock_sync_task(endpoint: ClockSyncServerEndpoint) {
+        let mut protocol = endpoint.ready().await.unwrap();
+        protocol.serve().await.unwrap();
+    }
 }
 
 async fn start_session(
@@ -428,6 +467,19 @@ async fn start_session(
     )
     .await?;
 
+    let clock_sync = {
+        let endpoint: ClockSyncServerEndpoint =
+            connection.register_clock_sync_endpoint(None).await?;
+        let endpoint_id = endpoint.id();
+        info!("Start clock sync. Endpoint: {endpoint_id:X}");
+
+        let task = ClockSyncTask::new(endpoint);
+        Some(StartSessionClockSyncResponse {
+            endpoint: endpoint_id,
+            task,
+        })
+    };
+
     backend.connection_task = Some(ConnectionTask::new(
         connection.clone(),
         backend.statemachine_proxy.clone(),
@@ -437,5 +489,6 @@ async fn start_session(
         video,
         audio,
         input,
+        clock_sync,
     })
 }
