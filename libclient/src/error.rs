@@ -75,6 +75,7 @@ pub enum Error {
     },
     WsConnectFailed,
     DataPlaneConnectFailed,
+    DeserializationFailed,
 }
 
 impl From<std::io::Error> for Error {

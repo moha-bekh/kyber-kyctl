@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::{SendError, TrySendError};
 
@@ -6,6 +7,7 @@ pub enum Metric {
     Video(VideoMetric),
     NetworkLocal(NetworkStats),
     NetworkPing(NetworkPing),
+    NetworkRemote(NetworkStats),
 }
 
 #[derive(Debug, Clone)]

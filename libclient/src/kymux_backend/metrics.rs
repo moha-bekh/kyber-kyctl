@@ -1,6 +1,6 @@
 use log::warn;
 
-use kymux::{ClockSyncClientProtocol, ProtocolEndpoint};
+use kymux::{ClockSyncClientProtocol, MetricsPacket, ProtocolEndpoint, ProtocolRecv};
 
 use crate::metrics::{Metric, MetricsProducer, NetworkPing, NetworkStats};
 use crate::runtime::{self, Duration};
@@ -72,4 +72,44 @@ async fn run_clock_sync(
         }
         interval.tick().await;
     }
+}
+
+pub(crate) async fn start_remote_metrics_receiver(
+    kymux: &kymux::Connection,
+    endpoint_id: u16,
+    metrics: MetricsProducer,
+) -> Result<()> {
+    let endpoint = kymux.connect_metrics_endpoint(endpoint_id)?;
+    let protocol = endpoint
+        .ready()
+        .await
+        .map_err(|err| Error::KymuxReadyFailed { reason: err.0 })?;
+
+    runtime::spawn(async move {
+        if let Err(err) = run_metrics_receiver(protocol, metrics).await {
+            warn!("Remote metrics receiver error: {err:?}");
+        }
+    });
+
+    Ok(())
+}
+
+async fn run_metrics_receiver(
+    mut protocol: ProtocolRecv<MetricsPacket>,
+    metrics: MetricsProducer,
+) -> Result<()> {
+    while let Some(packet) = protocol
+        .recv()
+        .await
+        .map_err(|err| Error::Kymux(err.into()))?
+    {
+        let network_stats =
+            rmp_serde::from_slice(&packet.payload).map_err(|_| Error::DeserializationFailed)?;
+        let metric = Metric::NetworkRemote(network_stats);
+        if let Err(err) = metrics.send(metric) {
+            warn!("Metric discarded: {err}");
+        }
+    }
+
+    Ok(())
 }

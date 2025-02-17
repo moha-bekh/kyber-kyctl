@@ -1109,6 +1109,7 @@ dependencies = [
  "log",
  "raw-window-handle",
  "reqwest",
+ "rmp-serde",
  "rustls",
  "rustls-pemfile",
  "serde",

@@ -96,12 +96,18 @@ pub(crate) struct StartSessionClockSyncResponse {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+pub(crate) struct StartSessionMetricsResponse {
+    pub(crate) endpoint: u16,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct StartSessionResponse {
     pub(crate) session_id: Option<u32>,
     pub(crate) video: Option<Vec<StartSessionVideoResponse>>,
     pub(crate) audio: Option<StartSessionAudioResponse>,
     pub(crate) input: Option<StartSessionInputResponse>,
     pub(crate) clock_sync: Option<StartSessionClockSyncResponse>,
+    pub(crate) metrics: Option<StartSessionMetricsResponse>,
 }
 
 pub(crate) async fn start_stream(
