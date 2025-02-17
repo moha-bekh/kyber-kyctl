@@ -1,3 +1,4 @@
+mod metrics;
 pub(crate) mod requests;
 mod server;
 mod webtransport;
@@ -7,7 +8,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use actix_web::web;
-use kymux::{ClockSyncServerEndpoint, ProtocolEndpoint};
+use bytes::Bytes;
+use kymux::{
+    ClockSyncServerEndpoint, KyProtoStatsProvider, MetricsPacket, MetricsServerEndpoint,
+    ProtocolEndpoint,
+};
 use log::{info, warn};
 use tokio::sync::{oneshot, Mutex};
 use tokio::task::{self, JoinHandle};
@@ -22,6 +27,7 @@ use crate::inputservice;
 use crate::utils::TypeConvert;
 use crate::{Controller, DataPlaneBackend, StateMachineEvent, StateMachineProxy};
 
+use metrics::NetworkStats;
 use requests::{KymuxTransportBackend, StartKymuxCertificateHash};
 
 struct ConnectionTask {
@@ -377,11 +383,17 @@ pub(crate) struct StartSessionClockSyncResponse {
     endpoint: u16,
 }
 
+pub(crate) struct StartSessionMetricsResponse {
+    task: MetricsTask,
+    endpoint: u16,
+}
+
 pub(crate) struct StartSessionResponse {
     pub(crate) video: Option<Vec<StartSessionVideoResponse>>,
     pub(crate) audio: Option<StartSessionAudioResponse>,
     pub(crate) input: Option<StartSessionInputResponse>,
     pub(crate) clock_sync: Option<StartSessionClockSyncResponse>,
+    pub(crate) metrics: Option<StartSessionMetricsResponse>,
 }
 
 pub(crate) struct ClockSyncTask {
@@ -414,6 +426,34 @@ impl ClockSyncTask {
     async fn clock_sync_task(endpoint: ClockSyncServerEndpoint) {
         let mut protocol = endpoint.ready().await.unwrap();
         protocol.serve().await.unwrap();
+    }
+}
+
+pub(crate) struct MetricsTask {
+    stop_tx: oneshot::Sender<()>,
+    handle: tokio::task::JoinHandle<()>,
+}
+
+impl MetricsTask {
+    fn new(endpoint: MetricsServerEndpoint, stats_provider: KyProtoStatsProvider) -> Self {
+        let (stop_tx, stop_rx) = oneshot::channel();
+
+        let handle = task::spawn(async move {
+            tokio::select! {
+                _ = stop_rx => {
+                }
+                _ = run_stats_poller(endpoint, stats_provider, Duration::from_secs(5)) => {
+                }
+
+            }
+        });
+
+        Self { stop_tx, handle }
+    }
+
+    pub(crate) async fn stop(self) {
+        let _ = self.stop_tx.send(());
+        let _ = self.handle.await;
     }
 }
 
@@ -480,6 +520,20 @@ async fn start_session(
         })
     };
 
+    let metrics = {
+        let endpoint = connection.register_metrics_endpoint(None).await?;
+        let endpoint_id = endpoint.id();
+        info!("Start metrics server. Endpoint: {endpoint_id:X}");
+
+        let stats_provider = connection.stats_provider();
+        let task = MetricsTask::new(endpoint, stats_provider);
+
+        Some(StartSessionMetricsResponse {
+            endpoint: endpoint_id,
+            task,
+        })
+    };
+
     backend.connection_task = Some(ConnectionTask::new(
         connection.clone(),
         backend.statemachine_proxy.clone(),
@@ -490,5 +544,34 @@ async fn start_session(
         audio,
         input,
         clock_sync,
+        metrics,
     })
+}
+
+async fn run_stats_poller(
+    endpoint: MetricsServerEndpoint,
+    stats_provider: KyProtoStatsProvider,
+    interval: Duration,
+) -> Result<()> {
+    let mut protocol = endpoint
+        .ready()
+        .await
+        .map_err(|err| Error::Kymux { source: err.into() })?;
+    let mut interval = tokio::time::interval(interval);
+    loop {
+        interval.tick().await;
+        let connection_stats = stats_provider.connection_stats().await;
+        let network_stats = NetworkStats {
+            rtt_micros: connection_stats
+                .rtt
+                .map(|d| u64::try_from(d.as_micros()).unwrap()),
+            packets_lost: connection_stats.packets_lost,
+        };
+        let payload = Bytes::from(rmp_serde::to_vec(&network_stats).unwrap());
+        let packet = MetricsPacket { payload };
+        protocol
+            .send(packet)
+            .await
+            .map_err(|err| Error::Kymux { source: err.into() })?;
+    }
 }

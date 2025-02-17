@@ -66,6 +66,7 @@ pub(crate) struct StreamingServices {
     pub(crate) audio: Option<avservice::Handler>,
     pub(crate) input: Option<inputservice::Handler>,
     pub(crate) clock_sync: Option<crate::kymux_controller::ClockSyncTask>,
+    pub(crate) metrics: Option<crate::kymux_controller::MetricsTask>,
 }
 
 impl StreamingServices {
@@ -109,6 +110,10 @@ impl StreamingServices {
 
         if let Some(clock_sync) = self.clock_sync.take() {
             clock_sync.stop().await;
+        }
+
+        if let Some(metrics) = self.metrics.take() {
+            metrics.stop().await;
         }
 
         Ok(())
