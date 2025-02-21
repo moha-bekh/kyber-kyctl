@@ -22,6 +22,7 @@ pub enum VideoMetricData {
     FrameReceived,
     FrameDecoding,
     FrameDecoded,
+    FramePrepared,
     FrameDisplayed,
     FrameSkipped,
 }

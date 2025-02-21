@@ -1,9 +1,12 @@
 use std::borrow::Cow;
+use std::collections::HashMap;
 
 use log::{error, info, warn};
 use vlc::MediaPlayerAudioEx;
+use vlc::MetricsEntry;
 
 use crate::error::{Error, PlayerError, Result};
+use crate::metrics::{Metric, VideoMetric, VideoMetricData};
 use crate::platform::WindowHandle;
 use crate::{Message, MessageSender};
 
@@ -114,6 +117,76 @@ impl Player {
         })
     }
 
+    fn on_metrics(map: HashMap<String, i64>, message_sender: &MessageSender) {
+        let Some(pts) = map.get("pts").map(|&v| u64::try_from(v).unwrap()) else {
+            warn!("Metrics without pts: ignoring");
+            return;
+        };
+        if let Some(&ts) = map.get("received") {
+            let metric = Metric::Video(VideoMetric {
+                pts,
+                ts,
+                data: VideoMetricData::FrameReceived,
+            });
+            Self::send_metric(message_sender, metric);
+        }
+        if let Some(&ts) = map.get("decoding") {
+            let metric = Metric::Video(VideoMetric {
+                pts,
+                ts,
+                data: VideoMetricData::FrameDecoding,
+            });
+            Self::send_metric(message_sender, metric);
+        }
+        if let Some(&ts) = map.get("decoded") {
+            let metric = Metric::Video(VideoMetric {
+                pts,
+                ts,
+                data: VideoMetricData::FrameDecoded,
+            });
+            Self::send_metric(message_sender, metric);
+        }
+        if let Some(&ts) = map.get("prepared") {
+            let metric = Metric::Video(VideoMetric {
+                pts,
+                ts,
+                data: VideoMetricData::FramePrepared,
+            });
+            Self::send_metric(message_sender, metric);
+        }
+        if let Some(&ts) = map.get("displayed") {
+            let metric = Metric::Video(VideoMetric {
+                pts,
+                ts,
+                data: VideoMetricData::FrameDisplayed,
+            });
+            Self::send_metric(message_sender, metric);
+        }
+        if let Some(&ts) = map.get("skipped") {
+            let metric = Metric::Video(VideoMetric {
+                pts,
+                ts,
+                data: VideoMetricData::FrameSkipped,
+            });
+            Self::send_metric(message_sender, metric);
+        }
+    }
+
+    fn metrics_to_map(entries: Vec<MetricsEntry>) -> HashMap<String, i64> {
+        let mut map = HashMap::new();
+        for MetricsEntry { key, value } in entries {
+            map.insert(key, value);
+        }
+        map
+    }
+
+    fn send_metric(message_sender: &MessageSender, metric: Metric) {
+        let msg = Message::Metric(metric);
+        if let Err(err) = message_sender.send(msg) {
+            warn!("Failed to send metric to MessageSender: {err:?}");
+        }
+    }
+
     fn play_video(&mut self, config: VideoConfig) -> Result<()> {
         info!("Play video. URI: {}", config.uri);
 
@@ -126,6 +199,12 @@ impl Player {
         let mp =
             vlc::MediaPlayer::new(&self.instance).ok_or(PlayerError::MediaPlayerCreateFailed)?;
         mp.set_media(&media);
+
+        let message_sender2 = self.message_sender.clone();
+        mp.set_metrics_callback(move |entries| {
+            let map = Self::metrics_to_map(entries);
+            Self::on_metrics(map, &message_sender2);
+        });
 
         match config.window_handle {
             #[cfg(target_os = "linux")]
