@@ -18,11 +18,13 @@ pub(crate) async fn start_connection_stats_poller(
         loop {
             interval.tick().await;
             let connection_stats = stats_provider.connection_stats().await;
+            let protocol_stats = stats_provider.protocol_stats();
             let metric = Metric::NetworkLocal(NetworkStats {
                 rtt_micros: connection_stats
                     .rtt
                     .map(|d| u64::try_from(d.as_micros()).unwrap()),
                 packets_lost: connection_stats.packets_lost,
+                dropped_packets: protocol_stats.dropped_packets,
             });
             if let Err(err) = metrics.send(metric) {
                 warn!("Metric discarded: {err}");
