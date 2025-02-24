@@ -4,4 +4,5 @@ use serde::{Deserialize, Serialize};
 pub struct NetworkStats {
     pub rtt_micros: Option<u64>,
     pub packets_lost: Option<u64>,
+    pub dropped_packets: Option<u64>,
 }

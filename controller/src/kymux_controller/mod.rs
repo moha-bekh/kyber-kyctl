@@ -561,11 +561,13 @@ async fn run_stats_poller(
     loop {
         interval.tick().await;
         let connection_stats = stats_provider.connection_stats().await;
+        let protocol_stats = stats_provider.protocol_stats();
         let network_stats = NetworkStats {
             rtt_micros: connection_stats
                 .rtt
                 .map(|d| u64::try_from(d.as_micros()).unwrap()),
             packets_lost: connection_stats.packets_lost,
+            dropped_packets: protocol_stats.dropped_packets,
         };
         let payload = Bytes::from(rmp_serde::to_vec(&network_stats).unwrap());
         let packet = MetricsPacket { payload };
