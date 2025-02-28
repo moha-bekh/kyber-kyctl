@@ -105,6 +105,7 @@ pub(crate) struct StartRequest {
 pub(crate) struct StartSessionVideoResponse {
     pub(crate) display_id: u32,
     pub(crate) endpoint: u16,
+    pub(crate) metrics_endpoint: Option<u16>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -171,6 +172,7 @@ pub(crate) async fn start_session(
                         StartSessionVideoResponse {
                             display_id: video.display_id,
                             endpoint: video.endpoint,
+                            metrics_endpoint: video.metrics_endpoint,
                         }
                     })
                     .collect()

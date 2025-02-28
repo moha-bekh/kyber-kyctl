@@ -261,6 +261,15 @@ async fn start_video(
         let endpoint_id = endpoint.id();
         let uri = services_sink.register_and_forward(endpoint)?;
 
+        let (metrics_uri, metrics_endpoint_id) = {
+            let metrics_endpoint = connection.register_metrics_endpoint(None).await?;
+            let metrics_endpoint_id = metrics_endpoint.id();
+
+            let metrics_uri = services_sink.register_and_forward(metrics_endpoint)?;
+
+            (Some(metrics_uri), Some(metrics_endpoint_id))
+        };
+
         info!("Start Video avservice. Protocol: {video_protocol:?}, Endpoint: {endpoint_id:X}");
         let mut avservice =
             avservice::Handler::new(avservice::HandlerType::Video, statemachine_proxy.clone());
@@ -269,6 +278,7 @@ async fn start_video(
                 process_factory,
                 stream_request.display_id,
                 uri,
+                metrics_uri,
                 request.bitrate / video_stream_count,
                 stream_request.codec.clone(),
                 stream_request.yuv444,
@@ -280,6 +290,7 @@ async fn start_video(
             display_id: stream_request.display_id,
             avservice,
             endpoint: endpoint_id,
+            metrics_endpoint: metrics_endpoint_id,
         })
     }
 
@@ -365,6 +376,7 @@ pub(crate) struct StartSessionVideoResponse {
     display_id: u32,
     avservice: avservice::Handler,
     endpoint: u16,
+    metrics_endpoint: Option<u16>,
 }
 
 pub(crate) struct StartSessionAudioResponse {

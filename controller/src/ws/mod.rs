@@ -69,6 +69,7 @@ async fn start_handler(
                 &ctrl.process_factory,
                 video_request.display_id,
                 uri,
+                None,
                 request.bitrate,
                 video_request.codec.clone(),
                 video_request.yuv444,

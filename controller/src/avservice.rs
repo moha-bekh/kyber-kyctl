@@ -247,6 +247,7 @@ impl Handler {
         process_factory: &Arc<ProcessFactory>,
         display_id: u32,
         uri: String,
+        metrics_uri: Option<String>,
         bitrate: u32,
         codec: VideoCodec,
         yuv444: bool,
@@ -257,6 +258,7 @@ impl Handler {
             Command::KymuxStartVideo {
                 display_id,
                 uri,
+                metrics_uri,
                 bitrate,
                 codec,
                 yuv444,
