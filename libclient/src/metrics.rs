@@ -19,6 +19,10 @@ pub struct VideoMetric {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VideoMetricData {
+    FrameAcquired,
+    FrameEncoding,
+    FrameEncoded,
+    FrameSent,
     FrameReceived,
     FrameDecoding,
     FrameDecoded,

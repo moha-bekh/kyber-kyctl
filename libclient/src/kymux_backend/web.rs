@@ -476,13 +476,23 @@ impl KymuxBackend {
         let metrics2 = metrics.clone();
         let metrics3 = metrics.clone();
 
-        metrics::start_connection_stats_poller(&kymux, metrics, Duration::from_secs(5)).await;
+        metrics::start_connection_stats_poller(&kymux, metrics.clone(), Duration::from_secs(5))
+            .await;
 
         let clock_sync_id = host_config.clock_sync.as_ref().unwrap().endpoint;
         metrics::start_pinger(&kymux, clock_sync_id, metrics2, Duration::from_secs(10)).await?;
 
         let remote_network_stats_id = host_config.metrics.as_ref().unwrap().endpoint;
         metrics::start_remote_metrics_receiver(&kymux, remote_network_stats_id, metrics3).await?;
+
+        if let Some(video) = &host_config.video {
+            // TODO: Attach DisplayId
+            let endpoints = video.iter().filter_map(|v| v.metrics_endpoint);
+            for endpoint in endpoints {
+                metrics::start_remote_video_metrics_receiver(&kymux, endpoint, metrics.clone())
+                    .await?;
+            }
+        }
 
         let close_requested = CloseRequestState::new();
 

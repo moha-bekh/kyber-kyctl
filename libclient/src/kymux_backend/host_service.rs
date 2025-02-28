@@ -77,6 +77,7 @@ struct StartRequest {
 pub(crate) struct StartSessionVideoResponse {
     pub(crate) display_id: u32,
     pub(crate) endpoint: u16,
+    pub(crate) metrics_endpoint: Option<u16>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

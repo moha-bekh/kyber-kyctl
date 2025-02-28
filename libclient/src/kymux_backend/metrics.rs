@@ -1,8 +1,13 @@
+use std::collections::HashMap;
+
 use log::warn;
+use serde::Deserialize;
 
 use kymux::{ClockSyncClientProtocol, MetricsPacket, ProtocolEndpoint, ProtocolRecv};
 
-use crate::metrics::{Metric, MetricsProducer, NetworkPing, NetworkStats};
+use crate::metrics::{
+    Metric, MetricsProducer, NetworkPing, NetworkStats, VideoMetric, VideoMetricData,
+};
 use crate::runtime::{self, Duration};
 use crate::{Error, Result};
 
@@ -112,6 +117,98 @@ async fn run_metrics_receiver(
             warn!("Metric discarded: {err}");
         }
     }
+
+    Ok(())
+}
+
+// Must match struct Metrics in avserver
+#[derive(Debug, Deserialize)]
+struct RemoteVideoMetrics {
+    key: String,
+    value: i64,
+}
+
+async fn run_remote_video_metrics_receiver(
+    mut protocol: ProtocolRecv<MetricsPacket>,
+    metrics: MetricsProducer,
+) -> Result<()> {
+    while let Some(packet) = protocol
+        .recv()
+        .await
+        .map_err(|err| Error::Kymux(err.into()))?
+    {
+        let m: Vec<RemoteVideoMetrics> = rmp_serde::from_slice(&packet.payload).unwrap();
+        let m: HashMap<&str, i64> = m.iter().map(|m| (m.key.as_str(), m.value)).collect();
+
+        let Some(pts) = m.get("pts").map(|&v| u64::try_from(v).unwrap()) else {
+            warn!("Metrics without pts: ignoring");
+            continue;
+        };
+
+        if let Some(&ts) = m.get("acquired") {
+            let metric = Metric::Video(VideoMetric {
+                pts,
+                ts,
+                data: VideoMetricData::FrameAcquired,
+            });
+            if metrics.send_force(metric).await.is_err() {
+                break;
+            }
+        };
+
+        if let Some(&ts) = m.get("encoding") {
+            let metric = Metric::Video(VideoMetric {
+                pts,
+                ts,
+                data: VideoMetricData::FrameEncoding,
+            });
+            if metrics.send_force(metric).await.is_err() {
+                break;
+            }
+        };
+
+        if let Some(&ts) = m.get("encoded") {
+            let metric = Metric::Video(VideoMetric {
+                pts,
+                ts,
+                data: VideoMetricData::FrameEncoded,
+            });
+            if metrics.send_force(metric).await.is_err() {
+                break;
+            }
+        };
+
+        if let Some(&ts) = m.get("sent") {
+            let metric = Metric::Video(VideoMetric {
+                pts,
+                ts,
+                data: VideoMetricData::FrameSent,
+            });
+            if metrics.send_force(metric).await.is_err() {
+                break;
+            }
+        };
+    }
+
+    Ok(())
+}
+
+pub(crate) async fn start_remote_video_metrics_receiver(
+    kymux: &kymux::Connection,
+    endpoint_id: u16,
+    metrics: MetricsProducer,
+) -> Result<()> {
+    let endpoint = kymux.connect_metrics_endpoint(endpoint_id)?;
+    let protocol = endpoint
+        .ready()
+        .await
+        .map_err(|err| Error::KymuxReadyFailed { reason: err.0 })?;
+
+    runtime::spawn(async move {
+        if let Err(err) = run_remote_video_metrics_receiver(protocol, metrics).await {
+            warn!("Remote video metrics receiver error: {err:?}");
+        }
+    });
 
     Ok(())
 }
