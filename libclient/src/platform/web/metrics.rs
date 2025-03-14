@@ -8,6 +8,8 @@ impl MetricsProcessor {
         Ok(Self)
     }
 
+    pub async fn close(&mut self) {}
+
     pub async fn on_metric(&mut self, metric: Metric) {
         log::info!("metric: {metric:?}");
     }

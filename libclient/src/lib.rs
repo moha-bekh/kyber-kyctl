@@ -681,6 +681,7 @@ impl MainLoop {
                 _ = stop_rx => {}
                 _ = Self::process_metrics(&mut metrics_collector, &mut metrics_processor) => {}
             }
+            metrics_processor.close().await;
         });
 
         loop {

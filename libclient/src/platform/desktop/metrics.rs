@@ -17,6 +17,8 @@ impl MetricsProcessor {
         Ok(Self { json_producer, out })
     }
 
+    pub async fn close(&mut self) {}
+
     pub async fn on_metric(&mut self, metric: Metric) {
         if let Some(mut data) = self.json_producer.push(&metric) {
             data.push(b'\n');
