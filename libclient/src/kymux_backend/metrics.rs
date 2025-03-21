@@ -1,7 +1,10 @@
 use log::warn;
 
-use crate::metrics::{Metric, MetricsProducer, NetworkStats};
+use kymux::{ClockSyncClientProtocol, ProtocolEndpoint};
+
+use crate::metrics::{Metric, MetricsProducer, NetworkPing, NetworkStats};
 use crate::runtime::{self, Duration};
+use crate::{Error, Result};
 
 pub(crate) async fn start_connection_stats_poller(
     kymux: &kymux::Connection,
@@ -26,4 +29,47 @@ pub(crate) async fn start_connection_stats_poller(
             }
         }
     });
+}
+
+pub(crate) async fn start_pinger(
+    kymux: &kymux::Connection,
+    endpoint_id: u16,
+    metrics: MetricsProducer,
+    interval: Duration,
+) -> Result<()> {
+    let clock_sync = kymux.connect_clock_sync_endpoint(endpoint_id)?;
+    let protocol = clock_sync
+        .ready()
+        .await
+        .map_err(|err| Error::KymuxReadyFailed { reason: err.0 })?;
+
+    runtime::spawn(async move {
+        if let Err(err) = run_clock_sync(protocol, metrics, interval).await {
+            warn!("Clock sync error: {err:?}");
+        }
+    });
+
+    Ok(())
+}
+
+async fn run_clock_sync(
+    mut protocol: ClockSyncClientProtocol,
+    metrics: MetricsProducer,
+    interval: Duration,
+) -> Result<()> {
+    let mut interval = runtime::interval(interval);
+    loop {
+        let result = protocol
+            .sync_average(3)
+            .await
+            .map_err(|err| Error::Kymux(kymux::Error::KyprotoProtocolError { source: err }))?;
+        let metric = Metric::NetworkPing(NetworkPing {
+            offset_micros: result.offset_micros(),
+            delay_micros: result.delay_micros(),
+        });
+        if let Err(err) = metrics.send(metric) {
+            warn!("Metric discarded: {err}");
+        }
+        interval.tick().await;
+    }
 }

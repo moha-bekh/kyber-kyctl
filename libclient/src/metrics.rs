@@ -5,6 +5,7 @@ use tokio::sync::mpsc::error::{SendError, TrySendError};
 pub enum Metric {
     Video(VideoMetric),
     NetworkLocal(NetworkStats),
+    NetworkPing(NetworkPing),
 }
 
 #[derive(Debug, Clone)]
@@ -28,6 +29,12 @@ pub enum VideoMetricData {
 pub struct NetworkStats {
     pub rtt_micros: Option<u64>,
     pub packets_lost: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NetworkPing {
+    pub offset_micros: i64,
+    pub delay_micros: i64,
 }
 
 #[derive(Debug)]
