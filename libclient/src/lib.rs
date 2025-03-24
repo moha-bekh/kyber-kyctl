@@ -40,6 +40,7 @@ pub use host_events::{StreamerPipelineEventType, StreamerPipelineStage, Streamer
 use http::HttpClient;
 pub(crate) use message_bus::{MessageReceiver, MessageSender};
 use metrics::{MetricsCollector, MetricsProducer};
+pub(crate) use platform::metrics::MetricsProcessor;
 pub use platform::{ConnectConfig, VideoPlayerConfig};
 pub(crate) use platform::{ConnectionParams, InputPipeline, MainLoopEngine};
 
@@ -654,9 +655,12 @@ impl MainLoop {
         }
     }
 
-    async fn process_metrics(metrics_collector: &mut MetricsCollector) {
+    async fn process_metrics(
+        metrics_collector: &mut MetricsCollector,
+        metrics_processor: &mut MetricsProcessor,
+    ) {
         while let Some(metric) = metrics_collector.recv().await {
-            log::info!("metric: {metric:?}");
+            metrics_processor.on_metric(metric).await
         }
     }
 
@@ -666,9 +670,16 @@ impl MainLoop {
         let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
 
         runtime::spawn(async move {
+            let mut metrics_processor = match platform::metrics::MetricsProcessor::new().await {
+                Ok(metrics_processor) => metrics_processor,
+                Err(err) => {
+                    log::error!("Could not open metrics processor: {err:?}");
+                    return;
+                }
+            };
             tokio::select! {
                 _ = stop_rx => {}
-                _ = Self::process_metrics(&mut metrics_collector) => {}
+                _ = Self::process_metrics(&mut metrics_collector, &mut metrics_processor) => {}
             }
         });
 
