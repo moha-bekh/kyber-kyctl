@@ -662,8 +662,14 @@ impl MainLoop {
 
     async fn run(mut self) {
         let mut metrics_collector = self.metrics_collector.take().unwrap();
+
+        let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
+
         runtime::spawn(async move {
-            Self::process_metrics(&mut metrics_collector).await;
+            tokio::select! {
+                _ = stop_rx => {}
+                _ = Self::process_metrics(&mut metrics_collector) => {}
+            }
         });
 
         loop {
@@ -683,6 +689,8 @@ impl MainLoop {
                 break;
             }
         }
+
+        let _ = stop_tx.send(()); // ignore send errors
     }
 }
 
