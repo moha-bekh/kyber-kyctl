@@ -336,6 +336,8 @@ impl Handler {
 
                 self.event_manager.send_event(event);
 
+                self.bitrate_changed(config.bitrate)?;
+
                 Ok(())
             }
             Message::StopStreamingSession => {
@@ -384,17 +386,7 @@ impl Handler {
             Message::SetBitrate { bitrate } => {
                 host_service::set_bitrate(&self.http_client, *bitrate).await
             }
-            Message::BitrateChanged { bitrate } => {
-                {
-                    let mut state = self.state.lock().unwrap();
-                    state.bitrate = Some(*bitrate);
-                }
-
-                self.event_manager
-                    .send_event(Event::BitrateChanged { bitrate: *bitrate });
-
-                Ok(())
-            }
+            Message::BitrateChanged { bitrate } => self.bitrate_changed(*bitrate),
             Message::PlayerStarted => {
                 info!("Player started");
                 Ok(())
@@ -478,6 +470,18 @@ impl Handler {
                 Ok(())
             }
         }
+    }
+
+    fn bitrate_changed(&self, bitrate: u32) -> Result<()> {
+        {
+            let mut state = self.state.lock().unwrap();
+            state.bitrate = Some(bitrate);
+        }
+
+        self.event_manager
+            .send_event(Event::BitrateChanged { bitrate });
+
+        Ok(())
     }
 }
 
