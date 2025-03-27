@@ -99,6 +99,7 @@ pub(crate) struct StartRequest {
     pub(crate) video: Option<Vec<StartRequestVideo>>,
     pub(crate) audio: bool,
     pub(crate) inputs: Option<StartRequestInput>,
+    pub(crate) metrics: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

@@ -261,13 +261,15 @@ async fn start_video(
         let endpoint_id = endpoint.id();
         let uri = services_sink.register_and_forward(endpoint)?;
 
-        let (metrics_uri, metrics_endpoint_id) = {
+        let (metrics_uri, metrics_endpoint_id) = if request.metrics {
             let metrics_endpoint = connection.register_metrics_endpoint(None).await?;
             let metrics_endpoint_id = metrics_endpoint.id();
 
             let metrics_uri = services_sink.register_and_forward(metrics_endpoint)?;
 
             (Some(metrics_uri), Some(metrics_endpoint_id))
+        } else {
+            (None, None)
         };
 
         info!("Start Video avservice. Protocol: {video_protocol:?}, Endpoint: {endpoint_id:X}");
@@ -519,7 +521,7 @@ async fn start_session(
     )
     .await?;
 
-    let clock_sync = {
+    let clock_sync = if request.metrics {
         let endpoint: ClockSyncServerEndpoint =
             connection.register_clock_sync_endpoint(None).await?;
         let endpoint_id = endpoint.id();
@@ -530,9 +532,11 @@ async fn start_session(
             endpoint: endpoint_id,
             task,
         })
+    } else {
+        None
     };
 
-    let metrics = {
+    let metrics = if request.metrics {
         let endpoint = connection.register_metrics_endpoint(None).await?;
         let endpoint_id = endpoint.id();
         info!("Start metrics server. Endpoint: {endpoint_id:X}");
@@ -544,6 +548,8 @@ async fn start_session(
             endpoint: endpoint_id,
             task,
         })
+    } else {
+        None
     };
 
     backend.connection_task = Some(ConnectionTask::new(
