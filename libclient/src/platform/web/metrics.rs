@@ -12,7 +12,7 @@ pub struct MetricsProcessor {
 
 impl MetricsProcessor {
     pub async fn new() -> Result<Self> {
-        let json_producer = MetricsJSONProducer;
+        let json_producer = MetricsJSONProducer::new();
         let stream = Self::select_file().await?;
         Ok(Self {
             json_producer,
@@ -50,7 +50,8 @@ impl MetricsProcessor {
     }
 
     pub async fn on_metric(&mut self, metric: Metric) {
-        if let Some(mut data) = self.json_producer.push(&metric) {
+        let lines = self.json_producer.push(&metric);
+        for mut data in lines {
             data.push(b'\n');
             if let Err(err) = self.append(&data).await {
                 log::warn!("Could not write metric: {err:?}");
