@@ -295,6 +295,18 @@ impl RendererWorker {
                 let pts = reflect::get_f64(msg, "pts")? as u64;
                 let ts = reflect::get_f64(msg, "ts")? as i64;
 
+                if metric_type == VideoMetricData::FrameDisplayed {
+                    // Generate a fake "prepared" event for consistency with the
+                    // desktop version using VLC
+                    let metric = Metric::Video(VideoMetric {
+                        source_id,
+                        pts,
+                        ts,
+                        data: VideoMetricData::FramePrepared,
+                    });
+                    Self::message_sender_send(message_sender, Message::Metric(metric));
+                }
+
                 let metric = Metric::Video(VideoMetric {
                     source_id,
                     pts,
