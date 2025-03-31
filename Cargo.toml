@@ -3,7 +3,7 @@
 resolver = "2"
 
 members = [
-    "libclient",
+    "libclient", "libclient-common",
     "libclient-rs",
 ]
 
