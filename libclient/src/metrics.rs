@@ -2,7 +2,25 @@ use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::{SendError, TrySendError};
 
 #[derive(Debug, Clone)]
-pub struct Metric; // Empty placeholder for now
+pub enum Metric {
+    Video(VideoMetric),
+}
+
+#[derive(Debug, Clone)]
+pub struct VideoMetric {
+    pub pts: u64,
+    pub ts: i64,
+    pub data: VideoMetricData,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VideoMetricData {
+    FrameReceived,
+    FrameDecoding,
+    FrameDecoded,
+    FrameDisplayed,
+    FrameSkipped,
+}
 
 #[derive(Debug)]
 pub struct MetricsCollector {

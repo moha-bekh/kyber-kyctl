@@ -2,9 +2,13 @@ use log::{error, info, warn};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
+use crate::metrics::{Metric, VideoMetric, VideoMetricData};
 use crate::platform::player::packet::MediaPacket;
+use crate::runtime::Instant;
+use crate::{Message, MessageSender};
 
 pub struct VideoDecoder {
+    message_sender: MessageSender,
     _output_closure: Closure<dyn FnMut(web_sys::VideoFrame) -> Result<(), JsValue>>,
     _error_closure: Closure<dyn FnMut(js_sys::Error) -> Result<(), JsValue>>,
     video_decoder: web_sys::VideoDecoder,
@@ -20,6 +24,7 @@ pub struct VideoDecoderCallbacks {
 
 impl VideoDecoder {
     pub fn new(
+        message_sender: MessageSender,
         cbs: VideoDecoderCallbacks,
         codec: String,
         hardware_acceleration: bool,
@@ -32,6 +37,7 @@ impl VideoDecoder {
             web_sys::VideoDecoder::new(&web_sys::VideoDecoderInit::new(error_fn, output_fn))?;
 
         Ok(Self {
+            message_sender,
             _output_closure: output_closure,
             _error_closure: error_closure,
             video_decoder,
@@ -85,6 +91,15 @@ impl VideoDecoder {
             let chunk = web_sys::EncodedVideoChunk::new(&web_sys::EncodedVideoChunkInit::new(
                 &data, timestamp, type_,
             ))?;
+
+            let metric = Metric::Video(VideoMetric {
+                pts: header.pts,
+                ts: Instant::now().raw_us() as i64,
+                data: VideoMetricData::FrameDecoding,
+            });
+            if let Err(err) = self.message_sender.send(Message::Metric(metric)) {
+                warn!("Failed to send decoding metric: {err:?}");
+            }
 
             let ret = self.video_decoder.decode(&chunk);
             if let Err(err) = &ret {

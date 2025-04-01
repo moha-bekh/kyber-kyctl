@@ -1,9 +1,11 @@
+use kywasmtime::Instant;
 use log::{info, warn};
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::MessageEvent;
 
+use crate::metrics::{Metric, VideoMetric, VideoMetricData};
 use crate::platform::reflect;
 use crate::{Message, MessageSender};
 
@@ -37,9 +39,22 @@ impl FrameBufPush {
         }
     }
 
-    fn push(&mut self, frame: VideoFrameWrapper) {
-        if self.producer.replace(frame).is_some() {
+    fn push(&mut self, frame: VideoFrameWrapper) -> Result<(), JsValue> {
+        if let Some(prev) = self.producer.replace(frame) {
             // Previous frame skipped
+            if let Some(pts) = prev.frame.timestamp() {
+                let js_self = js_sys::global().dyn_into::<web_sys::DedicatedWorkerGlobalScope>()?;
+
+                let ts = Instant::now().raw_us() as f64;
+
+                let msg = js_sys::Object::new();
+                reflect::set(&msg, "type", "metric".into())?;
+                reflect::set(&msg, "metric_type", "frame_skipped".into())?;
+                reflect::set(&msg, "ts", ts.into())?;
+                reflect::set(&msg, "pts", pts.into())?;
+                js_self.post_message(&msg)?;
+            }
+
             self.frame_skipped += 1;
             if self.frame_skipped % FRAME_SKIPPED_DISPLAY_THRESHOLD == 0 {
                 info!("{} VideoFrames skipped", self.frame_skipped);
@@ -48,6 +63,8 @@ impl FrameBufPush {
             info!("{} VideoFrames have been skipped", self.frame_skipped);
             self.frame_skipped = 0;
         }
+
+        Ok(())
     }
 }
 
@@ -117,7 +134,7 @@ impl VideoRendererWorkerCtx {
                 let frame_w = VideoFrameWrapper { frame, rotation };
 
                 match sink {
-                    FrameSink::FrameBuf(ref mut sink) => sink.push(frame_w),
+                    FrameSink::FrameBuf(ref mut sink) => sink.push(frame_w)?,
                     FrameSink::Regulator(ref mut sink) => {
                         let recv_date = reflect::get_f64(msg, "recv_date")? as u64;
                         let pts = frame_w.frame.timestamp().expect("No pts") as u64;
@@ -142,7 +159,7 @@ impl VideoRendererWorkerCtx {
         mut producer: FrameBufPush,
     ) -> Result<(), JsValue> {
         while let Some(frame) = reg_pull.pull().await {
-            producer.push(frame);
+            producer.push(frame)?;
         }
 
         Ok(())
@@ -160,7 +177,20 @@ impl VideoRendererWorkerCtx {
         loop {
             let frame = consumer.take().await;
 
+            let timestamp = frame.frame.timestamp();
             let result = renderer.draw(frame)?;
+
+            if let Some(pts) = timestamp {
+                let ts = Instant::now().raw_us() as f64;
+
+                let msg = js_sys::Object::new();
+                reflect::set(&msg, "type", "metric".into())?;
+                reflect::set(&msg, "metric_type", "frame_displayed".into())?;
+                reflect::set(&msg, "ts", ts.into())?;
+                reflect::set(&msg, "pts", pts.into())?;
+                js_self.post_message(&msg)?;
+            }
+
             match result {
                 None => {}
                 Some(RenderResult::CanvasResized {
@@ -250,6 +280,26 @@ impl RendererWorker {
                     },
                 );
             }
+            "metric" => {
+                let metric_type = match reflect::get_string(msg, "metric_type")?.as_str() {
+                    "frame_skipped" => VideoMetricData::FrameSkipped,
+                    "frame_displayed" => VideoMetricData::FrameDisplayed,
+                    metric_type => {
+                        return Err(JsValue::from(format!(
+                            "Unexpected metric type: {metric_type}"
+                        )))
+                    }
+                };
+                let pts = reflect::get_f64(msg, "pts")? as u64;
+                let ts = reflect::get_f64(msg, "ts")? as i64;
+
+                let metric = Metric::Video(VideoMetric {
+                    pts,
+                    ts,
+                    data: metric_type,
+                });
+                Self::message_sender_send(message_sender, Message::Metric(metric));
+            }
             _ => {
                 warn!("Got unknown message type: {msg_type:?}");
             }
@@ -282,7 +332,7 @@ impl RendererWorker {
         &self,
         frame: web_sys::VideoFrame,
         rotation: u8,
-        recv_date: u64,
+        recv_date: i64,
     ) -> Result<(), JsValue> {
         let frame_param: JsValue = frame.into();
 

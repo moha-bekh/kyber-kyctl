@@ -1,3 +1,4 @@
+use crate::metrics::{Metric, VideoMetric, VideoMetricData};
 use crate::platform::dom;
 use crate::platform::player::packet::{CodecPacket, Packet};
 use crate::platform::player::video::decoder::{VideoDecoder, VideoDecoderCallbacks};
@@ -26,7 +27,7 @@ pub struct VideoPlayer {
     codec: String,
     hardware_acceleration: bool,
     video_rotation: Rc<AtomicU8>,
-    recv_dates: Rc<RefCell<VecDeque<u64>>>,
+    recv_dates: Rc<RefCell<VecDeque<i64>>>,
 }
 
 impl VideoPlayer {
@@ -67,9 +68,21 @@ impl VideoPlayer {
         let message_sender3 = message_sender.clone();
         let cbs = VideoDecoderCallbacks {
             output: Box::new(move |frame| {
+                let now = Instant::now().raw_us() as i64;
                 let rotation = video_rotation_ref.load(Ordering::Relaxed);
                 let pts = frame.timestamp().unwrap_or(-1.);
                 let recv_date = recv_dates2.borrow_mut().pop_front().unwrap();
+
+                if let Some(pts) = frame.timestamp() {
+                    let pts = pts as u64;
+                    let metric = Metric::Video(VideoMetric {
+                        pts,
+                        ts: now,
+                        data: VideoMetricData::FrameDecoded,
+                    });
+                    Self::message_sender_send(&message_sender3, Message::Metric(metric));
+                }
+
                 renderer_worker.send_frame(frame, rotation, recv_date)?;
 
                 if notify_decoded {
@@ -112,8 +125,15 @@ impl VideoPlayer {
                 assert!(self.video_decoder.is_some());
                 if let Some(video_decoder) = &mut self.video_decoder {
                     if !packet.header.is_config {
-                        let recv_date = Instant::now().raw_us();
+                        let recv_date = Instant::now().raw_us() as i64;
                         self.recv_dates.borrow_mut().push_back(recv_date);
+
+                        let metric = Metric::Video(VideoMetric {
+                            pts: packet.header.pts,
+                            ts: recv_date,
+                            data: VideoMetricData::FrameReceived,
+                        });
+                        Self::message_sender_send(&self.message_sender, Message::Metric(metric));
                     }
                     video_decoder.send_packet(packet)?;
                 } else {
@@ -133,6 +153,7 @@ impl VideoPlayer {
                     };
 
                     self.video_decoder = Some(VideoDecoder::new(
+                        self.message_sender.clone(),
                         cbs,
                         self.codec.clone(),
                         self.hardware_acceleration,
