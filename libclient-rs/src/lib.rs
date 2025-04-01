@@ -4,6 +4,7 @@ use std::os::raw::c_void;
 
 use log::{error, warn};
 
+use libclient_common::metrics::{Metric, NetworkPing, NetworkStats, VideoMetric, VideoMetricData};
 use libclient_sys as sys;
 use libkynput_rs::Pipeline;
 
@@ -15,6 +16,8 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub type Display = sys::libclient_Display;
+
+pub type MetricsCallback = dyn FnMut(Metric) + Send + Sync;
 
 #[cfg(feature = "kymux")]
 #[derive(Clone, Copy, Debug)]
@@ -803,6 +806,14 @@ impl Client {
             Err(Error::Generic)
         }
     }
+
+    pub fn set_metrics_callback(&self, cb: Box<MetricsCallback>) {
+        unsafe {
+            // XXX leak
+            let userdata = Box::into_raw(Box::new(cb)) as *mut _;
+            sys::libclient_client_set_metrics_callback(self.ptr, Some(metrics_cb), userdata);
+        }
+    }
 }
 
 impl Clone for Client {
@@ -839,4 +850,104 @@ pub fn init() {
         sys::libclient_set_log_cb(Some(log_cb), std::ptr::null_mut());
         sys::libclient_init_crypto();
     }
+}
+
+// Cannot implement From due to the orphan rule:
+//  - native Rust structures are in libclient-common
+//  - Rust wrappers generated from C code are un libclient-sys
+
+fn from_metric(metric: &sys::libclient_Metric) -> Metric {
+    match metric.type_ {
+        sys::libclient_MetricType_LIBCLIENT_METRIC_TYPE_VIDEO => {
+            let video_metric = from_video_metric(unsafe { &metric.data.video });
+            Metric::Video(video_metric)
+        }
+        sys::libclient_MetricType_LIBCLIENT_METRIC_TYPE_NETWORK_LOCAL => {
+            let network_stats = from_network_stats(unsafe { &metric.data.network_local });
+            Metric::NetworkLocal(network_stats)
+        }
+        sys::libclient_MetricType_LIBCLIENT_METRIC_TYPE_NETWORK_PING => {
+            let network_ping = from_network_ping(unsafe { &metric.data.network_ping });
+            Metric::NetworkPing(network_ping)
+        }
+        sys::libclient_MetricType_LIBCLIENT_METRIC_TYPE_NETWORK_REMOTE => {
+            let network_stats = from_network_stats(unsafe { &metric.data.network_remote });
+            Metric::NetworkRemote(network_stats)
+        }
+        v => panic!("Unexpected metric type: {v}"),
+    }
+}
+
+fn from_video_metric(video_metric: &sys::libclient_VideoMetric) -> VideoMetric {
+    VideoMetric {
+        source_id: video_metric.source_id,
+        pts: video_metric.pts,
+        ts: video_metric.ts,
+        data: from_video_metric_data(&video_metric.data),
+    }
+}
+
+fn from_video_metric_data(video_metric_data: &sys::libclient_VideoMetricData) -> VideoMetricData {
+    match *video_metric_data {
+        sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_ACQUIRED => {
+            VideoMetricData::FrameAcquired
+        }
+        sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_ENCODING => {
+            VideoMetricData::FrameEncoding
+        }
+        sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_ENCODED => {
+            VideoMetricData::FrameEncoded
+        }
+        sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_SENT => {
+            VideoMetricData::FrameSent
+        }
+        sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_RECEIVED => {
+            VideoMetricData::FrameReceived
+        }
+        sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_DECODING => {
+            VideoMetricData::FrameDecoding
+        }
+        sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_DECODED => {
+            VideoMetricData::FrameDecoded
+        }
+        sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_PREPARED => {
+            VideoMetricData::FramePrepared
+        }
+        sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_DISPLAYED => {
+            VideoMetricData::FrameDisplayed
+        }
+        sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_SKIPPED => {
+            VideoMetricData::FrameSkipped
+        }
+        v => panic!("Unexpected video metric data type: {v}"),
+    }
+}
+
+fn from_network_stats(network_stats: &sys::libclient_NetworkStats) -> NetworkStats {
+    let map_value = |v: i64| -> Option<u64> {
+        if v >= 0 {
+            Some(v as u64)
+        } else {
+            None
+        }
+    };
+
+    NetworkStats {
+        rtt_micros: map_value(network_stats.rtt_micros),
+        packets_lost: map_value(network_stats.packets_lost),
+        dropped_packets: map_value(network_stats.dropped_packets),
+    }
+}
+
+fn from_network_ping(network_ping: &sys::libclient_NetworkPing) -> NetworkPing {
+    NetworkPing {
+        offset_micros: network_ping.offset_micros,
+        delay_micros: network_ping.delay_micros,
+    }
+}
+
+extern "C" fn metrics_cb(metric: *const sys::libclient_Metric, userdata: *mut c_void) {
+    let cb: &mut MetricsCallback = unsafe { &mut **(userdata as *mut Box<MetricsCallback>) };
+    let metric = from_metric(unsafe { &*metric });
+    cb(metric);
 }
