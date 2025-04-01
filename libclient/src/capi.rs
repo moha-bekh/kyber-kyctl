@@ -3,11 +3,13 @@ use std::sync::Arc;
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int, c_void};
 use std::ptr;
+use std::sync::atomic::AtomicPtr;
 
 use log::warn;
 
 use libkynput_rs::Pipeline;
 
+use crate::metrics::{Metric, NetworkPing, NetworkStats, VideoMetric, VideoMetricData};
 use crate::VideoCodec;
 
 #[allow(non_camel_case_types)]
@@ -901,4 +903,178 @@ pub unsafe extern "C" fn libclient_client_set_event_handler(
         .add_event_sink(Box::new(handler));
 
     0
+}
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub enum libclient_MetricType {
+    Video,
+    NetworkLocal,
+    NetworkPing,
+    NetworkRemote,
+}
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct libclient_VideoMetric {
+    pub source_id: u32,
+    pub pts: u64,
+    pub ts: i64,
+    pub data: libclient_VideoMetricData,
+}
+
+impl From<VideoMetric> for libclient_VideoMetric {
+    fn from(video_metric: VideoMetric) -> Self {
+        Self {
+            source_id: video_metric.source_id,
+            pts: video_metric.pts,
+            ts: video_metric.ts,
+            data: video_metric.data.into(),
+        }
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub enum libclient_VideoMetricData {
+    FrameAcquired,
+    FrameEncoding,
+    FrameEncoded,
+    FrameSent,
+    FrameReceived,
+    FrameDecoding,
+    FrameDecoded,
+    FramePrepared,
+    FrameDisplayed,
+    FrameSkipped,
+}
+
+impl From<VideoMetricData> for libclient_VideoMetricData {
+    fn from(video_metric_data: VideoMetricData) -> Self {
+        match video_metric_data {
+            VideoMetricData::FrameAcquired => libclient_VideoMetricData::FrameAcquired,
+            VideoMetricData::FrameEncoding => libclient_VideoMetricData::FrameEncoding,
+            VideoMetricData::FrameEncoded => libclient_VideoMetricData::FrameEncoded,
+            VideoMetricData::FrameSent => libclient_VideoMetricData::FrameSent,
+            VideoMetricData::FrameReceived => libclient_VideoMetricData::FrameReceived,
+            VideoMetricData::FrameDecoding => libclient_VideoMetricData::FrameDecoding,
+            VideoMetricData::FrameDecoded => libclient_VideoMetricData::FrameDecoded,
+            VideoMetricData::FramePrepared => libclient_VideoMetricData::FramePrepared,
+            VideoMetricData::FrameDisplayed => libclient_VideoMetricData::FrameDisplayed,
+            VideoMetricData::FrameSkipped => libclient_VideoMetricData::FrameSkipped,
+        }
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct libclient_NetworkStats {
+    pub rtt_micros: i64,
+    pub packets_lost: i64,
+    pub dropped_packets: i64,
+}
+
+impl From<NetworkStats> for libclient_NetworkStats {
+    fn from(network_stats: NetworkStats) -> Self {
+        Self {
+            rtt_micros: network_stats.rtt_micros.map(|v| v as i64).unwrap_or(-1),
+            packets_lost: network_stats.packets_lost.map(|v| v as i64).unwrap_or(-1),
+            dropped_packets: network_stats
+                .dropped_packets
+                .map(|v| v as i64)
+                .unwrap_or(-1),
+        }
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct libclient_NetworkPing {
+    pub offset_micros: i64,
+    pub delay_micros: i64,
+}
+
+impl From<NetworkPing> for libclient_NetworkPing {
+    fn from(network_ping: NetworkPing) -> Self {
+        Self {
+            offset_micros: network_ping.offset_micros,
+            delay_micros: network_ping.delay_micros,
+        }
+    }
+}
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union libclient_MetricData {
+    pub video: libclient_VideoMetric,
+    pub network_local: libclient_NetworkStats,
+    pub network_ping: libclient_NetworkPing,
+    pub network_remote: libclient_NetworkStats,
+}
+
+#[allow(non_camel_case_types)]
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct libclient_Metric {
+    pub type_: libclient_MetricType,
+    pub data: libclient_MetricData,
+}
+
+impl From<Metric> for libclient_Metric {
+    fn from(metric: Metric) -> Self {
+        match metric {
+            Metric::Video(video_metric) => Self {
+                type_: libclient_MetricType::Video,
+                data: libclient_MetricData {
+                    video: video_metric.into(),
+                },
+            },
+            Metric::NetworkLocal(network_stats) => Self {
+                type_: libclient_MetricType::NetworkLocal,
+                data: libclient_MetricData {
+                    network_local: network_stats.into(),
+                },
+            },
+            Metric::NetworkPing(network_ping) => Self {
+                type_: libclient_MetricType::NetworkPing,
+                data: libclient_MetricData {
+                    network_ping: network_ping.into(),
+                },
+            },
+            Metric::NetworkRemote(network_stats) => Self {
+                type_: libclient_MetricType::NetworkRemote,
+                data: libclient_MetricData {
+                    network_remote: network_stats.into(),
+                },
+            },
+        }
+    }
+}
+
+#[allow(non_camel_case_types)]
+pub type libclient_metrics_cb =
+    extern "C" fn(metric: *const libclient_Metric, userdata: *mut c_void);
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_client_set_metrics_callback(
+    client: *mut libclient_Client,
+    metrics_cb: libclient_metrics_cb,
+    userdata: *mut c_void,
+) {
+    let metrics_cb = Arc::new(metrics_cb);
+    let userdata = Arc::new(AtomicPtr::new(userdata));
+    let cb = move |metric: Metric| unsafe {
+        let userdata = *userdata.as_ptr();
+        let libclient_metric: libclient_Metric = metric.into();
+        metrics_cb(std::ptr::from_ref(&libclient_metric), userdata);
+    };
+
+    let client = unsafe { &(*client).client };
+    client.set_metrics_callback(Box::new(cb));
 }
