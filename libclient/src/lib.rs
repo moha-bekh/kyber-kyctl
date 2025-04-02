@@ -38,6 +38,7 @@ pub use event_manager::EventSink;
 use host_events::HostEventReceiver;
 pub use host_events::{StreamerPipelineEventType, StreamerPipelineStage, StreamerPipelineType};
 use http::HttpClient;
+pub use libclient_common::metrics::Metric;
 pub(crate) use message_bus::{MessageReceiver, MessageSender};
 use metrics::{MetricsCollector, MetricsProducer};
 pub(crate) use platform::metrics::MetricsProcessor;
@@ -646,6 +647,7 @@ struct MainLoop {
     msg_receiver: MessageReceiver,
     handler: Handler,
     metrics_collector: Option<MetricsCollector>,
+    metrics_cb: Arc<Mutex<Option<Box<MetricsCallback>>>>,
 }
 
 impl MainLoop {
@@ -653,19 +655,25 @@ impl MainLoop {
         msg_receiver: MessageReceiver,
         handler: Handler,
         metrics_collector: Option<MetricsCollector>,
+        metrics_cb: Arc<Mutex<Option<Box<MetricsCallback>>>>,
     ) -> Self {
         Self {
             msg_receiver,
             handler,
             metrics_collector,
+            metrics_cb,
         }
     }
 
     async fn process_metrics(
         metrics_collector: &mut MetricsCollector,
         metrics_processor: &mut MetricsProcessor,
+        metrics_cb: Arc<Mutex<Option<Box<MetricsCallback>>>>,
     ) {
         while let Some(metric) = metrics_collector.recv().await {
+            if let Some(cb) = &*metrics_cb.lock().unwrap() {
+                cb(metric.clone());
+            }
             metrics_processor.on_metric(metric).await
         }
     }
@@ -674,6 +682,7 @@ impl MainLoop {
         let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
 
         if let Some(mut metrics_collector) = self.metrics_collector.take() {
+            let metrics_cb = self.metrics_cb.clone();
             runtime::spawn(async move {
                 let mut metrics_processor = match platform::metrics::MetricsProcessor::new().await {
                     Ok(metrics_processor) => metrics_processor,
@@ -684,7 +693,7 @@ impl MainLoop {
                 };
                 tokio::select! {
                     _ = stop_rx => {}
-                    _ = Self::process_metrics(&mut metrics_collector, &mut metrics_processor) => {}
+                    _ = Self::process_metrics(&mut metrics_collector, &mut metrics_processor, metrics_cb) => {}
                 }
                 metrics_processor.close().await;
             });
@@ -719,12 +728,16 @@ pub struct State {
     pub bitrate: Option<u32>,
 }
 
+pub type MetricsCallback = dyn Fn(Metric) + Send + Sync;
+
 pub struct Client {
     event_manager: EventManager,
     msg_sender: MessageSender,
 
     mainloop_engine: MainLoopEngine,
     state: Arc<Mutex<State>>,
+
+    metrics_cb: Arc<Mutex<Option<Box<MetricsCallback>>>>,
 }
 
 impl Client {
@@ -751,7 +764,9 @@ impl Client {
             metrics_producer,
             state.clone(),
         )?;
-        let mainloop = MainLoop::new(msg_receiver, handler, metrics_collector);
+
+        let metrics_cb = Arc::new(Mutex::new(None));
+        let mainloop = MainLoop::new(msg_receiver, handler, metrics_collector, metrics_cb.clone());
 
         let mainloop_engine = MainLoopEngine::new(mainloop);
 
@@ -760,6 +775,7 @@ impl Client {
             msg_sender,
             mainloop_engine,
             state,
+            metrics_cb,
         })
     }
 
@@ -845,5 +861,9 @@ impl Client {
         force_software: bool,
     ) -> Vec<platform::player::VideoDecoderConfig> {
         platform::player::supported_video_codecs(force_software).await
+    }
+
+    pub fn set_metrics_callback(&self, cb: Box<MetricsCallback>) {
+        *self.metrics_cb.lock().unwrap() = Some(cb);
     }
 }
