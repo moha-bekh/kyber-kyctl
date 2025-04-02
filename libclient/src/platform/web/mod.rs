@@ -4,7 +4,6 @@ pub(crate) mod http;
 mod input_service;
 mod mainloop_engine;
 
-pub(crate) mod metrics;
 #[cfg(feature = "js-player")]
 pub(crate) mod player;
 pub(crate) mod reflect;

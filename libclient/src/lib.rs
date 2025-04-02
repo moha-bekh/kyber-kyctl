@@ -41,7 +41,6 @@ use http::HttpClient;
 pub use libclient_common::metrics::Metric;
 pub(crate) use message_bus::{MessageReceiver, MessageSender};
 use metrics::{MetricsCollector, MetricsProducer};
-pub(crate) use platform::metrics::MetricsProcessor;
 pub use platform::{ConnectConfig, VideoPlayerConfig};
 pub(crate) use platform::{ConnectionParams, InputPipeline, MainLoopEngine};
 
@@ -667,14 +666,12 @@ impl MainLoop {
 
     async fn process_metrics(
         metrics_collector: &mut MetricsCollector,
-        metrics_processor: &mut MetricsProcessor,
         metrics_cb: Arc<Mutex<Option<Box<MetricsCallback>>>>,
     ) {
         while let Some(metric) = metrics_collector.recv().await {
             if let Some(cb) = &*metrics_cb.lock().unwrap() {
                 cb(metric.clone());
             }
-            metrics_processor.on_metric(metric).await
         }
     }
 
@@ -684,18 +681,10 @@ impl MainLoop {
         if let Some(mut metrics_collector) = self.metrics_collector.take() {
             let metrics_cb = self.metrics_cb.clone();
             runtime::spawn(async move {
-                let mut metrics_processor = match platform::metrics::MetricsProcessor::new().await {
-                    Ok(metrics_processor) => metrics_processor,
-                    Err(err) => {
-                        log::error!("Could not open metrics processor: {err:?}");
-                        return;
-                    }
-                };
                 tokio::select! {
                     _ = stop_rx => {}
-                    _ = Self::process_metrics(&mut metrics_collector, &mut metrics_processor, metrics_cb) => {}
+                    _ = Self::process_metrics(&mut metrics_collector, metrics_cb) => {}
                 }
-                metrics_processor.close().await;
             });
         }
 

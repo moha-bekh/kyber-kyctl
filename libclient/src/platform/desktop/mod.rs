@@ -6,7 +6,6 @@ mod host_events;
 pub(crate) mod http;
 pub(crate) mod input_service;
 mod mainloop_engine;
-pub(crate) mod metrics;
 pub(crate) mod player;
 pub(crate) mod tls;
 pub(crate) mod window_handle;
