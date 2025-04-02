@@ -818,14 +818,6 @@ impl Client {
     }
 }
 
-impl Clone for Client {
-    fn clone(&self) -> Self {
-        Self {
-            ptr: unsafe { sys::libclient_client_ref(self.ptr) },
-        }
-    }
-}
-
 extern "C" fn log_cb(
     level: sys::libclient_LogLevel,
     target: *const libc::c_char,
