@@ -53,11 +53,8 @@ pub enum Error {
     },
     #[error("Operation on date overflow/underflow")]
     DateOperationOverflow,
-    #[error("Actix Web error: {source:?}")]
-    Actix {
-        #[from]
-        source: actix_web::Error,
-    },
+    #[error("Actix Web error: {0}")]
+    Actix(String),
     #[error("Thread panicked")]
     ThreadPanicked,
     #[error("Channel receive failed (channel closed)")]
@@ -81,3 +78,10 @@ pub enum Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+// actix_web::Error is not Send, we want our error::Error to be Send
+impl From<actix_web::Error> for Error {
+    fn from(err: actix_web::Error) -> Self {
+        Error::Actix(err.to_string())
+    }
+}
