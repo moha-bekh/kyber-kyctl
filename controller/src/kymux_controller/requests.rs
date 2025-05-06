@@ -87,6 +87,8 @@ pub(crate) struct StartRequestVideo {
 pub(crate) struct StartRequestInput {
     pub(crate) cursor_format: CursorFormat,
     pub(crate) gamepad_force_xbox360: Option<bool>,
+    #[serde(default)]
+    pub(crate) clipboard: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -112,6 +114,8 @@ pub(crate) struct StartSessionAudioResponse {
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct StartSessionInputResponse {
     pub(crate) endpoint: u16,
+    #[serde(default)]
+    pub(crate) clipboard: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -175,6 +179,7 @@ pub(crate) async fn start_session(
 
                 Some(StartSessionInputResponse {
                     endpoint: input.endpoint,
+                    clipboard: input.clipboard,
                 })
             } else {
                 None

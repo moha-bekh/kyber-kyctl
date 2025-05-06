@@ -53,13 +53,13 @@ impl Handler {
         process_factory: &Arc<ProcessFactory>,
         host_config: HostConfig,
         service_config: ServiceConfig,
-    ) -> Result<()> {
+    ) -> Result<Option<Event>> {
         if self.inner.is_some() {
             return Err(Error::StreamerStarted);
         }
 
         let mut inner = Self::spawn_process(process_factory).await?;
-        inner
+        let evt = inner
             .sender
             .send(Command::StartTcp {
                 host_config,
@@ -68,7 +68,7 @@ impl Handler {
             .await?;
         self.inner = Some(inner);
 
-        Ok(())
+        Ok(evt)
     }
 
     pub(crate) async fn start_kymux(
@@ -77,13 +77,13 @@ impl Handler {
         host_config: HostConfig,
         service_config: ServiceConfig,
         uri: String,
-    ) -> Result<()> {
+    ) -> Result<Option<Event>> {
         if self.inner.is_some() {
             return Err(Error::StreamerStarted);
         }
 
         let mut inner = Self::spawn_process(process_factory).await?;
-        inner
+        let evt = inner
             .sender
             .send(Command::StartKymux {
                 host_config,
@@ -93,7 +93,7 @@ impl Handler {
             .await?;
         self.inner = Some(inner);
 
-        Ok(())
+        Ok(evt)
     }
 
     pub(crate) async fn update_host_config(&mut self, host_config: HostConfig) -> Result<()> {

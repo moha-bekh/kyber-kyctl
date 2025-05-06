@@ -336,16 +336,22 @@ async fn start_input(
     let service_config = inputservice_types::ServiceConfig {
         cursor_format: inputs_request.cursor_format.clone(),
         gamepad_force_xbox360: inputs_request.gamepad_force_xbox360,
+        clipboard: inputs_request.clipboard,
     };
 
     let mut inputservice = inputservice::Handler::new();
-    inputservice
+    let (clipboard,) = match inputservice
         .start_kymux(process_factory, host_config, service_config, uri)
-        .await?;
+        .await?
+    {
+        Some(inputservice_types::Event::Connected { clipboard }) => (clipboard,),
+        _ => (false,),
+    };
 
     Ok(Some(StartSessionInputResponse {
         inputservice,
         endpoint: endpoint_id,
+        clipboard,
     }))
 }
 
@@ -363,6 +369,7 @@ pub(crate) struct StartSessionAudioResponse {
 pub(crate) struct StartSessionInputResponse {
     inputservice: inputservice::Handler,
     endpoint: u16,
+    clipboard: bool,
 }
 
 pub(crate) struct StartSessionResponse {

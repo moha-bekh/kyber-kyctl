@@ -42,6 +42,8 @@ pub struct StartRequestAudio {
 pub(crate) struct StartRequestInput {
     pub(crate) cursor_format: CursorFormat,
     pub(crate) gamepad_force_xbox360: Option<bool>,
+    #[serde(default)]
+    pub(crate) clipboard: bool,
 }
 
 #[derive(Debug, Deserialize)]
