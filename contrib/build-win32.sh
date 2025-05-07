@@ -10,7 +10,17 @@ VLC_SRCDIR="$WORKSPACE_ROOT/external/vlc"
 KYAUDIOREG_SRCDIR="$WORKSPACE_ROOT/external/kyaudioreg"
 
 # Build configuration
-NJOBS=$(grep -c ^processor /proc/cpuinfo)
+case "$(uname -s)" in
+    Linux)
+        NJOBS="$(grep -c ^processor /proc/cpuinfo)"
+        ;;
+    Darwin|*BSD*)
+        NJOBS="$(sysctl -n hw.ncpu)"
+        ;;
+    *)
+        NJOBS="$(getconf _NPROCESSORS_ONLN)"  # glibc/coreutils fallback
+        ;;
+esac
 PLATFORM_NAME="x86_64-w64-mingw32"
 CROSS_PREFIX="x86_64-w64-mingw32"
 
