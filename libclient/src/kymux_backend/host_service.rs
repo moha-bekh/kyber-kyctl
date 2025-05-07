@@ -59,6 +59,7 @@ struct StartRequestVideo {
 struct StartRequestInput {
     cursor_format: CursorFormat,
     gamepad_force_xbox360: Option<bool>,
+    clipboard: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -85,6 +86,8 @@ pub(crate) struct StartSessionAudioResponse {
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct StartSessionInputResponse {
     pub(crate) endpoint: u16,
+    #[serde(default)]
+    pub(crate) clipboard: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -125,6 +128,7 @@ pub(crate) async fn start_stream(
         cursor_format.map(|cursor_format| StartRequestInput {
             cursor_format,
             gamepad_force_xbox360: input_config.gamepad_force_xbox360,
+            clipboard: input_config.clipboard,
         })
     } else {
         None
@@ -159,6 +163,16 @@ pub(crate) async fn start_stream(
             .map(|v| v.to_string())
             .unwrap_or("None".to_string())
     );
+
+    let requested_clipboard = body.inputs.as_ref().is_some_and(|inputs| inputs.clipboard);
+    let got_clipboard = response
+        .input
+        .as_ref()
+        .is_some_and(|inputs| inputs.clipboard);
+
+    if requested_clipboard && !got_clipboard {
+        warn!("Requested clipboard forwarding but server did not enable it.");
+    }
 
     Ok(response)
 }

@@ -19,6 +19,7 @@ struct StartRequestVideo {
 pub(crate) struct StartRequestInput {
     pub(crate) cursor_format: CursorFormat,
     pub(crate) gamepad_force_xbox360: Option<bool>,
+    pub(crate) clipboard: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -57,6 +58,7 @@ pub(super) async fn start_stream(backend_config: &WsBackendConfig<'_>) -> Result
         cursor_format.map(|cursor_format| StartRequestInput {
             cursor_format,
             gamepad_force_xbox360: input_config.gamepad_force_xbox360,
+            clipboard: input_config.clipboard,
         })
     } else {
         None

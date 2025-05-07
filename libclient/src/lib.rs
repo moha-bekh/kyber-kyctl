@@ -538,6 +538,7 @@ impl AudioSessionConfig {
 pub struct InputSessionConfig {
     pub pipeline: InputPipeline,
     pub gamepad_force_xbox360: Option<bool>,
+    pub clipboard: bool,
 }
 
 #[derive(Clone)]
@@ -599,6 +600,7 @@ impl StreamingSessionConfig {
                 "\t\tgamepad_force_xbox360: {:?}",
                 input.gamepad_force_xbox360
             );
+            info!("\t\tclipboard: {:?}", input.clipboard);
         } else {
             info!("\tinput: false");
         }
