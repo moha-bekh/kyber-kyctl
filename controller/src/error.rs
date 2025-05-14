@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use kymux::kyproto;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -13,6 +14,11 @@ pub enum Error {
     Kymux {
         #[from]
         source: kymux::Error,
+    },
+    #[error("kyproto protocol error: {source:?}")]
+    KyProtoProtocol {
+        #[from]
+        source: kyproto::ProtocolError,
     },
     #[error("libkypc error: {source:?}")]
     Libypc {

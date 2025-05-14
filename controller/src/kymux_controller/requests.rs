@@ -1,4 +1,5 @@
 use actix_web::{post, web, HttpResponse};
+use kymux::kyproto;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
@@ -71,8 +72,8 @@ pub(crate) async fn start_mux(
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct KymuxConfig {
-    pub(crate) video_protocol: Option<kymux::VideoProtocol>,
-    pub(crate) audio_protocol: Option<kymux::AudioProtocol>,
+    pub(crate) video_protocol: Option<kyproto::VideoProtocol>,
+    pub(crate) audio_protocol: Option<kyproto::AudioProtocol>,
 }
 
 #[derive(Debug, Deserialize)]

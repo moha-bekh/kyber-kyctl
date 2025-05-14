@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use kymux::kyproto;
 use log::{info, warn};
 use tokio::sync::oneshot;
 use tokio::task::{self, JoinHandle};
@@ -11,7 +12,7 @@ struct KymuxServerTaskRx {
     stop_tx: oneshot::Sender<()>,
     join_handle: JoinHandle<()>,
 
-    connected_rx: oneshot::Receiver<kymux::Connection>,
+    connected_rx: oneshot::Receiver<kyproto::Connection>,
 }
 
 pub(crate) struct KymuxServer {
@@ -78,7 +79,7 @@ impl KymuxServer {
     pub(crate) async fn wait_connected(
         &mut self,
         timeout: Duration,
-    ) -> Result<Arc<kymux::Connection>> {
+    ) -> Result<Arc<kyproto::Connection>> {
         let Some(task_rx) = self.task_rx.take() else {
             warn!("Kymux not listening");
             return Err(Error::KymuxNotListening);
@@ -103,7 +104,7 @@ impl KymuxServer {
 
     async fn run_task(
         server: Arc<kymux::Server>,
-        connected_tx: oneshot::Sender<kymux::Connection>,
+        connected_tx: oneshot::Sender<kyproto::Connection>,
     ) -> Result<()> {
         info!("Waiting for Kymux connection");
         let connection = server.accept().await?;

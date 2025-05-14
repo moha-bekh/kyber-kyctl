@@ -9,10 +9,7 @@ use std::time::Duration;
 
 use actix_web::web;
 use bytes::Bytes;
-use kymux::{
-    ClockSyncServerEndpoint, KyProtoStatsProvider, MetricsPacket, MetricsServerEndpoint,
-    ProtocolEndpoint,
-};
+use kymux::kyproto::{self, ProtocolEndpoint};
 use log::{info, warn};
 use tokio::sync::{oneshot, Mutex};
 use tokio::task::{self, JoinHandle};
@@ -36,7 +33,7 @@ struct ConnectionTask {
 }
 
 impl ConnectionTask {
-    fn new(connection: Arc<kymux::Connection>, statemachine_proxy: StateMachineProxy) -> Self {
+    fn new(connection: Arc<kyproto::Connection>, statemachine_proxy: StateMachineProxy) -> Self {
         let (stop_tx, stop_rx) = oneshot::channel();
 
         let join_handle = task::spawn(async move {
@@ -70,7 +67,7 @@ impl ConnectionTask {
     }
 
     async fn run_task(
-        connection: Arc<kymux::Connection>,
+        connection: Arc<kyproto::Connection>,
         statemachine_proxy: StateMachineProxy,
     ) -> Result<()> {
         let ret = connection.closed().await;
@@ -236,7 +233,7 @@ async fn start_kymux(
 async fn start_video(
     request: &requests::StartRequest,
     services_sink: &kymux::ipc::IpcHandler,
-    connection: &kymux::Connection,
+    connection: &kyproto::Connection,
     process_factory: &Arc<ProcessFactory>,
     statemachine_proxy: StateMachineProxy,
 ) -> Result<Option<Vec<StartSessionVideoResponse>>> {
@@ -252,7 +249,7 @@ async fn start_video(
         let video_protocol = request
             .kymux_config
             .video_protocol
-            .unwrap_or(kymux::VideoProtocol::Reliable);
+            .unwrap_or(kyproto::VideoProtocol::Reliable);
 
         let endpoint = connection
             .register_video_endpoint(None, video_protocol)
@@ -302,7 +299,7 @@ async fn start_video(
 async fn start_audio(
     request: &requests::StartRequest,
     services_sink: &kymux::ipc::IpcHandler,
-    connection: &kymux::Connection,
+    connection: &kyproto::Connection,
     process_factory: &Arc<ProcessFactory>,
     statemachine_proxy: StateMachineProxy,
 ) -> Result<Option<StartSessionAudioResponse>> {
@@ -314,7 +311,7 @@ async fn start_audio(
     let audio_protocol = request
         .kymux_config
         .audio_protocol
-        .unwrap_or(kymux::AudioProtocol::Reliable);
+        .unwrap_or(kyproto::AudioProtocol::Reliable);
 
     let endpoint = connection
         .register_audio_endpoint(None, audio_protocol)
@@ -336,7 +333,7 @@ async fn start_audio(
 async fn start_input(
     request: &requests::StartRequest,
     services_sink: &kymux::ipc::IpcHandler,
-    connection: &kymux::Connection,
+    connection: &kyproto::Connection,
     process_factory: &Arc<ProcessFactory>,
     host_config: inputservice_types::HostConfig,
 ) -> Result<Option<StartSessionInputResponse>> {
@@ -416,7 +413,7 @@ pub(crate) struct ClockSyncTask {
 }
 
 impl ClockSyncTask {
-    fn new(endpoint: ClockSyncServerEndpoint) -> Self {
+    fn new(endpoint: kyproto::ClockSyncServerEndpoint) -> Self {
         let (stop_tx, stop_rx) = oneshot::channel();
 
         let handle = task::spawn(async move {
@@ -437,7 +434,7 @@ impl ClockSyncTask {
         let _ = self.handle.await;
     }
 
-    async fn clock_sync_task(endpoint: ClockSyncServerEndpoint) {
+    async fn clock_sync_task(endpoint: kyproto::ClockSyncServerEndpoint) {
         let mut protocol = endpoint.ready().await.unwrap();
         protocol.serve().await.unwrap();
     }
@@ -449,7 +446,10 @@ pub(crate) struct MetricsTask {
 }
 
 impl MetricsTask {
-    fn new(endpoint: MetricsServerEndpoint, stats_provider: KyProtoStatsProvider) -> Self {
+    fn new(
+        endpoint: kyproto::MetricsServerEndpoint,
+        stats_provider: kyproto::KyProtoStatsProvider,
+    ) -> Self {
         let (stop_tx, stop_rx) = oneshot::channel();
 
         let handle = task::spawn(async move {
@@ -522,7 +522,7 @@ async fn start_session(
     .await?;
 
     let clock_sync = if request.metrics {
-        let endpoint: ClockSyncServerEndpoint =
+        let endpoint: kyproto::ClockSyncServerEndpoint =
             connection.register_clock_sync_endpoint(None).await?;
         let endpoint_id = endpoint.id();
         info!("Start clock sync. Endpoint: {endpoint_id:X}");
@@ -567,8 +567,8 @@ async fn start_session(
 }
 
 async fn run_stats_poller(
-    endpoint: MetricsServerEndpoint,
-    stats_provider: KyProtoStatsProvider,
+    endpoint: kyproto::MetricsServerEndpoint,
+    stats_provider: kyproto::KyProtoStatsProvider,
     interval: Duration,
 ) -> Result<()> {
     let mut protocol = endpoint
@@ -588,7 +588,7 @@ async fn run_stats_poller(
             dropped_packets: protocol_stats.dropped_packets,
         };
         let payload = Bytes::from(rmp_serde::to_vec(&network_stats).unwrap());
-        let packet = MetricsPacket { payload };
+        let packet = kyproto::MetricsPacket { payload };
         protocol
             .send(packet)
             .await
