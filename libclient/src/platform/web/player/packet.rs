@@ -1,3 +1,5 @@
+use kymux::kyproto;
+
 #[derive(Debug)]
 pub enum Packet {
     Codec(CodecPacket),
@@ -33,14 +35,14 @@ pub struct MediaPacketHeader {
 }
 
 #[cfg(feature = "kymux")]
-impl From<kymux::AVPacket> for Packet {
-    fn from(packet: kymux::AVPacket) -> Self {
+impl From<kyproto::AVPacket> for Packet {
+    fn from(packet: kyproto::AVPacket) -> Self {
         match packet {
-            kymux::AVPacket::Codec(packet) => Packet::Codec(CodecPacket {
+            kyproto::AVPacket::Codec(packet) => Packet::Codec(CodecPacket {
                 codec: packet.header.codec,
                 rotation: packet.header.rotation,
             }),
-            kymux::AVPacket::Media(packet) => Packet::Media(MediaPacket {
+            kyproto::AVPacket::Media(packet) => Packet::Media(MediaPacket {
                 header: MediaPacketHeader {
                     is_config: packet.header.is_config,
                     is_key: packet.header.is_key,
@@ -53,7 +55,7 @@ impl From<kymux::AVPacket> for Packet {
                     buffer
                 },
             }),
-            kymux::AVPacket::Hole(packet) => Packet::Hole(HolePacket {
+            kyproto::AVPacket::Hole(packet) => Packet::Hole(HolePacket {
                 missing_audio_samples: packet.header.missing_audio_samples,
             }),
         }

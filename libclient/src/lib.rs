@@ -508,7 +508,7 @@ impl Handler {
 pub use kymux_backend::{KymuxConfig, KymuxTransportBackend};
 
 #[cfg(feature = "kymux")]
-pub use kymux::{AudioProtocol, VideoProtocol};
+pub use kymux::kyproto::{AudioProtocol, VideoProtocol};
 
 #[derive(Clone, Debug)]
 pub enum StreamingProtocol {

@@ -2,6 +2,9 @@ use std::path::PathBuf;
 
 use crate::platform;
 
+#[cfg(feature = "kymux")]
+use kymux::kyproto;
+
 #[derive(Debug)]
 pub enum PlayerError {
     InstanceCreateFailed,
@@ -42,6 +45,8 @@ pub enum Error {
     KymuxSendFailed {
         reason: String,
     },
+    #[cfg(feature = "kymux")]
+    KyProtoProtocolError(kyproto::ProtocolError),
     #[cfg(feature = "desktop")]
     TaskJoin(tokio::task::JoinError),
     FileNotFound(PathBuf),
@@ -118,6 +123,13 @@ impl From<platform::InputError> for Error {
 impl From<kymux::Error> for Error {
     fn from(err: kymux::Error) -> Error {
         Error::Kymux(err)
+    }
+}
+
+#[cfg(feature = "kymux")]
+impl From<kyproto::ProtocolError> for Error {
+    fn from(err: kyproto::ProtocolError) -> Error {
+        Error::KyProtoProtocolError(err)
     }
 }
 

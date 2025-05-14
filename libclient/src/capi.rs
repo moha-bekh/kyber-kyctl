@@ -7,6 +7,7 @@ use std::sync::atomic::AtomicPtr;
 
 use log::warn;
 
+use kymux::kyproto;
 use libkynput_rs::Pipeline;
 
 use crate::metrics::{
@@ -81,7 +82,7 @@ pub enum libclient_KymuxVideoProtocol {
 }
 
 #[cfg(feature = "kymux")]
-impl From<libclient_KymuxVideoProtocol> for kymux::VideoProtocol {
+impl From<libclient_KymuxVideoProtocol> for kyproto::VideoProtocol {
     fn from(value: libclient_KymuxVideoProtocol) -> Self {
         match value {
             libclient_KymuxVideoProtocol::Reliable => Self::Reliable,
@@ -102,7 +103,7 @@ pub enum libclient_KymuxAudioProtocol {
 }
 
 #[cfg(feature = "kymux")]
-impl From<libclient_KymuxAudioProtocol> for kymux::AudioProtocol {
+impl From<libclient_KymuxAudioProtocol> for kyproto::AudioProtocol {
     fn from(value: libclient_KymuxAudioProtocol) -> Self {
         match value {
             libclient_KymuxAudioProtocol::Reliable => Self::Reliable,

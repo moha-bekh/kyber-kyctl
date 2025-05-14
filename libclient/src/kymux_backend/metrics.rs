@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use log::warn;
 use serde::Deserialize;
 
-use kymux::{ClockSyncClientProtocol, MetricsPacket, ProtocolEndpoint, ProtocolRecv};
+use kymux::kyproto::{self, ProtocolEndpoint};
 
 use crate::metrics::{
     Metric, MetricsProducer, NetworkPing, NetworkStats, VideoMetric, VideoMetricData,
@@ -12,11 +12,11 @@ use crate::runtime::{self, Duration};
 use crate::{Error, Result};
 
 pub(crate) async fn start_connection_stats_poller(
-    kymux: &kymux::Connection,
+    connection: &kyproto::Connection,
     metrics: MetricsProducer,
     interval: Duration,
 ) {
-    let stats_provider = kymux.stats_provider();
+    let stats_provider = connection.stats_provider();
 
     runtime::spawn(async move {
         let mut interval = runtime::interval(interval);
@@ -39,12 +39,12 @@ pub(crate) async fn start_connection_stats_poller(
 }
 
 pub(crate) async fn start_pinger(
-    kymux: &kymux::Connection,
+    connection: &kyproto::Connection,
     endpoint_id: u16,
     metrics: MetricsProducer,
     interval: Duration,
 ) -> Result<()> {
-    let clock_sync = kymux.connect_clock_sync_endpoint(endpoint_id)?;
+    let clock_sync = connection.connect_clock_sync_endpoint(endpoint_id)?;
     let protocol = clock_sync
         .ready()
         .await
@@ -60,7 +60,7 @@ pub(crate) async fn start_pinger(
 }
 
 async fn run_clock_sync(
-    mut protocol: ClockSyncClientProtocol,
+    mut protocol: kyproto::ClockSyncClientProtocol,
     metrics: MetricsProducer,
     interval: Duration,
 ) -> Result<()> {
@@ -82,11 +82,11 @@ async fn run_clock_sync(
 }
 
 pub(crate) async fn start_remote_metrics_receiver(
-    kymux: &kymux::Connection,
+    connection: &kyproto::Connection,
     endpoint_id: u16,
     metrics: MetricsProducer,
 ) -> Result<()> {
-    let endpoint = kymux.connect_metrics_endpoint(endpoint_id)?;
+    let endpoint = connection.connect_metrics_endpoint(endpoint_id)?;
     let protocol = endpoint
         .ready()
         .await
@@ -102,7 +102,7 @@ pub(crate) async fn start_remote_metrics_receiver(
 }
 
 async fn run_metrics_receiver(
-    mut protocol: ProtocolRecv<MetricsPacket>,
+    mut protocol: kyproto::ProtocolRecv<kyproto::MetricsPacket>,
     metrics: MetricsProducer,
 ) -> Result<()> {
     while let Some(packet) = protocol
@@ -130,7 +130,7 @@ struct RemoteVideoMetrics {
 
 async fn run_remote_video_metrics_receiver(
     source_id: u32,
-    mut protocol: ProtocolRecv<MetricsPacket>,
+    mut protocol: kyproto::ProtocolRecv<kyproto::MetricsPacket>,
     metrics: MetricsProducer,
 ) -> Result<()> {
     while let Some(packet) = protocol
@@ -199,12 +199,12 @@ async fn run_remote_video_metrics_receiver(
 }
 
 pub(crate) async fn start_remote_video_metrics_receiver(
-    kymux: &kymux::Connection,
+    connection: &kyproto::Connection,
     source_id: u32,
     endpoint_id: u16,
     metrics: MetricsProducer,
 ) -> Result<()> {
-    let endpoint = kymux.connect_metrics_endpoint(endpoint_id)?;
+    let endpoint = connection.connect_metrics_endpoint(endpoint_id)?;
     let protocol = endpoint
         .ready()
         .await

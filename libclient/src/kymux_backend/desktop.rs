@@ -7,7 +7,7 @@ use log::{error, info, warn};
 use tokio::sync::oneshot;
 use tokio::task::{self, JoinHandle};
 
-use kymux::{AudioProtocol, VideoProtocol};
+use kymux::kyproto;
 
 use super::metrics;
 use super::{KymuxBackendConfig, KymuxTransportBackend};
@@ -83,7 +83,7 @@ impl KymuxClosedTask {
     }
 }
 
-async fn connect_quinn(conn_params: &ConnectionParams, port: u16) -> Result<kymux::Connection> {
+async fn connect_quinn(conn_params: &ConnectionParams, port: u16) -> Result<kyproto::Connection> {
     let roots = if let Some(tls_config) = &conn_params.tls_config {
         let mut roots = rustls::RootCertStore::empty();
         roots
@@ -104,7 +104,7 @@ async fn connect_quinn(conn_params: &ConnectionParams, port: u16) -> Result<kymu
         conn_params.host.clone()
     };
 
-    Ok(kymux::Connection::connect(kymux::ClientConfig::Quic {
+    Ok(kymux::connect(kymux::ClientConfig::Quic {
         addr: SocketAddr::new(conn_params.addr.ip(), port),
         roots,
         server_name,
@@ -134,7 +134,7 @@ fn create_video_config(
     let video_protocol = backend_config
         .kymux_config
         .video_protocol
-        .unwrap_or(VideoProtocol::Reliable);
+        .unwrap_or(kyproto::VideoProtocol::Reliable);
 
     let mut player_config_list = vec![];
 
@@ -177,7 +177,7 @@ fn create_audio_config(
     let audio_protocol = backend_config
         .kymux_config
         .audio_protocol
-        .unwrap_or(AudioProtocol::Reliable);
+        .unwrap_or(kyproto::AudioProtocol::Reliable);
     let uri = kymux.connect_and_forward_audio_endpoint(host_config.endpoint, audio_protocol)?;
     let audio_buffer = audio_config.audio_buffer();
 
@@ -185,20 +185,21 @@ fn create_audio_config(
 }
 
 async fn start_metrics(
-    kymux: &kymux::Connection,
+    connection: &kyproto::Connection,
     host_config: &StartSessionResponse,
     metrics: MetricsProducer,
 ) -> Result<()> {
     let metrics2 = metrics.clone();
     let metrics3 = metrics.clone();
 
-    metrics::start_connection_stats_poller(kymux, metrics.clone(), Duration::from_secs(5)).await;
+    metrics::start_connection_stats_poller(connection, metrics.clone(), Duration::from_secs(5))
+        .await;
 
     let clock_sync_id = host_config.clock_sync.as_ref().unwrap().endpoint;
-    metrics::start_pinger(kymux, clock_sync_id, metrics2, Duration::from_secs(10)).await?;
+    metrics::start_pinger(connection, clock_sync_id, metrics2, Duration::from_secs(10)).await?;
 
     let remote_network_stats_id = host_config.metrics.as_ref().unwrap().endpoint;
-    metrics::start_remote_metrics_receiver(kymux, remote_network_stats_id, metrics3).await?;
+    metrics::start_remote_metrics_receiver(connection, remote_network_stats_id, metrics3).await?;
 
     if let Some(video) = &host_config.video {
         let endpoints = video
@@ -206,7 +207,7 @@ async fn start_metrics(
             .filter_map(|v| v.metrics_endpoint.map(|endpoint| (v.display_id, endpoint)));
         for (display_id, endpoint) in endpoints {
             metrics::start_remote_video_metrics_receiver(
-                kymux,
+                connection,
                 display_id,
                 endpoint,
                 metrics.clone(),
@@ -300,7 +301,7 @@ struct InputService {
     client: InputClient,
 }
 
-async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kymux::Connection> {
+async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kyproto::Connection> {
     // Request remote Kymux start
     let start_response = host_service::start_kymux(
         backend_config.http_client,
@@ -338,7 +339,8 @@ impl KymuxBackend {
         backend_config: KymuxBackendConfig<'_>,
         metrics: Option<MetricsProducer>,
     ) -> Result<Self> {
-        let kymux = start_kymux(&backend_config).await?;
+        let connection = start_kymux(&backend_config).await?;
+        let connection = Arc::new(connection);
 
         let has_metrics = metrics.is_some();
 
@@ -346,7 +348,7 @@ impl KymuxBackend {
         let host_config = host_service::start_stream(&backend_config, has_metrics).await?;
 
         if let Some(metrics) = metrics {
-            start_metrics(&kymux, &host_config, metrics).await?;
+            start_metrics(&connection, &host_config, metrics).await?;
         }
 
         const IPC_PORT: u16 = 9090;

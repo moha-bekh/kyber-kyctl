@@ -2,6 +2,7 @@
 #[cfg_attr(feature = "web", path = "./web.rs")]
 mod platform;
 
+use kymux::kyproto;
 use serde::Serialize;
 
 use crate::error::Result;
@@ -23,8 +24,8 @@ pub enum KymuxTransportBackend {
 #[derive(Clone, Debug, Serialize)]
 pub struct KymuxConfig {
     pub backend: KymuxTransportBackend,
-    pub video_protocol: Option<kymux::VideoProtocol>,
-    pub audio_protocol: Option<kymux::AudioProtocol>,
+    pub video_protocol: Option<kyproto::VideoProtocol>,
+    pub audio_protocol: Option<kyproto::AudioProtocol>,
 }
 
 pub(crate) struct KymuxBackendConfig<'a> {

@@ -8,10 +8,7 @@ use log::{error, info, warn};
 use tokio::sync::oneshot;
 use wasm_bindgen_futures::spawn_local;
 
-use kymux::{
-    AVPacket, AudioProtocol, InputPacket, ProtocolEndpoint, ProtocolRecv, ProtocolSend,
-    VideoProtocol,
-};
+use kymux::kyproto::{self, ProtocolEndpoint};
 use libkynput::bufferproxy::{BufferProxy, BufferProxyReceiver, BufferProxySender};
 use libkynput::{InputNetworkStream, InputNetworkStreamMsg, InputNetworkStreamObserver};
 
@@ -89,7 +86,7 @@ struct KymuxClosedTask {
 }
 
 impl KymuxClosedTask {
-    fn new(connection: kymux::Connection, msg_sender: MessageSender) -> Self {
+    fn new(connection: kyproto::Connection, msg_sender: MessageSender) -> Self {
         let (stop_tx, stop_rx) = oneshot::channel();
 
         spawn_local(async move {
@@ -125,19 +122,17 @@ impl KymuxClosedTask {
 async fn connect_webtransport(
     url: String,
     certificate_hash: Option<StartKymuxCertificateHash>,
-) -> Result<kymux::Connection> {
+) -> Result<kyproto::Connection> {
     let certificate_hash = certificate_hash.map(|c| kymux::WebTransportCertificateHash {
         hash_algorithm: c.algorithm,
         hash: c.hash,
     });
 
-    Ok(
-        kymux::Connection::connect(kymux::ClientConfig::WebTransport {
-            url,
-            certificate_hash,
-        })
-        .await?,
-    )
+    Ok(kymux::connect(kymux::ClientConfig::WebTransport {
+        url,
+        certificate_hash,
+    })
+    .await?)
 }
 
 async fn create_video_decoder_config(config: &VideoSessionConfig) -> Option<VideoDecoderConfig> {
@@ -164,7 +159,7 @@ async fn create_video_decoder_config(config: &VideoSessionConfig) -> Option<Vide
 
 async fn player_forward_task<Player>(
     type_: &str,
-    mut recv: ProtocolRecv<AVPacket>,
+    mut recv: kyproto::ProtocolRecv<kyproto::AVPacket>,
     mut player: Player,
     close_requested: CloseRequestState,
 ) where
@@ -194,7 +189,7 @@ async fn player_forward_task<Player>(
 }
 
 async fn create_videoplayer(
-    kymux: &kymux::Connection,
+    connection: &kyproto::Connection,
     backend_config: &KymuxBackendConfig<'_>,
     host_config: &Option<Vec<StartSessionVideoResponse>>,
     close_requested: &CloseRequestState,
@@ -217,7 +212,7 @@ async fn create_videoplayer(
     let video_protocol = backend_config
         .kymux_config
         .video_protocol
-        .unwrap_or(VideoProtocol::Reliable);
+        .unwrap_or(kyproto::VideoProtocol::Reliable);
 
     let mut player_list = vec![];
 
@@ -243,7 +238,7 @@ async fn create_videoplayer(
 
         info!("Start video with protocol {video_protocol:?}");
 
-        let endpoint = kymux.connect_video_endpoint(*endpoint, video_protocol)?;
+        let endpoint = connection.connect_video_endpoint(*endpoint, video_protocol)?;
         let recv = endpoint
             .ready()
             .await
@@ -259,7 +254,7 @@ async fn create_videoplayer(
 }
 
 async fn create_audioplayer(
-    kymux: &kymux::Connection,
+    connection: &kyproto::Connection,
     backend_config: &KymuxBackendConfig<'_>,
     host_config: &Option<StartSessionAudioResponse>,
     close_requested: &CloseRequestState,
@@ -286,8 +281,8 @@ async fn create_audioplayer(
     let audio_protocol = backend_config
         .kymux_config
         .audio_protocol
-        .unwrap_or(AudioProtocol::Reliable);
-    let endpoint = kymux.connect_audio_endpoint(host_config.endpoint, audio_protocol)?;
+        .unwrap_or(kyproto::AudioProtocol::Reliable);
+    let endpoint = connection.connect_audio_endpoint(host_config.endpoint, audio_protocol)?;
     let recv = endpoint
         .ready()
         .await
@@ -300,20 +295,21 @@ async fn create_audioplayer(
 }
 
 async fn start_metrics(
-    kymux: &kymux::Connection,
+    connection: &kyproto::Connection,
     host_config: &StartSessionResponse,
     metrics: MetricsProducer,
 ) -> Result<()> {
     let metrics2 = metrics.clone();
     let metrics3 = metrics.clone();
 
-    metrics::start_connection_stats_poller(kymux, metrics.clone(), Duration::from_secs(5)).await;
+    metrics::start_connection_stats_poller(connection, metrics.clone(), Duration::from_secs(5))
+        .await;
 
     let clock_sync_id = host_config.clock_sync.as_ref().unwrap().endpoint;
-    metrics::start_pinger(kymux, clock_sync_id, metrics2, Duration::from_secs(10)).await?;
+    metrics::start_pinger(connection, clock_sync_id, metrics2, Duration::from_secs(10)).await?;
 
     let remote_network_stats_id = host_config.metrics.as_ref().unwrap().endpoint;
-    metrics::start_remote_metrics_receiver(kymux, remote_network_stats_id, metrics3).await?;
+    metrics::start_remote_metrics_receiver(connection, remote_network_stats_id, metrics3).await?;
 
     if let Some(video) = &host_config.video {
         let endpoints = video
@@ -321,7 +317,7 @@ async fn start_metrics(
             .filter_map(|v| v.metrics_endpoint.map(|endpoint| (v.display_id, endpoint)));
         for (display_id, endpoint) in endpoints {
             metrics::start_remote_video_metrics_receiver(
-                kymux,
+                connection,
                 display_id,
                 endpoint,
                 metrics.clone(),
@@ -334,22 +330,27 @@ async fn start_metrics(
 }
 
 async fn create_player(
-    kymux: &mut kymux::Connection,
+    connection: &kyproto::Connection,
     backend_config: &KymuxBackendConfig<'_>,
     host_config: &StartSessionResponse,
     close_requested: &CloseRequestState,
     metrics: bool,
 ) -> Result<Option<Player>> {
     let video_player = create_videoplayer(
-        kymux,
+        connection,
         backend_config,
         &host_config.video,
         close_requested,
         metrics,
     )
     .await?;
-    let audio_player =
-        create_audioplayer(kymux, backend_config, &host_config.audio, close_requested).await?;
+    let audio_player = create_audioplayer(
+        connection,
+        backend_config,
+        &host_config.audio,
+        close_requested,
+    )
+    .await?;
 
     if video_player.is_some() || audio_player.is_some() {
         Ok(Some(Player {
@@ -362,7 +363,7 @@ async fn create_player(
 }
 
 async fn input_rx_task(
-    mut endpoint_rx: ProtocolRecv<InputPacket>,
+    mut endpoint_rx: kyproto::ProtocolRecv<kyproto::InputPacket>,
     libkynput_tx: BufferProxySender,
 ) -> Result<()> {
     loop {
@@ -391,12 +392,12 @@ async fn input_rx_task(
 }
 
 async fn input_tx_task(
-    mut endpoint_tx: ProtocolSend<InputPacket>,
+    mut endpoint_tx: kyproto::ProtocolSend<kyproto::InputPacket>,
     mut libkynput_rx: BufferProxyReceiver,
 ) -> Result<()> {
     while let Ok(buf) = libkynput_rx.recv().await {
         endpoint_tx
-            .send(kymux::InputPacket {
+            .send(kyproto::InputPacket {
                 type_: buf[0],
                 payload: bytes::Bytes::copy_from_slice(&buf[1..]),
             })
@@ -408,7 +409,7 @@ async fn input_tx_task(
 }
 
 async fn start_input(
-    kymux: &kymux::Connection,
+    connection: &kyproto::Connection,
     backend_config: &KymuxBackendConfig<'_>,
     host_config: &StartSessionResponse,
     msg_sender: MessageSender,
@@ -426,7 +427,7 @@ async fn start_input(
     };
 
     // Open endpoint
-    let endpoint = kymux.connect_input_endpoint(host_config.endpoint)?;
+    let endpoint = connection.connect_input_endpoint(host_config.endpoint)?;
     let (endpoint_tx, endpoint_rx) = endpoint
         .ready()
         .await
@@ -461,7 +462,7 @@ async fn start_input(
     }))
 }
 
-async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kymux::Connection> {
+async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kyproto::Connection> {
     // Request remote Kymux start
     let start_response = host_service::start_kymux(
         backend_config.http_client,
@@ -506,7 +507,7 @@ impl KymuxBackend {
         mut backend_config: KymuxBackendConfig<'_>,
         metrics: Option<MetricsProducer>,
     ) -> Result<Self> {
-        let mut kymux = start_kymux(&backend_config).await?;
+        let connection = start_kymux(&backend_config).await?;
 
         // Tweak configuration in function of local capabilities
         if !AudioPlayer::available() {
@@ -520,14 +521,14 @@ impl KymuxBackend {
         let host_config = host_service::start_stream(&backend_config, has_metrics).await?;
 
         if let Some(metrics) = metrics {
-            start_metrics(&kymux, &host_config, metrics).await?;
+            start_metrics(&connection, &host_config, metrics).await?;
         }
 
         let close_requested = CloseRequestState::new();
 
         // Play Video and Audio
         let player = create_player(
-            &mut kymux,
+            &connection,
             &backend_config,
             &host_config,
             &close_requested,
@@ -537,7 +538,7 @@ impl KymuxBackend {
 
         // Start input
         let input_service = start_input(
-            &kymux,
+            &connection,
             &backend_config,
             &host_config,
             backend_config.msg_sender.clone(),
@@ -545,7 +546,7 @@ impl KymuxBackend {
         .await?;
 
         // Monitor connection closed
-        let closed_task = KymuxClosedTask::new(kymux, backend_config.msg_sender.clone());
+        let closed_task = KymuxClosedTask::new(connection, backend_config.msg_sender.clone());
 
         Ok(Self {
             player,
