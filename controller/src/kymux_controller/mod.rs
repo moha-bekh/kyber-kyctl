@@ -112,10 +112,7 @@ impl KymuxBackend {
         };
 
         info!("Stop running IPC Services sink");
-        let ret = self.services_sink.stop().await;
-        if let Err(err) = ret {
-            warn!("Kymux IPC stop raised an error: {err:?}");
-        }
+        self.services_sink.stop();
 
         info!("Stop running Kymux Server");
         let ret = self.server.stop().await;
@@ -232,7 +229,7 @@ async fn start_kymux(
 
 async fn start_video(
     request: &requests::StartRequest,
-    services_sink: &kymux::ipc::IpcHandler,
+    services_sink: &mut kymux::ipc::IpcHandler,
     connection: &kyproto::Connection,
     process_factory: &Arc<ProcessFactory>,
     statemachine_proxy: StateMachineProxy,
@@ -298,7 +295,7 @@ async fn start_video(
 
 async fn start_audio(
     request: &requests::StartRequest,
-    services_sink: &kymux::ipc::IpcHandler,
+    services_sink: &mut kymux::ipc::IpcHandler,
     connection: &kyproto::Connection,
     process_factory: &Arc<ProcessFactory>,
     statemachine_proxy: StateMachineProxy,
@@ -332,7 +329,7 @@ async fn start_audio(
 
 async fn start_input(
     request: &requests::StartRequest,
-    services_sink: &kymux::ipc::IpcHandler,
+    services_sink: &mut kymux::ipc::IpcHandler,
     connection: &kyproto::Connection,
     process_factory: &Arc<ProcessFactory>,
     host_config: inputservice_types::HostConfig,
@@ -494,7 +491,7 @@ async fn start_session(
     // Start services
     let video = start_video(
         &request,
-        &backend.services_sink,
+        &mut backend.services_sink,
         &connection,
         &ctrl.process_factory,
         state_machine_proxy.clone(),
@@ -503,7 +500,7 @@ async fn start_session(
 
     let audio = start_audio(
         &request,
-        &backend.services_sink,
+        &mut backend.services_sink,
         &connection,
         &ctrl.process_factory,
         state_machine_proxy.clone(),
@@ -512,7 +509,7 @@ async fn start_session(
 
     let input = start_input(
         &request,
-        &backend.services_sink,
+        &mut backend.services_sink,
         &connection,
         &ctrl.process_factory,
         inputservice_types::HostConfig {
