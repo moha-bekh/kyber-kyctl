@@ -351,8 +351,8 @@ impl KymuxBackend {
             start_metrics(&connection, &host_config, metrics).await?;
         }
 
-        const IPC_PORT: u16 = 9090;
-        let mut kymux = kymux::ipc::IPCForwardableConnection::new(kymux, IPC_PORT).await?;
+        const IPC_PORTS: std::ops::Range<u16> = 9090..9100;
+        let mut kymux = kymux::ipc::IPCForwardableConnection::new(kymux, IPC_PORTS).await?;
 
         // Play Video and Audio
         let player = create_player(&mut kymux, &backend_config, &host_config, has_metrics).await?;
