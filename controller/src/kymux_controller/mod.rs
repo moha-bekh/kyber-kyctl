@@ -90,8 +90,8 @@ pub(crate) struct KymuxBackend {
 
 impl KymuxBackend {
     async fn new(server: KymuxServer, statemachine_proxy: StateMachineProxy) -> Result<Self> {
-        const IPC_PORT: u16 = 9091;
-        let services_sink = kymux::ipc::IpcHandler::new(IPC_PORT).await?;
+        const IPC_PORTS: std::ops::Range<u16> = 9091..9100;
+        let services_sink = kymux::ipc::IpcHandler::new(IPC_PORTS).await?;
 
         Ok(Self {
             server,
