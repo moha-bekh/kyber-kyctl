@@ -41,10 +41,7 @@ struct KymuxClosedTask {
 }
 
 impl KymuxClosedTask {
-    fn new(
-        connection: Arc<kymux::ipc::IPCForwardableConnection>,
-        msg_sender: MessageSender,
-    ) -> Self {
+    fn new(connection: Arc<kyproto::Connection>, msg_sender: MessageSender) -> Self {
         let (stop_tx, stop_rx) = oneshot::channel();
 
         let join_handle = task::spawn(async move {
@@ -260,7 +257,7 @@ async fn create_player(
 }
 
 async fn start_input(
-    kymux: &kymux::ipc::IPCForwardableConnection,
+    kymux: &mut kymux::ipc::IPCForwardableConnection,
     backend_config: &KymuxBackendConfig<'_>,
     host_config: &StartSessionResponse,
     msg_sender: MessageSender,
@@ -328,7 +325,7 @@ async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kyproto:
 }
 
 pub(super) struct KymuxBackend {
-    kymux: Arc<kymux::ipc::IPCForwardableConnection>,
+    kymux: Option<kymux::ipc::IPCForwardableConnection>,
     player: Option<Player>,
     input_service: Option<InputService>,
     closed_task: Option<KymuxClosedTask>,
@@ -352,14 +349,15 @@ impl KymuxBackend {
         }
 
         const IPC_PORTS: std::ops::Range<u16> = 9090..9100;
-        let mut kymux = kymux::ipc::IPCForwardableConnection::new(kymux, IPC_PORTS).await?;
+        let mut kymux =
+            kymux::ipc::IPCForwardableConnection::new(connection.clone(), IPC_PORTS).await?;
 
         // Play Video and Audio
         let player = create_player(&mut kymux, &backend_config, &host_config, has_metrics).await?;
 
         // Start input
         let input_service = start_input(
-            &kymux,
+            &mut kymux,
             &backend_config,
             &host_config,
             backend_config.msg_sender.clone(),
@@ -367,11 +365,11 @@ impl KymuxBackend {
         .await?;
 
         // Monitor connection closed
-        let kymux = Arc::new(kymux);
-        let closed_task = KymuxClosedTask::new(kymux.clone(), backend_config.msg_sender.clone());
+        let closed_task =
+            KymuxClosedTask::new(connection.clone(), backend_config.msg_sender.clone());
 
         Ok(Self {
-            kymux,
+            kymux: Some(kymux),
             player,
             input_service,
             closed_task: Some(closed_task),
@@ -434,7 +432,9 @@ impl BackendDriver for KymuxBackend {
             input_service.pipeline.stop()?;
         }
 
-        self.kymux.stop().await?;
+        if let Some(kymux) = self.kymux.take() {
+            kymux.stop();
+        }
 
         Ok(())
     }
