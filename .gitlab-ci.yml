@@ -1,7 +1,7 @@
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
   DEBIAN_IMAGE: registry.gitlab.com/kyber-labs/kyber-streamer/docker-images/debian-bookworm:20250819182152
-  WASM_IMAGE: registry.gitlab.com/kyber-labs/kyber-streamer/docker-images/debian-wasm:20250819184953
+  WASM_IMAGE: registry.gitlab.com/kyber-labs/kyber-streamer/docker-images/debian-wasm:20250822133647
   WIN64_IMAGE: registry.gitlab.com/kyber-labs/kyber-streamer/docker-images/debian-win64:20250819183159
   MACOS_RUST_VERSION: 1.89.0
 

@@ -87,7 +87,7 @@ impl AudioPlayer {
                 copy_options.set_frame_count(samples);
 
                 let mut tmp = vec![0u8; bytes as usize];
-                frame.copy_to_with_u8_array(&mut tmp, &copy_options)?;
+                frame.copy_to_with_u8_slice(&mut tmp[..], &copy_options)?;
 
                 let missing_samples = holes2.pull(push_seq).unwrap_or(0);
                 reg.push(missing_samples, &tmp);
