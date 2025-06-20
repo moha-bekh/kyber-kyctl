@@ -54,6 +54,13 @@ impl Identity {
         Ok(uuid)
     }
 
+    pub fn renew(&self, exp: OffsetDateTime) -> Result<(), actix_session::SessionInsertError> {
+        self.0.session.insert(EXP_KEY, exp.unix_timestamp()).and({
+            self.0.session.renew();
+            Ok(())
+        })
+    }
+
     pub fn logout(self) {
         self.0.session.purge();
     }

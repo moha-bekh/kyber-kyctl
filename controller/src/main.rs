@@ -95,6 +95,57 @@ async fn login(ctrl: web::Data<Mutex<Controller>>, req: HttpRequest) -> HttpResp
     HttpResponse::Ok().json(body)
 }
 
+#[post("/renew")]
+async fn renew(
+    ctrl: web::Data<Mutex<Controller>>,
+    req: HttpRequest,
+    user: Identity,
+) -> HttpResponse {
+    let Some(Ok((auth_type, auth_creds))) = req
+        .headers()
+        .get(actix_web::http::header::AUTHORIZATION)
+        .map(auth::from_authorization_header)
+    else {
+        return HttpResponse::BadRequest().json("Invalid authentication type");
+    };
+
+    let auth_session = match auth::authenticate(&auth_type, &auth_creds) {
+        Ok(session) => session,
+        Err(err) => {
+            error!("Authentication failed: {err}");
+            return HttpResponse::Unauthorized().finish();
+        }
+    };
+
+    let Some(exp) = auth_session.expiration else {
+        error!("Missing expiration date");
+        return HttpResponse::Unauthorized().finish();
+    };
+
+    let Ok(uid) = user.uid() else {
+        return HttpResponse::Unauthorized().finish();
+    };
+
+    let mut ctrl = ctrl.lock().await;
+    let Ok(session) = ctrl.get_session(&uid) else {
+        warn!("Session destroyed during renewal");
+        user.logout();
+        return HttpResponse::Unauthorized().finish();
+    };
+
+    if session.username != auth_session.username {
+        error!("Credentials and renewed session mismatch");
+        return HttpResponse::Unauthorized().finish();
+    }
+
+    let Ok(_) = user.renew(exp) else {
+        return HttpResponse::Unauthorized().finish();
+    };
+    session.expiration = Some(exp);
+
+    HttpResponse::Ok().finish()
+}
+
 #[get("/capabilities")]
 async fn capabilities() -> HttpResponse {
     let ret = Capabilities {
@@ -419,6 +470,7 @@ async fn real_main() -> Result<()> {
             )
             .service(capabilities)
             .service(login)
+            .service(renew)
             .service(websocket_service)
             .service(enumerate_displays)
             .service(stop_streaming)
