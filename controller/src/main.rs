@@ -468,13 +468,16 @@ async fn real_main() -> Result<()> {
                     .service(ws::requests::video)
                     .service(ws::requests::audio),
             )
+            .service(
+                web::scope("/session")
+                    .service(login)
+                    .service(renew)
+                    .service(logout),
+            )
             .service(capabilities)
-            .service(login)
-            .service(renew)
             .service(websocket_service)
             .service(enumerate_displays)
             .service(stop_streaming)
-            .service(logout)
             .service(set_bitrate);
 
         if let Some(webclient_root) = &webclient_root {
