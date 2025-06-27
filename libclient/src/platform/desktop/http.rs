@@ -8,7 +8,7 @@ pub(crate) fn create_host(conn_params: &ConnectionParams) -> String {
 }
 
 pub(crate) fn create_reqwest(conn_params: ConnectionParams) -> Result<reqwest::Client> {
-    let client_builder = reqwest::ClientBuilder::new();
+    let client_builder = reqwest::ClientBuilder::new().cookie_store(true);
 
     let client_builder = if let Some(tls_host) = &conn_params.tls_host {
         client_builder.resolve(tls_host, conn_params.addr)

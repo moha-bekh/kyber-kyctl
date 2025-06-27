@@ -70,6 +70,7 @@ desktop = [
     "kymux?/backend-quinn",
     "kymux?/ipc",
     "kymux?/tokio-rt",
+    "reqwest/cookies",
     "reqwest/rustls-tls",
     "reqwest/rustls-tls-native-roots",
     "tokio/rt-multi-thread",
