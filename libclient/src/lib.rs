@@ -148,6 +148,10 @@ impl Handler {
         info!("Get Host capabilities");
         let capabilities = host_service::capabilities(&self.http_client).await?;
 
+        let response =
+            host_service::login(&self.http_client, &self.conn_params.credentials).await?;
+        info!("Logged in with uuid '{}\"", response.uid);
+
         // Connect to websocket
         info!("Connect to Control Plane");
         let host_events = HostEventReceiver::new(

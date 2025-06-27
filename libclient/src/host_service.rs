@@ -1,8 +1,9 @@
 use std::time::Duration;
 
-use log::warn;
-use reqwest::{self, StatusCode};
-use serde::Serialize;
+use base64::Engine;
+use log::{error, warn};
+use reqwest::{self, header, StatusCode};
+use serde::{Deserialize, Serialize};
 
 #[cfg(target_family = "wasm")]
 use kywasmtime::timeout;
@@ -11,7 +12,7 @@ use tokio::time::timeout;
 
 use crate::error::{Error, Result};
 use crate::http::HttpClient;
-use crate::{Capabilities, Display};
+use crate::{AuthCredentials, Capabilities, Display};
 
 #[derive(Debug, Serialize)]
 pub(crate) struct SetBitrateRequest {
@@ -40,6 +41,41 @@ pub(crate) async fn capabilities(client: &HttpClient) -> Result<Capabilities> {
     }
 
     Ok(response.json::<_>().await?)
+}
+
+#[derive(Deserialize)]
+pub(crate) struct LoginResponse {
+    pub(crate) uid: String,
+    pub(crate) websocket: String,
+    // TODO(alaric): Dataplane token.
+}
+
+pub(crate) async fn login(
+    client: &HttpClient,
+    credentials: &AuthCredentials,
+) -> Result<LoginResponse> {
+    let url = format!("{base_url}/session/login", base_url = client.base_url());
+    let authorization = match credentials {
+        AuthCredentials::Basic { username } => {
+            let encoded = base64::prelude::BASE64_STANDARD.encode(format!("{username}:"));
+            format!("Basic {encoded}")
+        }
+        AuthCredentials::Jwt { token } => format!("Bearer {token}"),
+    };
+
+    let response = client
+        .post(url)
+        .header(header::AUTHORIZATION, authorization)
+        .send()
+        .await?;
+    if response.status() != StatusCode::OK {
+        error!("GET /session/login failed: {}", response.status());
+        return Err(Error::HttpQueryFailed {
+            status: response.status().into(),
+        });
+    }
+
+    Ok(response.json().await?)
 }
 
 pub(crate) async fn enumerate_displays(client: &HttpClient) -> Result<Vec<Display>> {
