@@ -127,13 +127,6 @@ impl Handler {
         info!("Get Host capabilities");
         let capabilities = host_service::capabilities(&self.http_client).await?;
 
-        // Kick the previously connected user
-        info!("Stop any existing stream");
-        let ret = host_service::stop_session(&self.http_client).await;
-        if let Err(err) = ret {
-            info!("Stop stream result: {err:?}");
-        }
-
         // Connect to websocket
         info!("Connect to Control Plane");
         let host_events = HostEventReceiver::new(
