@@ -141,17 +141,18 @@ case "$ACTION" in
         # Build
         cargo build \
             --target $CARGO_TARGET  \
-            --features=auth-jwt \
+            --features=auth-jwt,cli \
             --release
 
         # Install
         mkdir -p $OUT_DIR/bin
         cp target/$CARGO_TARGET/release/controller $OUT_DIR/bin
+        cp target/$CARGO_TARGET/release/jwt-gen $OUT_DIR/bin
     ;;
     "clippy")
         cargo clippy \
             --target $CARGO_TARGET \
-            --features=auth-jwt \
+            --features=auth-jwt,cli \
             -- -D warnings
     ;;
     "test")

@@ -103,10 +103,11 @@ fi
 # Run action
 case "$ACTION" in
     "build")
-        cargo build --features=auth-jwt --release
+        cargo build --features=auth-jwt,cli --release
         cp target/release/controller $OUT_DIR/bin
+        cp target/release/jwt-gen $OUT_DIR/bin
     ;;
     "clippy")
-        cargo clippy --features=auth-jwt -- -D warnings
+        cargo clippy --features=auth-jwt,cli -- -D warnings
     ;;
 esac
