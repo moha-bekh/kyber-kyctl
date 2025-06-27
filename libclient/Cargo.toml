@@ -53,6 +53,9 @@ features = [
     "WebSocket",
 ]
 
+[build-dependencies]
+vergen = { version = "8.3.1", features = ["build", "git", "gix"] }
+
 [features]
 capi = []
 default = []

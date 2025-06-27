@@ -81,6 +81,27 @@ trait BackendDriver {
     async fn stop(&mut self) -> Result<()>;
 }
 
+#[derive(Clone, Debug)]
+pub enum AuthCredentials {
+    Basic { username: String },
+    Jwt { token: String },
+}
+
+impl Default for AuthCredentials {
+    fn default() -> Self {
+        let os = if cfg!(target_arch = "wasm32") {
+            "wasm32"
+        } else {
+            std::env::consts::OS
+        };
+
+        let version = env!("VERGEN_GIT_DESCRIBE");
+        let username = format!("libclient-{os}-{version}");
+
+        Self::Basic { username }
+    }
+}
+
 struct Handler {
     conn_params: ConnectionParams,
     http_client: HttpClient,

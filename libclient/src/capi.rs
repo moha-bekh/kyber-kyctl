@@ -29,6 +29,17 @@ pub struct libclient_ConnectConfig {
     config: crate::ConnectConfig,
 }
 
+#[repr(C)]
+pub enum libclient_AuthType {
+    Basic,
+    Jwt,
+}
+
+#[allow(non_camel_case_types)]
+pub struct libclient_AuthCredentials {
+    inner: crate::AuthCredentials,
+}
+
 #[allow(non_camel_case_types)]
 pub struct libclient_StreamingProtocol {
     protocol: crate::StreamingProtocol,
@@ -252,6 +263,28 @@ pub unsafe extern "C" fn libclient_windowshandle_from_hwnd(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn libclient_auth_credential_new(
+    type_: libclient_AuthType,
+    credentials: *const c_char,
+) -> *mut libclient_AuthCredentials {
+    let Ok(credentials) = CStr::from_ptr(credentials).to_str() else {
+        warn!("Fail to convert credentials");
+        return ptr::null_mut();
+    };
+
+    let credentials = credentials.to_owned();
+
+    let credentials = match type_ {
+        libclient_AuthType::Basic => crate::AuthCredentials::Basic {
+            username: credentials,
+        },
+        libclient_AuthType::Jwt => crate::AuthCredentials::Jwt { token: credentials },
+    };
+
+    Box::into_raw(Box::new(libclient_AuthCredentials { inner: credentials }))
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn libclient_connect_config_default(
     host: *const c_char,
     out_config: *mut *mut libclient_ConnectConfig,
@@ -264,11 +297,23 @@ pub unsafe extern "C" fn libclient_connect_config_default(
     let config = crate::ConnectConfig {
         host: host.into(),
         port: crate::STREAMER_PORT,
+        credentials: crate::AuthCredentials::default(),
         tls_host: None,
         tls_root_cert: None,
     };
 
     *out_config = Box::into_raw(Box::new(libclient_ConnectConfig { config }));
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_connect_config_set_credentials(
+    config: *mut libclient_ConnectConfig,
+    credentials: *mut libclient_AuthCredentials,
+) -> c_int {
+    let credentials = Box::from_raw(credentials);
+    (*config).config.credentials = credentials.inner;
+
     0
 }
 

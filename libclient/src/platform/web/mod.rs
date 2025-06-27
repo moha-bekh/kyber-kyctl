@@ -11,7 +11,7 @@ mod websocket;
 
 use log::info;
 
-use crate::Result;
+use crate::{AuthCredentials, Result};
 pub(crate) use host_events::{WsClient, WsClientBuilder};
 pub(crate) use input_service::{get_cursor_format, InputError, InputMsgSink, InputPipeline};
 pub(crate) use mainloop_engine::MainLoopEngine;
@@ -21,6 +21,7 @@ pub(crate) use websocket::{WebSocket, WebSocketHandler};
 pub struct ConnectConfig {
     pub host: String,
     pub port: u16,
+    pub credentials: AuthCredentials,
 }
 
 #[derive(Clone, Debug)]
@@ -50,6 +51,7 @@ pub struct AudioPlayerConfig {
 pub(crate) struct ConnectionParams {
     pub(crate) host: String,
     pub(crate) port: u16,
+    pub(crate) credentials: AuthCredentials,
 }
 
 impl ConnectionParams {
@@ -57,6 +59,7 @@ impl ConnectionParams {
         Ok(Self {
             host: connect_config.host.clone(),
             port: connect_config.port,
+            credentials: connect_config.credentials,
         })
     }
 }

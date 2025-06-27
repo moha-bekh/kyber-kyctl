@@ -15,7 +15,7 @@ pub(crate) use input_service::{get_cursor_format, InputClient, InputError, Input
 pub(crate) use mainloop_engine::MainLoopEngine;
 pub(crate) use window_handle::WindowHandle;
 
-use crate::{Error, Result, TlsRootCert};
+use crate::{AuthCredentials, Error, Result, TlsRootCert};
 
 #[derive(Clone, Debug)]
 pub struct ConnectConfig {
@@ -23,6 +23,7 @@ pub struct ConnectConfig {
     pub port: u16,
     pub tls_host: Option<String>,
     pub tls_root_cert: Option<TlsRootCert>,
+    pub credentials: AuthCredentials,
 }
 
 #[derive(Clone, Debug)]
@@ -55,6 +56,7 @@ pub(crate) struct ConnectionParams {
     pub(crate) addr: std::net::SocketAddr,
     pub(crate) tls_host: Option<String>,
     pub(crate) tls_config: Option<tls::Config>,
+    pub(crate) credentials: AuthCredentials,
 }
 
 impl ConnectionParams {
@@ -73,6 +75,7 @@ impl ConnectionParams {
             addr,
             tls_host: connect_config.tls_host.clone(),
             tls_config,
+            credentials: connect_config.credentials,
         })
     }
 

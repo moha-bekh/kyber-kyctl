@@ -646,6 +646,28 @@ impl Drop for StreamingSessionConfig {
     }
 }
 
+#[derive(Clone, Debug)]
+pub enum AuthCredentials {
+    Basic { username: String },
+    Jwt { token: String },
+}
+
+impl AuthCredentials {
+    fn as_raw(&self) -> *mut sys::libclient_AuthCredentials {
+        let (type_, creds) = match self {
+            AuthCredentials::Basic { username } => {
+                (sys::libclient_AuthType_LIBCLIENT_AUTH_TYPE_BASIC, username)
+            }
+            AuthCredentials::Jwt { token } => {
+                (sys::libclient_AuthType_LIBCLIENT_AUTH_TYPE_JWT, token)
+            }
+        };
+
+        let creds = to_cstr(creds);
+        unsafe { sys::libclient_auth_credential_new(type_, creds.as_ptr()) }
+    }
+}
+
 pub struct ConnectConfig {
     ptr: *mut sys::libclient_ConnectConfig,
 }
@@ -662,6 +684,17 @@ impl ConnectConfig {
             } else {
                 Err(Error::Generic)
             }
+        }
+    }
+
+    pub fn set_credentials(&self, credentials: &AuthCredentials) -> Result<()> {
+        let credentials = credentials.as_raw();
+
+        let ret = unsafe { sys::libclient_connect_config_set_credentials(self.ptr, credentials) };
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err(Error::Generic)
         }
     }
 
