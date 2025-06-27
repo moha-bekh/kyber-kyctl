@@ -177,15 +177,15 @@ impl Handler {
         self.stop_backend().await?;
 
         if stop_session {
-            info!("Request to stop host session");
-            let ret = host_service::stop_session(&self.http_client).await;
+            info!("Request to log out and stop host session");
+            let ret = host_service::logout(&self.http_client).await;
             if let Err(err) = ret {
                 warn!(
-                    "Stop session rejected by controller ({:?}). Stop client anyway.",
+                    "Logout request rejected by controller ({:?}). Stop client anyway.",
                     err
                 );
             } else {
-                info!("Host session stopped");
+                info!("Logged out, session stopped");
             }
         }
 

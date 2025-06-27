@@ -73,12 +73,12 @@ pub(crate) async fn stop_streaming(client: &HttpClient) -> Result<()> {
     Ok(())
 }
 
-pub(crate) async fn stop_session(client: &HttpClient) -> Result<()> {
-    let url = format!("{base_url}/stop_session", base_url = client.base_url());
+pub(crate) async fn logout(client: &HttpClient) -> Result<()> {
+    let url = format!("{base_url}/session/logout", base_url = client.base_url());
 
     let response = client.post(&url).send().await?;
     if response.status() != StatusCode::OK {
-        warn!("POST /stop_session failed: {}", response.status());
+        warn!("POST /session/logout failed: {}", response.status());
         return Err(Error::HttpQueryFailed {
             status: response.status().into(),
         });
