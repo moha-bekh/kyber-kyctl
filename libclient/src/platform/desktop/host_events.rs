@@ -26,16 +26,41 @@ impl WsClient {
         conn_params: &ConnectionParams,
         capabilities: &ControlPlaneCapabilities,
         event_sink: HostEventSink,
+        auth_token: &str,
     ) -> Result<Self> {
         let host = conn_params.tls_host.as_ref().unwrap_or(&conn_params.host);
         let port = conn_params.port;
         let url = format!("wss://{host}:{port}/ws");
 
-        let stream = if let Some(tls_config) = &conn_params.tls_config {
+        let mut stream = if let Some(tls_config) = &conn_params.tls_config {
             Self::connect_with_rootca(url, conn_params, tls_config).await?
         } else {
             Self::connect_without_rootca(url).await?
         };
+
+        info!("Waiting for control plane authentication...");
+        let token = format!("{{\"token\":\"{auth_token}\"}}");
+        let Ok(_) = stream.send(tungstenite_Message::Text(token)).await else {
+            return Err(Error::ChannelSend);
+        };
+
+        let timer_duration = host_events::timeout_duration(capabilities);
+        let Ok(resp) = tokio::time::timeout(timer_duration, stream.next()).await else {
+            return Err(Error::HttpQueryTimeout);
+        };
+
+        let Some(Ok(tungstenite_Message::Text(status))) = resp else {
+            return Err(Error::Rejected);
+        };
+
+        let Ok(status) = serde_json::from_str::<&str>(&status) else {
+            return Err(Error::Rejected);
+        };
+
+        if status != "Welcome" {
+            return Err(Error::Rejected);
+        }
+        info!("Control plane authentified");
 
         let (stop_tx, stop_rx) = oneshot::channel();
 
@@ -231,7 +256,8 @@ impl crate::host_events::WsClientBuilder for WsClientBuilder {
         conn_params: &ConnectionParams,
         capabilities: &ControlPlaneCapabilities,
         event_sink: HostEventSink,
+        auth_token: &str,
     ) -> Result<Self::Type> {
-        WsClient::new(conn_params, capabilities, event_sink).await
+        WsClient::new(conn_params, capabilities, event_sink, auth_token).await
     }
 }

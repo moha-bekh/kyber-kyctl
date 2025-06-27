@@ -158,6 +158,7 @@ impl Handler {
             &self.conn_params,
             &capabilities.control_plane,
             self.message_sender.clone(),
+            &response.websocket,
         )
         .await?;
 

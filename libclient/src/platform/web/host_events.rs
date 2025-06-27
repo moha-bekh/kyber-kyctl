@@ -27,20 +27,31 @@ struct Timer {
     _closure: Closure<dyn FnMut()>,
 }
 
+enum ConnectionState {
+    Connecting {
+        timer: Option<Timer>,
+        token: String,
+        connected_tx: oneshot::Sender<ConnectionResult>,
+    },
+    Authentified {
+        timer: Option<Timer>,
+    },
+    Closed,
+}
+
 struct Inner {
     ws: Rc<WebSocket>,
     timer_duration: Duration,
     event_sink: Rc<HostEventSink>,
-    timer: RefCell<Option<Timer>>,
-    started_tx: RefCell<Option<oneshot::Sender<ConnectionResult>>>,
+    state: RefCell<ConnectionState>,
 }
 
 impl Inner {
-    fn new(
+    async fn new(
         url: String,
         capabilities: &ControlPlaneCapabilities,
         event_sink: HostEventSink,
-        started_tx: oneshot::Sender<ConnectionResult>,
+        auth_token: &str,
     ) -> Result<Rc<Self>> {
         // Connect
         let ws = WebSocket::new(&url)?;
@@ -48,28 +59,43 @@ impl Inner {
         let timer_duration = host_events::timeout_duration(capabilities);
         info!("Setting Control Plane timeout duration to {timer_duration:?}");
 
+        let (connected_tx, connected_rx) = oneshot::channel();
+        let state = ConnectionState::Connecting {
+            timer: None,
+            token: auth_token.to_owned(),
+            connected_tx,
+        };
+
         let this = Rc::new(Self {
             ws: ws.clone(),
             timer_duration,
             event_sink: Rc::new(event_sink),
-            timer: RefCell::new(None),
-            started_tx: RefCell::new(Some(started_tx)),
+            state: RefCell::new(state),
         });
 
         ws.plug_handler(this.clone())?;
 
-        Ok(this)
+        match connected_rx.await {
+            Ok(ConnectionResult::Ok) => Ok(this),
+            Ok(ConnectionResult::Failed) => Err(Error::WsConnectFailed),
+            Err(_) => Err(Error::WsConnectFailed),
+        }
     }
 
     fn stop(&self) -> Result<()> {
-        self.clear_timeout()?;
+        self.clear_timeout(&mut self.state.borrow_mut())?;
         self.ws.unplug_handler()?;
 
         Ok(())
     }
 
-    fn clear_timeout(&self) -> Result<()> {
-        let mut timer = self.timer.borrow_mut();
+    fn clear_timeout(&self, state: &mut ConnectionState) -> Result<()> {
+        let timer = match *state {
+            ConnectionState::Connecting { ref mut timer, .. } => timer,
+            ConnectionState::Authentified { ref mut timer, .. } => timer,
+            _ => return Ok(()),
+        };
+
         if let Some(timer) = timer.take() {
             let window = dom::window()?;
             window.clear_timeout_with_handle(timer.id);
@@ -78,7 +104,7 @@ impl Inner {
         Ok(())
     }
 
-    fn arm_timeout(&self, duration: Duration) -> Result<()> {
+    fn arm_timeout(&self, duration: Duration, state: &mut ConnectionState) -> Result<()> {
         let event_sink = self.event_sink.clone();
 
         let ontimeout_cb = Closure::<dyn FnMut()>::new(move || {
@@ -93,7 +119,12 @@ impl Inner {
             duration.as_millis() as _,
         )?;
 
-        let mut timer = self.timer.borrow_mut();
+        let timer = match state {
+            ConnectionState::Connecting { ref mut timer, .. } => timer,
+            ConnectionState::Authentified { ref mut timer, .. } => timer,
+            _ => return Ok(()),
+        };
+
         if let Some(timer) = timer.take() {
             window.clear_timeout_with_handle(timer.id);
         }
@@ -105,36 +136,16 @@ impl Inner {
 
         Ok(())
     }
-}
 
-impl WebSocketHandler for Inner {
-    const NAME: &'static str = "Control";
-
-    // Event handlers
-    fn on_open(&self) -> Result<()> {
-        self.arm_timeout(self.timer_duration)?;
-
-        let Some(started_tx) = self.started_tx.borrow_mut().take() else {
-            warn!("started_tx already consumed");
-            return Ok(());
+    fn handle_authentication(&self, msg: String) -> bool {
+        let Ok(status) = serde_json::from_str::<&str>(&msg) else {
+            return false;
         };
 
-        let ret = started_tx.send(ConnectionResult::Ok);
-        if ret.is_err() {
-            warn!("Fail to forward error");
-        }
-
-        Ok(())
+        status == "Welcome"
     }
 
-    fn on_message(&self, msg: MessageEvent) -> Result<()> {
-        // Unpack MessageEvent
-        let Ok(msg) = msg.data().dyn_into::<js_sys::JsString>() else {
-            info!("Unexpected message type");
-            return Ok(());
-        };
-
-        let msg: String = msg.into();
+    fn handle_authentified_messages(&self, msg: String, state: &mut ConnectionState) -> Result<()> {
         match serde_json::from_str(&msg) {
             Ok(HostEventFrame::Event { event }) => {
                 self.event_sink.blocking_push(event);
@@ -149,7 +160,7 @@ impl WebSocketHandler for Inner {
                     }
                 };
 
-                self.arm_timeout(self.timer_duration)?;
+                self.arm_timeout(self.timer_duration, state)?;
 
                 let ret = self.ws.ws.send_with_str(&pong);
                 if let Err(err) = ret {
@@ -167,23 +178,91 @@ impl WebSocketHandler for Inner {
         Ok(())
     }
 
-    fn on_close(&self, event: CloseEvent) -> Result<()> {
-        self.clear_timeout()?;
+    fn send_token(&self) -> Result<()> {
+        let mut state = self.state.borrow_mut();
+        let ConnectionState::Connecting { ref token, .. } = *state else {
+            return Ok(());
+        };
+        let token = format!("{{\"token\":\"{token}\"}}");
+        self.arm_timeout(self.timer_duration, &mut state)?;
+        Ok(self.ws.ws.send_with_str(&token)?)
+    }
+}
 
-        if let Some(started_tx) = self.started_tx.borrow_mut().take() {
-            let ret = started_tx.send(ConnectionResult::Failed);
-            if ret.is_err() {
-                warn!("Fail to forward error");
+impl WebSocketHandler for Inner {
+    const NAME: &'static str = "Control";
+
+    // Event handlers
+    fn on_open(&self) -> Result<()> {
+        if self.send_token().is_err() {
+            if let ConnectionState::Connecting { connected_tx, .. } =
+                self.state.replace(ConnectionState::Closed)
+            {
+                let _ = connected_tx.send(ConnectionResult::Failed);
             }
+        }
+        Ok(())
+    }
+
+    fn on_message(&self, msg: MessageEvent) -> Result<()> {
+        // Unpack MessageEvent
+        let Ok(msg) = msg.data().dyn_into::<js_sys::JsString>() else {
+            info!("Unexpected message type");
+            return Ok(());
+        };
+
+        let msg: String = msg.into();
+        {
+            let mut state = self.state.borrow_mut();
+            match *state {
+                ConnectionState::Authentified { .. } => {
+                    return self.handle_authentified_messages(msg, &mut state)
+                }
+                ConnectionState::Closed => return Ok(()),
+                _ => (), // Connecting handled after as it changes the state.
+            }
+        }
+
+        // Handling ConnectionState::Connecting
+
+        // TODO: Overall this code begs for a proper type state pattern refactor on the Inner
+        // connection but the internal mutability makes it challenging.
+        let (new_state, result) = if self.handle_authentication(msg) {
+            (
+                ConnectionState::Authentified { timer: None },
+                ConnectionResult::Ok,
+            )
         } else {
-            self.event_sink
-                .blocking_push_msg(Message::ControlPlaneClosed {
-                    reason: ControlPlaneCloseReason::Closed {
-                        was_clean: event.was_clean(),
-                        code: Some(event.code()),
-                        reason: Some(event.reason()),
-                    },
-                });
+            (ConnectionState::Closed, ConnectionResult::Failed)
+        };
+
+        let mut old_state = self.state.replace(new_state);
+        self.clear_timeout(&mut old_state)?;
+        if let ConnectionState::Connecting { connected_tx, .. } = old_state {
+            let _ = connected_tx.send(result);
+        }
+        Ok(())
+    }
+
+    fn on_close(&self, event: CloseEvent) -> Result<()> {
+        let mut state = self.state.replace(ConnectionState::Closed);
+
+        self.clear_timeout(&mut state)?;
+        match state {
+            ConnectionState::Connecting { connected_tx, .. } => {
+                let _ = connected_tx.send(ConnectionResult::Failed);
+            }
+            ConnectionState::Authentified { .. } => {
+                self.event_sink
+                    .blocking_push_msg(Message::ControlPlaneClosed {
+                        reason: ControlPlaneCloseReason::Closed {
+                            was_clean: event.was_clean(),
+                            code: Some(event.code()),
+                            reason: Some(event.reason()),
+                        },
+                    });
+            }
+            ConnectionState::Closed => (),
         }
 
         Ok(())
@@ -210,6 +289,7 @@ impl WsClient {
         conn_params: &ConnectionParams,
         capabilities: &ControlPlaneCapabilities,
         event_sink: HostEventSink,
+        auth_token: &str,
     ) -> Result<Self> {
         let url = format!(
             "wss://{host}:{port}/ws",
@@ -217,14 +297,9 @@ impl WsClient {
             port = conn_params.port
         );
 
-        let (connected_tx, connected_rx) = oneshot::channel();
-        let inner = InnerRef(Inner::new(url, capabilities, event_sink, connected_tx)?);
+        let inner = InnerRef(Inner::new(url, capabilities, event_sink, auth_token).await?);
 
-        match connected_rx.await {
-            Ok(ConnectionResult::Ok) => Ok(Self { _inner: inner }),
-            Ok(ConnectionResult::Failed) => Err(Error::WsConnectFailed),
-            Err(_) => Err(Error::WsConnectFailed),
-        }
+        Ok(Self { _inner: inner })
     }
 }
 
@@ -250,7 +325,8 @@ impl crate::host_events::WsClientBuilder for WsClientBuilder {
         conn_params: &ConnectionParams,
         capabilities: &ControlPlaneCapabilities,
         event_sink: HostEventSink,
+        auth_token: &str,
     ) -> Result<Self::Type> {
-        WsClient::new(conn_params, capabilities, event_sink).await
+        WsClient::new(conn_params, capabilities, event_sink, auth_token).await
     }
 }

@@ -22,6 +22,7 @@ pub(crate) trait WsClientBuilder {
         conn_params: &ConnectionParams,
         capabilities: &ControlPlaneCapabilities,
         event_sink: HostEventSink,
+        auth_token: &str,
     ) -> Result<Self::Type>;
 }
 
@@ -126,10 +127,13 @@ impl HostEventReceiver {
         conn_params: &ConnectionParams,
         capabilities: &ControlPlaneCapabilities,
         msg_sender: MessageSender,
+        auth_token: &str,
     ) -> Result<Self> {
         let event_sink = HostEventSink::new(msg_sender);
 
-        let client = platform::WsClientBuilder::new(conn_params, capabilities, event_sink).await?;
+        let client =
+            platform::WsClientBuilder::new(conn_params, capabilities, event_sink, auth_token)
+                .await?;
 
         Ok(Self { client })
     }
