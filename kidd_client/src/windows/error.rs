@@ -1,5 +1,7 @@
+use std::mem::MaybeUninit;
 use std::ptr;
 
+use log::warn;
 use windows_sys::{
     core::*,
     Win32::{
@@ -32,7 +34,7 @@ pub(crate) fn last_win32_error(func: &'static str, file: &'static str, line: u32
         return Ok(());
     }
 
-    let buffer: PWSTR = ptr::null_mut();
+    let mut buffer: MaybeUninit<PWSTR> = MaybeUninit::uninit();
 
     let s = unsafe {
         let len = FormatMessageW(
@@ -42,18 +44,30 @@ pub(crate) fn last_win32_error(func: &'static str, file: &'static str, line: u32
             ptr::null_mut(),
             error_code,
             makelangid(LANG_NEUTRAL, SUBLANG_DEFAULT),
-            buffer,
+            #[allow(clippy::crosspointer_transmute)]
+            std::mem::transmute::<*mut *mut u16, *mut u16>(buffer.as_mut_ptr()),
             0,
             ptr::null_mut(),
         );
 
-        let s = String::from_utf16(std::slice::from_raw_parts(buffer, len as usize));
-        LocalFree(buffer as _);
+        if len > 0 {
+            let buffer = buffer.assume_init();
+            let s = String::from_utf16(std::slice::from_raw_parts(buffer, len as usize));
+            LocalFree(buffer as _);
 
-        s
+            if let Err(err) = &s {
+                warn!("Failed to convert Win32 error 0x{error_code:X}: {err:?}");
+            }
+
+            s.ok()
+        } else {
+            warn!("FormatMessageW() failed: {:X}", GetLastError());
+
+            None
+        }
     };
 
-    if let Ok(s) = s {
+    if let Some(s) = s {
         Err(Error::Win32(Win32Error {
             func,
             os_error: error_code,
