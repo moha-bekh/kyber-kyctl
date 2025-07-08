@@ -106,6 +106,7 @@ macro_rules! check_win32_error {
 
 pub(crate) use check_win32_error;
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub enum Error {
     Rejected,
