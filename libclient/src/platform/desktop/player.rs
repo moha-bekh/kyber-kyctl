@@ -85,11 +85,11 @@ impl Player {
         ];
 
         if let Some(video_buffer) = video_buffer {
-            options.push(format!("--video-buffer={}", video_buffer));
+            options.push(format!("--video-buffer={video_buffer}"));
         }
 
         if let Some(audio_buffer) = audio_buffer {
-            options.push(format!("--audio-buffer={}", audio_buffer));
+            options.push(format!("--audio-buffer={audio_buffer}"));
         }
 
         let instance =

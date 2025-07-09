@@ -24,7 +24,7 @@ fn get_tmp_folder() -> PathBuf {
     }
 }
 
-fn create_video_sdp_file(streamer: &str, video_port: u16, sdp_param: &str) -> Result<String> {
+fn create_video_sdp_file(streamer_ip: &str, video_port: u16, sdp_param: &str) -> Result<String> {
     let sdp_path = get_tmp_folder().join("video.sdp");
 
     let sdp = format!(
@@ -36,10 +36,7 @@ fn create_video_sdp_file(streamer: &str, video_port: u16, sdp_param: &str) -> Re
         a=tool:libavformat 58.45.100\n\
         m=video {video_port} RTP/AVP 96\n\
         a=rtpmap:96 H264/90000\n\
-        {sdp_param}\n",
-        streamer_ip = streamer,
-        video_port = video_port,
-        sdp_param = sdp_param,
+        {sdp_param}\n"
     );
 
     debug!("Write video SDP to {:?}", sdp_path);
@@ -51,7 +48,7 @@ fn create_video_sdp_file(streamer: &str, video_port: u16, sdp_param: &str) -> Re
     ))
 }
 
-fn create_audio_sdp_file(streamer: &str, audio_port: u16) -> Result<String> {
+fn create_audio_sdp_file(streamer_ip: &str, audio_port: u16) -> Result<String> {
     let sdp_path = get_tmp_folder().join("audio.sdp");
 
     let sdp = format!(
@@ -64,9 +61,7 @@ fn create_audio_sdp_file(streamer: &str, audio_port: u16) -> Result<String> {
         m=audio {audio_port} RTP/AVP 97\n\
         b=AS:128\n\
         a=rtpmap:97 opus/48000/2\n\
-        a=fmtp:97 sprop-stereo=1\n",
-        streamer_ip = streamer,
-        audio_port = audio_port,
+        a=fmtp:97 sprop-stereo=1\n"
     );
 
     debug!("Write audio SDP to {:?}", sdp_path);
