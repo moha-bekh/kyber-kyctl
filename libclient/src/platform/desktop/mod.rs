@@ -42,6 +42,7 @@ impl VideoPlayerConfig {
 }
 
 #[derive(Clone, Debug)]
+#[allow(unused)]
 pub struct AudioPlayerConfig {
     pub audio_buffer: u32, // ms
 }
