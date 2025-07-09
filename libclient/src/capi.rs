@@ -563,7 +563,7 @@ pub unsafe extern "C" fn libclient_client_new(
 
 #[no_mangle]
 pub unsafe extern "C" fn libclient_client_stop(client: *mut libclient_Client) -> c_int {
-    let ret = (*client).client.stop();
+    let ret = (&(*client)).client.stop();
     result_to_c_int(ret)
 }
 
@@ -572,19 +572,19 @@ pub unsafe extern "C" fn libclient_client_disconnect_and_stop(
     client: *mut libclient_Client,
     stop_session: bool,
 ) -> c_int {
-    let ret = (*client).client.disconnect_and_stop(stop_session);
+    let ret = (&(*client)).client.disconnect_and_stop(stop_session);
     result_to_c_int(ret)
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn libclient_client_connect(client: *mut libclient_Client) -> c_int {
-    let ret = (*client).client.connect();
+    let ret = (&(*client)).client.connect();
     result_to_c_int(ret)
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn libclient_client_disconnect(client: *mut libclient_Client) -> c_int {
-    let ret = (*client).client.disconnect();
+    let ret = (&(*client)).client.disconnect();
     result_to_c_int(ret)
 }
 
@@ -595,13 +595,13 @@ pub unsafe extern "C" fn libclient_client_start_streaming(
 ) -> c_int {
     let session_config = (*session_config).config.clone();
 
-    let ret = (*client).client.start_streaming(session_config);
+    let ret = (&(*client)).client.start_streaming(session_config);
     result_to_c_int(ret)
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn libclient_client_stop_streaming(client: *mut libclient_Client) -> c_int {
-    let ret = (*client).client.stop_streaming();
+    let ret = (&(*client)).client.stop_streaming();
     result_to_c_int(ret)
 }
 
@@ -610,7 +610,7 @@ pub unsafe extern "C" fn libclient_client_audio_set_volume(
     client: *mut libclient_Client,
     volume: f32,
 ) -> c_int {
-    let ret = (*client).client.audio_set_volume(volume);
+    let ret = (&(*client)).client.audio_set_volume(volume);
     result_to_c_int(ret)
 }
 
@@ -619,7 +619,7 @@ pub unsafe extern "C" fn libclient_client_audio_set_mute(
     client: *mut libclient_Client,
     mute: bool,
 ) -> c_int {
-    let ret = (*client).client.audio_set_mute(mute);
+    let ret = (&(*client)).client.audio_set_mute(mute);
     result_to_c_int(ret)
 }
 
@@ -628,7 +628,7 @@ pub unsafe extern "C" fn libclient_client_set_bitrate(
     client: *mut libclient_Client,
     bitrate: u32,
 ) -> c_int {
-    let ret = (*client).client.set_bitrate(bitrate);
+    let ret = (&(*client)).client.set_bitrate(bitrate);
     result_to_c_int(ret)
 }
 
@@ -637,7 +637,7 @@ pub unsafe extern "C" fn libclient_client_ref(
     client: *mut libclient_Client,
 ) -> *mut libclient_Client {
     Box::into_raw(Box::new(libclient_Client {
-        client: (*client).client.clone(),
+        client: (&(*client)).client.clone(),
     }))
 }
 
@@ -894,7 +894,7 @@ pub unsafe extern "C" fn libclient_client_set_event_handler(
     client: *mut libclient_Client,
     handler: libclient_EventHandler,
 ) -> c_int {
-    (*client)
+    (&(*client))
         .client
         .event_manager
         .add_event_sink(Box::new(handler));
