@@ -10,7 +10,7 @@ mod message_bus;
 #[cfg_attr(feature = "web", path = "./platform/web/mod.rs")]
 mod platform;
 
-#[cfg(any(cargo_c, feature = "capi"))]
+#[cfg(feature = "capi")]
 pub mod capi;
 
 #[cfg(feature = "kymux")]
