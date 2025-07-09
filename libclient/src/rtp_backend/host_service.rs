@@ -49,11 +49,6 @@ struct HelloResponse {
     ip: String,
 }
 
-#[derive(Debug, Serialize)]
-struct GenerateSdpRequest {
-    yuv444: bool,
-}
-
 #[derive(Debug, Deserialize)]
 struct GenerateSdpResponse {
     params: String,
