@@ -6,6 +6,7 @@ pub enum Packet {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct CodecPacket {
     pub codec: u32,
     pub rotation: u8,
@@ -23,6 +24,7 @@ pub struct HolePacket {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct MediaPacketHeader {
     pub is_config: bool,
     pub is_key: bool,

@@ -111,9 +111,7 @@ impl<T> VideoRegulatorPull<T> {
     }
 
     pub async fn pull(&mut self) -> Option<T> {
-        let Some(Packet { object, pts }) = self.rx.recv().await else {
-            return None;
-        };
+        let Packet { object, pts } = self.rx.recv().await?;
 
         let clock_range = self.shared_data.clock.lock().unwrap().range;
         assert!(clock_range > 0);
