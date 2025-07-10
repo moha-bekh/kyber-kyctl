@@ -117,7 +117,7 @@ case "$ACTION" in
             -p libclient \
             --release \
             --features=kymux,web,websocket \
-            -- -D warnings -A clippy::missing_safety_doc
+            -- -D warnings -A clippy::missing_safety_doc -A unexpected-cfgs
     ;;
     "package-js")
         JS_SRC_DIR=$BASE_DIR/libclient/js
