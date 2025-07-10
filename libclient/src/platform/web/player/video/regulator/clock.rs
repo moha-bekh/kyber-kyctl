@@ -7,7 +7,6 @@
  * The estimation is then used to compute the target system time a frame with a
  * certain PTS should be displayed.
  */
-
 pub(crate) struct Clock {
     pub range: usize,
     pub offset: u64,

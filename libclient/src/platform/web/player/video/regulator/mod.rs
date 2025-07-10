@@ -34,7 +34,6 @@ use wasm_bindgen::JsValue;
  * Concretely, this value is used to determine the exact system time when the
  * frame must be passed to the consumer (calling pull()).
  */
-
 struct SharedData {
     clock: Mutex<Clock>,
     notify: Notify,
