@@ -139,7 +139,10 @@ pub(crate) async fn start_stream(
     };
 
     let inputs = if let Some(input_config) = &backend_config.streaming_config.input {
-        let cursor_format = get_cursor_format(&input_config.pipeline);
+        let cursor_format = get_cursor_format(&input_config.pipeline).or_else(|| {
+            warn!("No Cursor format found. Force raw");
+            Some(CursorFormat::Raw)
+        });
         cursor_format.map(|cursor_format| StartRequestInput {
             cursor_format,
             gamepad_force_xbox360: input_config.gamepad_force_xbox360,
