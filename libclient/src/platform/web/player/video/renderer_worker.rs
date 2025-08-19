@@ -229,6 +229,7 @@ impl RendererWorker {
 
     pub fn create(
         message_sender: MessageSender,
+        source_id: u32,
     ) -> Result<(RendererWorker, RendererWorkerHandle), JsValue> {
         let options = web_sys::WorkerOptions::new();
         options.set_type(web_sys::WorkerType::Module);
@@ -240,7 +241,7 @@ impl RendererWorker {
 
         let worker_message_cb =
             Closure::<dyn FnMut(_)>::new(move |event: web_sys::MessageEvent| {
-                let ret = Self::handle_worker_message(event, &message_sender);
+                let ret = Self::handle_worker_message(event, &message_sender, source_id);
                 if let Err(err) = ret {
                     warn!("VideoDemuxerWorker failed to process message: {err:?}");
                 }
@@ -259,6 +260,7 @@ impl RendererWorker {
     fn handle_worker_message(
         event: web_sys::MessageEvent,
         message_sender: &MessageSender,
+        source_id: u32,
     ) -> Result<(), JsValue> {
         let msg = &event.data().dyn_into::<js_sys::Object>()?;
         let msg_type = reflect::get_string(msg, "type")?;
@@ -294,6 +296,7 @@ impl RendererWorker {
                 let ts = reflect::get_f64(msg, "ts")? as i64;
 
                 let metric = Metric::Video(VideoMetric {
+                    source_id,
                     pts,
                     ts,
                     data: metric_type,

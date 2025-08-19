@@ -235,6 +235,7 @@ async fn create_videoplayer(
             backend_config.msg_sender.clone(),
             &config.player,
             video_config,
+            config.display_id,
             config.player.notify_decoded,
         )?;
 
@@ -486,11 +487,17 @@ impl KymuxBackend {
         metrics::start_remote_metrics_receiver(&kymux, remote_network_stats_id, metrics3).await?;
 
         if let Some(video) = &host_config.video {
-            // TODO: Attach DisplayId
-            let endpoints = video.iter().filter_map(|v| v.metrics_endpoint);
-            for endpoint in endpoints {
-                metrics::start_remote_video_metrics_receiver(&kymux, endpoint, metrics.clone())
-                    .await?;
+            let endpoints = video
+                .iter()
+                .filter_map(|v| v.metrics_endpoint.map(|endpoint| (v.display_id, endpoint)));
+            for (display_id, endpoint) in endpoints {
+                metrics::start_remote_video_metrics_receiver(
+                    &kymux,
+                    display_id,
+                    endpoint,
+                    metrics.clone(),
+                )
+                .await?;
             }
         }
 

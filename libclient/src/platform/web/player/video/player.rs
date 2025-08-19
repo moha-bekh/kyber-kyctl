@@ -24,6 +24,7 @@ pub struct VideoPlayer {
     message_sender: MessageSender,
     cbs: Option<VideoDecoderCallbacks>,
     video_decoder: Option<VideoDecoder>,
+    source_id: u32,
     codec: String,
     hardware_acceleration: bool,
     video_rotation: Rc<AtomicU8>,
@@ -35,6 +36,7 @@ impl VideoPlayer {
         message_sender: MessageSender,
         player_config: &VideoPlayerConfig,
         decoder_config: VideoDecoderConfig,
+        source_id: u32,
         notify_decoded: bool,
     ) -> Result<(Self, VideoPlayerHandle)> {
         let canvas = dom::get_canvas(&player_config.canvas)?;
@@ -42,7 +44,7 @@ impl VideoPlayer {
         let offscreen_canvas = canvas.transfer_control_to_offscreen()?;
 
         let (renderer_worker, renderer_worker_handle) =
-            RendererWorker::create(message_sender.clone())?;
+            RendererWorker::create(message_sender.clone(), source_id)?;
         renderer_worker.start(offscreen_canvas, player_config.video_buffer)?;
 
         let video_rotation = Rc::new(AtomicU8::new(0));
@@ -76,6 +78,7 @@ impl VideoPlayer {
                 if let Some(pts) = frame.timestamp() {
                     let pts = pts as u64;
                     let metric = Metric::Video(VideoMetric {
+                        source_id,
                         pts,
                         ts: now,
                         data: VideoMetricData::FrameDecoded,
@@ -107,6 +110,7 @@ impl VideoPlayer {
             message_sender,
             cbs: Some(cbs),
             video_decoder: None,
+            source_id,
             codec,
             hardware_acceleration,
             video_rotation,
@@ -129,6 +133,7 @@ impl VideoPlayer {
                         self.recv_dates.borrow_mut().push_back(recv_date);
 
                         let metric = Metric::Video(VideoMetric {
+                            source_id: self.source_id,
                             pts: packet.header.pts,
                             ts: recv_date,
                             data: VideoMetricData::FrameReceived,
@@ -155,6 +160,7 @@ impl VideoPlayer {
                     self.video_decoder = Some(VideoDecoder::new(
                         self.message_sender.clone(),
                         cbs,
+                        self.source_id,
                         self.codec.clone(),
                         self.hardware_acceleration,
                     )?);

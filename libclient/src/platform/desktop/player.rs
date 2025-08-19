@@ -118,13 +118,14 @@ impl Player {
         })
     }
 
-    fn on_metrics(map: HashMap<String, i64>, message_sender: &MessageSender) {
+    fn on_metrics(source_id: u32, map: HashMap<String, i64>, message_sender: &MessageSender) {
         let Some(pts) = map.get("pts").map(|&v| u64::try_from(v).unwrap()) else {
             warn!("Metrics without pts: ignoring");
             return;
         };
         if let Some(&ts) = map.get("received") {
             let metric = Metric::Video(VideoMetric {
+                source_id,
                 pts,
                 ts,
                 data: VideoMetricData::FrameReceived,
@@ -133,6 +134,7 @@ impl Player {
         }
         if let Some(&ts) = map.get("decoding") {
             let metric = Metric::Video(VideoMetric {
+                source_id,
                 pts,
                 ts,
                 data: VideoMetricData::FrameDecoding,
@@ -141,6 +143,7 @@ impl Player {
         }
         if let Some(&ts) = map.get("decoded") {
             let metric = Metric::Video(VideoMetric {
+                source_id,
                 pts,
                 ts,
                 data: VideoMetricData::FrameDecoded,
@@ -149,6 +152,7 @@ impl Player {
         }
         if let Some(&ts) = map.get("prepared") {
             let metric = Metric::Video(VideoMetric {
+                source_id,
                 pts,
                 ts,
                 data: VideoMetricData::FramePrepared,
@@ -157,6 +161,7 @@ impl Player {
         }
         if let Some(&ts) = map.get("displayed") {
             let metric = Metric::Video(VideoMetric {
+                source_id,
                 pts,
                 ts,
                 data: VideoMetricData::FrameDisplayed,
@@ -165,6 +170,7 @@ impl Player {
         }
         if let Some(&ts) = map.get("skipped") {
             let metric = Metric::Video(VideoMetric {
+                source_id,
                 pts,
                 ts,
                 data: VideoMetricData::FrameSkipped,
@@ -201,10 +207,11 @@ impl Player {
             vlc::MediaPlayer::new(&self.instance).ok_or(PlayerError::MediaPlayerCreateFailed)?;
         mp.set_media(&media);
 
+        let source_id = config.source_id;
         let message_sender2 = self.message_sender.clone();
         mp.set_metrics_callback(move |entries| {
             let map = Self::metrics_to_map(entries);
-            Self::on_metrics(map, &message_sender2);
+            Self::on_metrics(source_id, map, &message_sender2);
         });
 
         match config.window_handle {

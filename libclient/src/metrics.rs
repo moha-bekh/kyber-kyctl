@@ -12,6 +12,7 @@ pub enum Metric {
 
 #[derive(Debug, Clone)]
 pub struct VideoMetric {
+    pub source_id: u32,
     pub pts: u64,
     pub ts: i64,
     pub data: VideoMetricData,

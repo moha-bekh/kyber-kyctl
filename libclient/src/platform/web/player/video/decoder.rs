@@ -13,6 +13,7 @@ pub struct VideoDecoder {
     _error_closure: Closure<dyn FnMut(js_sys::Error) -> Result<(), JsValue>>,
     video_decoder: web_sys::VideoDecoder,
     pending_config: Option<Vec<u8>>,
+    source_id: u32,
     codec: String,
     hardware_acceleration: bool,
 }
@@ -26,6 +27,7 @@ impl VideoDecoder {
     pub fn new(
         message_sender: MessageSender,
         cbs: VideoDecoderCallbacks,
+        source_id: u32,
         codec: String,
         hardware_acceleration: bool,
     ) -> Result<Self, JsValue> {
@@ -42,6 +44,7 @@ impl VideoDecoder {
             _error_closure: error_closure,
             video_decoder,
             pending_config: None,
+            source_id,
             codec,
             hardware_acceleration,
         })
@@ -93,6 +96,7 @@ impl VideoDecoder {
             ))?;
 
             let metric = Metric::Video(VideoMetric {
+                source_id: self.source_id,
                 pts: header.pts,
                 ts: Instant::now().raw_us() as i64,
                 data: VideoMetricData::FrameDecoding,

@@ -137,6 +137,7 @@ impl WsBackend {
             backend_config.msg_sender.clone(),
             &video_config.player,
             video_decoder_config,
+            video_config.display_id,
             video_config.player.notify_decoded,
         )?;
 

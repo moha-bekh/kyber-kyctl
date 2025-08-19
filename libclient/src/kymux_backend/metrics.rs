@@ -129,6 +129,7 @@ struct RemoteVideoMetrics {
 }
 
 async fn run_remote_video_metrics_receiver(
+    source_id: u32,
     mut protocol: ProtocolRecv<MetricsPacket>,
     metrics: MetricsProducer,
 ) -> Result<()> {
@@ -147,6 +148,7 @@ async fn run_remote_video_metrics_receiver(
 
         if let Some(&ts) = m.get("acquired") {
             let metric = Metric::Video(VideoMetric {
+                source_id,
                 pts,
                 ts,
                 data: VideoMetricData::FrameAcquired,
@@ -158,6 +160,7 @@ async fn run_remote_video_metrics_receiver(
 
         if let Some(&ts) = m.get("encoding") {
             let metric = Metric::Video(VideoMetric {
+                source_id,
                 pts,
                 ts,
                 data: VideoMetricData::FrameEncoding,
@@ -169,6 +172,7 @@ async fn run_remote_video_metrics_receiver(
 
         if let Some(&ts) = m.get("encoded") {
             let metric = Metric::Video(VideoMetric {
+                source_id,
                 pts,
                 ts,
                 data: VideoMetricData::FrameEncoded,
@@ -180,6 +184,7 @@ async fn run_remote_video_metrics_receiver(
 
         if let Some(&ts) = m.get("sent") {
             let metric = Metric::Video(VideoMetric {
+                source_id,
                 pts,
                 ts,
                 data: VideoMetricData::FrameSent,
@@ -195,6 +200,7 @@ async fn run_remote_video_metrics_receiver(
 
 pub(crate) async fn start_remote_video_metrics_receiver(
     kymux: &kymux::Connection,
+    source_id: u32,
     endpoint_id: u16,
     metrics: MetricsProducer,
 ) -> Result<()> {
@@ -205,7 +211,7 @@ pub(crate) async fn start_remote_video_metrics_receiver(
         .map_err(|err| Error::KymuxReadyFailed { reason: err.0 })?;
 
     runtime::spawn(async move {
-        if let Err(err) = run_remote_video_metrics_receiver(protocol, metrics).await {
+        if let Err(err) = run_remote_video_metrics_receiver(source_id, protocol, metrics).await {
             warn!("Remote video metrics receiver error: {err:?}");
         }
     });
