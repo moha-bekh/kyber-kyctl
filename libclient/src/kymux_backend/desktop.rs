@@ -147,6 +147,7 @@ fn create_video_config(
         let uri = kymux.connect_and_forward_video_endpoint(*endpoint, video_protocol)?;
 
         let player_config = player::VideoConfig {
+            source_id: config.display_id,
             software_decode: config.player.software_decode,
             window_handle: config.player.window_handle,
             uri,

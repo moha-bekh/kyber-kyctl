@@ -54,6 +54,7 @@ pub(crate) fn plug_event_manager_to_player(
 }
 
 pub(crate) struct VideoConfig {
+    pub(crate) source_id: u32,
     pub(crate) software_decode: bool,
     pub(crate) window_handle: WindowHandle,
     pub(crate) uri: String,

@@ -194,6 +194,7 @@ impl RtpBackend {
         let sdp_path = create_video_sdp_file(local_ip, RTP_VIDEO_PORT, &sdp_param)?;
 
         let vlc_videoconfig = player::VideoConfig {
+            source_id: video_config.display_id,
             uri: sdp_path,
             software_decode: video_config.player.software_decode,
             window_handle: video_config.player.window_handle,
