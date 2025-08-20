@@ -581,7 +581,7 @@ pub unsafe extern "C" fn libclient_streaming_session_config_set_input(
 
 #[allow(non_camel_case_types)]
 pub struct libclient_Client {
-    client: Arc<crate::Client>,
+    client: crate::Client,
 }
 
 #[no_mangle]
@@ -593,9 +593,7 @@ pub unsafe extern "C" fn libclient_client_new(
 
     let client = crate::Client::new(connect_config, metrics);
     if let Ok(client) = client {
-        Box::into_raw(Box::new(libclient_Client {
-            client: Arc::new(client),
-        }))
+        Box::into_raw(Box::new(libclient_Client { client }))
     } else {
         ptr::null_mut()
     }
@@ -670,15 +668,6 @@ pub unsafe extern "C" fn libclient_client_set_bitrate(
 ) -> c_int {
     let ret = (&(*client)).client.set_bitrate(bitrate);
     result_to_c_int(ret)
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn libclient_client_ref(
-    client: *mut libclient_Client,
-) -> *mut libclient_Client {
-    Box::into_raw(Box::new(libclient_Client {
-        client: (&(*client)).client.clone(),
-    }))
 }
 
 #[no_mangle]
