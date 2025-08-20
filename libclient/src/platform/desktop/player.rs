@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::collections::HashMap;
 
 use log::{error, info, warn};
@@ -9,6 +8,22 @@ use crate::error::{Error, PlayerError, Result};
 use crate::metrics::{Metric, VideoMetric, VideoMetricData};
 use crate::platform::WindowHandle;
 use crate::{Message, MessageSender};
+
+#[allow(dead_code)]
+pub(crate) fn setup_vlc_logger(instance: &vlc::Instance) {
+    instance.set_log(
+        |level: vlc::LogLevel, _log_ctx: vlc::Log, msg: std::borrow::Cow<str>| {
+            let level = match level {
+                vlc::LogLevel::Debug => log::Level::Debug,
+                vlc::LogLevel::Notice => log::Level::Info,
+                vlc::LogLevel::Warning => log::Level::Warn,
+                vlc::LogLevel::Error => log::Level::Error,
+            };
+
+            log::log!(target: "vlc", level, "{msg}");
+        },
+    );
+}
 
 pub(crate) fn plug_event_manager_to_player(
     mp: &vlc::MediaPlayer,
@@ -100,17 +115,8 @@ impl Player {
 
         let instance =
             vlc::Instance::with_args(Some(options)).ok_or(PlayerError::InstanceCreateFailed)?;
-
-        instance.set_log(|level: vlc::LogLevel, _log_ctx: vlc::Log, msg: Cow<str>| {
-            let level = match level {
-                vlc::LogLevel::Debug => log::Level::Debug,
-                vlc::LogLevel::Notice => log::Level::Info,
-                vlc::LogLevel::Warning => log::Level::Warn,
-                vlc::LogLevel::Error => log::Level::Error,
-            };
-
-            log::log!(target: "vlc", level, "{msg}");
-        });
+        #[cfg(not(target_os = "android"))]
+        setup_vlc_logger(&instance);
 
         Ok(Self {
             instance,
