@@ -863,7 +863,7 @@ impl Client {
         platform::player::supported_video_codecs(force_software).await
     }
 
-    pub fn set_metrics_callback(&self, cb: Box<MetricsCallback>) {
-        *self.metrics_cb.lock().unwrap() = Some(cb);
+    pub fn set_metrics_callback(&self, cb: Option<Box<MetricsCallback>>) {
+        *self.metrics_cb.lock().unwrap() = cb;
     }
 }

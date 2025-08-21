@@ -12,6 +12,7 @@ use libkynput_rs::Pipeline;
 use crate::metrics::{
     Metric, MetricsJSONProducer, NetworkPing, NetworkStats, VideoMetric, VideoMetricData,
 };
+use crate::MetricsCallback;
 use crate::VideoCodec;
 
 #[allow(non_camel_case_types)]
@@ -1078,7 +1079,7 @@ impl From<Metric> for libclient_Metric {
 
 #[allow(non_camel_case_types)]
 pub type libclient_metrics_cb =
-    extern "C" fn(metric: *const libclient_Metric, userdata: *mut c_void);
+    Option<extern "C" fn(metric: *const libclient_Metric, userdata: *mut c_void)>;
 
 #[no_mangle]
 pub unsafe extern "C" fn libclient_client_set_metrics_callback(
@@ -1086,16 +1087,22 @@ pub unsafe extern "C" fn libclient_client_set_metrics_callback(
     metrics_cb: libclient_metrics_cb,
     userdata: *mut c_void,
 ) {
-    let metrics_cb = Arc::new(metrics_cb);
-    let userdata = Arc::new(AtomicPtr::new(userdata));
-    let cb = move |metric: Metric| unsafe {
-        let userdata = *userdata.as_ptr();
-        let libclient_metric: libclient_Metric = metric.into();
-        metrics_cb(std::ptr::from_ref(&libclient_metric), userdata);
+    let cb: Option<Box<MetricsCallback>> = if let Some(metrics_cb) = metrics_cb {
+        let metrics_cb = Arc::new(metrics_cb);
+        let userdata = Arc::new(AtomicPtr::new(userdata));
+        let cb = move |metric: Metric| unsafe {
+            let userdata = *userdata.as_ptr();
+            let libclient_metric: libclient_Metric = metric.into();
+            metrics_cb(std::ptr::from_ref(&libclient_metric), userdata);
+        };
+
+        Some(Box::new(cb))
+    } else {
+        None
     };
 
     let client = unsafe { &(*client).client };
-    client.set_metrics_callback(Box::new(cb));
+    client.set_metrics_callback(cb);
 }
 
 #[allow(non_camel_case_types)]

@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::ffi::{CStr, CString};
 use std::mem::{self, MaybeUninit};
 use std::os::raw::c_void;
@@ -702,13 +703,17 @@ impl Drop for ConnectConfig {
 
 pub struct Client {
     ptr: *mut sys::libclient_Client,
+    metrics_cb: Cell<Option<Box<Box<MetricsCallback>>>>,
 }
 
 impl Client {
     pub fn new(connect_config: &ConnectConfig, metrics: bool) -> Result<Self> {
         let ptr = unsafe { sys::libclient_client_new(connect_config.ptr, metrics) };
         if !ptr.is_null() {
-            Ok(Self { ptr })
+            Ok(Self {
+                ptr,
+                metrics_cb: Cell::new(None),
+            })
         } else {
             Err(Error::Generic)
         }
@@ -809,11 +814,26 @@ impl Client {
         }
     }
 
-    pub fn set_metrics_callback(&self, cb: Box<MetricsCallback>) {
-        unsafe {
-            // XXX leak
-            let userdata = Box::into_raw(Box::new(cb)) as *mut _;
-            sys::libclient_client_set_metrics_callback(self.ptr, Some(metrics_cb), userdata);
+    pub fn set_metrics_callback(&self, cb: Option<Box<MetricsCallback>>) {
+        if let Some(cb) = cb {
+            unsafe {
+                let mut cb = Box::new(cb);
+                let userdata = &mut *cb as *mut _ as *mut c_void;
+                self.metrics_cb.set(Some(cb));
+                sys::libclient_client_set_metrics_callback(self.ptr, Some(metrics_cb), userdata);
+            }
+        } else {
+            unsafe {
+                sys::libclient_client_set_metrics_callback(self.ptr, None, std::ptr::null_mut());
+            }
+        }
+    }
+}
+
+impl Drop for Client {
+    fn drop(&mut self) {
+        if self.metrics_cb.take().is_some() {
+            self.set_metrics_callback(None);
         }
     }
 }
