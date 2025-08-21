@@ -46,7 +46,7 @@ pub(crate) use platform::{ConnectionParams, InputPipeline, MainLoopEngine};
 
 pub fn init_crypto() {
     #[cfg(feature = "desktop")]
-    rustls::crypto::aws_lc_rs::default_provider()
+    rustls::crypto::ring::default_provider()
         .install_default()
         .unwrap();
 }
