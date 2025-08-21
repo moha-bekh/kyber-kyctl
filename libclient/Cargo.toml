@@ -14,11 +14,11 @@ libc = "0.2.153"
 libclient-common = { version = "0.1.0", path = "../libclient-common" }
 log = {version = "0.4.21", features = ["std"] }
 reqwest = { version = "0.12.7", default-features = false, features = ["json"] }
-rustls = { version = "0.23.13", optional = true }
+rustls = { version = "0.23.31", optional = true }
 rustls-pemfile = { version = "2.1.3", optional = true }
 serde = {version = "1.0.197", features = ["derive"] }
 serde_json = { version = "1.0.114", features = ["preserve_order"] }
-tokio = { version = "1.36.0", features = ["macros", "sync", "io-util"] }
+tokio = { version = "1.47.1", features = ["macros", "sync", "io-util"] }
 wasm-bindgen = { version = "0.2.84", optional = true }
 wasm-bindgen-futures = { version = "0.4.37", optional = true }
 
