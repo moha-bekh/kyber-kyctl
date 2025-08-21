@@ -235,7 +235,7 @@ fn setup_logs(logfile: &str, level: LevelFilter) -> log4rs::Handle {
 
 async fn real_main() -> Result<()> {
     // Initialize rustls crypto
-    let ret = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    let ret = rustls::crypto::ring::default_provider().install_default();
     if ret.is_err() {
         warn!("Rustls default provider init failed");
         return Err(Error::RustlsDefaultProviderInit);
