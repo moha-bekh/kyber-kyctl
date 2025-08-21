@@ -9,7 +9,9 @@ use log::warn;
 
 use libkynput_rs::Pipeline;
 
-use crate::metrics::{Metric, NetworkPing, NetworkStats, VideoMetric, VideoMetricData};
+use crate::metrics::{
+    Metric, MetricsJSONProducer, NetworkPing, NetworkStats, VideoMetric, VideoMetricData,
+};
 use crate::VideoCodec;
 
 #[allow(non_camel_case_types)]
@@ -969,6 +971,23 @@ impl From<VideoMetricData> for libclient_VideoMetricData {
     }
 }
 
+impl From<libclient_VideoMetricData> for VideoMetricData {
+    fn from(data: libclient_VideoMetricData) -> Self {
+        match data {
+            libclient_VideoMetricData::FrameAcquired => VideoMetricData::FrameAcquired,
+            libclient_VideoMetricData::FrameEncoding => VideoMetricData::FrameEncoding,
+            libclient_VideoMetricData::FrameEncoded => VideoMetricData::FrameEncoded,
+            libclient_VideoMetricData::FrameSent => VideoMetricData::FrameSent,
+            libclient_VideoMetricData::FrameReceived => VideoMetricData::FrameReceived,
+            libclient_VideoMetricData::FrameDecoding => VideoMetricData::FrameDecoding,
+            libclient_VideoMetricData::FrameDecoded => VideoMetricData::FrameDecoded,
+            libclient_VideoMetricData::FramePrepared => VideoMetricData::FramePrepared,
+            libclient_VideoMetricData::FrameDisplayed => VideoMetricData::FrameDisplayed,
+            libclient_VideoMetricData::FrameSkipped => VideoMetricData::FrameSkipped,
+        }
+    }
+}
+
 #[allow(non_camel_case_types)]
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -1077,4 +1096,118 @@ pub unsafe extern "C" fn libclient_client_set_metrics_callback(
 
     let client = unsafe { &(*client).client };
     client.set_metrics_callback(Box::new(cb));
+}
+
+#[allow(non_camel_case_types)]
+pub struct libclient_metrics_json_producer {
+    producer: MetricsJSONProducer,
+}
+
+#[allow(non_camel_case_types)]
+pub struct libclient_metrics_json {
+    _data: Vec<CString>,
+    c_data: Vec<*const c_char>,
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_metrics_json_producer_new(
+) -> *mut libclient_metrics_json_producer {
+    let producer = MetricsJSONProducer::new();
+    Box::into_raw(Box::new(libclient_metrics_json_producer { producer }))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_metrics_json_producer_unref(
+    producer: *mut libclient_metrics_json_producer,
+) {
+    let _ = Box::from_raw(producer);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_metrics_json_producer_push(
+    producer: *mut libclient_metrics_json_producer,
+    metric: *const libclient_Metric,
+) -> *mut libclient_metrics_json {
+    let producer = &mut (*producer).producer;
+    let metric = &(*metric);
+
+    let map_value = |v: i64| -> Option<u64> {
+        if v >= 0 {
+            Some(v as u64)
+        } else {
+            None
+        }
+    };
+
+    let metric = match metric.type_ {
+        libclient_MetricType::Video => {
+            let data = &metric.data.video;
+
+            Metric::Video(VideoMetric {
+                source_id: data.source_id,
+                pts: data.pts,
+                ts: data.ts,
+                data: data.data.into(),
+            })
+        }
+        libclient_MetricType::NetworkLocal => {
+            let data = &metric.data.network_local;
+
+            Metric::NetworkLocal(NetworkStats {
+                rtt_micros: map_value(data.rtt_micros),
+                packets_lost: map_value(data.packets_lost),
+                dropped_packets: map_value(data.dropped_packets),
+            })
+        }
+        libclient_MetricType::NetworkPing => {
+            let data = &metric.data.network_ping;
+
+            Metric::NetworkPing(NetworkPing {
+                offset_micros: data.offset_micros,
+                delay_micros: data.delay_micros,
+            })
+        }
+        libclient_MetricType::NetworkRemote => {
+            let data = &metric.data.network_remote;
+
+            Metric::NetworkRemote(NetworkStats {
+                rtt_micros: map_value(data.rtt_micros),
+                packets_lost: map_value(data.packets_lost),
+                dropped_packets: map_value(data.dropped_packets),
+            })
+        }
+    };
+
+    let json = producer.push(&metric);
+
+    let mut data = Vec::with_capacity(json.len());
+
+    for l in json {
+        let s = CString::from_vec_unchecked(l);
+        data.push(s);
+    }
+
+    let c_data = data.iter().map(|s| s.as_ptr()).collect::<Vec<_>>();
+
+    Box::into_raw(Box::new(libclient_metrics_json {
+        _data: data,
+        c_data,
+    }))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_metrics_json_values(
+    json: *mut libclient_metrics_json,
+    out_values: *mut *const *const c_char,
+    out_count: *mut libc::size_t,
+) {
+    let json = &*json;
+
+    *out_values = json.c_data.as_ptr();
+    *out_count = json.c_data.len();
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_metrics_json_unref(json: *mut libclient_metrics_json) {
+    let _ = Box::from_raw(json);
 }
