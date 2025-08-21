@@ -1,10 +1,12 @@
 use std::ffi::{CStr, CString};
-use std::mem;
+use std::mem::{self, MaybeUninit};
 use std::os::raw::c_void;
+use std::sync::atomic::{self, AtomicPtr};
 
 use log::{error, warn};
 
-use libclient_common::metrics::{Metric, NetworkPing, NetworkStats, VideoMetric, VideoMetricData};
+pub use libclient_common::metrics::Metric;
+use libclient_common::metrics::{NetworkPing, NetworkStats, VideoMetric, VideoMetricData};
 use libclient_sys as sys;
 use libkynput_rs::Pipeline;
 
@@ -852,6 +854,94 @@ pub fn init() {
     }
 }
 
+fn to_c_metric(metric: &Metric) -> sys::libclient_Metric {
+    let map_value = |v: Option<u64>| -> i64 {
+        if let Some(v) = v {
+            v as i64
+        } else {
+            -1
+        }
+    };
+
+    match metric {
+        Metric::Video(metric) => {
+            let data = match metric.data {
+                VideoMetricData::FrameAcquired => {
+                    sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_ACQUIRED
+                }
+                VideoMetricData::FrameEncoding => {
+                    sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_ENCODING
+                }
+                VideoMetricData::FrameEncoded => {
+                    sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_ENCODED
+                }
+                VideoMetricData::FrameSent => {
+                    sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_SENT
+                }
+                VideoMetricData::FrameReceived => {
+                    sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_RECEIVED
+                }
+                VideoMetricData::FrameDecoding => {
+                    sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_DECODING
+                }
+                VideoMetricData::FrameDecoded => {
+                    sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_DECODED
+                }
+                VideoMetricData::FramePrepared => {
+                    sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_PREPARED
+                }
+                VideoMetricData::FrameDisplayed => {
+                    sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_DISPLAYED
+                }
+                VideoMetricData::FrameSkipped => {
+                    sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_SKIPPED
+                }
+            };
+
+            sys::libclient_Metric {
+                type_: sys::libclient_MetricType_LIBCLIENT_METRIC_TYPE_VIDEO,
+                data: sys::libclient_MetricData {
+                    video: sys::libclient_VideoMetric {
+                        source_id: metric.source_id,
+                        pts: metric.pts,
+                        ts: metric.ts,
+                        data,
+                    },
+                },
+            }
+        }
+        Metric::NetworkLocal(metric) => sys::libclient_Metric {
+            type_: sys::libclient_MetricType_LIBCLIENT_METRIC_TYPE_NETWORK_LOCAL,
+            data: sys::libclient_MetricData {
+                network_local: sys::libclient_NetworkStats {
+                    rtt_micros: map_value(metric.rtt_micros),
+                    packets_lost: map_value(metric.packets_lost),
+                    dropped_packets: map_value(metric.dropped_packets),
+                },
+            },
+        },
+        Metric::NetworkPing(metric) => sys::libclient_Metric {
+            type_: sys::libclient_MetricType_LIBCLIENT_METRIC_TYPE_NETWORK_PING,
+            data: sys::libclient_MetricData {
+                network_ping: sys::libclient_NetworkPing {
+                    offset_micros: metric.offset_micros,
+                    delay_micros: metric.delay_micros,
+                },
+            },
+        },
+        Metric::NetworkRemote(metric) => sys::libclient_Metric {
+            type_: sys::libclient_MetricType_LIBCLIENT_METRIC_TYPE_NETWORK_REMOTE,
+            data: sys::libclient_MetricData {
+                network_local: sys::libclient_NetworkStats {
+                    rtt_micros: map_value(metric.rtt_micros),
+                    packets_lost: map_value(metric.packets_lost),
+                    dropped_packets: map_value(metric.dropped_packets),
+                },
+            },
+        },
+    }
+}
+
 // Cannot implement From due to the orphan rule:
 //  - native Rust structures are in libclient-common
 //  - Rust wrappers generated from C code are un libclient-sys
@@ -950,4 +1040,68 @@ extern "C" fn metrics_cb(metric: *const sys::libclient_Metric, userdata: *mut c_
     let cb: &mut MetricsCallback = unsafe { &mut **(userdata as *mut Box<MetricsCallback>) };
     let metric = from_metric(unsafe { &*metric });
     cb(metric);
+}
+
+pub struct MetricsJSONProducer {
+    ptr: AtomicPtr<sys::libclient_metrics_json_producer>,
+}
+
+impl Default for MetricsJSONProducer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MetricsJSONProducer {
+    pub fn new() -> Self {
+        let ptr = unsafe { sys::libclient_metrics_json_producer_new() };
+        Self {
+            ptr: AtomicPtr::new(ptr),
+        }
+    }
+
+    pub fn push(&self, metric: &Metric) -> Vec<Vec<u8>> {
+        let ptr = self.ptr.load(atomic::Ordering::Relaxed);
+        let metric = to_c_metric(metric);
+
+        let c_json_list =
+            unsafe { sys::libclient_metrics_json_producer_push(ptr, &metric as *const _) };
+
+        let c_values = unsafe {
+            let mut c_values = MaybeUninit::uninit();
+            let mut c_values_count = MaybeUninit::uninit();
+
+            sys::libclient_metrics_json_values(
+                c_json_list,
+                c_values.as_mut_ptr(),
+                c_values_count.as_mut_ptr(),
+            );
+
+            let c_values = c_values.assume_init();
+            let c_values_count = c_values_count.assume_init();
+
+            std::slice::from_raw_parts(c_values, c_values_count)
+        };
+
+        let values: Vec<_> = c_values
+            .iter()
+            .map(|v| {
+                let s = unsafe { CStr::from_ptr(*v) };
+                s.to_bytes().to_vec()
+            })
+            .collect();
+
+        unsafe {
+            sys::libclient_metrics_json_unref(c_json_list);
+        }
+
+        values
+    }
+}
+
+impl Drop for MetricsJSONProducer {
+    fn drop(&mut self) {
+        let ptr = self.ptr.load(atomic::Ordering::Relaxed);
+        unsafe { sys::libclient_metrics_json_producer_unref(ptr) };
+    }
 }
