@@ -5,7 +5,7 @@ mod host_events;
 mod host_service;
 pub(crate) mod http;
 mod message_bus;
-pub(crate) mod metrics;
+pub mod metrics;
 pub(crate) mod runtime;
 
 #[cfg_attr(feature = "desktop", path = "./platform/desktop/mod.rs")]

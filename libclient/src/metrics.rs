@@ -1,52 +1,8 @@
-use serde::{Deserialize, Serialize};
+pub use libclient_common::metrics::*;
 use serde_json::json;
 use std::collections::{HashMap, VecDeque};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::{SendError, TrySendError};
-
-#[derive(Debug, Clone)]
-pub enum Metric {
-    Video(VideoMetric),
-    NetworkLocal(NetworkStats),
-    NetworkPing(NetworkPing),
-    NetworkRemote(NetworkStats),
-}
-
-#[derive(Debug, Clone)]
-pub struct VideoMetric {
-    pub source_id: u32,
-    pub pts: u64,
-    pub ts: i64,
-    pub data: VideoMetricData,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum VideoMetricData {
-    FrameAcquired,
-    FrameEncoding,
-    FrameEncoded,
-    FrameSent,
-    FrameReceived,
-    FrameDecoding,
-    FrameDecoded,
-    FramePrepared,
-    FrameDisplayed,
-    FrameSkipped,
-}
-
-// like kymux::ConnectionStats, but a struct local and serializable
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NetworkStats {
-    pub rtt_micros: Option<u64>,
-    pub packets_lost: Option<u64>,
-    pub dropped_packets: Option<u64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NetworkPing {
-    pub offset_micros: i64,
-    pub delay_micros: i64,
-}
 
 #[derive(Debug)]
 pub struct MetricsCollector {
