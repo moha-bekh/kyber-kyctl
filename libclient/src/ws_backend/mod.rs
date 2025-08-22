@@ -103,14 +103,14 @@ pub(crate) struct WsBackend {
 }
 
 impl WsBackend {
-    pub(crate) async fn new(backend_config: WsBackendConfig<'_>) -> Result<Self> {
+    pub(crate) async fn new(backend_config: WsBackendConfig<'_>, metrics: bool) -> Result<Self> {
         info!("Start websocket session");
 
         // Start Websocket service
         host_service::start_stream(&backend_config).await?;
 
         // Start services
-        let video_service = Self::create_video_service(&backend_config).await?;
+        let video_service = Self::create_video_service(&backend_config, metrics).await?;
         let audio_service = Self::create_audio_service(&backend_config).await?;
         let input_service = Self::create_input_service(&backend_config)?;
 
@@ -123,6 +123,7 @@ impl WsBackend {
 
     async fn create_video_service(
         backend_config: &WsBackendConfig<'_>,
+        metrics: bool,
     ) -> Result<Option<VideoService>> {
         let video_config = &backend_config.streaming_config.video;
         if video_config.is_empty() {
@@ -139,6 +140,7 @@ impl WsBackend {
             video_decoder_config,
             video_config.display_id,
             video_config.player.notify_decoded,
+            metrics,
         )?;
 
         let url = format!(

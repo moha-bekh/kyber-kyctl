@@ -16,6 +16,7 @@ pub struct VideoDecoder {
     source_id: u32,
     codec: String,
     hardware_acceleration: bool,
+    metrics: bool,
 }
 
 pub struct VideoDecoderCallbacks {
@@ -30,6 +31,7 @@ impl VideoDecoder {
         source_id: u32,
         codec: String,
         hardware_acceleration: bool,
+        metrics: bool,
     ) -> Result<Self, JsValue> {
         let output_closure = Closure::wrap(cbs.output);
         let error_closure = Closure::wrap(cbs.error);
@@ -47,6 +49,7 @@ impl VideoDecoder {
             source_id,
             codec,
             hardware_acceleration,
+            metrics,
         })
     }
 
@@ -95,14 +98,16 @@ impl VideoDecoder {
                 &data, timestamp, type_,
             ))?;
 
-            let metric = Metric::Video(VideoMetric {
-                source_id: self.source_id,
-                pts: header.pts,
-                ts: Instant::now().raw_us() as i64,
-                data: VideoMetricData::FrameDecoding,
-            });
-            if let Err(err) = self.message_sender.send(Message::Metric(metric)) {
-                warn!("Failed to send decoding metric: {err:?}");
+            if self.metrics {
+                let metric = Metric::Video(VideoMetric {
+                    source_id: self.source_id,
+                    pts: header.pts,
+                    ts: Instant::now().raw_us() as i64,
+                    data: VideoMetricData::FrameDecoding,
+                });
+                if let Err(err) = self.message_sender.send(Message::Metric(metric)) {
+                    warn!("Failed to send decoding metric: {err:?}");
+                }
             }
 
             let ret = self.video_decoder.decode(&chunk);

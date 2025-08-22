@@ -71,6 +71,7 @@ pub(crate) struct Player {
     video_mediaplayer: Vec<vlc::MediaPlayer>,
     audio_mediaplayer: Option<vlc::MediaPlayer>,
     message_sender: MessageSender,
+    metrics: bool,
 }
 
 impl Player {
@@ -78,6 +79,7 @@ impl Player {
         message_sender: MessageSender,
         video_buffer: Option<u32>,
         audio_buffer: Option<u32>,
+        metrics: bool,
     ) -> Result<Self> {
         let mut options = vec![
             "--0latency".to_string(),
@@ -115,6 +117,7 @@ impl Player {
             video_mediaplayer: vec![],
             audio_mediaplayer: None,
             message_sender,
+            metrics,
         })
     }
 
@@ -207,12 +210,15 @@ impl Player {
             vlc::MediaPlayer::new(&self.instance).ok_or(PlayerError::MediaPlayerCreateFailed)?;
         mp.set_media(&media);
 
-        let source_id = config.source_id;
-        let message_sender2 = self.message_sender.clone();
-        mp.set_metrics_callback(move |entries| {
-            let map = Self::metrics_to_map(entries);
-            Self::on_metrics(source_id, map, &message_sender2);
-        });
+        if self.metrics {
+            // Note: VLC metrics are disabled if the metrics callback is not set
+            let source_id = config.source_id;
+            let message_sender2 = self.message_sender.clone();
+            mp.set_metrics_callback(move |entries| {
+                let map = Self::metrics_to_map(entries);
+                Self::on_metrics(source_id, map, &message_sender2);
+            });
+        }
 
         match config.window_handle {
             #[cfg(target_os = "linux")]

@@ -700,8 +700,8 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(connect_config: &ConnectConfig) -> Result<Self> {
-        let ptr = unsafe { sys::libclient_client_new(connect_config.ptr) };
+    pub fn new(connect_config: &ConnectConfig, metrics: bool) -> Result<Self> {
+        let ptr = unsafe { sys::libclient_client_new(connect_config.ptr, metrics) };
         if !ptr.is_null() {
             Ok(Self { ptr })
         } else {

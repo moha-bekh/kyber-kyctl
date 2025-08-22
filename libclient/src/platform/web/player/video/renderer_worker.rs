@@ -29,30 +29,35 @@ impl Drop for VideoFrameWrapper {
 struct FrameBufPush {
     producer: CellBufProducer<VideoFrameWrapper>,
     frame_skipped: usize,
+    metrics: bool,
 }
 
 impl FrameBufPush {
-    fn new(producer: CellBufProducer<VideoFrameWrapper>) -> Self {
+    fn new(producer: CellBufProducer<VideoFrameWrapper>, metrics: bool) -> Self {
         Self {
             producer,
             frame_skipped: 0,
+            metrics,
         }
     }
 
     fn push(&mut self, frame: VideoFrameWrapper) -> Result<(), JsValue> {
         if let Some(prev) = self.producer.replace(frame) {
             // Previous frame skipped
-            if let Some(pts) = prev.frame.timestamp() {
-                let js_self = js_sys::global().dyn_into::<web_sys::DedicatedWorkerGlobalScope>()?;
+            if self.metrics {
+                if let Some(pts) = prev.frame.timestamp() {
+                    let js_self =
+                        js_sys::global().dyn_into::<web_sys::DedicatedWorkerGlobalScope>()?;
 
-                let ts = Instant::now().raw_us() as f64;
+                    let ts = Instant::now().raw_us() as f64;
 
-                let msg = js_sys::Object::new();
-                reflect::set(&msg, "type", "metric".into())?;
-                reflect::set(&msg, "metric_type", "frame_skipped".into())?;
-                reflect::set(&msg, "ts", ts.into())?;
-                reflect::set(&msg, "pts", pts.into())?;
-                js_self.post_message(&msg)?;
+                    let msg = js_sys::Object::new();
+                    reflect::set(&msg, "type", "metric".into())?;
+                    reflect::set(&msg, "metric_type", "frame_skipped".into())?;
+                    reflect::set(&msg, "ts", ts.into())?;
+                    reflect::set(&msg, "pts", pts.into())?;
+                    js_self.post_message(&msg)?;
+                }
             }
 
             self.frame_skipped += 1;
@@ -97,9 +102,12 @@ impl VideoRendererWorkerCtx {
                 let video_buffer_ms = js_sys::Reflect::get(msg, &"video_buffer".into())?
                     .as_f64()
                     .unwrap() as u32;
+                let metrics = js_sys::Reflect::get(msg, &"metrics_enabled".into())?
+                    .as_bool()
+                    .unwrap();
 
                 let (producer, consumer) = cell_buf::cell_buf();
-                let producer = FrameBufPush::new(producer);
+                let producer = FrameBufPush::new(producer, metrics);
 
                 let sink = if video_buffer_ms > 0 {
                     let video_buffer_us = video_buffer_ms as u64 * 1000;
@@ -119,7 +127,7 @@ impl VideoRendererWorkerCtx {
                 self.sink = Some(sink);
 
                 spawn_local(async move {
-                    let ret = Self::display_frames(canvas, consumer).await;
+                    let ret = Self::display_frames(canvas, consumer, metrics).await;
                     if let Err(err) = ret {
                         warn!("VideoRenderer display_frames() ended with error {err:?}");
                     }
@@ -168,6 +176,7 @@ impl VideoRendererWorkerCtx {
     async fn display_frames(
         canvas: web_sys::OffscreenCanvas,
         consumer: CellBufConsumer<VideoFrameWrapper>,
+        metrics: bool,
     ) -> Result<(), JsValue> {
         let js_self = js_sys::global().dyn_into::<web_sys::DedicatedWorkerGlobalScope>()?;
 
@@ -180,15 +189,17 @@ impl VideoRendererWorkerCtx {
             let timestamp = frame.frame.timestamp();
             let result = renderer.draw(frame)?;
 
-            if let Some(pts) = timestamp {
-                let ts = Instant::now().raw_us() as f64;
+            if metrics {
+                if let Some(pts) = timestamp {
+                    let ts = Instant::now().raw_us() as f64;
 
-                let msg = js_sys::Object::new();
-                reflect::set(&msg, "type", "metric".into())?;
-                reflect::set(&msg, "metric_type", "frame_displayed".into())?;
-                reflect::set(&msg, "ts", ts.into())?;
-                reflect::set(&msg, "pts", pts.into())?;
-                js_self.post_message(&msg)?;
+                    let msg = js_sys::Object::new();
+                    reflect::set(&msg, "type", "metric".into())?;
+                    reflect::set(&msg, "metric_type", "frame_displayed".into())?;
+                    reflect::set(&msg, "ts", ts.into())?;
+                    reflect::set(&msg, "pts", pts.into())?;
+                    js_self.post_message(&msg)?;
+                }
             }
 
             match result {
@@ -327,6 +338,7 @@ impl RendererWorker {
         &self,
         canvas: web_sys::OffscreenCanvas,
         video_buffer: u32,
+        metrics: bool,
     ) -> Result<(), JsValue> {
         let canvas_param = canvas.into();
 
@@ -334,6 +346,7 @@ impl RendererWorker {
         reflect::set(&msg, "type", Self::TYPE_START.into())?;
         reflect::set_ref(&msg, "canvas", &canvas_param)?;
         reflect::set(&msg, "video_buffer", video_buffer.into())?;
+        reflect::set(&msg, "metrics_enabled", metrics.into())?;
 
         let transfer = js_sys::Array::of1(&canvas_param);
 

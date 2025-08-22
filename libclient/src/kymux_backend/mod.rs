@@ -42,7 +42,7 @@ pub type BoxedKymuxBackend = Box<dyn BackendDriver>;
 
 pub(crate) async fn new(
     config: KymuxBackendConfig<'_>,
-    metrics: MetricsProducer,
+    metrics: Option<MetricsProducer>,
 ) -> Result<BoxedKymuxBackend> {
     let backend = platform::KymuxBackend::new(config, metrics).await?;
     Ok(Box::new(backend))

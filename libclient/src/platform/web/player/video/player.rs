@@ -29,6 +29,7 @@ pub struct VideoPlayer {
     hardware_acceleration: bool,
     video_rotation: Rc<AtomicU8>,
     recv_dates: Rc<RefCell<VecDeque<i64>>>,
+    metrics: bool,
 }
 
 impl VideoPlayer {
@@ -38,6 +39,7 @@ impl VideoPlayer {
         decoder_config: VideoDecoderConfig,
         source_id: u32,
         notify_decoded: bool,
+        metrics: bool,
     ) -> Result<(Self, VideoPlayerHandle)> {
         let canvas = dom::get_canvas(&player_config.canvas)?;
 
@@ -45,7 +47,7 @@ impl VideoPlayer {
 
         let (renderer_worker, renderer_worker_handle) =
             RendererWorker::create(message_sender.clone(), source_id)?;
-        renderer_worker.start(offscreen_canvas, player_config.video_buffer)?;
+        renderer_worker.start(offscreen_canvas, player_config.video_buffer, metrics)?;
 
         let video_rotation = Rc::new(AtomicU8::new(0));
         let video_rotation_ref = video_rotation.clone();
@@ -75,15 +77,17 @@ impl VideoPlayer {
                 let pts = frame.timestamp().unwrap_or(-1.);
                 let recv_date = recv_dates2.borrow_mut().pop_front().unwrap();
 
-                if let Some(pts) = frame.timestamp() {
-                    let pts = pts as u64;
-                    let metric = Metric::Video(VideoMetric {
-                        source_id,
-                        pts,
-                        ts: now,
-                        data: VideoMetricData::FrameDecoded,
-                    });
-                    Self::message_sender_send(&message_sender3, Message::Metric(metric));
+                if metrics {
+                    if let Some(pts) = frame.timestamp() {
+                        let pts = pts as u64;
+                        let metric = Metric::Video(VideoMetric {
+                            source_id,
+                            pts,
+                            ts: now,
+                            data: VideoMetricData::FrameDecoded,
+                        });
+                        Self::message_sender_send(&message_sender3, Message::Metric(metric));
+                    }
                 }
 
                 renderer_worker.send_frame(frame, rotation, recv_date)?;
@@ -115,6 +119,7 @@ impl VideoPlayer {
             hardware_acceleration,
             video_rotation,
             recv_dates,
+            metrics,
         };
         let handle = VideoPlayerHandle {
             renderer_worker_handle,
@@ -132,13 +137,18 @@ impl VideoPlayer {
                         let recv_date = Instant::now().raw_us() as i64;
                         self.recv_dates.borrow_mut().push_back(recv_date);
 
-                        let metric = Metric::Video(VideoMetric {
-                            source_id: self.source_id,
-                            pts: packet.header.pts,
-                            ts: recv_date,
-                            data: VideoMetricData::FrameReceived,
-                        });
-                        Self::message_sender_send(&self.message_sender, Message::Metric(metric));
+                        if self.metrics {
+                            let metric = Metric::Video(VideoMetric {
+                                source_id: self.source_id,
+                                pts: packet.header.pts,
+                                ts: recv_date,
+                                data: VideoMetricData::FrameReceived,
+                            });
+                            Self::message_sender_send(
+                                &self.message_sender,
+                                Message::Metric(metric),
+                            );
+                        }
                     }
                     video_decoder.send_packet(packet)?;
                 } else {
@@ -163,6 +173,7 @@ impl VideoPlayer {
                         self.source_id,
                         self.codec.clone(),
                         self.hardware_acceleration,
+                        self.metrics,
                     )?);
                 }
             }

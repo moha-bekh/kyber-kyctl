@@ -198,6 +198,7 @@ async fn create_videoplayer(
     backend_config: &KymuxBackendConfig<'_>,
     host_config: &Option<Vec<StartSessionVideoResponse>>,
     close_requested: &CloseRequestState,
+    metrics: bool,
 ) -> Result<Option<Vec<VideoPlayerHandle>>> {
     let video_config = &backend_config.streaming_config.video;
     if video_config.is_empty() {
@@ -237,6 +238,7 @@ async fn create_videoplayer(
             video_config,
             config.display_id,
             config.player.notify_decoded,
+            metrics,
         )?;
 
         info!("Start video with protocol {video_protocol:?}");
@@ -302,9 +304,16 @@ async fn create_player(
     backend_config: &KymuxBackendConfig<'_>,
     host_config: &StartSessionResponse,
     close_requested: &CloseRequestState,
+    metrics: bool,
 ) -> Result<Option<Player>> {
-    let video_player =
-        create_videoplayer(kymux, backend_config, &host_config.video, close_requested).await?;
+    let video_player = create_videoplayer(
+        kymux,
+        backend_config,
+        &host_config.video,
+        close_requested,
+        metrics,
+    )
+    .await?;
     let audio_player =
         create_audioplayer(kymux, backend_config, &host_config.audio, close_requested).await?;
 
@@ -461,7 +470,7 @@ pub(super) struct KymuxBackend {
 impl KymuxBackend {
     pub(super) async fn new(
         mut backend_config: KymuxBackendConfig<'_>,
-        metrics: MetricsProducer,
+        metrics: Option<MetricsProducer>,
     ) -> Result<Self> {
         let mut kymux = start_kymux(&backend_config).await?;
 
@@ -471,41 +480,52 @@ impl KymuxBackend {
             backend_config.streaming_config.audio = None;
         }
 
+        let has_metrics = metrics.is_some();
+
         // Start stream
-        let host_config = host_service::start_stream(&backend_config).await?;
+        let host_config = host_service::start_stream(&backend_config, has_metrics).await?;
 
-        let metrics2 = metrics.clone();
-        let metrics3 = metrics.clone();
+        if let Some(metrics) = metrics {
+            let metrics2 = metrics.clone();
+            let metrics3 = metrics.clone();
 
-        metrics::start_connection_stats_poller(&kymux, metrics.clone(), Duration::from_secs(5))
-            .await;
+            metrics::start_connection_stats_poller(&kymux, metrics.clone(), Duration::from_secs(5))
+                .await;
 
-        let clock_sync_id = host_config.clock_sync.as_ref().unwrap().endpoint;
-        metrics::start_pinger(&kymux, clock_sync_id, metrics2, Duration::from_secs(10)).await?;
+            let clock_sync_id = host_config.clock_sync.as_ref().unwrap().endpoint;
+            metrics::start_pinger(&kymux, clock_sync_id, metrics2, Duration::from_secs(10)).await?;
 
-        let remote_network_stats_id = host_config.metrics.as_ref().unwrap().endpoint;
-        metrics::start_remote_metrics_receiver(&kymux, remote_network_stats_id, metrics3).await?;
-
-        if let Some(video) = &host_config.video {
-            let endpoints = video
-                .iter()
-                .filter_map(|v| v.metrics_endpoint.map(|endpoint| (v.display_id, endpoint)));
-            for (display_id, endpoint) in endpoints {
-                metrics::start_remote_video_metrics_receiver(
-                    &kymux,
-                    display_id,
-                    endpoint,
-                    metrics.clone(),
-                )
+            let remote_network_stats_id = host_config.metrics.as_ref().unwrap().endpoint;
+            metrics::start_remote_metrics_receiver(&kymux, remote_network_stats_id, metrics3)
                 .await?;
+
+            if let Some(video) = &host_config.video {
+                let endpoints = video
+                    .iter()
+                    .filter_map(|v| v.metrics_endpoint.map(|endpoint| (v.display_id, endpoint)));
+                for (display_id, endpoint) in endpoints {
+                    metrics::start_remote_video_metrics_receiver(
+                        &kymux,
+                        display_id,
+                        endpoint,
+                        metrics.clone(),
+                    )
+                    .await?;
+                }
             }
         }
 
         let close_requested = CloseRequestState::new();
 
         // Play Video and Audio
-        let player =
-            create_player(&mut kymux, &backend_config, &host_config, &close_requested).await?;
+        let player = create_player(
+            &mut kymux,
+            &backend_config,
+            &host_config,
+            &close_requested,
+            has_metrics,
+        )
+        .await?;
 
         // Start input
         let input_service = start_input(

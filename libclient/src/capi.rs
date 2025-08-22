@@ -548,10 +548,11 @@ pub struct libclient_Client {
 #[no_mangle]
 pub unsafe extern "C" fn libclient_client_new(
     connect_config: *mut libclient_ConnectConfig,
+    metrics: bool,
 ) -> *mut libclient_Client {
     let connect_config = (*connect_config).config.clone();
 
-    let client = crate::Client::new(connect_config);
+    let client = crate::Client::new(connect_config, metrics);
     if let Ok(client) = client {
         Box::into_raw(Box::new(libclient_Client {
             client: Arc::new(client),

@@ -106,7 +106,7 @@ pub(crate) struct RtpBackend {
 }
 
 impl RtpBackend {
-    pub(crate) async fn new(backend_config: RtpBackendConfig<'_>) -> Result<Self> {
+    pub(crate) async fn new(backend_config: RtpBackendConfig<'_>, metrics: bool) -> Result<Self> {
         // Prepare video config
         let local_ip = host_service::hello(backend_config.http_client).await?;
 
@@ -148,6 +148,7 @@ impl RtpBackend {
                 backend_config.msg_sender.clone(),
                 video_buffer,
                 audio_buffer,
+                metrics,
             )?;
             player.play(vlc_videoconfig, vlc_audioconfig)?;
 

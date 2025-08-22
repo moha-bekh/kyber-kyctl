@@ -84,7 +84,7 @@ struct Handler {
     http_client: HttpClient,
     event_manager: EventManager,
     message_sender: MessageSender,
-    metrics: MetricsProducer,
+    metrics: Option<MetricsProducer>,
 
     host_events: Option<HostEventReceiver>,
 
@@ -102,7 +102,7 @@ impl Handler {
         connect_config: ConnectConfig,
         event_manager: EventManager,
         message_sender: MessageSender,
-        metrics: MetricsProducer,
+        metrics: Option<MetricsProducer>,
         state: Arc<Mutex<State>>,
     ) -> Result<Self> {
         let conn_params = ConnectionParams::new(connect_config)?;
@@ -217,7 +217,8 @@ impl Handler {
                     msg_sender,
                 };
 
-                let backend = Box::new(ws_backend::WsBackend::new(config).await?);
+                let backend =
+                    Box::new(ws_backend::WsBackend::new(config, self.metrics.is_some()).await?);
                 self.backend = Some(backend);
             }
             #[cfg(feature = "kymux")]
@@ -241,7 +242,8 @@ impl Handler {
                     msg_sender,
                 };
 
-                let backend = Box::new(rtp_backend::RtpBackend::new(config).await?);
+                let backend =
+                    Box::new(rtp_backend::RtpBackend::new(config, self.metrics.is_some()).await?);
                 self.backend = Some(backend);
             }
         };
@@ -477,7 +479,11 @@ impl Handler {
                 Ok(())
             }
             Message::Metric(metric) => {
-                if let Err(err) = self.metrics.send(metric.clone()) {
+                let metrics = self
+                    .metrics
+                    .as_ref()
+                    .expect("Received a metric while metrics are disabled");
+                if let Err(err) = metrics.send(metric.clone()) {
                     warn!("Metric discarded: {err}");
                 }
                 Ok(())
@@ -646,12 +652,12 @@ impl MainLoop {
     fn new(
         msg_receiver: MessageReceiver,
         handler: Handler,
-        metrics_collector: MetricsCollector,
+        metrics_collector: Option<MetricsCollector>,
     ) -> Self {
         Self {
             msg_receiver,
             handler,
-            metrics_collector: Some(metrics_collector),
+            metrics_collector,
         }
     }
 
@@ -665,24 +671,24 @@ impl MainLoop {
     }
 
     async fn run(mut self) {
-        let mut metrics_collector = self.metrics_collector.take().unwrap();
-
         let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
 
-        runtime::spawn(async move {
-            let mut metrics_processor = match platform::metrics::MetricsProcessor::new().await {
-                Ok(metrics_processor) => metrics_processor,
-                Err(err) => {
-                    log::error!("Could not open metrics processor: {err:?}");
-                    return;
+        if let Some(mut metrics_collector) = self.metrics_collector.take() {
+            runtime::spawn(async move {
+                let mut metrics_processor = match platform::metrics::MetricsProcessor::new().await {
+                    Ok(metrics_processor) => metrics_processor,
+                    Err(err) => {
+                        log::error!("Could not open metrics processor: {err:?}");
+                        return;
+                    }
+                };
+                tokio::select! {
+                    _ = stop_rx => {}
+                    _ = Self::process_metrics(&mut metrics_collector, &mut metrics_processor) => {}
                 }
-            };
-            tokio::select! {
-                _ = stop_rx => {}
-                _ = Self::process_metrics(&mut metrics_collector, &mut metrics_processor) => {}
-            }
-            metrics_processor.close().await;
-        });
+                metrics_processor.close().await;
+            });
+        }
 
         loop {
             let wrapper = self.msg_receiver.recv().await;
@@ -722,15 +728,19 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(connect_config: ConnectConfig) -> Result<Self> {
+    pub fn new(connect_config: ConnectConfig, metrics: bool) -> Result<Self> {
         let event_manager = EventManager::new();
 
         let (msg_sender, msg_receiver) = message_bus::create();
         let event_manager_handler = event_manager.clone();
         let msg_sender_handler = msg_sender.clone();
 
-        let metrics_collector = MetricsCollector::new();
-        let metrics_producer = metrics_collector.producer();
+        let metrics_collector = if metrics {
+            Some(MetricsCollector::new())
+        } else {
+            None
+        };
+        let metrics_producer = metrics_collector.as_ref().map(|mc| mc.producer());
 
         let state = Arc::new(Mutex::new(State::default()));
 

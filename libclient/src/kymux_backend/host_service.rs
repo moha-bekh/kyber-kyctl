@@ -71,6 +71,7 @@ struct StartRequest {
     video: Option<Vec<StartRequestVideo>>,
     audio: bool,
     inputs: Option<StartRequestInput>,
+    metrics: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -113,6 +114,7 @@ pub(crate) struct StartSessionResponse {
 
 pub(crate) async fn start_stream(
     backend_config: &KymuxBackendConfig<'_>,
+    metrics: bool,
 ) -> Result<StartSessionResponse> {
     let url = format!(
         "{base_url}/kymux/start_session",
@@ -153,6 +155,7 @@ pub(crate) async fn start_stream(
         video,
         audio: backend_config.streaming_config.audio.is_some(),
         inputs,
+        metrics,
     };
 
     let response = backend_config
