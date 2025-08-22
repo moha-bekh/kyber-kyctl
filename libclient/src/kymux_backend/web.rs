@@ -299,6 +299,40 @@ async fn create_audioplayer(
     Ok(Some(audio_player_handle))
 }
 
+async fn start_metrics(
+    kymux: &kymux::Connection,
+    host_config: &StartSessionResponse,
+    metrics: MetricsProducer,
+) -> Result<()> {
+    let metrics2 = metrics.clone();
+    let metrics3 = metrics.clone();
+
+    metrics::start_connection_stats_poller(kymux, metrics.clone(), Duration::from_secs(5)).await;
+
+    let clock_sync_id = host_config.clock_sync.as_ref().unwrap().endpoint;
+    metrics::start_pinger(kymux, clock_sync_id, metrics2, Duration::from_secs(10)).await?;
+
+    let remote_network_stats_id = host_config.metrics.as_ref().unwrap().endpoint;
+    metrics::start_remote_metrics_receiver(kymux, remote_network_stats_id, metrics3).await?;
+
+    if let Some(video) = &host_config.video {
+        let endpoints = video
+            .iter()
+            .filter_map(|v| v.metrics_endpoint.map(|endpoint| (v.display_id, endpoint)));
+        for (display_id, endpoint) in endpoints {
+            metrics::start_remote_video_metrics_receiver(
+                kymux,
+                display_id,
+                endpoint,
+                metrics.clone(),
+            )
+            .await?;
+        }
+    }
+
+    Ok(())
+}
+
 async fn create_player(
     kymux: &mut kymux::Connection,
     backend_config: &KymuxBackendConfig<'_>,
@@ -486,33 +520,7 @@ impl KymuxBackend {
         let host_config = host_service::start_stream(&backend_config, has_metrics).await?;
 
         if let Some(metrics) = metrics {
-            let metrics2 = metrics.clone();
-            let metrics3 = metrics.clone();
-
-            metrics::start_connection_stats_poller(&kymux, metrics.clone(), Duration::from_secs(5))
-                .await;
-
-            let clock_sync_id = host_config.clock_sync.as_ref().unwrap().endpoint;
-            metrics::start_pinger(&kymux, clock_sync_id, metrics2, Duration::from_secs(10)).await?;
-
-            let remote_network_stats_id = host_config.metrics.as_ref().unwrap().endpoint;
-            metrics::start_remote_metrics_receiver(&kymux, remote_network_stats_id, metrics3)
-                .await?;
-
-            if let Some(video) = &host_config.video {
-                let endpoints = video
-                    .iter()
-                    .filter_map(|v| v.metrics_endpoint.map(|endpoint| (v.display_id, endpoint)));
-                for (display_id, endpoint) in endpoints {
-                    metrics::start_remote_video_metrics_receiver(
-                        &kymux,
-                        display_id,
-                        endpoint,
-                        metrics.clone(),
-                    )
-                    .await?;
-                }
-            }
+            start_metrics(&kymux, &host_config, metrics).await?;
         }
 
         let close_requested = CloseRequestState::new();
