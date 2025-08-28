@@ -188,6 +188,16 @@ pub unsafe extern "C" fn libclient_set_log_cb(cb: LogCb, userdata: *mut c_void) 
 
 #[cfg(target_os = "android")]
 #[no_mangle]
+pub unsafe extern "C" fn libclient_set_android_logger() {
+    android_logger::init_once(
+        android_logger::Config::default()
+            .with_max_level(log::LevelFilter::Info)
+            .with_tag("libclient"),
+    );
+}
+
+#[cfg(target_os = "android")]
+#[no_mangle]
 pub unsafe extern "C" fn libclient_windowshandle_set_android_context(
     awindow_handler: *mut c_void,
 ) -> *mut libclient_WindowHandle {
