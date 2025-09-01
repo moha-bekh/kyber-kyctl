@@ -14,5 +14,11 @@ impl ClientAuthTokens {
     }
 }
 
+#[derive(Debug, serde::Deserialize, Default)]
+#[serde(default)]
+pub struct Config {
+    pub disable_same_site_protection: bool,
+}
+
 pub mod expiration;
 pub mod identity;

@@ -3,7 +3,7 @@ use std::fs;
 use log::{error, info};
 use serde::Deserialize;
 
-use crate::auth;
+use crate::{auth, session};
 
 use super::utils;
 use super::{Error, Result};
@@ -17,6 +17,8 @@ pub(crate) struct Config {
     webtransport_gen_certificate: Option<bool>,
     #[serde(default)]
     auth: auth::Config,
+    #[serde(default)]
+    session: session::Config,
 }
 
 impl Config {
@@ -34,6 +36,10 @@ impl Config {
 
     pub(crate) fn auth(&self) -> &auth::Config {
         &self.auth
+    }
+
+    pub(crate) fn session(&self) -> &session::Config {
+        &self.session
     }
 }
 

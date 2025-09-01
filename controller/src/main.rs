@@ -387,6 +387,13 @@ async fn real_main() -> Result<()> {
 
     auth::init(config.auth());
 
+    let cookie_same_site = if config.session().disable_same_site_protection {
+        warn!("Session cookie 'SameSite' is set to 'none', this leaves Kyber vulnerable to CSRF attacks, check your configuration file!");
+        cookie::SameSite::None
+    } else {
+        cookie::SameSite::Strict
+    };
+
     let process_factory = Arc::new(ProcessFactory::new(false));
 
     let ctrl = web::Data::new(Mutex::new(Controller::new(
@@ -444,7 +451,7 @@ async fn real_main() -> Result<()> {
             .wrap(session::identity::middleware::IdentityMiddleware {})
             .wrap(
                 SessionMiddleware::builder(CookieSessionStore::default(), cookie_key)
-                    .cookie_same_site(cookie::SameSite::Strict)
+                    .cookie_same_site(cookie_same_site)
                     .build(),
             )
             // Kymux
