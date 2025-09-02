@@ -36,11 +36,20 @@ get_cargo_target()
         ios)
             echo "aarch64-apple-ios"
         ;;
+        ios-sim)
+            echo "aarch64-apple-ios-sim"
+        ;;
         tvos)
             echo "aarch64-apple-tvos"
         ;;
+        tvos-sim)
+            echo "aarch64-apple-tvos-sim"
+        ;;
         visionos)
             echo "aarch64-apple-visionos"
+        ;;
+        visionos-sim)
+            echo "aarch64-apple-visionos-sim"
         ;;
         *)
             echo "Unexpected arch $1"
@@ -52,13 +61,13 @@ get_cargo_target()
 get_cargoc_flags()
 {
     case $1 in
-        ios)
+        ios|ios-sim)
             echo ""
         ;;
-        tvos)
+        tvos|tvos-sim)
             echo "-Zbuild-std=std,panic_abort"
         ;;
-        visionos)
+        visionos|visionos-sim)
             echo "-Zbuild-std=std,panic_abort"
         ;;
         *)
