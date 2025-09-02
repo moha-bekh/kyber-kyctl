@@ -128,7 +128,7 @@ if [ "$BUILD_KYBER_DEPS" = true ]; then
     fi
 
     if [[ ! -d libkynput ]]; then
-        git_clone "kyber-labs/kyber-streamer/libkynput.git" "ios-support-next"
+        git_clone "kyber-labs/kyber-streamer/libkynput.git"
     fi
 
     if [[ ! -d libkypc ]]; then
