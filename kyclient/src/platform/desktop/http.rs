@@ -20,7 +20,10 @@
 
 //! HTTP client configuration with custom TLS verification.
 
-use log::warn;
+use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
+use std::str::FromStr;
+
+use log::{error, warn};
 use reqwest::RequestBuilder;
 
 use super::tls::{self, VerifyMode};
@@ -36,7 +39,23 @@ pub(crate) fn create_reqwest(conn_params: ConnectionParams) -> Result<reqwest::C
 
     // Apply hostname resolution override if tls_host is set
     let client_builder = if let Some(tls_host) = &conn_params.tls_host {
-        client_builder.resolve(tls_host, conn_params.addr)
+        let addrs = match IpAddr::from_str(&conn_params.host) {
+            Ok(remote_addr) => {
+                vec![SocketAddr::new(remote_addr, conn_params.port)]
+            }
+            Err(_) => {
+                let str_addr = format!("{}:{}", conn_params.host, conn_params.port);
+                str_addr
+                    .to_socket_addrs()
+                    .map_err(|err| {
+                        error!("Fail to resolve host {}: {err:?}", conn_params.host);
+                        Error::FailToResolveAddress { addr: str_addr }
+                    })?
+                    .collect()
+            }
+        };
+
+        client_builder.resolve_to_addrs(tls_host, &addrs)
     } else {
         client_builder
     };
