@@ -20,7 +20,7 @@
 
 #![cfg_attr(feature = "win32-hide-console", windows_subsystem = "windows")]
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::process::ExitCode;
 use std::sync::Arc;
 
@@ -483,6 +483,54 @@ pub(crate) async fn set_bitrate(
     HttpResponse::Ok().finish()
 }
 
+fn create_listening_socket(config: &config::Config) -> std::io::Result<std::net::TcpListener> {
+    use socket2::{Domain, Protocol, Socket, Type};
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+    let (addr, domain) = match config.listen_mode() {
+        config::ListenMode::Ipv4 => (
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), config.port()),
+            Domain::IPV4,
+        ),
+        config::ListenMode::DualStack => (
+            SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), config.port()),
+            Domain::IPV6,
+        ),
+    };
+
+    let socket = Socket::new(domain, Type::STREAM, Some(Protocol::TCP))?;
+
+    match config.listen_mode() {
+        config::ListenMode::Ipv4 => {}
+        config::ListenMode::DualStack => {
+            // Enable dual-stack: accept both IPv4 and IPv6 on this socket.
+            // On Linux this is the default; on Windows it must be set explicitly.
+            if let Err(e) = socket.set_only_v6(false) {
+                warn!("Unable to make socket dual-stack: {e}");
+            }
+        }
+    }
+
+    // Align with actix-web behavior about SO_REUSEADDR
+    // * https://github.com/actix/actix-web/blob/b9d3adfa4d4b70d2a110897adb2207f97e074a77/actix-web/src/server.rs#L1258
+    // * https://github.com/actix/actix-web/issues/2958
+    #[cfg(not(windows))]
+    socket.set_reuse_address(true)?;
+
+    socket.bind(&addr.into())?;
+
+    // Since we are creating a TcpListener ourself, try to match
+    // actix_web::HttpServer recommandations. actix_web::HttpServer::backlog()
+    // documentation states:
+    // > Generally set in the 64–2048 range. Default value is 1024.
+    //
+    // Arbitrary choice: lowest value since we aren't targeting massing request
+    // rate.
+    socket.listen(64)?;
+
+    Ok(std::net::TcpListener::from(socket))
+}
+
 fn build_serverconfig(tls_config: &tls::Config) -> Result<rustls::ServerConfig> {
     Ok(rustls::ServerConfig::builder()
         .with_no_client_auth()
@@ -569,6 +617,9 @@ async fn real_main() -> Result<()> {
 
     let process_factory = Arc::new(ProcessFactory::new(false));
 
+    let listening_port = config.port();
+    let listener = create_listening_socket(&config)?;
+
     let ctrl = web::Data::new(Mutex::new(Controller::new(
         process_factory.clone(),
         config,
@@ -577,7 +628,7 @@ async fn real_main() -> Result<()> {
 
     let statemachine = StateMachine::new(ctrl.clone())?;
 
-    let (watchdog, listening_port) = {
+    let watchdog = {
         let mut ctrl = ctrl.lock().await;
 
         // Configure watchdog
@@ -591,13 +642,12 @@ async fn real_main() -> Result<()> {
         // Configure StateMachine listener
         ctrl.state_machine_proxy = Some(statemachine.create_proxy());
 
-        (watchdog, ctrl.config.port())
+        watchdog
     };
 
     let session_exp_task = session::expiration::ExpirationTask::new(ctrl.clone());
 
     info!("HTTP listening on port {listening_port}");
-    let bind_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), listening_port);
 
     // Serve webclient if found
     let webclient_root = webclient::root();
@@ -677,7 +727,7 @@ async fn real_main() -> Result<()> {
                 app
             }
         })
-        .bind_rustls_0_23(bind_addr, server_config)?
+        .listen_rustls_0_23(listener, server_config)?
         .run();
 
     let server_handle = server.handle();
