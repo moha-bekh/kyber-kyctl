@@ -97,9 +97,6 @@ if [ "$BUILD_KYBER_DEPS" = true ]; then
     echo 'avservice-types = { path = "avserver/avservice-types" }' >> .cargo/config.toml
     echo 'inputservice-types = { path = "libkynput/inputservice-types" }' >> .cargo/config.toml
     echo 'kymux = { path = "kymux/kymux" }' >> .cargo/config.toml
-    echo 'kycom = { path = "kymux/kyproto/kycom" }' >> .cargo/config.toml
-    echo 'kynet = { path = "kymux/kyproto/kynet" }' >> .cargo/config.toml
-    echo 'kyproto = { path = "kymux/kyproto/kyproto" }' >> .cargo/config.toml
     echo 'libkypc = { path = "libkypc" }' >> .cargo/config.toml
 fi
 
