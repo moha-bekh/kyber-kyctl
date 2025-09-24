@@ -17,6 +17,12 @@ pub struct Display {
 }
 
 #[derive(Clone, Debug)]
+pub enum TlsRootCert {
+    Path(String),
+    Bytes(Vec<u8>),
+}
+
+#[derive(Clone, Debug)]
 pub enum ControlPlaneCloseReason {
     Eof,
     Closed {

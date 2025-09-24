@@ -13,8 +13,8 @@ use libkynput_rs::Pipeline;
 use crate::metrics::{
     Metric, MetricsJSONProducer, NetworkPing, NetworkStats, VideoMetric, VideoMetricData,
 };
-use crate::MetricsCallback;
 use crate::VideoCodec;
+use crate::{MetricsCallback, TlsRootCert};
 
 #[allow(non_camel_case_types)]
 pub type Display = super::Display;
@@ -288,16 +288,38 @@ pub unsafe extern "C" fn libclient_connect_config_set_tls_host(
 }
 
 #[no_mangle]
+#[deprecated = "use libclient_connect_config_set_tls_root_cert_path"]
 pub unsafe extern "C" fn libclient_connect_config_set_tls_root_cert(
     config: *mut libclient_ConnectConfig,
     tls_root_cert: *const c_char,
 ) -> c_int {
-    let Ok(tls_root_cert) = CStr::from_ptr(tls_root_cert).to_str() else {
+    libclient_connect_config_set_tls_root_cert_path(config, tls_root_cert)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_connect_config_set_tls_root_cert_path(
+    config: *mut libclient_ConnectConfig,
+    path: *const c_char,
+) -> c_int {
+    let Ok(tls_root_cert) = CStr::from_ptr(path).to_str() else {
         warn!("Fail to convert Root TLS certificate");
         return -1;
     };
 
-    (*config).config.tls_root_cert = Some(tls_root_cert.into());
+    (*config).config.tls_root_cert = Some(TlsRootCert::Path(tls_root_cert.into()));
+
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_connect_config_set_tls_root_cert_bytes(
+    config: *mut libclient_ConnectConfig,
+    bytes: *const c_char,
+    len: libc::size_t,
+) -> c_int {
+    let bytes = std::slice::from_raw_parts(bytes as *const u8, len).to_vec();
+
+    (*config).config.tls_root_cert = Some(TlsRootCert::Bytes(bytes));
 
     0
 }

@@ -32,7 +32,9 @@ use serde::{Deserialize, Serialize};
 
 pub use crate::error::{Error, Result};
 use enums::Message;
-pub use enums::{ControlPlaneCloseReason, DataPlaneCloseReason, Display, Event, StopReason};
+pub use enums::{
+    ControlPlaneCloseReason, DataPlaneCloseReason, Display, Event, StopReason, TlsRootCert,
+};
 use event_manager::EventManager;
 pub use event_manager::EventSink;
 use host_events::HostEventReceiver;

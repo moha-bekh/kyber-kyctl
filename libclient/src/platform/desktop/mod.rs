@@ -15,14 +15,14 @@ pub(crate) use input_service::{get_cursor_format, InputClient, InputError, Input
 pub(crate) use mainloop_engine::MainLoopEngine;
 pub(crate) use window_handle::WindowHandle;
 
-use crate::{Error, Result};
+use crate::{Error, Result, TlsRootCert};
 
 #[derive(Clone, Debug)]
 pub struct ConnectConfig {
     pub host: String,
     pub port: u16,
     pub tls_host: Option<String>,
-    pub tls_root_cert: Option<String>,
+    pub tls_root_cert: Option<TlsRootCert>,
 }
 
 #[derive(Clone, Debug)]
