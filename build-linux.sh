@@ -133,8 +133,8 @@ fi
 
 # Output directory
 export PATH=$OUT_DIR/bin:$PATH
-export PKG_CONFIG_PATH=$OUT_DIR/lib/pkgconfig:$OUT_DIR/lib/x86_64-linux-gnu/pkgconfig
-export LD_LIBRARY_PATH=$OUT_DIR/lib:$OUT_DIR/lib/x86_64-linux-gnu
+export PKG_CONFIG_PATH=$OUT_DIR/lib/pkgconfig:$OUT_DIR/lib/x86_64-linux-gnu/pkgconfig:$OUT_DIR/lib64/pkgconfig
+export LD_LIBRARY_PATH=$OUT_DIR/lib:$OUT_DIR/lib/x86_64-linux-gnu:$OUT_DIR/lib64
 
 # Build
 case "$ACTION" in
@@ -158,4 +158,4 @@ esac
 echo "Build completed. Update your PATH"
 echo "export PATH=$OUT_DIR/bin:\$PATH"
 echo "export PKG_CONFIG_PATH=$PKG_CONFIG_PATH"
-echo "export LD_LIBRARY_PATH=$OUT_DIR/lib:$OUT_DIR/lib/x86_64-linux-gnu"
+echo "export LD_LIBRARY_PATH=$OUT_DIR/lib:$OUT_DIR/lib/x86_64-linux-gnu:$OUT_DIR/lib64"

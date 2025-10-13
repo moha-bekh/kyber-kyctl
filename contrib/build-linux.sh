@@ -21,9 +21,6 @@ SRC_DIR="$WORK_DIR/src"
 # Output directory
 OUT_DIR="$BASE_DIR/$PLATFORM_NAME"
 
-export PATH=$OUT_DIR/bin:$PATH
-export PKG_CONFIG_PATH=$OUT_DIR/lib/pkgconfig:$OUT_DIR/lib/x86_64-linux-gnu/pkgconfig
-
 panic() {
     echo $1
     exit 1
@@ -102,7 +99,7 @@ build_libvlc() {
 --disable-flac --disable-screen --disable-freetype --disable-taglib --disable-smb2 --disable-sparkle
 --disable-addonmanagermodules --disable-mad --disable-chromecast --disable-lua --disable-medialibrary --disable-a52
 --disable-rav1e --disable-jpeg --disable-ncurses --disable-chromaprint --disable-shout --disable-schroedinger
---disable-soxr --disable-x264 --disable-x26410b --disable-x265 --disable-libplacebo
+--disable-soxr --disable-x264 --disable-x26410b --disable-x265 --disable-libplacebo --disable-nfs
 EOF
 )
 
