@@ -267,6 +267,7 @@ async fn real_main() -> Result<()> {
         let mut ctrl = ctrl.lock().await;
 
         // Configure watchdog
+        info!("Starting watchdog");
         let (watchdog, displays) =
             watchdog::Watchdog::new(&process_factory, statemachine.create_proxy()).await?;
 
