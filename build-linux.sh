@@ -103,7 +103,7 @@ if [ "$BUILD_KYBER_DEPS" = true ]; then
 
     mkdir -p .cargo
     echo '[patch.crates-io]' > .cargo/config.toml
-    echo 'kymux_client = { path = "../kymux/kymux_client" }' >> .cargo/config.toml
+    echo 'kycom = { path = "../kymux/kycom" }' >> .cargo/config.toml
     echo 'libkypc = { path = "../libkypc" }' >> .cargo/config.toml
 
     ./build-linux.sh -o $OUT_DIR
@@ -115,7 +115,7 @@ if [ "$BUILD_KYBER_DEPS" = true ]; then
     mkdir -p .cargo
     echo '[patch.crates-io]' > .cargo/config.toml
     echo 'kymux = { path = "kymux/kymux" }' >> .cargo/config.toml
-    echo 'kymux_client = { path = "kymux/kymux_client" }' >> .cargo/config.toml
+    echo 'kycom = { path = "kymux/kycom" }' >> .cargo/config.toml
     echo 'keycode = { path = "libkynput/external/keycode/keycode" }' >> .cargo/config.toml
     echo 'keycode_macro = { path = "libkynput/external/keycode/keycode_macro" }' >> .cargo/config.toml
     echo 'libkynput = { path = "libkynput/libkynput" }' >> .cargo/config.toml
