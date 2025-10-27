@@ -315,10 +315,8 @@ impl FrameTimestampsCollector {
     }
 
     fn update_clock_offset(&mut self, server_offset: i64) {
-        if self.server_offset.is_none() {
-            for source in self.sources.values_mut() {
-                source.update_clock_offset(server_offset);
-            }
+        for source in self.sources.values_mut() {
+            source.update_clock_offset(server_offset);
         }
 
         self.server_offset = Some(server_offset);
