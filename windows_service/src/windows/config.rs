@@ -8,11 +8,12 @@ use kidd_client::MonitorMode;
 use super::utils;
 use super::{Error, Result};
 
-#[derive(Clone, Copy, Debug, Deserialize)]
-#[allow(non_camel_case_types)]
+#[derive(Clone, Copy, Debug, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum KiddPlugStrategy {
-    when_no_monitor,
-    always,
+    #[default]
+    WhenNoMonitor,
+    Always,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -22,41 +23,49 @@ pub(crate) struct KiddMonitorMode {
     pub(crate) vsync: u32,
 }
 
-#[allow(clippy::from_over_into)]
-impl Into<kidd_client::MonitorMode> for KiddMonitorMode {
-    fn into(self) -> kidd_client::MonitorMode {
+impl From<&KiddMonitorMode> for kidd_client::MonitorMode {
+    fn from(m: &KiddMonitorMode) -> Self {
         kidd_client::MonitorMode {
-            width: self.width,
-            height: self.height,
-            vsync: self.vsync,
+            width: m.width,
+            height: m.height,
+            vsync: m.vsync,
         }
     }
 }
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct KiddConfig {
-    pub(crate) enabled: Option<bool>,
-    pub(crate) plug_strategy: Option<KiddPlugStrategy>,
-    pub(crate) extra_modes: Option<Vec<KiddMonitorMode>>,
+    #[serde(default = "default_enabled")]
+    pub(crate) enabled: bool,
+    #[serde(default)]
+    pub(crate) plug_strategy: KiddPlugStrategy,
+    #[serde(default)]
+    pub(crate) extra_modes: Vec<KiddMonitorMode>,
+}
+
+fn default_enabled() -> bool {
+    true
+}
+
+impl Default for KiddConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_enabled(),
+            plug_strategy: KiddPlugStrategy::default(),
+            extra_modes: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]
 pub(crate) struct Config {
-    pub(crate) kidd: Option<KiddConfig>,
+    pub(crate) kidd: KiddConfig,
 }
 
-impl Config {
-    pub(crate) fn kidd_extra_modes(&self) -> Option<Vec<KiddMonitorMode>> {
-        let Some(kidd_config) = &self.kidd else {
-            return None;
-        };
-
-        let Some(extra_modes) = &kidd_config.extra_modes else {
-            return None;
-        };
-
-        Some(extra_modes.clone())
-    }
+#[derive(Debug, Default, Deserialize)]
+struct Root {
+    #[serde(default)]
+    windows_service: Config,
 }
 
 pub(crate) fn load() -> Result<Config> {
@@ -73,20 +82,12 @@ pub(crate) fn load() -> Result<Config> {
         Error::ConfigParseFail
     })?;
 
-    let content: toml::Table = content.parse().map_err(|err| {
+    let config: Root = toml::from_str(&content).map_err(|err| {
         error!("Configuration file parsing failed: {err:?}");
         Error::ConfigParseFail
     })?;
 
-    let Some(avserver_conf) = content.get("windows_service") else {
-        info!("No windows_service section found. Use default configuration");
-        return Ok(Config::default());
-    };
-
-    avserver_conf
-        .clone()
-        .try_into()
-        .map_err(|err| Error::ConfigLoadFail { reason: err })
+    Ok(config.windows_service)
 }
 
 pub(crate) const DEFAULT_MONITOR_MODES: &[MonitorMode] = &[

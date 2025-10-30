@@ -72,16 +72,8 @@ fn system_has_monitors() -> bool {
 pub(crate) fn must_plug_monitor(config: &config::Config) -> bool {
     use config::KiddPlugStrategy;
 
-    let (enabled, plug_strategy) = if let Some(kidd_config) = &config.kidd {
-        (
-            kidd_config.enabled.unwrap_or(true),
-            kidd_config
-                .plug_strategy
-                .unwrap_or(KiddPlugStrategy::when_no_monitor),
-        )
-    } else {
-        (true, KiddPlugStrategy::when_no_monitor)
-    };
+    let enabled = config.kidd.enabled;
+    let plug_strategy = config.kidd.plug_strategy;
 
     info!("Kidd enabled: {enabled}");
 
@@ -94,9 +86,9 @@ pub(crate) fn must_plug_monitor(config: &config::Config) -> bool {
     info!("System has at least one monitor plugged: {system_has_monitors}");
 
     match (plug_strategy, system_has_monitors) {
-        (KiddPlugStrategy::when_no_monitor, false) => true,
-        (KiddPlugStrategy::when_no_monitor, true) => false,
-        (KiddPlugStrategy::always, _) => true,
+        (KiddPlugStrategy::WhenNoMonitor, false) => true,
+        (KiddPlugStrategy::WhenNoMonitor, true) => false,
+        (KiddPlugStrategy::Always, _) => true,
     }
 }
 
@@ -105,9 +97,9 @@ pub(crate) fn start_kidd(config: &config::Config) -> Result<Option<kidd_client::
 
     let mut modes = config::DEFAULT_MONITOR_MODES.to_vec();
 
-    if let Some(extra_modes) = config.kidd_extra_modes() {
+    if !config.kidd.extra_modes.is_empty() {
         info!("Adding extra modes to Kidd default configuration");
-        let mut extra_modes = extra_modes.into_iter().map(|m| m.into()).collect();
+        let mut extra_modes = config.kidd.extra_modes.iter().map(|m| m.into()).collect();
         info!("Extra modes: {extra_modes:?}");
         modes.append(&mut extra_modes);
     }
