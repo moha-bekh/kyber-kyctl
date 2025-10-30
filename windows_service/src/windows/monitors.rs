@@ -1,7 +1,7 @@
 use std::mem;
 use std::ptr;
 
-use log::{info, warn};
+use log::{error, info, warn};
 
 use windows_sys::core::*;
 use windows_sys::Win32::Devices::DeviceAndDriverInstallation::*;
@@ -118,10 +118,24 @@ pub(crate) fn start_kidd(config: &config::Config) -> Result<Option<kidd_client::
         modes.append(&mut extra_modes);
     }
     info!("Need to plug monitor, open driver device interface...");
-    let device_interface = kidd_client::Driver::open()?;
+    let device_interface = match kidd_client::Driver::open() {
+        Ok(device_interface) => device_interface,
+        Err(e) => {
+            error!("Failed to open Kidd driver: {:?}", e);
+            return Err(e.into());
+        }
+    };
     info!("Plugging {} monitors", needed_monitor_count);
-    for _ in 0..needed_monitor_count {
-        device_interface.plug_monitor(&modes, config::DEFAULT_MONITOR_MODE_IDX)?;
+    for monitor_id in 0..needed_monitor_count {
+        match device_interface.plug_monitor(&modes, config::DEFAULT_MONITOR_MODE_IDX) {
+            Ok(_) => {
+                info!("Virtual monitor {monitor_id} plugged");
+            }
+            Err(e) => {
+                warn!("Failed to plug virtual monitor {monitor_id}");
+                return Err(e.into());
+            }
+        };
     }
     Ok(Some(device_interface))
 }

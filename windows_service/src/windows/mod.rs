@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use log::{info, warn, LevelFilter};
+use log::{error, info, warn, LevelFilter};
 use log4rs::append::file::FileAppender;
 use windows_service::{
     service::{
@@ -66,7 +66,13 @@ impl ServiceContext {
 
         // Plug monitor if required
         let _kidd_interface = if config.kidd.enabled {
-            monitors::start_kidd(&config)?
+            match monitors::start_kidd(&config) {
+                Ok(interface) => interface,
+                Err(e) => {
+                    error!("Failed to start Kidd: {:?}. Service will continue without virtual monitors.", e);
+                    None
+                }
+            }
         } else {
             None
         };
