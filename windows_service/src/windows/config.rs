@@ -41,10 +41,16 @@ pub(crate) struct KiddConfig {
     pub(crate) plug_strategy: KiddPlugStrategy,
     #[serde(default)]
     pub(crate) extra_modes: Vec<KiddMonitorMode>,
+    #[serde(default = "default_monitor_count")]
+    pub(crate) monitor_count: u32,
 }
 
 fn default_enabled() -> bool {
     true
+}
+
+fn default_monitor_count() -> u32 {
+    1
 }
 
 impl Default for KiddConfig {
@@ -53,6 +59,7 @@ impl Default for KiddConfig {
             enabled: default_enabled(),
             plug_strategy: KiddPlugStrategy::default(),
             extra_modes: Vec::new(),
+            monitor_count: default_monitor_count(),
         }
     }
 }

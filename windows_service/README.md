@@ -29,11 +29,16 @@ The default behavior of the service is to plug a virtual monitor if there is no 
 # Define the strategy to apply to plug a screen or not
 #
 # Possible values:
-# * "when_no_monitor": Plug a monitor only if there is no monitor plugged
-# * "always": Always plug a monitor
+# * "when_no_monitor": Plug monitors only if no monitor is detected
+# * "always": Always plug the configured number of monitors
 #
 # Default: "when_no_monitor"
 #plug_strategy = "when_no_monitor"
+
+# Number of virtual monitors to create
+#
+# Default: 1
+#monitor_count = 1
 
 # Add one or more display mode for the plugged monitor.
 # The section can be specified multiple times to add multiple modes.

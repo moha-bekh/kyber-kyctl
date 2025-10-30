@@ -105,7 +105,9 @@ pub(crate) fn start_kidd(config: &config::Config) -> Result<Option<kidd_client::
     }
 
     let device_interface = kidd_client::Driver::open()?;
-    device_interface.plug_monitor(&modes, config::DEFAULT_MONITOR_MODE_IDX)?;
+    for _ in 0..config.kidd.monitor_count {
+        device_interface.plug_monitor(&modes, config::DEFAULT_MONITOR_MODE_IDX)?;
+    }
 
     Ok(Some(device_interface))
 }
