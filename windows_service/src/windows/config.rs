@@ -12,6 +12,7 @@ use super::{Error, Result};
 #[serde(rename_all = "snake_case")]
 pub(crate) enum KiddPlugStrategy {
     #[default]
+    MinimalMonitorCount,
     WhenNoMonitor,
     Always,
 }

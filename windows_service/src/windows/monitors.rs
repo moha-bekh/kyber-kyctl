@@ -26,38 +26,11 @@ impl Drop for HDEVINFO {
     }
 }
 
-fn system_has_monitors() -> bool {
-    let device_info_set: isize =
-        unsafe { SetupDiGetClassDevsW(&GUID_DEVCLASS_MONITOR, ptr::null(), 0, DIGCF_PRESENT) };
-    if device_info_set == INVALID_HANDLE_VALUE {
-        warn!(
-            "SetupDiGetClassDevsW() failed: {:?}",
-            last_win32_error("SetupDiGetClassDevsW", file!(), line!())
-        );
-        return false;
-    }
-
-    let device_info_set = HDEVINFO(device_info_set);
-
-    let mut device_info_data: SP_DEVINFO_DATA = unsafe { mem::zeroed() };
-    device_info_data.cbSize = mem::size_of::<SP_DEVINFO_DATA>() as _;
-
-    let ret = unsafe { SetupDiEnumDeviceInfo(device_info_set.0, 0, &mut device_info_data) };
-    if ret == FALSE {
-        return false;
-    }
-
+fn is_device_active(dndevinst: u32) -> bool {
     let mut status = 0;
     let mut problem_number = 0;
 
-    let ret = unsafe {
-        CM_Get_DevNode_Status(
-            &mut status,
-            &mut problem_number,
-            device_info_data.DevInst,
-            0,
-        )
-    };
+    let ret = unsafe { CM_Get_DevNode_Status(&mut status, &mut problem_number, dndevinst, 0) };
     if ret != CR_SUCCESS {
         warn!(
             "CM_Get_DevNode_Status() failed: {:?}",
@@ -66,34 +39,75 @@ fn system_has_monitors() -> bool {
         return false;
     }
 
-    status & DN_STARTED == DN_STARTED
+    (status & DN_STARTED) == DN_STARTED
 }
 
-pub(crate) fn must_plug_monitor(config: &config::Config) -> bool {
-    use config::KiddPlugStrategy;
-
-    let enabled = config.kidd.enabled;
-    let plug_strategy = config.kidd.plug_strategy;
-
-    info!("Kidd enabled: {enabled}");
-
-    if !enabled {
-        return false;
+fn get_monitor_count() -> u32 {
+    let device_info_set: isize =
+        unsafe { SetupDiGetClassDevsW(&GUID_DEVCLASS_MONITOR, ptr::null(), 0, DIGCF_PRESENT) };
+    if device_info_set == INVALID_HANDLE_VALUE {
+        warn!(
+            "SetupDiGetClassDevsW() failed: {:?}",
+            last_win32_error("SetupDiGetClassDevsW", file!(), line!())
+        );
+        return 0;
     }
 
-    let system_has_monitors = system_has_monitors();
-    info!("Kidd monitor plug strategy: {plug_strategy:?}");
-    info!("System has at least one monitor plugged: {system_has_monitors}");
+    let device_info_set = HDEVINFO(device_info_set);
 
-    match (plug_strategy, system_has_monitors) {
-        (KiddPlugStrategy::WhenNoMonitor, false) => true,
-        (KiddPlugStrategy::WhenNoMonitor, true) => false,
-        (KiddPlugStrategy::Always, _) => true,
+    let mut device_info_data: SP_DEVINFO_DATA = unsafe { mem::zeroed() };
+    device_info_data.cbSize = mem::size_of::<SP_DEVINFO_DATA>() as _;
+
+    let mut active_monitor_count: u32 = 0;
+
+    for device_id in 0u32.. {
+        let ret =
+            unsafe { SetupDiEnumDeviceInfo(device_info_set.0, device_id, &mut device_info_data) };
+        if ret == FALSE {
+            let err = unsafe { GetLastError() };
+            if err == ERROR_NO_MORE_ITEMS {
+                break;
+            }
+            warn!(
+                "SetupDiEnumDeviceInfo() failed: {:?}",
+                last_win32_error("SetupDiEnumDeviceInfo", file!(), line!())
+            );
+            continue;
+        }
+        if is_device_active(device_info_data.DevInst) {
+            active_monitor_count += 1;
+        }
+    }
+
+    active_monitor_count
+}
+
+fn get_needed_virtual_monitor_count(config: &config::Config) -> u32 {
+    use config::KiddPlugStrategy;
+
+    let nb_monitor = get_monitor_count();
+    let nb_virtual_monitor = config.kidd.monitor_count;
+
+    match config.kidd.plug_strategy {
+        KiddPlugStrategy::WhenNoMonitor => {
+            if nb_monitor == 0 {
+                nb_virtual_monitor
+            } else {
+                0
+            }
+        }
+        KiddPlugStrategy::Always => nb_virtual_monitor,
+        KiddPlugStrategy::MinimalMonitorCount => nb_virtual_monitor.saturating_sub(nb_monitor),
     }
 }
 
 pub(crate) fn start_kidd(config: &config::Config) -> Result<Option<kidd_client::DeviceInterface>> {
-    info!("System has no monitor. Plug one");
+    let needed_monitor_count: u32 = get_needed_virtual_monitor_count(config);
+
+    if needed_monitor_count == 0 {
+        info!("No monitors to plug");
+        return Ok(None);
+    }
 
     let mut modes = config::DEFAULT_MONITOR_MODES.to_vec();
 
@@ -103,11 +117,11 @@ pub(crate) fn start_kidd(config: &config::Config) -> Result<Option<kidd_client::
         info!("Extra modes: {extra_modes:?}");
         modes.append(&mut extra_modes);
     }
-
+    info!("Need to plug monitor, open driver device interface...");
     let device_interface = kidd_client::Driver::open()?;
-    for _ in 0..config.kidd.monitor_count {
+    info!("Plugging {} monitors", needed_monitor_count);
+    for _ in 0..needed_monitor_count {
         device_interface.plug_monitor(&modes, config::DEFAULT_MONITOR_MODE_IDX)?;
     }
-
     Ok(Some(device_interface))
 }

@@ -65,7 +65,7 @@ impl ServiceContext {
         let config = config::load()?;
 
         // Plug monitor if required
-        let _kidd_interface = if monitors::must_plug_monitor(&config) {
+        let _kidd_interface = if config.kidd.enabled {
             monitors::start_kidd(&config)?
         } else {
             None

@@ -31,9 +31,10 @@ The default behavior of the service is to plug a virtual monitor if there is no 
 # Possible values:
 # * "when_no_monitor": Plug monitors only if no monitor is detected
 # * "always": Always plug the configured number of monitors
+# * "minimal_monitor_count": Plug only enough monitors to reach monitor_count
 #
-# Default: "when_no_monitor"
-#plug_strategy = "when_no_monitor"
+# Default: "minimal_monitor_count"
+#plug_strategy = "minimal_monitor_count"
 
 # Number of virtual monitors to create
 #
