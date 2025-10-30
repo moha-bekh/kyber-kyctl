@@ -154,11 +154,13 @@ impl Handler {
 
         // Connect to websocket
         info!("Connect to Control Plane");
+        let websocket_token = response.websocket.clone();
+
         let host_events = HostEventReceiver::new(
             &self.conn_params,
             &capabilities.control_plane,
             self.message_sender.clone(),
-            &response.websocket,
+            &websocket_token,
         )
         .await?;
 

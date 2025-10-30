@@ -46,6 +46,8 @@ pub enum Error {
         reason: String,
     },
     #[cfg(feature = "kymux")]
+    KymuxInvalidToken,
+    #[cfg(feature = "kymux")]
     KyProtoProtocolError(kyproto::ProtocolError),
     #[cfg(feature = "desktop")]
     TaskJoin(tokio::task::JoinError),

@@ -47,7 +47,6 @@ pub(crate) async fn capabilities(client: &HttpClient) -> Result<Capabilities> {
 pub(crate) struct LoginResponse {
     pub(crate) uid: String,
     pub(crate) websocket: String,
-    // TODO(alaric): Dataplane token.
 }
 
 pub(crate) async fn login(

@@ -80,7 +80,11 @@ impl KymuxClosedTask {
     }
 }
 
-async fn connect_quinn(conn_params: &ConnectionParams, port: u16) -> Result<kyproto::Connection> {
+async fn connect_quinn(
+    conn_params: &ConnectionParams,
+    port: u16,
+    auth: &kyproto::ClientAuth,
+) -> Result<kyproto::Connection> {
     let roots = if let Some(tls_config) = &conn_params.tls_config {
         let mut roots = rustls::RootCertStore::empty();
         roots
@@ -101,11 +105,14 @@ async fn connect_quinn(conn_params: &ConnectionParams, port: u16) -> Result<kypr
         conn_params.host.clone()
     };
 
-    Ok(kymux::connect(kymux::ClientConfig::Quic {
-        addr: SocketAddr::new(conn_params.addr.ip(), port),
-        roots,
-        server_name,
-    })
+    Ok(kymux::connect_with_auth(
+        kymux::ClientConfig::Quic {
+            addr: SocketAddr::new(conn_params.addr.ip(), port),
+            roots,
+            server_name,
+        },
+        auth,
+    )
     .await?)
 }
 
@@ -314,7 +321,12 @@ async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kyproto:
                 "Connect using Quic backend. Port: {port}",
                 port = start_response.port
             );
-            connect_quinn(backend_config.conn_params, start_response.port).await
+
+            let auth = kymux::kyproto::ClientAuth::new(&start_response.token).map_err(|_| {
+                warn!("Got an invalid kymux token from controller");
+                Error::KymuxInvalidToken
+            })?;
+            connect_quinn(backend_config.conn_params, start_response.port, &auth).await
         }
     };
 

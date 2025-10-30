@@ -122,16 +122,20 @@ impl KymuxClosedTask {
 async fn connect_webtransport(
     url: String,
     certificate_hash: Option<StartKymuxCertificateHash>,
+    auth: &kyproto::ClientAuth,
 ) -> Result<kyproto::Connection> {
     let certificate_hash = certificate_hash.map(|c| kymux::WebTransportCertificateHash {
         hash_algorithm: c.algorithm,
         hash: c.hash,
     });
 
-    Ok(kymux::connect(kymux::ClientConfig::WebTransport {
-        url,
-        certificate_hash,
-    })
+    Ok(kymux::connect_with_auth(
+        kymux::ClientConfig::WebTransport {
+            url,
+            certificate_hash,
+        },
+        auth,
+    )
     .await?)
 }
 
@@ -485,7 +489,11 @@ async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kyproto:
                 port = start_response.port
             );
 
-            connect_webtransport(url, start_response.certificate_hash).await
+            let auth = kymux::kyproto::ClientAuth::new(&start_response.token).map_err(|_| {
+                warn!("Got an invalid kymux token from controller");
+                Error::KymuxInvalidToken
+            })?;
+            connect_webtransport(url, start_response.certificate_hash, &auth).await
         }
     };
 
