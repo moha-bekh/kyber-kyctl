@@ -1811,10 +1811,14 @@ dependencies = [
 name = "kycom"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "bytes",
  "kyproto",
+ "kyproto-types",
+ "kyutil",
  "log",
  "tokio",
+ "url",
 ]
 
 [[package]]
@@ -1836,8 +1840,10 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bytes",
+ "kyutil",
  "log",
  "quinn",
+ "quinn-proto",
  "rustls",
  "rustls-native-certs",
  "rustls-pemfile",
@@ -1855,6 +1861,8 @@ dependencies = [
  "byteorder",
  "bytes",
  "kynet",
+ "kyproto-types",
+ "kyutil",
  "libc",
  "log",
  "raptorq",
@@ -1863,6 +1871,24 @@ dependencies = [
  "thiserror 1.0.63",
  "tokio",
  "windows",
+]
+
+[[package]]
+name = "kyproto-types"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "byteorder",
+ "bytes",
+ "kyutil",
+ "thiserror 1.0.63",
+]
+
+[[package]]
+name = "kyutil"
+version = "0.1.0"
+dependencies = [
+ "thiserror 1.0.63",
 ]
 
 [[package]]
