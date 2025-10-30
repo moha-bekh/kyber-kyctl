@@ -1177,6 +1177,7 @@ dependencies = [
  "bytes",
  "kyproto",
  "kyproto-types",
+ "kyutil",
  "log",
  "tokio",
  "url",
@@ -1214,8 +1215,10 @@ dependencies = [
  "async-trait",
  "bytes",
  "js-sys",
+ "kyutil",
  "log",
  "quinn",
+ "quinn-proto",
  "rustls",
  "rustls-pemfile",
  "thiserror 1.0.58",
@@ -1234,6 +1237,7 @@ dependencies = [
  "bytes",
  "kynet",
  "kyproto-types",
+ "kyutil",
  "kywasmtime",
  "libc",
  "log",
@@ -1251,8 +1255,18 @@ dependencies = [
 name = "kyproto-types"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "byteorder",
  "bytes",
+ "kyutil",
+ "thiserror 1.0.58",
+]
+
+[[package]]
+name = "kyutil"
+version = "0.1.0"
+dependencies = [
+ "thiserror 1.0.58",
 ]
 
 [[package]]
@@ -1349,6 +1363,7 @@ dependencies = [
 name = "libkynput"
 version = "0.1.0"
 dependencies = [
+ "android_logger",
  "async-trait",
  "base64",
  "bytes",
