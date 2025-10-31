@@ -32,6 +32,7 @@ pub(crate) struct StartKymuxCertificateHash {
 pub(crate) struct StartKymuxResponse {
     pub(crate) port: u16,
     pub(crate) certificate_hash: Option<StartKymuxCertificateHash>,
+    pub(crate) token: String,
 }
 
 #[post("/start_mux")]

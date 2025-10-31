@@ -21,7 +21,7 @@ pub(crate) struct KymuxServer {
 }
 
 impl KymuxServer {
-    pub(crate) async fn new(server: kymux::Server) -> Result<Self> {
+    pub(crate) async fn new(server: kymux::Server, auth: kyproto::ClientAuth) -> Result<Self> {
         let (stop_tx, stop_rx) = oneshot::channel();
         let (connected_tx, connected_rx) = oneshot::channel();
 
@@ -32,7 +32,7 @@ impl KymuxServer {
             tokio::select! {
                 _ = stop_rx => {
                 }
-                ret = Self::run_task(server_task, connected_tx) => {
+                ret = Self::run_task(server_task, auth, connected_tx) => {
                     if let Err(err) = ret {
                         warn!("KymuxServer task ended with error {err:?}");
                     }
@@ -104,16 +104,35 @@ impl KymuxServer {
 
     async fn run_task(
         server: Arc<kymux::Server>,
+        auth: kyproto::ClientAuth,
         connected_tx: oneshot::Sender<kyproto::Connection>,
     ) -> Result<()> {
         info!("Waiting for Kymux connection");
-        let connection = server.accept().await?;
 
-        let ret = connected_tx.send(connection);
-        if ret.is_err() {
-            warn!("Fail to send Kymux connection notification");
+        loop {
+            let connection = server.accept_with_auth().await?;
+
+            let connection_auth = connection.get_auth();
+            if *connection_auth != auth {
+                warn!("Got invalid connection. Reject it");
+                connection.reject_authentication();
+                continue;
+            }
+
+            let connection = match connection.accept_authentication().await {
+                Ok(connection) => connection,
+                Err(err) => {
+                    warn!("Accept authentication failed: {err:?}");
+                    continue;
+                }
+            };
+
+            let ret = connected_tx.send(connection);
+            if ret.is_err() {
+                warn!("Fail to send Kymux connection notification");
+            }
+
+            return Ok(());
         }
-
-        Ok(())
     }
 }

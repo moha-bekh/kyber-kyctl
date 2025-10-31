@@ -209,7 +209,18 @@ async fn start_kymux(
     };
 
     // Start Listen task wrapper
-    let server = KymuxServer::new(server).await?;
+    let (server, token) = {
+        use rand::distr::SampleString;
+        const TOKEN_STRING_LEN: usize = 128;
+
+        let mut rng = rand::rng();
+        let token = rand::distr::Alphanumeric.sample_string(&mut rng, TOKEN_STRING_LEN);
+
+        let auth = kyproto::ClientAuth::new(&token).expect("Generated token rejected");
+
+        let server = KymuxServer::new(server, auth).await?;
+        (server, token)
+    };
 
     {
         let mut ctrl = ctrl.lock().await;
@@ -229,6 +240,7 @@ async fn start_kymux(
     Ok(requests::StartKymuxResponse {
         port: public_port,
         certificate_hash,
+        token,
     })
 }
 
