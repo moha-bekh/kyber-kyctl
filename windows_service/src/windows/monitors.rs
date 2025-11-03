@@ -102,7 +102,7 @@ fn get_needed_virtual_monitor_count(config: &config::Config) -> u32 {
 }
 
 pub(crate) fn start_kidd(config: &config::Config) -> Result<Option<kidd_client::DeviceInterface>> {
-    let needed_monitor_count: u32 = get_needed_virtual_monitor_count(config);
+    let mut needed_monitor_count: u32 = get_needed_virtual_monitor_count(config);
 
     if needed_monitor_count == 0 {
         info!("No monitors to plug");
@@ -125,7 +125,24 @@ pub(crate) fn start_kidd(config: &config::Config) -> Result<Option<kidd_client::
             return Err(e.into());
         }
     };
-    info!("Plugging {} monitors", needed_monitor_count);
+
+    let (major, minor) = match device_interface.get_version() {
+        Ok(version) => version,
+        Err(e) => {
+            error!("Failed to get driver version: {:?}", e);
+            return Err(e.into());
+        }
+    };
+
+    if major == 0 && minor == 1 {
+        warn!("Driver version 0.1 detected! Limiting to 1 monitor");
+        needed_monitor_count = 1;
+    }
+
+    info!(
+        "Plugging {} monitors (driver version {}.{})",
+        needed_monitor_count, major, minor
+    );
     for monitor_id in 0..needed_monitor_count {
         match device_interface.plug_monitor(&modes, config::DEFAULT_MONITOR_MODE_IDX) {
             Ok(_) => {

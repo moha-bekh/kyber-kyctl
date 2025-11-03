@@ -232,7 +232,7 @@ impl DeviceInterface {
         })
     }
 
-    pub(crate) fn get_version(&self) -> Result<(u32, u32)> {
+    pub fn get_version(&self) -> Result<(u32, u32)> {
         // Global timeout: 1 second
         const TRY_DELAY: Duration = Duration::from_millis(100);
         const TRY_COUNT: usize = 10;
