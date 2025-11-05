@@ -3,6 +3,8 @@ use std::fs;
 use log::{error, info};
 use serde::Deserialize;
 
+use crate::auth;
+
 use super::utils;
 use super::{Error, Result};
 
@@ -13,6 +15,8 @@ pub(crate) struct Config {
     port: Option<u16>,
     dataplane_port: Option<u16>,
     webtransport_gen_certificate: Option<bool>,
+    #[serde(default)]
+    auth: auth::Config,
 }
 
 impl Config {
@@ -26,6 +30,10 @@ impl Config {
 
     pub(crate) fn webtransport_gen_certificate(&self) -> bool {
         self.webtransport_gen_certificate.unwrap_or(true)
+    }
+
+    pub(crate) fn auth(&self) -> &auth::Config {
+        &self.auth
     }
 }
 

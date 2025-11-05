@@ -29,6 +29,9 @@ rcgen = "0.13.1"
 sha2 = "0.10.8"
 time = "0.3.34"
 
+# JWT authentication specifics
+jsonwebtoken = { version = "9.3.1", optional = true }
+
 avservice-types = "0.1"
 inputservice-types = "0.1"
 kymux = {version = "0.1", features = ["backend-quinn", "backend-wtransport", "ipc", "tokio-rt"]}
@@ -40,5 +43,7 @@ default = ["auth-basic"]
 win32-hide-console = []
 
 auth-basic = ["dep:base64"]
+auth-jwt = ["dep:jsonwebtoken"]
+
 [build-dependencies]
 vergen = { version = "8.3.1", features = ["build", "git", "gix"] }

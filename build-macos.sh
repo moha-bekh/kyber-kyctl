@@ -141,6 +141,7 @@ case "$ACTION" in
         # Build
         cargo build \
             --target $CARGO_TARGET  \
+            --features=auth-jwt \
             --release
 
         # Install
@@ -150,6 +151,7 @@ case "$ACTION" in
     "clippy")
         cargo clippy \
             --target $CARGO_TARGET \
+            --features=auth-jwt \
             -- -D warnings
     ;;
     "test")

@@ -111,6 +111,7 @@ case "$ACTION" in
         cargo build \
             --release \
             --bins --examples \
+            --features=auth-jwt \
             --target x86_64-pc-windows-gnu \
             $HIDE_CONSOLE_FEATURE
 
@@ -120,6 +121,9 @@ case "$ACTION" in
             $OUT_DIR/bin
     ;;
     "clippy")
-        cargo clippy --target x86_64-pc-windows-gnu -- -D warnings
+        cargo clippy \
+              --target x86_64-pc-windows-gnu \
+              --features=auth-jwt \
+              -- -D warnings
     ;;
 esac

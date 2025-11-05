@@ -311,6 +311,8 @@ async fn real_main() -> Result<()> {
     let tls_config = tls::load_config(STREAMER_CERT, STREAMER_KEY)?;
     let server_config = build_serverconfig(&tls_config)?;
 
+    auth::init(config.auth());
+
     let process_factory = Arc::new(ProcessFactory::new(false));
 
     let ctrl = web::Data::new(Mutex::new(Controller::new(
