@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
 use log::{info, warn};
+use time::OffsetDateTime;
 use uuid::Uuid;
 
 use avservice_types::Display;
 use libkypc::process::ProcessFactory;
 
+use crate::auth;
 use crate::avservice;
 use crate::config;
 use crate::error::{Error, Result};
@@ -65,15 +67,17 @@ impl StreamingSession {
 pub(crate) struct ClientSession {
     pub(crate) uid: Uuid,
     pub(crate) username: String,
+    pub(crate) expiration: Option<OffsetDateTime>,
     pub(crate) auth_tokens: ClientAuthTokens,
     pub(crate) stream_session: Option<StreamingSession>,
 }
 
 impl ClientSession {
-    pub(crate) fn new(uid: Uuid, username: String) -> Self {
+    pub(crate) fn new(uid: Uuid, session: auth::Session) -> Self {
         Self {
             uid,
-            username,
+            username: session.username,
+            expiration: session.expiration,
             auth_tokens: ClientAuthTokens::generate(),
             stream_session: None,
         }

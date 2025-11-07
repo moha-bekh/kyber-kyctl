@@ -4,11 +4,14 @@ use actix_web::{
     http::StatusCode,
     Error, FromRequest, HttpMessage, HttpRequest, HttpResponse,
 };
+use time::OffsetDateTime;
 use uuid::Uuid;
 
 pub struct Identity(IdentityInner);
 
 const UID_KEY: &str = "uid";
+const EXP_KEY: &str = "exp";
+
 #[derive(Clone)]
 struct IdentityInner {
     session: actix_session::Session,
@@ -26,14 +29,26 @@ impl IdentityInner {
             .get(UID_KEY)?
             .ok_or_else(|| ExtractError::MissingIdentity)
     }
+
+    fn get_unix_expiration(&self) -> Result<Option<i64>, ExtractError> {
+        Ok(self.session.get(EXP_KEY)?)
+    }
 }
 
 impl Identity {
-    pub fn login(ext: &Extensions) -> Result<Uuid, actix_session::SessionInsertError> {
+    pub fn login(
+        exp: Option<OffsetDateTime>,
+        ext: &Extensions,
+    ) -> Result<Uuid, actix_session::SessionInsertError> {
         let inner = IdentityInner::extract(ext);
 
         let uuid = Uuid::new_v4();
-        inner.session.insert(UID_KEY, &uuid)?;
+        inner.session.insert(UID_KEY, uuid)?;
+
+        if let Some(exp) = exp {
+            inner.session.insert(EXP_KEY, exp.unix_timestamp())?;
+        }
+
         inner.session.renew();
 
         Ok(uuid)
@@ -45,6 +60,14 @@ impl Identity {
 
     pub fn uid(&self) -> Result<Uuid, ExtractError> {
         self.0.get_identity()
+    }
+
+    pub fn expiration(&self) -> Result<Option<OffsetDateTime>, ExtractError> {
+        self.0
+            .get_unix_expiration()?
+            .map(OffsetDateTime::from_unix_timestamp)
+            .transpose()
+            .or(Err(ExtractError::InvalidExpirationTime))
     }
 
     fn extract(ext: &Extensions) -> Result<Self, ExtractError> {
@@ -79,4 +102,6 @@ pub enum ExtractError {
     SessionError(#[from] actix_session::SessionGetError),
     #[error("Identity not found in the session cookie")]
     MissingIdentity,
+    #[error("Expiration time is invalid")]
+    InvalidExpirationTime,
 }

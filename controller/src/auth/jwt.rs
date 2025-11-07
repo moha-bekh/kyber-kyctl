@@ -1,6 +1,6 @@
 use std::{fs::File, io::Read, sync::OnceLock};
 
-use super::Error;
+use super::{Error, Session};
 use jsonwebtoken::{
     decode,
     errors::{Error as JWTError, ErrorKind},
@@ -51,7 +51,7 @@ struct BackendContext {
 
 static BACKEND: OnceLock<BackendContext> = OnceLock::new();
 
-pub fn authenticate(token: &str) -> Result<String, Error> {
+pub fn authenticate(token: &str) -> Result<Session, Error> {
     let BackendContext { key, validation } = BACKEND.get().expect("Backend not initialized");
 
     let jwt = decode::<Claims>(token, key, validation);
@@ -71,7 +71,12 @@ pub fn authenticate(token: &str) -> Result<String, Error> {
     }
 
     let jwt = jwt?;
-    Ok(jwt.claims.sub)
+    let exp = OffsetDateTime::from_unix_timestamp(jwt.claims.exp)
+        .or(Err(Error::InvalidCredentialsFormat))?;
+    Ok(Session {
+        username: jwt.claims.sub,
+        expiration: Some(exp),
+    })
 }
 
 fn decode_key(algorithm: Algorithm, key: &[u8]) -> DecodingKey {

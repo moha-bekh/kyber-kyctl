@@ -63,17 +63,17 @@ async fn login(ctrl: web::Data<Mutex<Controller>>, req: HttpRequest) -> HttpResp
         return HttpResponse::BadRequest().json("Invalid authentication type");
     };
 
-    let username = match auth::authenticate(&auth_type, &auth_creds) {
-        Ok(username) => username,
+    let auth_session = match auth::authenticate(&auth_type, &auth_creds) {
+        Ok(session) => session,
         Err(err) => {
             error!("Authentication failed: {err}");
             return HttpResponse::Unauthorized().finish();
         }
     };
 
-    info!("Logging in \"{}\"...", username);
-    let uuid = Identity::login(&req.extensions()).unwrap();
-    let client_session = ClientSession::new(uuid, username);
+    info!("Logging in \"{}\"...", auth_session.username);
+    let uuid = Identity::login(auth_session.expiration, &req.extensions()).unwrap();
+    let client_session = ClientSession::new(uuid, auth_session);
     let body = serde_json::json!({
         "uid": uuid,
         "websocket": client_session.auth_tokens.websocket,
@@ -363,6 +363,8 @@ async fn real_main() -> Result<()> {
         (watchdog, ctrl.config.port())
     };
 
+    let session_exp_task = session::expiration::ExpirationTask::new(ctrl.clone());
+
     info!("HTTP listening on port {listening_port}");
     let bind_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), listening_port);
 
@@ -437,6 +439,7 @@ async fn real_main() -> Result<()> {
     .run()
     .await?;
 
+    session_exp_task.stop().await;
     watchdog.stop().await?;
     statemachine.stop().await?;
 

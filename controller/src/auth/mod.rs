@@ -37,7 +37,12 @@ pub(crate) fn from_authorization_header(
     Err(())
 }
 
-pub fn authenticate(auth_type: &AuthenticationType, credentials: &str) -> Result<String, Error> {
+pub struct Session {
+    pub username: String,
+    pub expiration: Option<OffsetDateTime>,
+}
+
+pub fn authenticate(auth_type: &AuthenticationType, credentials: &str) -> Result<Session, Error> {
     match auth_type {
         #[cfg(feature = "auth-basic")]
         AuthenticationType::Basic => basic::authenticate(credentials),
@@ -74,9 +79,12 @@ pub enum Error {
 mod jwt;
 #[cfg(feature = "auth-basic")]
 mod basic {
-    use super::Error;
+    use super::{Error, Session};
 
-    pub fn authenticate(username: &str) -> Result<String, Error> {
-        Ok(username.to_owned())
+    pub fn authenticate(username: &str) -> Result<Session, Error> {
+        Ok(Session {
+            username: username.to_owned(),
+            expiration: None,
+        })
     }
 }

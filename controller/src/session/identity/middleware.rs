@@ -7,6 +7,7 @@ use actix_web::{
     dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform},
     Error, HttpMessage as _, Result,
 };
+use time::OffsetDateTime;
 
 use super::Identity;
 
@@ -77,13 +78,15 @@ fn enforce_policies(req: &ServiceRequest) {
         }
     };
 
-    match identity_expired(&session) {
-        Err(_) | Ok(true) => session.logout(),
-        _ => (),
+    if identity_expired(&session) {
+        session.logout()
     }
 }
 
-fn identity_expired(session: &Identity) -> Result<bool, actix_session::SessionGetError> {
-    // TODO implement session expiration.
-    Ok(false)
+fn identity_expired(session: &Identity) -> bool {
+    let now = OffsetDateTime::now_utc();
+    session
+        .expiration()
+        .map(|opt| opt.map(|exp| now > exp).unwrap_or(false))
+        .unwrap_or(false)
 }
