@@ -53,6 +53,42 @@ struct Capabilities {
     control_plane: ControlPlaneCapabilities,
 }
 
+/// POST /session/login - Authenticates a user and creates a new session.
+///
+/// This is the main entry point for user authentication. It validates credentials,
+/// creates a session cookie, and generates one-time tokens for WebSocket authentication.
+///
+/// ## Request
+///
+/// Requires an `Authorization` header with credentials in one of the supported formats:
+/// - `Bearer <jwt>` - JWT authentication
+/// - `Basic <base64>` - Basic authentication (development only)
+///
+/// ## Response
+///
+/// On success (200 OK):
+/// ```json
+/// {
+///   "uid": "9c5b94b1-35ad-49bb-b118-8e8fc24abf80",
+///   "websocket": "<128-char-token>"
+/// }
+/// ```
+///
+/// The response includes:
+/// - `uid`: Session UUID (also stored in encrypted cookie)
+/// - `websocket`: One-time token for WebSocket authentication
+///
+/// A session cookie is automatically set via actix-session middleware.
+///
+/// ## Error Responses
+///
+/// - `400 Bad Request`: Invalid or unsupported Authorization header format
+/// - `401 Unauthorized`: Authentication failed (invalid credentials, expired JWT, etc.)
+///
+/// ## Single-Session Enforcement
+///
+/// If an existing session is active, it's automatically terminated before creating
+/// the new session. This enforces a single-session-per-instance policy.
 #[post("/login")]
 async fn login(ctrl: web::Data<Mutex<Controller>>, req: HttpRequest) -> HttpResponse {
     let Some(Ok((auth_type, auth_creds))) = req
@@ -81,6 +117,7 @@ async fn login(ctrl: web::Data<Mutex<Controller>>, req: HttpRequest) -> HttpResp
 
     let mut ctrl = ctrl.lock().await;
 
+    // Single-session enforcement: terminate existing session before creating new one
     if let Some(existing) = &ctrl.client_session {
         warn!(
             "Login attempt on an existing session from user \'{}\"",
@@ -95,6 +132,43 @@ async fn login(ctrl: web::Data<Mutex<Controller>>, req: HttpRequest) -> HttpResp
     HttpResponse::Ok().json(body)
 }
 
+/// POST /session/renew - Extends an existing session with refreshed credentials.
+///
+/// This endpoint allows users to renew their session without a full re-login by
+/// providing refreshed JWT credentials. It updates the session expiration time
+/// in both the cookie and the Controller state.
+///
+/// ## Request
+///
+/// Requires both:
+/// 1. Valid session cookie (checked via `Identity` parameter)
+/// 2. `Authorization` header with refreshed credentials
+///
+/// The credentials must have an expiration time (JWT only - Basic auth sessions
+/// cannot be renewed as they don't expire).
+///
+/// ## Validation Checks
+///
+/// The endpoint performs multiple security checks:
+/// - Session cookie must be valid and not expired
+/// - New credentials must authenticate successfully
+/// - New credentials must have an expiration time
+/// - Username in new credentials must match the existing session
+///
+/// This prevents credential swapping attacks where a user tries to renew another
+/// user's session with their own credentials.
+///
+/// ## Response
+///
+/// - `200 OK`: Session renewed successfully (empty body)
+/// - `400 Bad Request`: Invalid Authorization header format
+/// - `401 Unauthorized`: Authentication failed or validation check failed
+///
+/// ## Note on Cookie-Only Access
+///
+/// Currently, this endpoint requires an existing session cookie, so external clients
+/// with only a JWT (no cookie) cannot renew. This is documented as an open design
+/// question in Auth.md.
 #[post("/renew")]
 async fn renew(
     ctrl: web::Data<Mutex<Controller>>,
@@ -133,6 +207,7 @@ async fn renew(
         return HttpResponse::Unauthorized().finish();
     };
 
+    // Prevent credential swapping: username must match existing session
     if session.username != auth_session.username {
         error!("Credentials and renewed session mismatch");
         return HttpResponse::Unauthorized().finish();
@@ -158,6 +233,62 @@ async fn capabilities() -> HttpResponse {
     HttpResponse::Ok().json(ret)
 }
 
+/// GET /ws - WebSocket upgrade endpoint for control plane connection.
+///
+/// This endpoint implements a two-phase WebSocket authentication flow that avoids
+/// exposing credentials in URLs (which would appear in server logs).
+///
+/// ## Authentication Flow
+///
+///  Phase 1: HTTP Authentication
+///
+///   Client → POST /session/login (Authorization header)
+///        ← 200 OK {"uid": "<uuid>", "websocket": "<one-time-token>"}
+///        ← Set-Cookie: session=<encrypted-cookie>
+///
+/// Phase 2: WebSocket Connection & Authentication
+///
+///   Client → GET /ws (WebSocket upgrade request)
+///        ← 101 Switching Protocols (WebSocket established)
+///
+///   [Connection accepted but NOT yet authorized - pending state]
+///
+///   Client → WS Message: {"token": "<one-time-token>"}
+///        ↓
+///   Server validates token:
+///        - Must match ClientSession.auth_tokens.websocket
+///        - Must have active ClientSession
+///        - Token is consumed (one-time use)
+///
+///   If valid:
+///        ← WS Message: "Welcome"
+///        ← WS Message: DisplayList event
+///        [Connection fully authorized - HostEventSender created]
+///
+///   If invalid:
+///        ← WS Close: Protocol error "Invalid credentials"
+///
+/// ## Why Two Phases?
+///
+/// **Problem**: Browser security prevents sending cookies during WebSocket upgrades
+/// across different origins, and putting tokens in URLs risks exposure in logs.
+///
+/// **Solution**: "Credentials as first message" pattern:
+/// 1. Accept WebSocket at transport level (no auth yet)
+/// 2. Wait for first message containing one-time token
+/// 3. Validate token against HTTP session
+/// 4. Either activate (accept) or terminate (reject) the connection
+///
+/// ## Implementation Details
+///
+/// This handler returns immediately with the WebSocket upgrade response (HTTP 101).
+/// Authentication happens asynchronously in a spawned task:
+///
+/// 1. **Accept Transport**: `actix_ws::handle()` upgrades to WebSocket
+/// 2. **Spawn Auth Task**: Background task waits for first message
+/// 3. **Wait for Token**: `wait_authentication()` with 5-second timeout
+/// 4. **Validate Token**: Compare against `ClientSession.auth_tokens.websocket`
+/// 5. **Accept/Reject**: Either promote to `HostEventSender` or close connection
 #[get("/ws")]
 async fn websocket_service(
     ctrl: web::Data<Mutex<Controller>>,
@@ -172,6 +303,7 @@ async fn websocket_service(
         }
     };
 
+    // Spawn async task for authentication to avoid blocking HTTP worker
     tokio::task::spawn_local(async move {
         let auth = host_events::wait_authentication(session, msg_stream).await;
         let (token, pending_sender) = match auth {
@@ -196,6 +328,7 @@ async fn websocket_service(
             return;
         };
 
+        // Validate one-time token (must exactly match the login-generated token)
         if client_session.auth_tokens.websocket != token {
             error!("Client websocket token is invalid: \"{token}\"");
             pending_sender.reject().await;
@@ -436,6 +569,11 @@ async fn real_main() -> Result<()> {
 
     HttpServer::new(move || {
         let cookie_key = cookie::Key::generate();
+
+        // Actix Middleware Stack: Middleware executes in REVERSE order of .wrap() calls
+        //
+        // Data Flow:
+        // Cookie → Session → IdentityInner → Identity (FromRequest)
         let app = App::new()
             .app_data(ctrl.clone())
             .app_data(web::JsonConfig::default().limit(1024))
@@ -448,7 +586,9 @@ async fn real_main() -> Result<()> {
                     .allowed_header(actix_web::http::header::CONTENT_TYPE)
                     .allowed_header(actix_web::http::header::AUTHORIZATION),
             )
+            // Custom middleware: wraps Session in IdentityInner, enforces expiration
             .wrap(session::identity::middleware::IdentityMiddleware {})
+            // Decrypts session cookie, provides Session object to downstream middleware
             .wrap(
                 SessionMiddleware::builder(CookieSessionStore::default(), cookie_key)
                     .cookie_same_site(cookie_same_site)

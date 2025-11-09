@@ -1,7 +1,33 @@
+//! Authentication backend system.
+//!
+//! This module implements a simple architecture that allow multiple authentication methods through
+//! Cargo feature flags. This design allows Kyber to integrate with various authentication
+//! infrastructures while maintaining a consistent internal session management system.
+//!
+//! ## Supported Backends
+//!
+//! - **Basic Auth** (`auth-basic` feature, enabled by default): Passwordless authentication
+//!   for development. Accepts any username without validation. **Must be disabled in production.**
+//!
+//! - **JWT** (`auth-jwt` feature): JSON Web Token authentication supporting HS256 and RS256
+//!   algorithms with configurable keys and automatic expiration handling.
+//!
+//! ## Authentication Flow
+//!
+//! ```text
+//! Client → Authorization header → from_authorization_header()
+//!   → Extract (type, credentials)
+//!   → authenticate(type, credentials)
+//!   → Backend validation
+//!   → Session { username, expiration }
+//!   → Identity::login() creates cookie
+//! ```
+
 use actix_web::http::header::HeaderValue;
 use serde::Deserialize;
 use time::OffsetDateTime;
 
+/// Authentication method extracted from the Authorization header.
 #[derive(Debug)]
 pub enum AuthenticationType {
     #[cfg(feature = "auth-basic")]
@@ -10,6 +36,23 @@ pub enum AuthenticationType {
     Jwt,
 }
 
+/// Parses the HTTP Authorization header to extract authentication type and credentials.
+///
+/// Supports multiple authentication schemes based on enabled Cargo features:
+///
+/// ## JWT (Bearer scheme - RFC 6750)
+/// ```text
+/// Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+/// ```
+/// Returns: `(AuthenticationType::Jwt, "<jwt-token>")`
+///
+/// ## Basic Auth (RFC 7617)
+/// ```text
+/// Authorization: Basic dXNlcm5hbWU6cGFzc3dvcmQ=
+/// ```
+/// Where the base64-encoded value is `username:password`.
+/// The password portion is ignored (development-only mode).
+/// Returns: `(AuthenticationType::Basic, "<username>")`
 pub(crate) fn from_authorization_header(
     header: &HeaderValue,
 ) -> Result<(AuthenticationType, String), ()> {
@@ -37,11 +80,26 @@ pub(crate) fn from_authorization_header(
     Err(())
 }
 
+/// Common Kyber authenticated session.
 pub struct Session {
+    /// User identifier
     pub username: String,
+    /// Session expiration time
     pub expiration: Option<OffsetDateTime>,
 }
 
+/// Routes authentication to the appropriate backend based on type.
+///
+/// This is the main entry point for credential validation. It dispatches to
+/// the backend module corresponding to the authentication type.
+///
+/// # Parameters
+/// - `auth_type`: The authentication method (Basic, JWT, etc.)
+/// - `credentials`: The extracted credentials (username, JWT token, etc.)
+///
+/// # Returns
+/// - `Ok(Session)`: Valid credentials with username and optional expiration
+/// - `Err(Error)`: Authentication failed (invalid credentials, expired token, etc.)
 pub fn authenticate(auth_type: &AuthenticationType, credentials: &str) -> Result<Session, Error> {
     match auth_type {
         #[cfg(feature = "auth-basic")]
@@ -51,6 +109,7 @@ pub fn authenticate(auth_type: &AuthenticationType, credentials: &str) -> Result
     }
 }
 
+/// Configuration for authentication backends loaded from TOML.
 #[derive(Debug, Deserialize, Default)]
 #[serde(default)]
 pub struct Config {
@@ -58,29 +117,51 @@ pub struct Config {
     jwt: jwt::Config,
 }
 
+/// Initializes all enabled authentication backends.
+///
+/// This must be called once at application startup, before any authentication
+/// requests are processed. Each backend performs one-time initialization such as
+/// loading cryptographic keys.
 pub fn init(config: &Config) {
     #[cfg(feature = "auth-jwt")]
     jwt::init(&config.jwt);
 }
 
+/// Authentication errors returned by backend validation.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// Credential has expired
     #[error("Expired at {at}")]
     Expired { at: OffsetDateTime },
+
+    /// Cryptographic signature validation failed
     #[error("Invalid signature")]
     InvalidSignature,
+
+    /// Credentials format is invalid or cannot be decoded
     #[error("Invalid credentials format")]
     InvalidCredentialsFormat,
+
+    /// Required credential field is missing
     #[error("Missing mandatory field: {field}")]
     MissingField { field: String },
 }
 
+// JWT authentication backend (conditionally compiled)
 #[cfg(feature = "auth-jwt")]
 mod jwt;
+
 #[cfg(feature = "auth-basic")]
 mod basic {
     use super::{Error, Session};
 
+    /// Authenticates a user without password validation.
+    ///
+    /// # Parameters
+    /// - `username`: The username to authenticate (no validation performed)
+    ///
+    /// # Returns
+    /// A session with no expiration time (valid indefinitely until logout)
     pub fn authenticate(username: &str) -> Result<Session, Error> {
         Ok(Session {
             username: username.to_owned(),

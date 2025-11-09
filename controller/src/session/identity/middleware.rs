@@ -1,3 +1,22 @@
+//! Identity middleware for session management and expiration enforcement.
+//!
+//! This module implements actix-web's middleware pattern to provide automatic session
+//! handling for all HTTP requests. It runs before route handlers and performs two key tasks:
+//!
+//! 1. **Session Injection**: Extracts the actix-session `Session` object and wraps it in
+//!    `IdentityInner`, storing it in request extensions for later extraction by the
+//!    `Identity` FromRequest implementation.
+//!
+//! 2. **Expiration Enforcement**: Validates session expiration on every request and
+//!    automatically purges expired sessions before handlers execute.
+//!
+//! ## Actix Middleware Pattern
+//!
+//! Actix uses a two-stage middleware pattern:
+//!
+//! - **Transform**: Creates middleware instances (called once per worker thread)
+//! - **Service**: Processes individual requests (called for each HTTP request)
+
 use std::{future::Future, pin::Pin, rc::Rc};
 
 use actix_session::SessionExt;
@@ -11,9 +30,27 @@ use time::OffsetDateTime;
 
 use super::Identity;
 
+/// Identity middleware that manages session state for authentication.
+///
+/// This middleware must be registered **after** `SessionMiddleware` in the actix app:
+///
+/// ```rust
+/// HttpServer::new(|| {
+///     App::new()
+///         .wrap(IdentityMiddleware {})  // This middleware
+///         .wrap(SessionMiddleware::builder(...).build())  // Must come after
+///         // ... routes
+/// })
+/// ```
+///
+/// **Order matters**: Middleware wraps in reverse order, so SessionMiddleware runs first.
 #[derive(Default, Clone)]
 pub(crate) struct IdentityMiddleware;
 
+/// Transform trait implementation - creates middleware instances.
+///
+/// This is called once per worker thread to create the actual middleware service.
+/// The `S` generic parameter represents the next middleware/handler in the chain.
 impl<S, B> Transform<S, ServiceRequest> for IdentityMiddleware
 where
     S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
@@ -26,6 +63,7 @@ where
     type InitError = ();
     type Future = Ready<Result<Self::Transform, Self::InitError>>;
 
+    /// Creates a new middleware instance wrapping the next service in the chain.
     fn new_transform(&self, service: S) -> Self::Future {
         ready(Ok(InnerIdentityMiddleware {
             service: Rc::new(service),
@@ -33,6 +71,10 @@ where
     }
 }
 
+/// The actual middleware service that processes requests.
+///
+/// This struct holds a reference to the next service in the middleware chain.
+/// It's cloned for each request.
 pub(crate) struct InnerIdentityMiddleware<S> {
     service: Rc<S>,
 }
@@ -45,6 +87,9 @@ impl<S> Clone for InnerIdentityMiddleware<S> {
     }
 }
 
+/// Service trait implementation - processes individual requests.
+///
+/// This is where the actual middleware logic executes for each HTTP request.
 impl<S, B> Service<ServiceRequest> for InnerIdentityMiddleware<S>
 where
     S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
@@ -55,14 +100,27 @@ where
     type Error = Error;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>>>>;
 
+    // Delegates readiness check to the wrapped service
     forward_ready!(service);
 
+    /// Processes a single HTTP request.
+    ///
+    /// ## Execution flow:
+    ///
+    /// 1. Extract the `Session` object from the request (placed by SessionMiddleware)
+    /// 2. Wrap it in `IdentityInner` and insert into request extensions
+    /// 3. Enforce expiration policies (purge expired sessions)
+    /// 4. Call the next service in the chain (other middleware or the handler)
+    ///
+    /// This runs **before** route handlers, so expired sessions are purged before
+    /// handlers can access them.
     fn call(&self, req: ServiceRequest) -> Self::Future {
         let srv = Rc::clone(&self.service);
         Box::pin(async move {
             let identity_inner = super::IdentityInner {
                 session: req.get_session(),
             };
+
             req.extensions_mut().insert(identity_inner);
             enforce_policies(&req);
             srv.call(req).await
@@ -70,12 +128,13 @@ where
     }
 }
 
+/// Enforces session expiration policies on the current request.
+///
+/// If a session exists and has expired, it's immediately purged from the cookie.
 fn enforce_policies(req: &ServiceRequest) {
     let session = match Identity::extract(&req.extensions()) {
         Ok(session) => session,
-        Err(_err) => {
-            return;
-        }
+        Err(_err) => return,
     };
 
     if identity_expired(&session) {
@@ -83,6 +142,7 @@ fn enforce_policies(req: &ServiceRequest) {
     }
 }
 
+/// Checks if a session has expired based on current UTC time.
 fn identity_expired(session: &Identity) -> bool {
     let now = OffsetDateTime::now_utc();
     session

@@ -1,3 +1,41 @@
+//! JWT (JSON Web Token) authentication backend.
+//!
+//! This module implements RFC 7519 JWT validation with support for HS256 (HMAC)
+//! and RS256 (RSA) signing algorithms. It integrates with the `jsonwebtoken` crate
+//! for cryptographic operations.
+//!
+//! ## Supported Algorithms
+//!
+//! Even though algorithm support is easily extendable, Kyber has only been tested with:
+//! - **HS256**: HMAC with SHA-256 (symmetric key)
+//! - **RS256**: RSA Signature with SHA-256 (asymmetric key)
+//!
+//! ## JWT Claims
+//!
+//! Kyber requires these standard JWT claims:
+//!
+//! - `sub` (subject): Username/user identifier
+//! - `exp` (expiration): Unix timestamp when the token expires
+//! - `aud` (audience): Must be "kyber"
+//!
+//! ## Configuration Examples
+//!
+//! ### RS256 as a PEM file
+//!
+//! ```toml
+//! [controller.auth.jwt]
+//! algorithm = "RS256"
+//! key = { file = "/etc/kyber/jwt-public-key.pem" }
+//! ```
+//!
+//! ### HS256 as plain text
+//!
+//! ```toml
+//! [controller.auth.jwt]
+//! algorithm = "HS256"
+//! key = { plain = "your-secret-key-here" }
+//! ```
+
 use std::{fs::File, io::Read, sync::OnceLock};
 
 use super::{Error, Session};
@@ -12,18 +50,28 @@ use time::OffsetDateTime;
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ConfigKey {
+    /// Key provided directly as a string.
     Plain(String),
+
+    /// Path to a file containing the key.
     File(std::path::PathBuf),
 }
 
+/// JWT backend configuration.
 #[derive(Debug, Deserialize)]
 #[serde(default)]
 pub struct Config {
+    /// JWT signing algorithm (HS256 or RS256).
     algorithm: Algorithm,
+    /// Decoding/verification key configuration.
     key: ConfigKey,
 }
 
 impl Default for Config {
+    /// Default configuration for development.
+    ///
+    /// Uses HS256 with a well-known development key. This is intentionally insecure
+    /// and should only be used for local development/testing.
     fn default() -> Self {
         const DEFAULT_DEV_KEY: &str = "kyber-authentication-development-key";
         Self {
@@ -33,24 +81,61 @@ impl Default for Config {
     }
 }
 
+/// JWT claims that Kyber expects in every token.
+///
+/// These are standard JWT claims as defined in RFC 7519 Section 4.1.
 #[derive(Debug, Deserialize)]
 struct Claims {
-    // Audience, identifies the recipient (likely, the streaming session).
+    /// Audience - identifies the intended recipient of the token.
+    /// Kyber requires this to be "kyber" to prevent token reuse from other services.
     #[allow(unused)]
     aud: String,
-    // Expiration time, UTC timestamp.
+
+    /// Expiration Time - Unix timestamp (seconds since epoch) when the token expires.
+    /// Used to set the session expiration time.
     exp: i64,
-    // Subject, identifies the owner of the token.
+
+    /// Subject - identifies the principal (user) that the token represents.
+    /// This becomes the `username` in the session.
     sub: String,
 }
 
 struct BackendContext {
+    /// Cryptographic key for JWT signature verification
     key: DecodingKey,
+    /// Validation rules (required claims, audience, expiration checks)
     validation: Validation,
 }
 
+/// Global backend context singleton.
+///
+/// Initialized by `init()` at application startup.
 static BACKEND: OnceLock<BackendContext> = OnceLock::new();
 
+/// Validates a JWT token and extracts user session information.
+///
+/// ## Validation Process
+///
+/// 1. Decode the JWT header and payload
+/// 2. Verify the cryptographic signature
+/// 3. Validate required claims (`sub`, `exp`, `aud`)
+/// 4. Check expiration time (zero leeway)
+/// 5. Extract username from `sub` claim
+/// 6. Extract expiration from `exp` claim
+///
+/// ## Special Handling for Expired Tokens
+///
+/// When a token is expired, the `jsonwebtoken` crate doesn't expose the expiration
+/// timestamp in the error. To provide a helpful error message, we re-decode the token
+/// *without* expiration validation to extract the timestamp, then return an `Error::Expired`
+/// with the exact expiration time.
+///
+/// # Parameters
+/// - `token`: The JWT token string
+///
+/// # Returns
+/// - `Ok(Session)`: Valid token with extracted username and expiration
+/// - `Err(Error)`: Validation failed (expired, invalid signature, missing claims, etc.)
 pub fn authenticate(token: &str) -> Result<Session, Error> {
     let BackendContext { key, validation } = BACKEND.get().expect("Backend not initialized");
 
@@ -79,6 +164,15 @@ pub fn authenticate(token: &str) -> Result<Session, Error> {
     })
 }
 
+/// Creates a decoding key from raw bytes based on the algorithm.
+///
+/// # Parameters
+/// - `algorithm`: The JWT signing algorithm (determines key format)
+/// - `key`: Raw key bytes
+///
+/// # Panics
+/// - If an unsupported algorithm is provided
+/// - If the RSA PEM format is invalid (RS256 only)
 fn decode_key(algorithm: Algorithm, key: &[u8]) -> DecodingKey {
     match algorithm {
         Algorithm::HS256 => DecodingKey::from_secret(key),
@@ -86,6 +180,16 @@ fn decode_key(algorithm: Algorithm, key: &[u8]) -> DecodingKey {
         _ => panic!("Unsupported JWT algorithm (currently supported: HS256, RS256)"),
     }
 }
+
+/// Initializes the JWT backend.
+///
+/// This must be called exactly once at application startup before any authentication
+/// requests are processed.
+///
+/// # Panics
+/// - If called more than once (programming error)
+/// - If the key file cannot be read
+/// - If the RSA PEM format is invalid (RS256 only)
 pub(super) fn init(config: &Config) {
     let key = match &config.key {
         ConfigKey::Plain(key) => decode_key(config.algorithm, key.as_bytes()),
@@ -105,14 +209,17 @@ pub(super) fn init(config: &Config) {
     validation.set_required_spec_claims(&["exp", "sub", "aud"]);
     validation.set_audience(&["kyber"]);
 
-    // Set leeway to 0 as there's no leeway to the cookie session expiration in Kyber for now.
     validation.leeway = 0;
 
     BACKEND
         .set(BackendContext { key, validation })
         .or(Err(()))
         .expect("Cannot call init() twice");
-    log::info!("Backend initialized with algorithm {:?}", config.algorithm);
+
+    log::info!(
+        "JWT backend initialized with algorithm {:?}",
+        config.algorithm
+    );
 }
 
 impl From<JWTError> for Error {

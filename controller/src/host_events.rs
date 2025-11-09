@@ -328,6 +328,42 @@ impl HostEventSender {
     }
 }
 
+/// Waits for and validates the first WebSocket message containing authentication credentials.
+///
+/// This implements the "credentials as first message" pattern for WebSocket authentication,
+/// chosen over query parameters to avoid token leakage in server logs.
+///
+/// ## Authentication Flow
+///
+/// 1. Client establishes WebSocket connection (no auth yet)
+/// 2. Server accepts connection but doesn't authorize
+/// 3. This function waits for the first message (5-second timeout)
+/// 4. Client sends JSON: `{"token": "<one-time-token>"}`
+/// 5. Server extracts token and returns it for validation
+/// 6. Caller validates token against session
+/// 7. If valid → `pending_sender.accept()` sends "Welcome" and activates connection
+/// 8. If invalid → `pending_sender.reject()` closes connection with error
+///
+/// ## Security Design
+///
+/// - **One-time tokens**: Tokens are generated per login and cannot be reused
+/// - **First-message only**: No other messages are accepted before authentication
+/// - **Timeout**: 5-second window prevents connection hanging
+/// - **No URL exposure**: Token never appears in WebSocket URL or server logs
+///
+/// ## Message Format
+///
+/// Expected first message:
+/// ```json
+/// {"token": "7vaag596mfrsvlzzo8298yhv70k7hrrw..."}
+/// ```
+///
+/// ## Returns
+///
+/// - `Ok((token, pending_sender))`: Authentication message received successfully
+/// - `Err(WsAuthTimeout)`: No message received within 5 seconds
+/// - `Err(ChannelClosedRx)`: Connection closed before authentication
+/// - `Err(WsInvalidAuthMessage)`: Message format invalid or not a text message
 pub(crate) async fn wait_authentication(
     session: actix_ws::Session,
     msg_stream: actix_ws::MessageStream,
@@ -336,6 +372,7 @@ pub(crate) async fn wait_authentication(
         session,
         msg_stream,
     };
+
     let Ok(resp) =
         tokio::time::timeout(Duration::from_secs(5), pending_sender.msg_stream.recv()).await
     else {
@@ -367,12 +404,32 @@ pub(crate) async fn wait_authentication(
     Ok((token_holder.token, pending_sender))
 }
 
+/// A WebSocket connection in the authentication pending state.
+///
+/// This represents a WebSocket connection that has been accepted at the transport
+/// level but not yet authorized. It can transition to either:
+/// - `HostEventSender` via `accept()` - Authentication succeeded
+/// - Closed connection via `reject()` - Authentication failed
+///
+/// This two-phase approach (accept transport, then authenticate) allows the server
+/// to receive and validate credentials before fully activating the connection.
 pub(crate) struct PendingHostEventSender {
     session: actix_ws::Session,
     msg_stream: actix_ws::MessageStream,
 }
 
 impl PendingHostEventSender {
+    /// Accepts the WebSocket connection after successful authentication.
+    ///
+    /// Sends a "Welcome" confirmation message to the client and promotes the
+    /// pending connection to a fully authorized `HostEventSender`.
+    ///
+    /// # Parameters
+    /// - `proxy`: State machine proxy for coordinating streaming services
+    ///
+    /// # Returns
+    /// - `Ok(HostEventSender)`: Connection is now fully authorized and active
+    /// - `Err(ChannelClosedTx)`: Failed to send welcome message (connection died)
     pub(crate) async fn accept(mut self, proxy: StateMachineProxy) -> Result<HostEventSender> {
         const SUCCESS_JSON: &str = "\"Welcome\"";
         let Ok(_) = self.session.text(SUCCESS_JSON).await else {
@@ -383,6 +440,10 @@ impl PendingHostEventSender {
         Ok(HostEventSender::new(self.session, self.msg_stream, proxy))
     }
 
+    /// Rejects the WebSocket connection due to failed authentication.
+    ///
+    /// Closes the connection with a Protocol error code and "Invalid credentials"
+    /// message. This clearly indicates to the client that authentication failed.
     pub(crate) async fn reject(self) {
         let reason = CloseReason {
             code: CloseCode::Protocol,
