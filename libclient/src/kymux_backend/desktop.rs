@@ -5,7 +5,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use log::{error, info, warn};
 use tokio::sync::oneshot;
-use tokio::task::{self, JoinHandle};
+use tokio::task;
 
 use kymux::kyproto;
 
@@ -37,14 +37,13 @@ impl Player {
 
 struct KymuxClosedTask {
     stop_tx: oneshot::Sender<()>,
-    join_handle: JoinHandle<()>,
 }
 
 impl KymuxClosedTask {
     fn new(connection: Arc<kyproto::Connection>, msg_sender: MessageSender) -> Self {
         let (stop_tx, stop_rx) = oneshot::channel();
 
-        let join_handle = task::spawn(async move {
+        task::spawn(async move {
             tokio::select! {
                 _ = stop_rx => {}
                 ret = connection.closed() => {
@@ -61,10 +60,7 @@ impl KymuxClosedTask {
             }
         });
 
-        Self {
-            stop_tx,
-            join_handle,
-        }
+        Self { stop_tx }
     }
 
     async fn stop(self) -> Result<()> {
@@ -73,10 +69,7 @@ impl KymuxClosedTask {
             warn!("ClosedTask already stopped");
         }
 
-        self.join_handle.await.map_err(|err| {
-            warn!("ClosedTask panicked: {err:?}");
-            Error::ThreadPanicked
-        })
+        Ok(())
     }
 }
 
