@@ -25,6 +25,7 @@ mod rtp_backend;
 mod ws_backend;
 
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use log::{info, warn};
@@ -102,6 +103,53 @@ impl Default for AuthCredentials {
     }
 }
 
+/// Manages automatic reconnection behavior when connection is lost.
+///
+/// Reconnection is automatically triggered on connection loss (not on user disconnect).
+/// The strategy is to retry multiple times with a fixed interval between attempts.
+///
+/// # State Model
+/// - `control_should_be_up`: Intent - whether control plane should be connected
+/// - `streaming_should_be_up`: Intent - whether streaming should be active
+/// - `reconnecting`: Whether a reconnection attempt is in progress
+///
+/// # Events
+/// - `Reconnecting`: Emitted for each reconnection attempt
+/// - `Reconnected`: Emitted when reconnection succeeds with `should_restart_streaming` flag
+/// - `ReconnectionFailed`: Emitted when all attempts are exhausted
+///
+/// # Default Policy
+/// - 10 reconnection attempts
+/// - 1 second interval between attempts
+///
+/// # Application Responsibilities
+/// The application is responsible for:
+/// - Saving the streaming configuration when starting streaming
+/// - Restarting streaming when receiving `Reconnected` with `should_restart_streaming=true`
+struct ReconnectionState {
+    control_should_be_up: bool,
+    streaming_should_be_up: bool,
+    max_attempts: u32,
+    interval: Duration,
+    current_attempt: u32,
+    reconnecting: bool,
+    reconnection_task: Option<runtime::JoinHandle<()>>,
+}
+
+impl Default for ReconnectionState {
+    fn default() -> Self {
+        Self {
+            control_should_be_up: false,
+            streaming_should_be_up: false,
+            max_attempts: 10,
+            interval: Duration::from_secs(1),
+            current_attempt: 0,
+            reconnecting: false,
+            reconnection_task: None,
+        }
+    }
+}
+
 struct Handler {
     conn_params: ConnectionParams,
     http_client: HttpClient,
@@ -113,6 +161,7 @@ struct Handler {
 
     state: Arc<Mutex<State>>,
     displays: Vec<Display>,
+    reconnection_state: ReconnectionState,
 
     #[cfg(target_arch = "wasm32")]
     backend: Option<Box<dyn BackendDriver>>,
@@ -140,6 +189,7 @@ impl Handler {
             host_events: None,
             state,
             displays: vec![],
+            reconnection_state: ReconnectionState::default(),
             backend: None,
         })
     }
@@ -291,9 +341,95 @@ impl Handler {
         Ok(())
     }
 
+    fn schedule_reconnection(&mut self) -> bool {
+        if !self.reconnection_state.control_should_be_up {
+            return false;
+        }
+
+        if self.reconnection_state.reconnecting {
+            return false;
+        }
+
+        if self.reconnection_state.current_attempt >= self.reconnection_state.max_attempts {
+            return false;
+        }
+
+        self.reconnection_state.current_attempt += 1;
+        self.reconnection_state.reconnecting = true;
+        let attempt = self.reconnection_state.current_attempt;
+        let max_attempts = self.reconnection_state.max_attempts;
+
+        self.event_manager.send_event(Event::Reconnecting {
+            attempt,
+            max_attempts,
+        });
+
+        // Schedule reconnect message
+        let msg_sender = self.message_sender.clone();
+        let interval = self.reconnection_state.interval;
+        let task = runtime::spawn(async move {
+            runtime::sleep(interval).await;
+            let _ = msg_sender.send(Message::Reconnect { attempt });
+        });
+
+        // Store task handle so it can be cancelled if needed
+        self.reconnection_state.reconnection_task = Some(task);
+
+        true
+    }
+
+    fn cancel_reconnection_task(&mut self) {
+        if let Some(task) = self.reconnection_state.reconnection_task.take() {
+            task.abort();
+            info!("Reconnection task cancelled");
+        }
+        self.reconnection_state.reconnecting = false;
+        self.reconnection_state.current_attempt = 0;
+    }
+
+    async fn on_control_plane_reconnected(&mut self) -> Result<()> {
+        info!("Control plane reconnected successfully");
+        self.reconnection_state.current_attempt = 0;
+        self.reconnection_state.reconnecting = false;
+
+        let should_restart_streaming = self.reconnection_state.streaming_should_be_up;
+
+        self.event_manager.send_event(Event::Reconnected {
+            should_restart_streaming,
+        });
+
+        Ok(())
+    }
+
+    async fn on_reconnection_failure(&mut self, err: Error) -> Result<()> {
+        warn!(
+            "Reconnection attempt {} failed: {err:?}",
+            self.reconnection_state.current_attempt
+        );
+
+        self.reconnection_state.reconnecting = false;
+        if self.schedule_reconnection() {
+            return Ok(());
+        }
+
+        // All attempts exhausted
+        warn!(
+            "Reconnection failed after {} attempts",
+            self.reconnection_state.max_attempts
+        );
+        self.event_manager.send_event(Event::ReconnectionFailed);
+        self.event_manager.send_event(Event::Stopped {
+            reason: StopReason::ControlPlaneClosed,
+        });
+        Ok(())
+    }
+
     async fn handle_message(&mut self, msg: &Message) -> Result<()> {
         match msg {
             Message::Connect => {
+                // Set intent: control plane should be up
+                self.reconnection_state.control_should_be_up = true;
+
                 let event = match self.connect().await {
                     Ok(()) => Event::ControlPlaneConnected {
                         displays: self.displays.clone(),
@@ -311,6 +447,12 @@ impl Handler {
             }
             Message::Disconnect { stop_session } => {
                 info!("Disconnect requested by user");
+
+                // Clear intent flags and cancel any pending reconnection
+                self.reconnection_state.control_should_be_up = false;
+                self.reconnection_state.streaming_should_be_up = false;
+                self.cancel_reconnection_task();
+
                 let ret = self.disconnect(*stop_session).await;
 
                 self.event_manager.send_event(Event::Stopped {
@@ -319,6 +461,22 @@ impl Handler {
 
                 ret
             }
+            Message::Reconnect { attempt } => {
+                info!("Attempting reconnection (attempt {})", attempt);
+
+                // Check if reconnection is still desired
+                if !self.reconnection_state.control_should_be_up {
+                    info!("Reconnection cancelled - control plane should not be up");
+                    self.reconnection_state.reconnecting = false;
+                    self.reconnection_state.current_attempt = 0;
+                    return Ok(());
+                }
+
+                match self.connect().await {
+                    Ok(()) => self.on_control_plane_reconnected().await,
+                    Err(err) => self.on_reconnection_failure(err).await,
+                }
+            }
             Message::ControlPlaneClosed { reason } => {
                 warn!("ControlPlaneClosed. Reason: {reason:?}");
 
@@ -326,6 +484,12 @@ impl Handler {
                 let ret_hostevents = self.stop_hostevents().await;
                 let ret = ret_backend.and(ret_hostevents);
 
+                // Schedule reconnection if enabled
+                if self.schedule_reconnection() {
+                    return ret;
+                }
+
+                // If reconnection disabled or exhausted, stop
                 let reason = match reason {
                     ControlPlaneCloseReason::Eof => StopReason::ControlPlaneClosed,
                     ControlPlaneCloseReason::Closed { .. } => StopReason::ControlPlaneClosed,
@@ -343,9 +507,16 @@ impl Handler {
 
                 self.event_manager.send_event(Event::DataPlaneClosed);
 
+                // Schedule reconnection if enabled
+                if self.schedule_reconnection() {
+                    return ret;
+                }
+
                 ret
             }
             Message::StartStreamingSession { config } => {
+                self.reconnection_state.streaming_should_be_up = true;
+
                 let ret = self.start_streaming_session(config.clone()).await;
                 let (event, stop) = match ret {
                     Ok(()) => (Event::StreamingStarted, false),
@@ -373,6 +544,8 @@ impl Handler {
                 Ok(())
             }
             Message::StopStreamingSession => {
+                self.reconnection_state.streaming_should_be_up = false;
+
                 self.stop_streaming_session().await?;
 
                 self.event_manager.send_event(Event::StreamingStopped);

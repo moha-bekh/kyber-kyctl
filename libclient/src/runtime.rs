@@ -18,17 +18,43 @@ pub use tokio::time::{
 };
 
 #[cfg(not(target_family = "wasm"))]
-pub fn spawn<F>(future: F)
-where
-    F: Future<Output = ()> + Send + 'static,
-{
-    tokio::spawn(future);
+pub use tokio::task::JoinHandle;
+
+#[cfg(target_family = "wasm")]
+pub struct JoinHandle<T> {
+    abort_handle: futures::future::AbortHandle,
+    _marker: std::marker::PhantomData<T>,
 }
 
 #[cfg(target_family = "wasm")]
-pub fn spawn<F>(future: F)
+impl<T> JoinHandle<T> {
+    pub fn abort(&self) {
+        self.abort_handle.abort();
+    }
+}
+
+#[cfg(not(target_family = "wasm"))]
+pub fn spawn<F>(future: F) -> JoinHandle<()>
+where
+    F: Future<Output = ()> + Send + 'static,
+{
+    tokio::spawn(future)
+}
+
+#[cfg(target_family = "wasm")]
+pub fn spawn<F>(future: F) -> JoinHandle<()>
 where
     F: Future<Output = ()> + 'static,
 {
-    wasm_bindgen_futures::spawn_local(future);
+    let (abort_handle, abort_registration) = futures::future::AbortHandle::new_pair();
+    let abortable_future = futures::future::Abortable::new(future, abort_registration);
+
+    wasm_bindgen_futures::spawn_local(async {
+        let _ = abortable_future.await;
+    });
+
+    JoinHandle {
+        abort_handle,
+        _marker: std::marker::PhantomData,
+    }
 }

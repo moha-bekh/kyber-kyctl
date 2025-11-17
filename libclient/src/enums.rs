@@ -47,6 +47,10 @@ pub(crate) enum Message {
         stop_session: bool,
     },
 
+    Reconnect {
+        attempt: u32,
+    },
+
     ControlPlaneClosed {
         reason: ControlPlaneCloseReason,
     },
@@ -128,6 +132,14 @@ pub enum Event {
     ControlPlaneConnectFailed,
     DataPlaneConnectFailed,
     DataPlaneClosed,
+    Reconnecting {
+        attempt: u32,
+        max_attempts: u32,
+    },
+    Reconnected {
+        should_restart_streaming: bool,
+    },
+    ReconnectionFailed,
     Stopped {
         reason: StopReason,
     },

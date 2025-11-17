@@ -140,7 +140,7 @@ impl WindowHandle {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum StopReason {
     Requested,
     ControlPlaneClosed,
@@ -178,6 +178,14 @@ pub enum Event {
     ControlPlaneConnectFailed,
     DataPlaneConnectFailed,
     DataPlaneClosed,
+    Reconnecting {
+        attempt: u32,
+        max_attempts: u32,
+    },
+    Reconnected {
+        should_restart_streaming: bool,
+    },
+    ReconnectionFailed,
     Stopped {
         reason: StopReason,
     },
@@ -252,6 +260,41 @@ impl EventSinkData {
             }
             sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_DATA_PLANE_CLOSED => {
                 data.sink.on_event(Event::DataPlaneClosed);
+            }
+            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_RECONNECTING => {
+                let mut attempt: u32 = 0;
+                let mut max_attempts: u32 = 0;
+
+                let ret = unsafe {
+                    sys::libclient_event_unpack_reconnecting(event, &mut attempt, &mut max_attempts)
+                };
+                if ret != 0 {
+                    warn!("Fail to unpack EventType::Reconnecting");
+                    return;
+                }
+
+                data.sink.on_event(Event::Reconnecting {
+                    attempt,
+                    max_attempts,
+                });
+            }
+            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_RECONNECTED => {
+                let mut should_restart_streaming: bool = false;
+
+                let ret = unsafe {
+                    sys::libclient_event_unpack_reconnected(event, &mut should_restart_streaming)
+                };
+                if ret != 0 {
+                    warn!("Fail to unpack EventType::Reconnected");
+                    return;
+                }
+
+                data.sink.on_event(Event::Reconnected {
+                    should_restart_streaming,
+                });
+            }
+            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_RECONNECTION_FAILED => {
+                data.sink.on_event(Event::ReconnectionFailed);
             }
             sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_STOPPED => {
                 let mut c_reason = mem::MaybeUninit::uninit();

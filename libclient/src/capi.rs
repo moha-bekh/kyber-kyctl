@@ -752,6 +752,9 @@ pub enum libclient_EventType {
     ControlPlaneConnectFailed,
     DataPlaneConnectFailed,
     DataPlaneClosed,
+    Reconnecting,
+    Reconnected,
+    ReconnectionFailed,
     Stopped,
     DisplayListUpdated,
     InputServiceConnected,
@@ -802,6 +805,9 @@ pub unsafe extern "C" fn libclient_event_get_type(event: *const Event) -> libcli
         Event::ControlPlaneConnectFailed => libclient_EventType::ControlPlaneConnectFailed,
         Event::DataPlaneConnectFailed => libclient_EventType::DataPlaneConnectFailed,
         Event::DataPlaneClosed => libclient_EventType::DataPlaneClosed,
+        Event::Reconnecting { .. } => libclient_EventType::Reconnecting,
+        Event::Reconnected { .. } => libclient_EventType::Reconnected,
+        Event::ReconnectionFailed => libclient_EventType::ReconnectionFailed,
         Event::Stopped { .. } => libclient_EventType::Stopped,
         Event::DisplayListUpdated { .. } => libclient_EventType::DisplayListUpdated,
         Event::InputServiceConnected => libclient_EventType::InputServiceConnected,
@@ -852,6 +858,43 @@ pub unsafe extern "C" fn libclient_event_unpack_stopped(
         crate::StopReason::ControlPlaneTimeout => libclient_StopReason::ControlPlaneTimeout,
         crate::StopReason::DecodeError => libclient_StopReason::DecodeError,
     };
+
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_event_unpack_reconnecting(
+    event: *const Event,
+    out_attempt: *mut u32,
+    out_max_attempts: *mut u32,
+) -> c_int {
+    let Event::Reconnecting {
+        attempt,
+        max_attempts,
+    } = &*event
+    else {
+        return -1;
+    };
+
+    *out_attempt = *attempt;
+    *out_max_attempts = *max_attempts;
+
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_event_unpack_reconnected(
+    event: *const Event,
+    out_should_restart_streaming: *mut bool,
+) -> c_int {
+    let Event::Reconnected {
+        should_restart_streaming,
+    } = &*event
+    else {
+        return -1;
+    };
+
+    *out_should_restart_streaming = *should_restart_streaming;
 
     0
 }
