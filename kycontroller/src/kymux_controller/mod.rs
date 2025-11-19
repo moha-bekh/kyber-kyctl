@@ -31,6 +31,7 @@ use actix_web::web;
 use bytes::Bytes;
 use kymux::kycom;
 use kymux::kyproto::{self, ProtocolEndpoint};
+use kymux::types;
 use log::{info, warn};
 use tokio::sync::{oneshot, Mutex};
 use tokio::task::{self, JoinHandle};
@@ -749,8 +750,9 @@ async fn run_stats_poller(
             dropped_packets: protocol_stats.dropped_packets,
         };
         let payload = Bytes::from(rmp_serde::to_vec(&network_stats).unwrap());
-        let packet = kyproto::MetricsPacket { payload };
+        let packet = types::MetricsPacket { payload };
         protocol
+            .send
             .send(packet)
             .await
             .map_err(|err| Error::Kymux { source: err.into() })?;

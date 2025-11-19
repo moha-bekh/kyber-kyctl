@@ -23,8 +23,8 @@ use std::collections::HashMap;
 use log::warn;
 use serde::Deserialize;
 
-use kymux::kyproto::{self, ProtocolEndpoint};
-use kymux::types;
+use kymux::{kyproto, types};
+use types::ProtocolEndpoint;
 
 use crate::metrics::{
     Metric, MetricsProducer, NetworkPing, NetworkStats, VideoMetric, VideoMetricData,
@@ -123,10 +123,11 @@ pub(crate) async fn start_remote_metrics_receiver(
 }
 
 async fn run_metrics_receiver(
-    mut protocol: types::ProtocolRecv<types::MetricsPacket>,
+    mut protocol: types::MetricsClientProtocol,
     metrics: MetricsProducer,
 ) -> Result<()> {
     while let Some(packet) = protocol
+        .recv
         .recv()
         .await
         .map_err(|err| Error::Kymux(err.into()))?
@@ -151,10 +152,11 @@ struct RemoteVideoMetrics {
 
 async fn run_remote_video_metrics_receiver(
     source_id: u32,
-    mut protocol: types::ProtocolRecv<types::MetricsPacket>,
+    mut protocol: types::MetricsClientProtocol,
     metrics: MetricsProducer,
 ) -> Result<()> {
     while let Some(packet) = protocol
+        .recv
         .recv()
         .await
         .map_err(|err| Error::Kymux(err.into()))?
