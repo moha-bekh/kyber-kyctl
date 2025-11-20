@@ -567,9 +567,9 @@ async fn real_main() -> Result<()> {
         info!("Webclient root not found");
     }
 
-    HttpServer::new(move || {
-        let cookie_key = cookie::Key::generate();
+    let cookie_key = cookie::Key::generate();
 
+    HttpServer::new(move || {
         // Actix Middleware Stack: Middleware executes in REVERSE order of .wrap() calls
         //
         // Data Flow:
@@ -590,7 +590,7 @@ async fn real_main() -> Result<()> {
             .wrap(session::identity::middleware::IdentityMiddleware {})
             // Decrypts session cookie, provides Session object to downstream middleware
             .wrap(
-                SessionMiddleware::builder(CookieSessionStore::default(), cookie_key)
+                SessionMiddleware::builder(CookieSessionStore::default(), cookie_key.clone())
                     .cookie_same_site(cookie_same_site)
                     .build(),
             )
