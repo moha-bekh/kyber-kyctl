@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use actix_web::web;
 use bytes::Bytes;
+use kymux::kycom;
 use kymux::kyproto::{self, ProtocolEndpoint};
 use log::{info, warn};
 use tokio::sync::{oneshot, Mutex};
@@ -84,19 +85,19 @@ impl ConnectionTask {
 pub(crate) struct KymuxBackend {
     pub(crate) server: KymuxServer,
     connection_task: Option<ConnectionTask>,
-    services_sink: kymux::ipc::IpcHandler,
+    kycom: kycom::KyCom,
     statemachine_proxy: StateMachineProxy,
 }
 
 impl KymuxBackend {
     async fn new(server: KymuxServer, statemachine_proxy: StateMachineProxy) -> Result<Self> {
         const IPC_PORTS: std::ops::Range<u16> = 9091..9100;
-        let services_sink = kymux::ipc::IpcHandler::new(IPC_PORTS).await?;
+        let kycom = kycom::KyCom::start_on_any_port(IPC_PORTS).await?;
 
         Ok(Self {
             server,
             connection_task: None,
-            services_sink,
+            kycom,
             statemachine_proxy,
         })
     }
@@ -111,8 +112,8 @@ impl KymuxBackend {
             }
         };
 
-        info!("Stop running IPC Services sink");
-        self.services_sink.stop();
+        info!("Stop running kycom");
+        self.kycom.stop();
 
         info!("Stop running Kymux Server");
         let ret = self.server.stop().await;
@@ -246,7 +247,7 @@ async fn start_kymux(
 
 async fn start_video(
     request: &requests::StartRequest,
-    services_sink: &mut kymux::ipc::IpcHandler,
+    kycom: &mut kycom::KyCom,
     connection: &kyproto::Connection,
     process_factory: &Arc<ProcessFactory>,
     statemachine_proxy: StateMachineProxy,
@@ -270,13 +271,13 @@ async fn start_video(
             .await?;
 
         let endpoint_id = endpoint.id();
-        let uri = services_sink.register_and_forward(endpoint)?;
+        let uri = kycom.register_and_forward(endpoint)?.url();
 
         let (metrics_uri, metrics_endpoint_id) = if request.metrics {
             let metrics_endpoint = connection.register_metrics_endpoint(None).await?;
             let metrics_endpoint_id = metrics_endpoint.id();
 
-            let metrics_uri = services_sink.register_and_forward(metrics_endpoint)?;
+            let metrics_uri = kycom.register_and_forward(metrics_endpoint)?.url();
 
             (Some(metrics_uri), Some(metrics_endpoint_id))
         } else {
@@ -312,7 +313,7 @@ async fn start_video(
 
 async fn start_audio(
     request: &requests::StartRequest,
-    services_sink: &mut kymux::ipc::IpcHandler,
+    kycom: &mut kycom::KyCom,
     connection: &kyproto::Connection,
     process_factory: &Arc<ProcessFactory>,
     statemachine_proxy: StateMachineProxy,
@@ -332,7 +333,7 @@ async fn start_audio(
         .await?;
 
     let endpoint_id = endpoint.id();
-    let uri = services_sink.register_and_forward(endpoint)?;
+    let uri = kycom.register_and_forward(endpoint)?.url();
 
     info!("Start Audio avservice. Protocol: {audio_protocol:?}, Endpoint: {endpoint_id:X}");
     let mut avservice = avservice::Handler::new(avservice::HandlerType::Audio, statemachine_proxy);
@@ -346,7 +347,7 @@ async fn start_audio(
 
 async fn start_input(
     request: &requests::StartRequest,
-    services_sink: &mut kymux::ipc::IpcHandler,
+    kycom: &mut kycom::KyCom,
     connection: &kyproto::Connection,
     process_factory: &Arc<ProcessFactory>,
     host_config: inputservice_types::HostConfig,
@@ -359,7 +360,7 @@ async fn start_input(
     let endpoint = connection.register_input_endpoint(None).await?;
 
     let endpoint_id = endpoint.id();
-    let uri = services_sink.register_and_forward(endpoint)?;
+    let uri = kycom.register_and_forward(endpoint)?.url();
 
     info!("Start Inputservice. Endpoint: {endpoint_id:X}");
 
@@ -511,7 +512,7 @@ async fn start_session(
     // Start services
     let video = start_video(
         &request,
-        &mut backend.services_sink,
+        &mut backend.kycom,
         &connection,
         &ctrl.process_factory,
         state_machine_proxy.clone(),
@@ -520,7 +521,7 @@ async fn start_session(
 
     let audio = start_audio(
         &request,
-        &mut backend.services_sink,
+        &mut backend.kycom,
         &connection,
         &ctrl.process_factory,
         state_machine_proxy.clone(),
@@ -529,7 +530,7 @@ async fn start_session(
 
     let input = start_input(
         &request,
-        &mut backend.services_sink,
+        &mut backend.kycom,
         &connection,
         &ctrl.process_factory,
         inputservice_types::HostConfig {
