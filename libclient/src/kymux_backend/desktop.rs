@@ -166,13 +166,13 @@ struct InputService {
     client: InputClient,
 }
 
-pub(super) struct KymuxBackend {
+pub(super) struct KymuxDesktop {
     kycom: Option<kycom::KyCom>,
     player: Option<Player>,
     input_service: Option<InputService>,
 }
 
-impl KymuxBackend {
+impl KymuxDesktop {
     pub(super) async fn new(
         backend_config: &KymuxBackendConfig<'_>,
         endpoints: PlatformEndpoints,
@@ -209,7 +209,7 @@ impl KymuxBackend {
 }
 
 #[async_trait]
-impl BackendDriver for KymuxBackend {
+impl BackendDriver for KymuxDesktop {
     fn audio_set_volume(&self, volume: f32) -> Result<()> {
         let player = self.player.as_ref().ok_or(Error::NoAudioPlayer)?;
 

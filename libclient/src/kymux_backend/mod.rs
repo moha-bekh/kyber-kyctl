@@ -1,6 +1,8 @@
-#[cfg_attr(feature = "desktop", path = "./desktop.rs")]
-#[cfg_attr(feature = "web", path = "./web.rs")]
-mod platform;
+#[cfg(feature = "desktop")]
+mod desktop;
+
+#[cfg(feature = "web")]
+mod web;
 
 use async_trait::async_trait;
 use kymux::kyproto;
@@ -46,12 +48,23 @@ pub(crate) struct KymuxBackendConfig<'a> {
     pub(crate) msg_sender: MessageSender,
 }
 
+#[cfg(feature = "desktop")]
 async fn new_platform_backend(
     backend_config: &KymuxBackendConfig<'_>,
     endpoints: PlatformEndpoints,
     metrics: bool,
 ) -> Result<Box<dyn BackendDriver>> {
-    let backend = platform::KymuxBackend::new(backend_config, endpoints, metrics).await?;
+    let backend = desktop::KymuxDesktop::new(backend_config, endpoints, metrics).await?;
+    Ok(Box::new(backend))
+}
+
+#[cfg(feature = "web")]
+async fn new_platform_backend(
+    backend_config: &KymuxBackendConfig<'_>,
+    endpoints: PlatformEndpoints,
+    metrics: bool,
+) -> Result<Box<dyn BackendDriver>> {
+    let backend = web::KymuxWeb::new(backend_config, endpoints, metrics).await?;
     Ok(Box::new(backend))
 }
 

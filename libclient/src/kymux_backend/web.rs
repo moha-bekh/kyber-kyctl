@@ -330,13 +330,13 @@ async fn start_input(
     }))
 }
 
-pub(super) struct KymuxBackend {
+pub(super) struct KymuxWeb {
     player: Option<Player>,
     input_service: Option<InputService>,
     close_requested: CloseRequestState,
 }
 
-impl KymuxBackend {
+impl KymuxWeb {
     pub(super) async fn new(
         backend_config: &KymuxBackendConfig<'_>,
         mut endpoints: PlatformEndpoints,
@@ -377,7 +377,7 @@ impl KymuxBackend {
 }
 
 #[async_trait(?Send)]
-impl BackendDriver for KymuxBackend {
+impl BackendDriver for KymuxWeb {
     fn audio_set_volume(&self, volume: f32) -> Result<()> {
         let audio_player = self
             .player
