@@ -84,6 +84,7 @@ async fn connect_quinn(
     conn_params: &ConnectionParams,
     port: u16,
     auth: &kyproto::ClientAuth,
+    certificate_hash: Option<String>,
 ) -> Result<kyproto::Connection> {
     let roots = if let Some(tls_config) = &conn_params.tls_config {
         let mut roots = rustls::RootCertStore::empty();
@@ -110,6 +111,7 @@ async fn connect_quinn(
             addr: SocketAddr::new(conn_params.addr.ip(), port),
             roots,
             server_name,
+            certificate_hash,
         },
         auth,
     )
@@ -314,6 +316,9 @@ async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kyproto:
     )
     .await?;
 
+    // Extract certificate hash if provided (for self-signed WebTransport certificates)
+    let certificate_hash = start_response.certificate_hash.map(|h| h.hash);
+
     // Start Kymux connection
     let ret = match backend_config.kymux_config.backend {
         KymuxTransportBackend::Quic => {
@@ -326,7 +331,13 @@ async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kyproto:
                 warn!("Got an invalid kymux token from controller");
                 Error::KymuxInvalidToken
             })?;
-            connect_quinn(backend_config.conn_params, start_response.port, &auth).await
+            connect_quinn(
+                backend_config.conn_params,
+                start_response.port,
+                &auth,
+                certificate_hash,
+            )
+            .await
         }
     };
 
