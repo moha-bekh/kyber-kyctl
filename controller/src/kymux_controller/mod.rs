@@ -26,7 +26,7 @@ use crate::utils::TypeConvert;
 use crate::{Controller, DataPlaneBackend, StateMachineEvent, StateMachineProxy};
 
 use metrics::NetworkStats;
-use requests::{KymuxTransportBackend, StartKymuxCertificateHash};
+use requests::StartKymuxCertificateHash;
 
 struct ConnectionTask {
     stop_tx: oneshot::Sender<()>,
@@ -127,7 +127,6 @@ impl KymuxBackend {
 
 async fn start_kymux(
     ctrl: web::Data<Mutex<Controller>>,
-    backend: KymuxTransportBackend,
     public_port: u16,
     statemachine_proxy: StateMachineProxy,
 ) -> Result<requests::StartKymuxResponse> {
@@ -163,51 +162,43 @@ async fn start_kymux(
 
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), listening_port);
 
-    // Start Listen task
-    let (server, certificate_hash) = match backend {
-        KymuxTransportBackend::Quic => {
-            info!("Start Quic listener on address {addr:?}");
+    // Start common server (supports both QUIC and WebTransport on same port)
+    info!("Starting common Kymux server on address {addr:?} (supports QUIC + WebTransport)");
 
-            let config = kymux::ServerConfig::Quic {
-                addr,
-                cert_chain: tls_config.cert_chain.clone(),
-                private_key: tls_config.private_key.clone_key(),
-            };
-            let server = kymux::Server::new(config).await?;
-            (server, None)
-        }
-        KymuxTransportBackend::Webtransport => {
-            info!("Start webtransport listener on address {addr:?}");
+    // Choose certificate based on config:
+    // - Dev mode (webtransport_gen_certificate=true): Generate short-lived cert with hash
+    //   Required for WebTransport clients using serverCertificateHashes
+    // - Prod mode (webtransport_gen_certificate=false): Use TLS cert from config
+    //   Assumes cert is signed by a trusted CA (works for both QUIC and WebTransport)
+    let (cert_chain, private_key, certificate_hash) = if webtransport_gen_certificate {
+        info!("Generating short-lived certificate for WebTransport compatibility");
 
-            let (cert_chain, private_key, certificate_hash) = if webtransport_gen_certificate {
-                info!("Generate certificate for webtransport connection");
+        let cert = webtransport::gen_webtransport_cert()?;
 
-                let cert = webtransport::gen_webtransport_cert()?;
+        let certificate_hash = StartKymuxCertificateHash {
+            algorithm: "sha-256".into(),
+            hash: cert.cert_digest.clone(),
+        };
 
-                let certificate_hash = StartKymuxCertificateHash {
-                    algorithm: "sha-256".into(),
-                    hash: cert.cert_digest,
-                };
+        info!("Generated certificate with hash: {}", cert.cert_digest);
 
-                (vec![cert.cert_der], cert.key_der, Some(certificate_hash))
-            } else {
-                (
-                    tls_config.cert_chain.clone(),
-                    tls_config.private_key.clone_key(),
-                    None,
-                )
-            };
+        (vec![cert.cert_der], cert.key_der, Some(certificate_hash))
+    } else {
+        info!("Using TLS certificate from config (must be CA-signed for WebTransport)");
 
-            let server_config = kymux::ServerConfig::Wtransport {
-                addr,
-                cert_chain,
-                private_key,
-            };
-            let server = kymux::Server::new(server_config).await?;
-
-            (server, certificate_hash)
-        }
+        (
+            tls_config.cert_chain.clone(),
+            tls_config.private_key.clone_key(),
+            None,
+        )
     };
+
+    let config = kymux::ServerConfig {
+        addr,
+        cert_chain,
+        private_key,
+    };
+    let server = kymux::Server::new(config).await?;
 
     // Start Listen task wrapper
     let (server, token) = {

@@ -10,16 +10,9 @@ use inputservice_types::CursorFormat;
 use crate::utils::generate_session_id;
 use crate::{controller::Controller, session::identity::Identity};
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-pub(crate) enum KymuxTransportBackend {
-    Quic,
-    Webtransport,
-}
-
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct StartKymux {
     pub(crate) public_streamer_port: u16,
-    pub(crate) backend: KymuxTransportBackend,
 }
 
 #[derive(Debug, Serialize)]
@@ -55,7 +48,6 @@ pub(crate) async fn start_mux(
     // Assume that the public port used for UDP is the same than the port for TCP.
     let ret = super::start_kymux(
         ctrl.clone(),
-        request.backend,
         request.public_streamer_port,
         state_machine_proxy,
     )
