@@ -105,10 +105,12 @@ impl Default for AuthCredentials {
 
 /// Manages automatic reconnection behavior when connection is lost.
 ///
-/// Reconnection is automatically triggered on connection loss (not on user disconnect).
+/// Reconnection is automatically triggered on connection loss (not on user disconnect),
+/// but only if `enabled` is set to true via `ConnectConfig::auto_reconnection`.
 /// The strategy is to retry multiple times with a fixed interval between attempts.
 ///
 /// # State Model
+/// - `enabled`: Whether auto-reconnection is enabled (from ConnectConfig)
 /// - `control_should_be_up`: Intent - whether control plane should be connected
 /// - `streaming_should_be_up`: Intent - whether streaming should be active
 /// - `reconnecting`: Whether a reconnection attempt is in progress
@@ -119,14 +121,18 @@ impl Default for AuthCredentials {
 /// - `ReconnectionFailed`: Emitted when all attempts are exhausted
 ///
 /// # Default Policy
-/// - 10 reconnection attempts
+/// - Auto-reconnection disabled by default
+/// - 10 reconnection attempts (when enabled)
 /// - 1 second interval between attempts
 ///
 /// # Application Responsibilities
 /// The application is responsible for:
+/// - Enabling auto-reconnection via `ConnectConfig::auto_reconnection = true`
+/// - Handling reconnection events (`Reconnecting`, `Reconnected`, `ReconnectionFailed`)
 /// - Saving the streaming configuration when starting streaming
 /// - Restarting streaming when receiving `Reconnected` with `should_restart_streaming=true`
 struct ReconnectionState {
+    enabled: bool,
     control_should_be_up: bool,
     streaming_should_be_up: bool,
     max_attempts: u32,
@@ -136,9 +142,10 @@ struct ReconnectionState {
     reconnection_task: Option<runtime::JoinHandle<()>>,
 }
 
-impl Default for ReconnectionState {
-    fn default() -> Self {
+impl ReconnectionState {
+    fn new(enabled: bool) -> Self {
         Self {
+            enabled,
             control_should_be_up: false,
             streaming_should_be_up: false,
             max_attempts: 10,
@@ -177,6 +184,7 @@ impl Handler {
         metrics: Option<MetricsProducer>,
         state: Arc<Mutex<State>>,
     ) -> Result<Self> {
+        let auto_reconnection = connect_config.auto_reconnection;
         let conn_params = ConnectionParams::new(connect_config)?;
         let http_client = HttpClient::new(conn_params.clone())?;
 
@@ -189,7 +197,7 @@ impl Handler {
             host_events: None,
             state,
             displays: vec![],
-            reconnection_state: ReconnectionState::default(),
+            reconnection_state: ReconnectionState::new(auto_reconnection),
             backend: None,
         })
     }
@@ -342,6 +350,10 @@ impl Handler {
     }
 
     fn schedule_reconnection(&mut self) -> bool {
+        if !self.reconnection_state.enabled {
+            return false;
+        }
+
         if !self.reconnection_state.control_should_be_up {
             return false;
         }

@@ -769,6 +769,10 @@ impl ConnectConfig {
     pub fn set_streamer_port(&self, port: u16) {
         unsafe { sys::libclient_connect_config_set_streamer_port(self.ptr, port) }
     }
+
+    pub fn set_auto_reconnection(&self, enabled: bool) {
+        unsafe { sys::libclient_connect_config_set_auto_reconnection(self.ptr, enabled) }
+    }
 }
 
 impl Drop for ConnectConfig {

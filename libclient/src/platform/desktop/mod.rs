@@ -24,6 +24,10 @@ pub struct ConnectConfig {
     pub tls_host: Option<String>,
     pub tls_root_cert: Option<TlsRootCert>,
     pub credentials: AuthCredentials,
+    /// Enable automatic reconnection on connection loss. Default: false.
+    /// When enabled, the client will emit `Reconnecting`, `Reconnected`, and
+    /// `ReconnectionFailed` events that the application must handle.
+    pub auto_reconnection: bool,
 }
 
 #[derive(Clone, Debug)]

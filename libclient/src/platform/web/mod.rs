@@ -22,6 +22,10 @@ pub struct ConnectConfig {
     pub host: String,
     pub port: u16,
     pub credentials: AuthCredentials,
+    /// Enable automatic reconnection on connection loss. Default: false.
+    /// When enabled, the client will emit `Reconnecting`, `Reconnected`, and
+    /// `ReconnectionFailed` events that the application must handle.
+    pub auto_reconnection: bool,
 }
 
 #[derive(Clone, Debug)]

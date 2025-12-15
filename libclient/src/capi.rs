@@ -300,6 +300,7 @@ pub unsafe extern "C" fn libclient_connect_config_default(
         credentials: crate::AuthCredentials::default(),
         tls_host: None,
         tls_root_cert: None,
+        auto_reconnection: false,
     };
 
     *out_config = Box::into_raw(Box::new(libclient_ConnectConfig { config }));
@@ -375,6 +376,14 @@ pub unsafe extern "C" fn libclient_connect_config_set_streamer_port(
     port: u16,
 ) {
     (*config).config.port = port;
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn libclient_connect_config_set_auto_reconnection(
+    config: *mut libclient_ConnectConfig,
+    enabled: bool,
+) {
+    (*config).config.auto_reconnection = enabled;
 }
 
 #[no_mangle]
