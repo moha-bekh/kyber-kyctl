@@ -15,7 +15,7 @@ pub(crate) struct StartKymux {
     pub(crate) public_streamer_port: u16,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub(crate) struct StartKymuxCertificateHash {
     pub(crate) algorithm: String,
     pub(crate) hash: String,

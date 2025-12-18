@@ -12,7 +12,7 @@ use crate::avservice;
 use crate::config;
 use crate::error::{Error, Result};
 use crate::inputservice;
-use crate::kymux_controller::KymuxBackend;
+use crate::kymux_controller::{KymuxBackend, SharedKymuxInfra};
 use crate::session::ClientAuthTokens;
 use crate::tls;
 use crate::ws::WebsocketBackend;
@@ -156,6 +156,9 @@ pub struct Controller {
     pub(crate) services: StreamingServices,
 
     pub(crate) state_machine_proxy: Option<StateMachineProxy>,
+
+    // Shared Kymux infrastructure (server supporting both QUIC and WebTransport on same port)
+    pub(crate) shared_kymux_infra: Option<Arc<tokio::sync::Mutex<SharedKymuxInfra>>>,
 }
 
 impl Controller {
@@ -172,6 +175,7 @@ impl Controller {
             client_session: None,
             services: Default::default(),
             state_machine_proxy: None,
+            shared_kymux_infra: None,
         }
     }
 
