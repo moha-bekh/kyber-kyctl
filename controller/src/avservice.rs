@@ -22,6 +22,7 @@ struct ReceiverTask {
 impl ReceiverTask {
     fn new(
         type_: HandlerType,
+        session_id: Option<uuid::Uuid>,
         receiver: EventReceiver<Event>,
         statemachine_proxy: StateMachineProxy,
     ) -> Self {
@@ -29,6 +30,7 @@ impl ReceiverTask {
 
         let handle = task::spawn(Self::task_entry(
             type_,
+            session_id,
             receiver,
             statemachine_proxy,
             stop_rx,
@@ -57,6 +59,7 @@ impl ReceiverTask {
 
     async fn task_entry(
         type_: HandlerType,
+        session_id: Option<uuid::Uuid>,
         receiver: EventReceiver<avservice_types::Event>,
         statemachine_proxy: StateMachineProxy,
         stop_rx: oneshot::Receiver<()>,
@@ -64,23 +67,24 @@ impl ReceiverTask {
         tokio::select! {
             _ = stop_rx => {
             }
-            _ = Self::process_receiver(type_, receiver, statemachine_proxy) => {}
+            _ = Self::process_receiver(type_, session_id, receiver, statemachine_proxy) => {}
         }
     }
 
     async fn process_receiver(
         type_: HandlerType,
+        session_id: Option<uuid::Uuid>,
         mut receiver: EventReceiver<avservice_types::Event>,
         statemachine_proxy: StateMachineProxy,
     ) {
         while let Ok(event) = receiver.recv().await {
             statemachine_proxy
-                .send(StateMachineEvent::AvService { event })
+                .send(StateMachineEvent::AvService { session_id, event })
                 .await;
         }
 
         statemachine_proxy
-            .send(StateMachineEvent::AvServiceStopped { type_ })
+            .send(StateMachineEvent::AvServiceStopped { session_id, type_ })
             .await;
     }
 }
@@ -97,10 +101,16 @@ impl Inner {
     fn start_receiver_task(
         &mut self,
         type_: HandlerType,
+        session_id: Option<uuid::Uuid>,
         statemachine_proxy: StateMachineProxy,
     ) -> Result<()> {
         let receiver = self.receiver.take().ok_or(Error::AvServerNoReceiver)?;
-        self.receiver_task = Some(ReceiverTask::new(type_, receiver, statemachine_proxy));
+        self.receiver_task = Some(ReceiverTask::new(
+            type_,
+            session_id,
+            receiver,
+            statemachine_proxy,
+        ));
 
         Ok(())
     }
@@ -116,15 +126,21 @@ pub(crate) enum HandlerType {
 
 pub(crate) struct Handler {
     type_: HandlerType,
+    session_id: Option<uuid::Uuid>,
     avserver_path: PathBuf,
     statemachine_proxy: StateMachineProxy,
     inner: Option<Inner>,
 }
 
 impl Handler {
-    pub(crate) fn new(type_: HandlerType, statemachine_proxy: StateMachineProxy) -> Self {
+    pub(crate) fn new(
+        type_: HandlerType,
+        session_id: Option<uuid::Uuid>,
+        statemachine_proxy: StateMachineProxy,
+    ) -> Self {
         Self {
             type_,
+            session_id,
             avserver_path: utils::get_executable_path("avserver"),
             inner: None,
             statemachine_proxy,
@@ -166,7 +182,7 @@ impl Handler {
             return Err(Error::DisplayListEmpty);
         };
 
-        inner.start_receiver_task(self.type_, self.statemachine_proxy.clone())?;
+        inner.start_receiver_task(self.type_, self.session_id, self.statemachine_proxy.clone())?;
         self.inner = Some(inner);
 
         Ok(displays)
@@ -289,7 +305,7 @@ impl Handler {
         let mut inner = self.spawn_process(process_factory).await?;
         inner.sender.send(start_cmd).await?;
 
-        inner.start_receiver_task(self.type_, self.statemachine_proxy.clone())?;
+        inner.start_receiver_task(self.type_, self.session_id, self.statemachine_proxy.clone())?;
         self.inner = Some(inner);
 
         Ok(())

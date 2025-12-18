@@ -335,7 +335,8 @@ async fn websocket_service(
             return;
         }
 
-        let Ok(sender) = pending_sender.accept(state_machine_proxy).await else {
+        let session_id = client_session.uid;
+        let Ok(sender) = pending_sender.accept(session_id, state_machine_proxy).await else {
             error!("Could not accept websocket connection");
             return;
         };

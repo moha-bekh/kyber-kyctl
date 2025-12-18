@@ -14,8 +14,10 @@ impl Watchdog {
         process_factory: &Arc<ProcessFactory>,
         statemachine_proxy: StateMachineProxy,
     ) -> Result<(Self, Vec<avservice_types::Display>)> {
+        // Watchdog is global, not tied to any user session
         let mut avservice = avservice::Handler::new(
             avservice::HandlerType::EnumerateDisplays,
+            None,
             statemachine_proxy.clone(),
         );
 

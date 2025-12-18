@@ -4,6 +4,7 @@ use tokio::{
     sync::{mpsc, oneshot, Mutex},
     task,
 };
+use uuid::Uuid;
 
 use crate::utils::TypeConvert;
 use crate::{avservice, host_events};
@@ -12,15 +13,22 @@ use crate::{Controller, Error, HostEvent, Result};
 #[derive(Debug)]
 pub(crate) enum StateMachineEvent {
     AvService {
+        /// None means the event targets all sessions (e.g., from watchdog)
+        session_id: Option<Uuid>,
         event: avservice_types::Event,
     },
     AvServiceStopped {
+        /// None means global (e.g., watchdog stopped)
+        session_id: Option<Uuid>,
         type_: avservice::HandlerType,
     },
     HostEvents {
+        session_id: Uuid,
         notification: host_events::Notification,
     },
-    KymuxTimeout,
+    KymuxTimeout {
+        session_id: Uuid,
+    },
 }
 
 #[derive(Clone)]
@@ -97,9 +105,10 @@ impl StateMachine {
         while let Some(evt) = events_rx.recv().await {
             match evt {
                 StateMachineEvent::AvService {
+                    session_id,
                     event: avservice_types::Event::DisplayListUpdated { displays },
                 } => {
-                    info!("Got display update: {displays:?}");
+                    info!("Got display update (session: {:?}): {displays:?}", session_id);
                     let mut ctrl = ctrl.lock().await;
 
                     if let Some(streaming_session) = ctrl
@@ -129,8 +138,10 @@ impl StateMachine {
                     ctrl.displays = displays;
                 }
                 StateMachineEvent::AvService {
+                    session_id,
                     event: avservice_types::Event::PipelineEvent(event),
                 } => {
+                    info!("Got pipeline event (session: {:?}): {event:?}", session_id);
                     let ctrl = ctrl.lock().await;
 
                     if let Some(streaming_session) = ctrl
@@ -144,8 +155,8 @@ impl StateMachine {
                             .await;
                     };
                 }
-                StateMachineEvent::AvServiceStopped { type_ } => {
-                    info!("AvServer {type_:?} stopped");
+                StateMachineEvent::AvServiceStopped { session_id, type_ } => {
+                    info!("AvServer {type_:?} stopped (session: {:?})", session_id);
 
                     let ctrl = ctrl.lock().await;
 
@@ -179,9 +190,9 @@ impl StateMachine {
                             .await;
                     };
                 }
-                StateMachineEvent::HostEvents { notification } => match notification {
+                StateMachineEvent::HostEvents { session_id, notification } => match notification {
                     host_events::Notification::ConnectionLost => {
-                        warn!("Control Websocket disconnected");
+                        warn!("Control Websocket disconnected for session {}", session_id);
 
                         let mut ctrl = ctrl.lock().await;
 
@@ -191,8 +202,8 @@ impl StateMachine {
                         }
                     }
                 },
-                StateMachineEvent::KymuxTimeout => {
-                    warn!("Kymux connection timeout");
+                StateMachineEvent::KymuxTimeout { session_id } => {
+                    warn!("Kymux connection timeout for session {}", session_id);
                 }
                 _ => {}
             }

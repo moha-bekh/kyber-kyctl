@@ -34,14 +34,18 @@ struct ConnectionTask {
 }
 
 impl ConnectionTask {
-    fn new(connection: Arc<kyproto::Connection>, statemachine_proxy: StateMachineProxy) -> Self {
+    fn new(
+        connection: Arc<kyproto::Connection>,
+        statemachine_proxy: StateMachineProxy,
+        session_id: uuid::Uuid,
+    ) -> Self {
         let (stop_tx, stop_rx) = oneshot::channel();
 
         let join_handle = task::spawn(async move {
             tokio::select! {
                 _ = stop_rx => {
                 }
-                ret = Self::run_task(connection, statemachine_proxy) => {
+                ret = Self::run_task(connection, statemachine_proxy, session_id) => {
                     if let Err(err) = ret {
                         warn!("ClosedTask task ended with error {err:?}");
                     }
@@ -70,12 +74,13 @@ impl ConnectionTask {
     async fn run_task(
         connection: Arc<kyproto::Connection>,
         statemachine_proxy: StateMachineProxy,
+        session_id: uuid::Uuid,
     ) -> Result<()> {
         let ret = connection.closed().await;
-        info!("Kymux connection closed: {ret:?}");
+        info!("Kymux connection closed for session {session_id}: {ret:?}");
 
         statemachine_proxy
-            .send(StateMachineEvent::KymuxTimeout)
+            .send(StateMachineEvent::KymuxTimeout { session_id })
             .await;
 
         Ok(())
@@ -277,7 +282,7 @@ async fn start_video(
 
         info!("Start Video avservice. Protocol: {video_protocol:?}, Endpoint: {endpoint_id:X}");
         let mut avservice =
-            avservice::Handler::new(avservice::HandlerType::Video, statemachine_proxy.clone());
+            avservice::Handler::new(avservice::HandlerType::Video, None, statemachine_proxy.clone());
         avservice
             .kymux_start_video(
                 process_factory,
@@ -327,7 +332,7 @@ async fn start_audio(
     let uri = kycom.register_and_forward(endpoint)?.url();
 
     info!("Start Audio avservice. Protocol: {audio_protocol:?}, Endpoint: {endpoint_id:X}");
-    let mut avservice = avservice::Handler::new(avservice::HandlerType::Audio, statemachine_proxy);
+    let mut avservice = avservice::Handler::new(avservice::HandlerType::Audio, None, statemachine_proxy);
     avservice.kymux_start_audio(process_factory, uri).await?;
 
     Ok(Some(StartSessionAudioResponse {
@@ -487,6 +492,7 @@ async fn start_session(
     let Some(client_session) = ctrl.client_session.as_mut() else {
         return Err(Error::SessionNotOpened);
     };
+    let session_id = client_session.uid;
     let Some(streaming_session) = client_session.stream_session.as_mut() else {
         return Err(Error::ControlPlaneNotOpened);
     };
@@ -564,6 +570,7 @@ async fn start_session(
     backend.connection_task = Some(ConnectionTask::new(
         connection.clone(),
         backend.statemachine_proxy.clone(),
+        session_id,
     ));
 
     Ok(StartSessionResponse {

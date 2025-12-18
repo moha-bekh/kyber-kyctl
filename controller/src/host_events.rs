@@ -15,6 +15,7 @@ pub(crate) const KEEPINTVL: Duration = Duration::from_secs(20);
 pub(crate) const KEEPCNT: u64 = 3;
 
 struct PingTask {
+    session_id: uuid::Uuid,
     ping_rx: mpsc::Receiver<u64>,
     events_tx: mpsc::Sender<HostEventFrame>,
     statemachine_proxy: StateMachineProxy,
@@ -43,7 +44,7 @@ impl PingTask {
                     // - If true: Notify of disconnection lost
                     // - Else continue to ping
                     if id - last_id_received.unwrap_or(FIRST_ID) >= KEEPCNT {
-                        self.statemachine_proxy.send(StateMachineEvent::HostEvents { notification: Notification::ConnectionLost })
+                        self.statemachine_proxy.send(StateMachineEvent::HostEvents { session_id: self.session_id, notification: Notification::ConnectionLost })
                         .await;
 
                         break;
@@ -180,6 +181,7 @@ pub(crate) struct HostEventSender {
 
 impl HostEventSender {
     fn new(
+        session_id: uuid::Uuid,
         session: actix_ws::Session,
         msg_stream: actix_ws::MessageStream,
         statemachine_proxy: StateMachineProxy,
@@ -188,6 +190,7 @@ impl HostEventSender {
         let (stop_tx, stop_rx) = oneshot::channel();
 
         let handle = task::spawn_local(Self::task_entry(
+            session_id,
             session,
             msg_stream,
             events_tx.clone(),
@@ -225,6 +228,7 @@ impl HostEventSender {
     }
 
     async fn task_entry(
+        session_id: uuid::Uuid,
         session: actix_ws::Session,
         msg_stream: actix_ws::MessageStream,
         events_tx: mpsc::Sender<HostEventFrame>,
@@ -235,6 +239,7 @@ impl HostEventSender {
         let (ping_task_tx, ping_task_rx) = mpsc::channel(32);
 
         let mut ping_task = PingTask {
+            session_id,
             ping_rx: ping_task_rx,
             events_tx,
             statemachine_proxy: statemachine_proxy.clone(),
@@ -243,8 +248,8 @@ impl HostEventSender {
         tokio::select! {
             _ = stop_rx => {
             }
-            _ = Self::process_rx_events(msg_stream, ping_task_tx, statemachine_proxy.clone()) => {}
-            _ = Self::process_tx_events(session.clone(), events_rx, statemachine_proxy) => {}
+            _ = Self::process_rx_events(session_id, msg_stream, ping_task_tx, statemachine_proxy.clone()) => {}
+            _ = Self::process_tx_events(session_id, session.clone(), events_rx, statemachine_proxy) => {}
             _ = ping_task.run() => {}
         }
 
@@ -252,6 +257,7 @@ impl HostEventSender {
     }
 
     async fn process_rx_events(
+        session_id: uuid::Uuid,
         mut stream: actix_ws::MessageStream,
         ping_task_tx: mpsc::Sender<u64>,
         statemachine_proxy: StateMachineProxy,
@@ -293,12 +299,14 @@ impl HostEventSender {
 
         statemachine_proxy
             .send(StateMachineEvent::HostEvents {
+                session_id,
                 notification: Notification::ConnectionLost,
             })
             .await;
     }
 
     async fn process_tx_events(
+        session_id: uuid::Uuid,
         mut session: actix_ws::Session,
         mut events_rx: mpsc::Receiver<HostEventFrame>,
         statemachine_proxy: StateMachineProxy,
@@ -318,6 +326,7 @@ impl HostEventSender {
 
                 statemachine_proxy
                     .send(StateMachineEvent::HostEvents {
+                        session_id,
                         notification: Notification::ConnectionLost,
                     })
                     .await;
@@ -425,19 +434,29 @@ impl PendingHostEventSender {
     /// pending connection to a fully authorized `HostEventSender`.
     ///
     /// # Parameters
+    /// - `session_id`: UUID of the session this connection belongs to
     /// - `proxy`: State machine proxy for coordinating streaming services
     ///
     /// # Returns
     /// - `Ok(HostEventSender)`: Connection is now fully authorized and active
     /// - `Err(ChannelClosedTx)`: Failed to send welcome message (connection died)
-    pub(crate) async fn accept(mut self, proxy: StateMachineProxy) -> Result<HostEventSender> {
+    pub(crate) async fn accept(
+        mut self,
+        session_id: uuid::Uuid,
+        proxy: StateMachineProxy,
+    ) -> Result<HostEventSender> {
         const SUCCESS_JSON: &str = "\"Welcome\"";
         let Ok(_) = self.session.text(SUCCESS_JSON).await else {
             self.reject().await;
             return Err(Error::ChannelClosedTx);
         };
 
-        Ok(HostEventSender::new(self.session, self.msg_stream, proxy))
+        Ok(HostEventSender::new(
+            session_id,
+            self.session,
+            self.msg_stream,
+            proxy,
+        ))
     }
 
     /// Rejects the WebSocket connection due to failed authentication.
