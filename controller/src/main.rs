@@ -510,12 +510,9 @@ async fn real_main() -> Result<()> {
     let config = config::load()?;
 
     // Load TLS config
-    //
-    // /!\/!\ WARNING /!\/!\
-    // 1. This TLS configuration is only valid for tests.
-    //    It must NOT be used in production
-    // 2. Those files are provided by the project that packages the final bundle
-    let tls_config = tls::load_config(STREAMER_CERT, STREAMER_KEY)?;
+    let tls_cert = config.tls_cert().unwrap_or(STREAMER_CERT);
+    let tls_key = config.tls_key().unwrap_or(STREAMER_KEY);
+    let tls_config = tls::load_config(tls_cert, tls_key)?;
     let server_config = build_serverconfig(&tls_config)?;
 
     auth::init(config.auth());

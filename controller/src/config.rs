@@ -15,6 +15,8 @@ pub(crate) struct Config {
     port: Option<u16>,
     dataplane_port: Option<u16>,
     webtransport_gen_certificate: Option<bool>,
+    tls_cert: Option<String>,
+    tls_key: Option<String>,
     #[serde(default)]
     auth: auth::Config,
     #[serde(default)]
@@ -40,6 +42,14 @@ impl Config {
 
     pub(crate) fn session(&self) -> &session::Config {
         &self.session
+    }
+
+    pub(crate) fn tls_cert(&self) -> Option<&str> {
+        self.tls_cert.as_deref()
+    }
+
+    pub(crate) fn tls_key(&self) -> Option<&str> {
+        self.tls_key.as_deref()
     }
 }
 
