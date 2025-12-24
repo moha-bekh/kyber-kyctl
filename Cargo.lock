@@ -1820,8 +1820,8 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bytes",
+ "kymux-types",
  "kyproto",
- "kyproto-types",
  "kyutil",
  "log",
  "tokio",
@@ -1834,11 +1834,24 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "kycom",
+ "kymux-types",
+ "kynet",
  "kyproto",
  "log",
  "rustls",
  "thiserror 1.0.58",
  "tokio",
+]
+
+[[package]]
+name = "kymux-types"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "byteorder",
+ "bytes",
+ "kyutil",
+ "thiserror 1.0.58",
 ]
 
 [[package]]
@@ -1880,8 +1893,8 @@ dependencies = [
  "async-trait",
  "byteorder",
  "bytes",
+ "kymux-types",
  "kynet",
- "kyproto-types",
  "kyutil",
  "kywasmtime",
  "libc",
@@ -1894,17 +1907,6 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "windows",
-]
-
-[[package]]
-name = "kyproto-types"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "byteorder",
- "bytes",
- "kyutil",
- "thiserror 1.0.58",
 ]
 
 [[package]]
