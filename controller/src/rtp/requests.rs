@@ -77,8 +77,15 @@ async fn hello(req: HttpRequest, _user: Identity) -> HttpResponse {
 async fn generate_sdp(
     ctrl: web::Data<Mutex<Controller>>,
     request: web::Json<GenerateSdpRequest>,
-    _user: Identity,
+    user: Identity,
 ) -> HttpResponse {
+    let session_id = match user.uid() {
+        Ok(uid) => uid,
+        Err(_) => {
+            return HttpResponse::Unauthorized().finish();
+        }
+    };
+
     let mut ctrl = ctrl.lock().await;
 
     // Check request validity
@@ -87,7 +94,7 @@ async fn generate_sdp(
         return HttpResponse::Forbidden().finish();
     }
 
-    let ret = super::generate_video_sdp(&mut ctrl, request.into_inner()).await;
+    let ret = super::generate_video_sdp(&mut ctrl, session_id, request.into_inner()).await;
     match ret {
         Ok(params) => {
             info!("SDP generated: {}", params);
@@ -105,8 +112,15 @@ async fn generate_sdp(
 async fn start(
     ctrl: web::Data<Mutex<Controller>>,
     request: web::Json<StartRequest>,
-    _user: Identity,
+    user: Identity,
 ) -> HttpResponse {
+    let session_id = match user.uid() {
+        Ok(uid) => uid,
+        Err(_) => {
+            return HttpResponse::Unauthorized().finish();
+        }
+    };
+
     let mut ctrl = ctrl.lock().await;
 
     // Check request validity
@@ -117,14 +131,14 @@ async fn start(
         }
     }
 
-    let ret = super::start(&mut ctrl, request.into_inner()).await;
+    let ret = super::start(&mut ctrl, session_id, request.into_inner()).await;
     match ret {
         Ok(_) => {
-            let session_id = generate_session_id();
-            info!("Stream started. SessionId: {session_id}");
+            let numeric_session_id = generate_session_id();
+            info!("Stream started. SessionId: {numeric_session_id}");
 
             HttpResponse::Ok().json(StartResponse {
-                session_id: Some(session_id),
+                session_id: Some(numeric_session_id),
             })
         }
         Err(err) => {

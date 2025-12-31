@@ -16,10 +16,12 @@
 //! ## Cleanup Process
 //!
 //! Every 30 seconds, the task:
-//! 1. Checks if a client session exists
-//! 2. Checks if the session has an expiration time
+//! 1. Iterates through all client sessions
+//! 2. Checks if each session has an expiration time (skipped for Basic auth)
 //! 3. Compares expiration to current UTC time
-//! 4. If expired: Calls `Controller::stop()` to gracefully terminate streaming services
+//! 4. If expired: Calls `Controller::stop()` to terminate that session's streaming services
+//! 5. Cleans up expired pending authentication tokens
+//! 6. Retries shared Kymux infrastructure cleanup (in case a previous attempt failed)
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -77,32 +79,51 @@ impl ExpirationTask {
         }
     }
 
-    /// Checks if the current session has expired and terminates it if so.
+    /// Checks if any sessions have expired and terminates them.
     ///
     /// ## Process:
     ///
     /// 1. Lock the controller (brief - no I/O while locked)
-    /// 2. Check if a client session exists (early return if none)
-    /// 3. Check if session has expiration time (early return for Basic auth)
+    /// 2. Iterate through all client sessions
+    /// 3. Check if session has expiration time (skip for Basic auth)
     /// 4. Compare expiration to current UTC time
-    /// 5. If expired: Call `Controller::stop()` to terminate all streaming services
+    /// 5. If expired: Call `Controller::stop()` to terminate that session's streaming services
+    /// 6. Clean up any expired pending authentication tokens
     async fn check_expiration(ctrl: &web::Data<Mutex<Controller>>) {
         let mut ctrl = ctrl.lock().await;
 
-        let Some(session) = ctrl.client_session.as_ref() else {
-            return;
-        };
+        let now = OffsetDateTime::now_utc();
+        let expired_sessions: Vec<_> = ctrl
+            .sessions
+            .iter()
+            .filter_map(|(uid, session)| {
+                session
+                    .expiration
+                    .and_then(|exp| if now > exp { Some(*uid) } else { None })
+            })
+            .collect();
 
-        let Some(exp) = session.expiration else {
-            return;
-        };
-
-        if OffsetDateTime::now_utc() > exp {
-            warn!("Killing expired session \"{}\"", session.uid);
-            let ret = ctrl.stop().await;
+        for session_id in expired_sessions {
+            warn!("Killing expired session \"{}\"", session_id);
+            let ret = ctrl.stop(session_id).await;
             if let Err(err) = ret {
                 error!("Fail to stop session: {err:?}");
             }
         }
+
+        // Cleanup expired pending auth tokens in shared Kymux infrastructure
+        if let Some(shared_infra) = &ctrl.shared_kymux_infra {
+            shared_infra
+                .lock()
+                .await
+                .router
+                .lock()
+                .await
+                .cleanup_expired();
+        }
+
+        // Retry cleanup of shared Kymux infrastructure if a previous attempt failed
+        // (e.g., because start_session was holding a reference during session termination)
+        ctrl.cleanup_shared_kymux_infra().await;
     }
 }

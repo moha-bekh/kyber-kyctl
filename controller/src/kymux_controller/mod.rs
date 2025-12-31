@@ -87,7 +87,7 @@ impl ConnectionTask {
     }
 }
 
-// Shared infrastructure for Kymux (server supports both QUIC and WebTransport on same port)
+// Shared infrastructure for all Kymux sessions (common server supports both QUIC and WebTransport)
 pub(crate) struct SharedKymuxInfra {
     pub(crate) server: KymuxServer,
     pub(crate) kycom: kycom::KyCom,
@@ -141,8 +141,8 @@ impl KymuxBackend {
             }
         };
 
-        // NOTE: We don't stop the shared kycom or KymuxServer here
-        // They will be stopped when the Controller shuts down via shared_kymux_infra
+        // NOTE: We don't stop the shared kycom or KymuxServer here because other sessions may still be using them
+        // They will be stopped when the Controller shuts down
 
         Ok(())
     }
@@ -150,13 +150,14 @@ impl KymuxBackend {
 
 async fn start_kymux(
     ctrl: web::Data<Mutex<Controller>>,
+    session_id: uuid::Uuid,
     public_port: u16,
     statemachine_proxy: StateMachineProxy,
 ) -> Result<requests::StartKymuxResponse> {
-    // Check if data plane is already opened
+    // Check if data plane is already opened for this session
     {
         let ctrl = ctrl.lock().await;
-        if ctrl.has_data_plane()? {
+        if ctrl.has_data_plane(&session_id)? {
             return Err(Error::DataPlaneAlreadyOpened);
         }
     }
@@ -187,17 +188,18 @@ async fn start_kymux(
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), listening_port);
 
     // Check if shared infrastructure already exists, if not create it
+    // The common server supports both QUIC and WebTransport on the same port
     let certificate_hash = {
         let mut ctrl = ctrl.lock().await;
 
         if let Some(existing_infra) = &ctrl.shared_kymux_infra {
             // Infrastructure exists, reuse it
-            info!("Reusing existing shared Kymux infrastructure");
+            info!("Reusing existing shared Kymux common infrastructure");
             existing_infra.lock().await.certificate_hash.clone()
         } else {
-            // Create new infrastructure
+            // Create new common infrastructure (supports both QUIC and WebTransport)
             info!(
-                "Starting Kymux server on address {addr:?} (supports QUIC + WebTransport)"
+                "Starting common Kymux server on address {addr:?} (supports QUIC + WebTransport)"
             );
 
             // Choose certificate based on config:
@@ -234,13 +236,13 @@ async fn start_kymux(
             };
             let server = kymux::Server::new(config).await?;
 
-            // Create the connection router
+            // Create the connection router first (shared between server and sessions)
             let router = Arc::new(Mutex::new(IncomingConnectionRouter::new()));
 
             // Create the server with the router
             let kymux_server = KymuxServer::new(server, router.clone()).await?;
 
-            // Create shared kycom
+            // Create shared kycom for all sessions
             const IPC_PORTS: std::ops::Range<u16> = 9091..9100;
             let kycom = kycom::KyCom::start_on_any_port(IPC_PORTS).await?;
 
@@ -271,20 +273,13 @@ async fn start_kymux(
     {
         let mut ctrl = ctrl.lock().await;
 
-        // Get shared_infra first (clones the Arc, releases borrow)
+        // Register session: creates pending_auth + oneshot channel
         let shared_infra = ctrl
             .shared_kymux_infra
             .as_ref()
             .ok_or(Error::KymuxNotListening)?
             .clone();
 
-        let Some(client_session) = ctrl.client_session.as_mut() else {
-            return Err(Error::SessionNotOpened);
-        };
-
-        let session_id = client_session.uid;
-
-        // Register session in router: creates pending_auth + oneshot channel
         let connection_rx = shared_infra
             .lock()
             .await
@@ -292,6 +287,8 @@ async fn start_kymux(
             .lock()
             .await
             .register_session(token.clone(), session_id);
+
+        let client_session = ctrl.get_session(&session_id)?;
 
         let Some(stream_session) = client_session.stream_session.as_mut() else {
             return Err(Error::ControlPlaneNotOpened);
@@ -314,6 +311,7 @@ async fn start_video(
     kycom: &mut kycom::KyCom,
     connection: &kyproto::Connection,
     process_factory: &Arc<ProcessFactory>,
+    session_id: uuid::Uuid,
     statemachine_proxy: StateMachineProxy,
 ) -> Result<Option<Vec<StartSessionVideoResponse>>> {
     let Some(video_request) = &request.video else {
@@ -349,8 +347,11 @@ async fn start_video(
         };
 
         info!("Start Video avservice. Protocol: {video_protocol:?}, Endpoint: {endpoint_id:X}");
-        let mut avservice =
-            avservice::Handler::new(avservice::HandlerType::Video, None, statemachine_proxy.clone());
+        let mut avservice = avservice::Handler::new(
+            avservice::HandlerType::Video,
+            Some(session_id),
+            statemachine_proxy.clone(),
+        );
         avservice
             .kymux_start_video(
                 process_factory,
@@ -380,6 +381,7 @@ async fn start_audio(
     kycom: &mut kycom::KyCom,
     connection: &kyproto::Connection,
     process_factory: &Arc<ProcessFactory>,
+    session_id: uuid::Uuid,
     statemachine_proxy: StateMachineProxy,
 ) -> Result<Option<StartSessionAudioResponse>> {
     if !request.audio {
@@ -400,7 +402,11 @@ async fn start_audio(
     let uri = kycom.register_and_forward(endpoint)?.url();
 
     info!("Start Audio avservice. Protocol: {audio_protocol:?}, Endpoint: {endpoint_id:X}");
-    let mut avservice = avservice::Handler::new(avservice::HandlerType::Audio, None, statemachine_proxy);
+    let mut avservice = avservice::Handler::new(
+        avservice::HandlerType::Audio,
+        Some(session_id),
+        statemachine_proxy,
+    );
     avservice.kymux_start_audio(process_factory, uri).await?;
 
     Ok(Some(StartSessionAudioResponse {
@@ -552,80 +558,92 @@ impl MetricsTask {
 
 async fn start_session(
     ctrl: &mut Controller,
+    session_id: uuid::Uuid,
     request: requests::StartRequest,
 ) -> Result<StartSessionResponse> {
     let state_machine_proxy = ctrl.state_machine_proxy()?;
 
-    // Get session info
-    let Some(client_session) = ctrl.client_session.as_mut() else {
-        return Err(Error::SessionNotOpened);
-    };
-    let session_id = client_session.uid;
-    let Some(streaming_session) = client_session.stream_session.as_mut() else {
-        return Err(Error::ControlPlaneNotOpened);
-    };
+    // Extract data from Controller before session access
+    let process_factory = ctrl.process_factory.clone();
+    let displays = ctrl.displays.convert();
 
-    let Some(DataPlaneBackend::Kymux(backend)) = streaming_session.data_plane.as_mut() else {
-        return Err(Error::KymuxNotListening);
-    };
-
-    // Get shared infrastructure
+    // Get shared_infra from Controller (not from backend - eliminates nested Arc<Mutex>)
     let shared_infra = ctrl
         .shared_kymux_infra
         .as_ref()
         .ok_or(Error::KymuxNotListening)?
         .clone();
 
-    // Wait for connection via the oneshot channel
-    let connection_rx = backend.connection_rx.take().ok_or(Error::KymuxNotListening)?;
+    // Get the connection receiver from KymuxBackend (was created in start_mux)
+    let connection_rx = {
+        let client_session = ctrl.get_session(&session_id)?;
+        let Some(streaming_session) = client_session.stream_session.as_mut() else {
+            return Err(Error::ControlPlaneNotOpened);
+        };
+        let Some(DataPlaneBackend::Kymux(backend)) = streaming_session.data_plane.as_mut() else {
+            return Err(Error::KymuxNotListening);
+        };
+        backend
+            .connection_rx
+            .take()
+            .ok_or(Error::KymuxNotListening)?
+    };
 
+    // Wait for the connection (server sends it when client connects with valid token)
     let connection = match tokio::time::timeout(Duration::from_millis(500), connection_rx).await {
         Ok(Ok(conn)) => conn,
         Ok(Err(_)) => {
-            warn!("Connection channel closed");
+            warn!("Connection channel closed for session {}", session_id);
             return Err(Error::ChannelClosedRx);
         }
         Err(_) => {
-            warn!("No Kymux connection received after 500ms");
+            warn!(
+                "Timeout waiting for Kymux connection for session {}",
+                session_id
+            );
             return Err(Error::KymuxAcceptTimeout);
         }
     };
 
-    // Get mutable access to kycom from shared infra
-    let mut infra = shared_infra.lock().await;
+    info!("Connection received for session {}", session_id);
 
     // Start services
-    let video = start_video(
-        &request,
-        &mut infra.kycom,
-        &connection,
-        &ctrl.process_factory,
-        state_machine_proxy.clone(),
-    )
-    .await?;
+    let (video, audio, input) = {
+        let mut infra = shared_infra.lock().await;
 
-    let audio = start_audio(
-        &request,
-        &mut infra.kycom,
-        &connection,
-        &ctrl.process_factory,
-        state_machine_proxy.clone(),
-    )
-    .await?;
+        let video = start_video(
+            &request,
+            &mut infra.kycom,
+            &connection,
+            &process_factory,
+            session_id,
+            state_machine_proxy.clone(),
+        )
+        .await?;
 
-    let input = start_input(
-        &request,
-        &mut infra.kycom,
-        &connection,
-        &ctrl.process_factory,
-        inputservice_types::HostConfig {
-            display_list: ctrl.displays.convert(),
-        },
-    )
-    .await?;
+        let audio = start_audio(
+            &request,
+            &mut infra.kycom,
+            &connection,
+            &process_factory,
+            session_id,
+            state_machine_proxy.clone(),
+        )
+        .await?;
 
-    // Release infra lock before setting up connection task
-    drop(infra);
+        let input = start_input(
+            &request,
+            &mut infra.kycom,
+            &connection,
+            &process_factory,
+            inputservice_types::HostConfig {
+                display_list: displays,
+            },
+        )
+        .await?;
+
+        (video, audio, input)
+    };
 
     let clock_sync = if request.metrics {
         let endpoint: kyproto::ClockSyncServerEndpoint =
@@ -658,11 +676,23 @@ async fn start_session(
         None
     };
 
-    backend.connection_task = Some(ConnectionTask::new(
-        connection.clone(),
-        backend.statemachine_proxy.clone(),
-        session_id,
-    ));
+    // Store connection task in the backend
+    {
+        let client_session = ctrl.get_session(&session_id)?;
+        let Some(streaming_session) = client_session.stream_session.as_mut() else {
+            return Err(Error::ControlPlaneNotOpened);
+        };
+
+        let Some(DataPlaneBackend::Kymux(backend)) = streaming_session.data_plane.as_mut() else {
+            return Err(Error::KymuxNotListening);
+        };
+
+        backend.connection_task = Some(ConnectionTask::new(
+            connection.clone(),
+            backend.statemachine_proxy.clone(),
+            session_id,
+        ));
+    }
 
     Ok(StartSessionResponse {
         video,

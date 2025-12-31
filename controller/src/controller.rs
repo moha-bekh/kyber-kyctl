@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use log::{info, warn};
@@ -70,6 +71,7 @@ pub(crate) struct ClientSession {
     pub(crate) expiration: Option<OffsetDateTime>,
     pub(crate) auth_tokens: ClientAuthTokens,
     pub(crate) stream_session: Option<StreamingSession>,
+    pub(crate) services: StreamingServices,
 }
 
 impl ClientSession {
@@ -80,6 +82,7 @@ impl ClientSession {
             expiration: session.expiration,
             auth_tokens: ClientAuthTokens::generate(),
             stream_session: None,
+            services: Default::default(),
         }
     }
 }
@@ -152,12 +155,11 @@ pub struct Controller {
     pub(crate) config: config::Config,
     pub(crate) tls_config: tls::Config,
 
-    pub(crate) client_session: Option<ClientSession>,
-    pub(crate) services: StreamingServices,
+    pub(crate) sessions: HashMap<Uuid, ClientSession>,
 
     pub(crate) state_machine_proxy: Option<StateMachineProxy>,
 
-    // Shared Kymux infrastructure (server supporting both QUIC and WebTransport on same port)
+    // Shared Kymux infrastructure (unified server supporting both QUIC and WebTransport on same port)
     pub(crate) shared_kymux_infra: Option<Arc<tokio::sync::Mutex<SharedKymuxInfra>>>,
 }
 
@@ -172,32 +174,25 @@ impl Controller {
             displays: vec![],
             config,
             tls_config,
-            client_session: None,
-            services: Default::default(),
+            sessions: HashMap::new(),
             state_machine_proxy: None,
             shared_kymux_infra: None,
         }
     }
 
     pub fn get_session<'a>(&'a mut self, uid: &uuid::Uuid) -> Result<&'a mut ClientSession> {
-        let session = self
-            .client_session
-            .as_mut()
-            .ok_or(Error::SessionNotOpened)?;
-
-        if &session.uid == uid {
-            Ok(session)
-        } else {
-            Err(Error::InvalidSession { uid: session.uid })
-        }
+        self.sessions
+            .get_mut(uid)
+            .ok_or(Error::InvalidSession { uid: *uid })
     }
 
-    pub async fn stop_streaming(&mut self) -> Result<()> {
-        info!("Stop streaming");
+    pub async fn stop_streaming(&mut self, session_id: Uuid) -> Result<()> {
+        info!("Stop streaming for session {}", session_id);
 
-        let Some(client_session) = self.client_session.as_mut() else {
-            return Err(Error::ControlPlaneNotOpened);
-        };
+        let client_session = self
+            .sessions
+            .get_mut(&session_id)
+            .ok_or(Error::InvalidSession { uid: session_id })?;
 
         if let Some(stream_session) = client_session.stream_session.as_mut() {
             let ret = stream_session.stop_dataplane().await;
@@ -206,7 +201,7 @@ impl Controller {
             }
         }
 
-        let ret = self.services.stop().await;
+        let ret = client_session.services.stop().await;
         if let Err(err) = ret {
             warn!("Failed to stop streaming services: {err:?}");
         }
@@ -214,11 +209,11 @@ impl Controller {
         Ok(())
     }
 
-    pub async fn stop(&mut self) -> Result<()> {
-        info!("Stop");
+    pub async fn stop(&mut self, session_id: Uuid) -> Result<()> {
+        info!("Stop session {}", session_id);
 
-        let Some(mut client_session) = self.client_session.take() else {
-            return Err(Error::ControlPlaneNotOpened);
+        let Some(mut client_session) = self.sessions.remove(&session_id) else {
+            return Err(Error::InvalidSession { uid: session_id });
         };
 
         if let Some(stream_session) = client_session.stream_session.take() {
@@ -228,18 +223,52 @@ impl Controller {
             }
         }
 
-        let ret = self.services.stop().await;
+        let ret = client_session.services.stop().await;
         if let Err(err) = ret {
             warn!("Failed to stop streaming services: {err:?}");
         }
 
+        // Clean up shared Kymux infrastructure when no more sessions
+        self.cleanup_shared_kymux_infra().await;
+
         Ok(())
     }
 
-    pub(crate) fn has_data_plane(&self) -> Result<bool> {
-        let Some(client_session) = self.client_session.as_ref() else {
-            return Err(Error::ControlPlaneNotOpened);
+    pub(crate) async fn cleanup_shared_kymux_infra(&mut self) {
+        if !self.sessions.is_empty() {
+            return;
+        }
+
+        let Some(shared_infra) = self.shared_kymux_infra.take() else {
+            return;
         };
+
+        // Try to get exclusive access. This can fail if another async task still
+        // holds a clone of the Arc. Known cases:
+        // - start_kymux: clones Arc while registering session and creating backend
+        // - start_session: clones Arc while waiting for connection and starting services
+        // These can race with session termination (timeout, logout) causing try_unwrap
+        // to fail. In that case, we restore the Arc and cleanup will be retried when
+        // the next session ends or when the holding task completes.
+        match Arc::try_unwrap(shared_infra) {
+            Ok(infra_mutex) => {
+                let infra = infra_mutex.into_inner();
+                if let Err(err) = infra.stop().await {
+                    warn!("Failed to stop shared Kymux infrastructure: {err:?}");
+                }
+            }
+            Err(arc) => {
+                info!("Deferring Kymux infrastructure cleanup: other references still held");
+                self.shared_kymux_infra = Some(arc);
+            }
+        }
+    }
+
+    pub(crate) fn has_data_plane(&self, session_id: &Uuid) -> Result<bool> {
+        let client_session = self
+            .sessions
+            .get(session_id)
+            .ok_or(Error::InvalidSession { uid: *session_id })?;
 
         let Some(stream_session) = client_session.stream_session.as_ref() else {
             return Err(Error::ControlPlaneNotOpened);

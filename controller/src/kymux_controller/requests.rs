@@ -1,6 +1,6 @@
 use actix_web::{post, web, HttpResponse};
 use kymux::kyproto;
-use log::{info, warn};
+use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
@@ -15,7 +15,7 @@ pub(crate) struct StartKymux {
     pub(crate) public_streamer_port: u16,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub(crate) struct StartKymuxCertificateHash {
     pub(crate) algorithm: String,
     pub(crate) hash: String,
@@ -30,10 +30,18 @@ pub(crate) struct StartKymuxResponse {
 
 #[post("/start_mux")]
 pub(crate) async fn start_mux(
-    _user: Identity,
+    user: Identity,
     ctrl: web::Data<Mutex<Controller>>,
     request: web::Json<StartKymux>,
 ) -> HttpResponse {
+    let session_id = match user.uid() {
+        Ok(uid) => uid,
+        Err(_) => {
+            warn!("Failed to extract session UID from Identity");
+            return HttpResponse::Unauthorized().finish();
+        }
+    };
+
     let state_machine_proxy = {
         let ctrl = ctrl.lock().await;
 
@@ -48,6 +56,7 @@ pub(crate) async fn start_mux(
     // Assume that the public port used for UDP is the same than the port for TCP.
     let ret = super::start_kymux(
         ctrl.clone(),
+        session_id,
         request.public_streamer_port,
         state_machine_proxy,
     )
@@ -137,10 +146,18 @@ pub(crate) struct StartSessionResponse {
 
 #[post("/start_session")]
 pub(crate) async fn start_session(
-    _user: Identity,
+    user: Identity,
     ctrl: web::Data<Mutex<Controller>>,
     request: web::Json<StartRequest>,
 ) -> HttpResponse {
+    let session_id = match user.uid() {
+        Ok(uid) => uid,
+        Err(_) => {
+            warn!("Failed to extract session UID from Identity");
+            return HttpResponse::Unauthorized().finish();
+        }
+    };
+
     let mut ctrl = ctrl.lock().await;
 
     // Check request validity
@@ -154,17 +171,25 @@ pub(crate) async fn start_session(
     }
 
     // Start session
-    let ret = super::start_session(&mut ctrl, request.into_inner()).await;
+    let ret = super::start_session(&mut ctrl, session_id, request.into_inner()).await;
     match ret {
         Ok(response) => {
-            let session_id = generate_session_id();
-            info!("Session started. SessionId: {session_id}");
+            let numeric_session_id = generate_session_id();
+            info!("Session started. SessionId: {numeric_session_id}");
+
+            let Ok(client_session) = ctrl.get_session(&session_id) else {
+                error!(
+                    "Session {} disappeared after successful start_session",
+                    session_id
+                );
+                return HttpResponse::InternalServerError().finish();
+            };
 
             let video = response.video.map(|video| {
                 video
                     .into_iter()
                     .map(|video| {
-                        ctrl.services.video.push(video.avservice);
+                        client_session.services.video.push(video.avservice);
 
                         StartSessionVideoResponse {
                             display_id: video.display_id,
@@ -176,7 +201,7 @@ pub(crate) async fn start_session(
             });
 
             let audio = if let Some(audio) = response.audio {
-                ctrl.services.audio = Some(audio.avservice);
+                client_session.services.audio = Some(audio.avservice);
 
                 Some(StartSessionAudioResponse {
                     endpoint: audio.endpoint,
@@ -186,7 +211,7 @@ pub(crate) async fn start_session(
             };
 
             let input = if let Some(input) = response.input {
-                ctrl.services.input = Some(input.inputservice);
+                client_session.services.input = Some(input.inputservice);
 
                 Some(StartSessionInputResponse {
                     endpoint: input.endpoint,
@@ -197,7 +222,7 @@ pub(crate) async fn start_session(
             };
 
             let clock_sync = if let Some(clock_sync) = response.clock_sync {
-                ctrl.services.clock_sync = Some(clock_sync.task);
+                client_session.services.clock_sync = Some(clock_sync.task);
 
                 Some(StartSessionClockSyncResponse {
                     endpoint: clock_sync.endpoint,
@@ -207,7 +232,7 @@ pub(crate) async fn start_session(
             };
 
             let metrics = if let Some(metrics) = response.metrics {
-                ctrl.services.metrics = Some(metrics.task);
+                client_session.services.metrics = Some(metrics.task);
 
                 Some(StartSessionMetricsResponse {
                     endpoint: metrics.endpoint,
@@ -217,7 +242,7 @@ pub(crate) async fn start_session(
             };
 
             HttpResponse::Ok().json(StartSessionResponse {
-                session_id: Some(session_id),
+                session_id: Some(numeric_session_id),
                 video,
                 audio,
                 input,

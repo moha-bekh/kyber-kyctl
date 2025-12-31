@@ -42,16 +42,23 @@ pub struct StartResponse {
 async fn start_handler(
     ctrl: web::Data<Mutex<Controller>>,
     request: web::Json<StartRequest>,
-    _user: Identity,
+    user: Identity,
 ) -> HttpResponse {
-    let ret = super::start_handler(ctrl, request).await;
+    let session_id = match user.uid() {
+        Ok(uid) => uid,
+        Err(_) => {
+            return HttpResponse::Unauthorized().finish();
+        }
+    };
+
+    let ret = super::start_handler(ctrl, session_id, request).await;
     match ret {
         Ok(_) => {
-            let session_id = generate_session_id();
+            let numeric_session_id = generate_session_id();
 
-            info!("Websocket backend started. SessionId: {session_id}");
+            info!("Websocket backend started. SessionId: {numeric_session_id}");
             HttpResponse::Ok().json(StartResponse {
-                session_id: Some(session_id),
+                session_id: Some(numeric_session_id),
             })
         }
         Err(err) => {
@@ -66,9 +73,16 @@ async fn video(
     ctrl: web::Data<Mutex<Controller>>,
     request: HttpRequest,
     stream: web::Payload,
-    _user: Identity,
+    user: Identity,
 ) -> HttpResponse {
-    let ret = super::start_video(ctrl, request, stream).await;
+    let session_id = match user.uid() {
+        Ok(uid) => uid,
+        Err(_) => {
+            return HttpResponse::Unauthorized().finish();
+        }
+    };
+
+    let ret = super::start_video(ctrl, session_id, request, stream).await;
     match ret {
         Ok(response) => {
             info!("Websocket video started");
@@ -86,9 +100,16 @@ async fn audio(
     ctrl: web::Data<Mutex<Controller>>,
     request: HttpRequest,
     stream: web::Payload,
-    _user: Identity,
+    user: Identity,
 ) -> HttpResponse {
-    let ret = super::start_audio(ctrl, request, stream).await;
+    let session_id = match user.uid() {
+        Ok(uid) => uid,
+        Err(_) => {
+            return HttpResponse::Unauthorized().finish();
+        }
+    };
+
+    let ret = super::start_audio(ctrl, session_id, request, stream).await;
     match ret {
         Ok(response) => {
             info!("Websocket audio started");
@@ -106,9 +127,16 @@ async fn inputs(
     ctrl: web::Data<Mutex<Controller>>,
     request: HttpRequest,
     stream: web::Payload,
-    _user: Identity,
+    user: Identity,
 ) -> HttpResponse {
-    let ret = super::start_inputs(ctrl, request, stream).await;
+    let session_id = match user.uid() {
+        Ok(uid) => uid,
+        Err(_) => {
+            return HttpResponse::Unauthorized().finish();
+        }
+    };
+
+    let ret = super::start_inputs(ctrl, session_id, request, stream).await;
     match ret {
         Ok(response) => {
             info!("Websocket inputs started");

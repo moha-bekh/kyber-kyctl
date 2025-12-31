@@ -44,10 +44,13 @@ enum Service {
 
 async fn start_handler(
     ctrl: web::Data<Mutex<Controller>>,
+    session_id: uuid::Uuid,
     request: web::Json<requests::StartRequest>,
 ) -> Result<()> {
     let mut ctrl = ctrl.lock().await;
-    if ctrl.has_data_plane()? {
+
+    // Check if data plane is already opened for this session
+    if ctrl.has_data_plane(&session_id)? {
         return Err(Error::DataPlaneAlreadyOpened);
     }
 
@@ -62,8 +65,11 @@ async fn start_handler(
     let avservice_video = if let Some(video_request) = request.video.as_ref() {
         let uri = format!("kymux://127.0.0.1:{WS_LOCAL_CLIENTS_PORT}/{VIDEO_STREAM_IDX:X}");
 
-        let mut avservice_video =
-            avservice::Handler::new(avservice::HandlerType::Video, None, ctrl.state_machine_proxy()?);
+        let mut avservice_video = avservice::Handler::new(
+            avservice::HandlerType::Video,
+            Some(session_id),
+            ctrl.state_machine_proxy()?,
+        );
         avservice_video
             .kymux_start_video(
                 &ctrl.process_factory,
@@ -88,8 +94,11 @@ async fn start_handler(
     let avservice_audio = if request.audio {
         let uri = format!("kymux://127.0.0.1:{WS_LOCAL_CLIENTS_PORT}/{AUDIO_STREAM_IDX:X}");
 
-        let mut avservice_audio =
-            avservice::Handler::new(avservice::HandlerType::Audio, None, ctrl.state_machine_proxy()?);
+        let mut avservice_audio = avservice::Handler::new(
+            avservice::HandlerType::Audio,
+            Some(session_id),
+            ctrl.state_machine_proxy()?,
+        );
         avservice_audio
             .kymux_start_audio(&ctrl.process_factory, uri)
             .await?;
@@ -131,9 +140,7 @@ async fn start_handler(
     service_listener.wait_all(pending_services).await?;
 
     // Store objects
-    let Some(client_session) = ctrl.client_session.as_mut() else {
-        return Err(Error::SessionNotOpened);
-    };
+    let client_session = ctrl.get_session(&session_id)?;
     let Some(streaming_session) = client_session.stream_session.as_mut() else {
         return Err(Error::ControlPlaneNotOpened);
     };
@@ -147,24 +154,23 @@ async fn start_handler(
         vec![]
     };
 
-    ctrl.services.video = avservice_video;
-    ctrl.services.audio = avservice_audio;
-    ctrl.services.input = inputservice;
+    client_session.services.video = avservice_video;
+    client_session.services.audio = avservice_audio;
+    client_session.services.input = inputservice;
 
     Ok(())
 }
 
 async fn start_video(
     ctrl: web::Data<Mutex<Controller>>,
+    session_id: uuid::Uuid,
     request: HttpRequest,
     stream: web::Payload,
 ) -> Result<HttpResponse> {
     let (res, session, msg_stream) = actix_ws::handle(&request, stream)?;
     let mut ctrl = ctrl.lock().await;
 
-    let Some(client_session) = ctrl.client_session.as_mut() else {
-        return Err(Error::SessionNotOpened);
-    };
+    let client_session = ctrl.get_session(&session_id)?;
     let Some(streaming_session) = client_session.stream_session.as_mut() else {
         return Err(Error::ControlPlaneNotOpened);
     };
@@ -183,15 +189,14 @@ async fn start_video(
 
 async fn start_audio(
     ctrl: web::Data<Mutex<Controller>>,
+    session_id: uuid::Uuid,
     request: HttpRequest,
     stream: web::Payload,
 ) -> Result<HttpResponse> {
     let (res, session, msg_stream) = actix_ws::handle(&request, stream)?;
     let mut ctrl = ctrl.lock().await;
 
-    let Some(client_session) = ctrl.client_session.as_mut() else {
-        return Err(Error::SessionNotOpened);
-    };
+    let client_session = ctrl.get_session(&session_id)?;
     let Some(streaming_session) = client_session.stream_session.as_mut() else {
         return Err(Error::ControlPlaneNotOpened);
     };
@@ -210,15 +215,14 @@ async fn start_audio(
 
 async fn start_inputs(
     ctrl: web::Data<Mutex<Controller>>,
+    session_id: uuid::Uuid,
     request: HttpRequest,
     stream: web::Payload,
 ) -> Result<HttpResponse> {
     let (res, session, msg_stream) = actix_ws::handle(&request, stream)?;
     let mut ctrl = ctrl.lock().await;
 
-    let Some(client_session) = ctrl.client_session.as_mut() else {
-        return Err(Error::SessionNotOpened);
-    };
+    let client_session = ctrl.get_session(&session_id)?;
     let Some(streaming_session) = client_session.stream_session.as_mut() else {
         return Err(Error::ControlPlaneNotOpened);
     };

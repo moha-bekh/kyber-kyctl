@@ -33,8 +33,6 @@ pub enum Error {
     ControlPlaneNotOpened,
     #[error("Data plane already opened")]
     DataPlaneAlreadyOpened,
-    #[error("Client session not opened")]
-    SessionNotOpened,
     #[error("Invalid session \"{uid}\"")]
     InvalidSession { uid: uuid::Uuid },
     #[error("Kymux accept() timeout")]

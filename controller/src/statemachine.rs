@@ -108,30 +108,53 @@ impl StateMachine {
                     session_id,
                     event: avservice_types::Event::DisplayListUpdated { displays },
                 } => {
-                    info!("Got display update (session: {:?}): {displays:?}", session_id);
+                    info!(
+                        "Got display update (session: {:?}): {displays:?}",
+                        session_id
+                    );
                     let mut ctrl = ctrl.lock().await;
 
-                    if let Some(streaming_session) = ctrl
-                        .client_session
-                        .as_ref()
-                        .and_then(|cs| cs.stream_session.as_ref())
-                    {
-                        streaming_session
-                            .host_event_sender
-                            .send(HostEvent::DisplayList {
-                                displays: displays.convert(),
-                            })
-                            .await;
+                    // Broadcast display list to all sessions
+                    for session in ctrl.sessions.values() {
+                        if let Some(streaming_session) = &session.stream_session {
+                            streaming_session
+                                .host_event_sender
+                                .send(HostEvent::DisplayList {
+                                    displays: displays.convert(),
+                                })
+                                .await;
+                        }
+                    }
+
+                    // Update inputservice(s)
+                    let host_config = inputservice_types::HostConfig {
+                        display_list: displays.convert(),
                     };
 
-                    if let Some(inputservice) = ctrl.services.input.as_mut() {
-                        let ret = inputservice
-                            .update_host_config(inputservice_types::HostConfig {
-                                display_list: displays.convert(),
-                            })
-                            .await;
-                        if let Err(err) = ret {
-                            warn!("Failed to send HostConfig to InputServer: {err:?}");
+                    match session_id {
+                        // Global event (e.g., from watchdog): update all inputservices
+                        None => {
+                            for session in ctrl.sessions.values_mut() {
+                                if let Some(inputservice) = session.services.input.as_mut() {
+                                    if let Err(err) =
+                                        inputservice.update_host_config(host_config.clone()).await
+                                    {
+                                        warn!("Failed to send HostConfig to InputServer: {err:?}");
+                                    }
+                                }
+                            }
+                        }
+                        // Session-specific event: update only that session's inputservice
+                        Some(sid) => {
+                            if let Some(session) = ctrl.sessions.get_mut(&sid) {
+                                if let Some(inputservice) = session.services.input.as_mut() {
+                                    if let Err(err) =
+                                        inputservice.update_host_config(host_config).await
+                                    {
+                                        warn!("Failed to send HostConfig to InputServer: {err:?}");
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -141,64 +164,74 @@ impl StateMachine {
                     session_id,
                     event: avservice_types::Event::PipelineEvent(event),
                 } => {
-                    info!("Got pipeline event (session: {:?}): {event:?}", session_id);
+                    // PipelineEvent is session-specific, ignore if no session_id
+                    let Some(sid) = session_id else {
+                        warn!("Received PipelineEvent without session_id, ignoring");
+                        continue;
+                    };
+
                     let ctrl = ctrl.lock().await;
 
-                    if let Some(streaming_session) = ctrl
-                        .client_session
-                        .as_ref()
-                        .and_then(|cs| cs.stream_session.as_ref())
-                    {
-                        streaming_session
-                            .host_event_sender
-                            .send(HostEvent::StreamerPipelineEvent(event.into()))
-                            .await;
-                    };
+                    if let Some(session) = ctrl.sessions.get(&sid) {
+                        if let Some(streaming_session) = &session.stream_session {
+                            streaming_session
+                                .host_event_sender
+                                .send(HostEvent::StreamerPipelineEvent(event.into()))
+                                .await;
+                        }
+                    }
                 }
                 StateMachineEvent::AvServiceStopped { session_id, type_ } => {
                     info!("AvServer {type_:?} stopped (session: {:?})", session_id);
 
+                    // Global AvService (e.g., watchdog) stopped - just log, no client notification
+                    let Some(sid) = session_id else {
+                        warn!("Global AvServer {type_:?} stopped");
+                        continue;
+                    };
+
                     let ctrl = ctrl.lock().await;
 
-                    if let Some(streaming_session) = ctrl
-                        .client_session
-                        .as_ref()
-                        .and_then(|cs| cs.stream_session.as_ref())
-                    {
-                        let type_ = match type_ {
-                            avservice::HandlerType::EnumerateDisplays => {
-                                host_events::StreamerPipelineType::EnumerateDisplays
-                            }
-                            avservice::HandlerType::VideoSdp => return,
-                            avservice::HandlerType::Video => {
-                                host_events::StreamerPipelineType::Video
-                            }
-                            avservice::HandlerType::Audio => {
-                                host_events::StreamerPipelineType::Audio
-                            }
-                        };
+                    if let Some(session) = ctrl.sessions.get(&sid) {
+                        if let Some(streaming_session) = &session.stream_session {
+                            let type_ = match type_ {
+                                avservice::HandlerType::EnumerateDisplays => {
+                                    host_events::StreamerPipelineType::EnumerateDisplays
+                                }
+                                avservice::HandlerType::VideoSdp => continue,
+                                avservice::HandlerType::Video => {
+                                    host_events::StreamerPipelineType::Video
+                                }
+                                avservice::HandlerType::Audio => {
+                                    host_events::StreamerPipelineType::Audio
+                                }
+                            };
 
-                        let event = host_events::StreamerPipelineEvent {
-                            type_,
-                            stage: host_events::StreamerPipelineStage::Process,
-                            event: host_events::StreamerPipelineEventType::Stopped,
-                        };
+                            let event = host_events::StreamerPipelineEvent {
+                                type_,
+                                stage: host_events::StreamerPipelineStage::Process,
+                                event: host_events::StreamerPipelineEventType::Stopped,
+                            };
 
-                        streaming_session
-                            .host_event_sender
-                            .send(HostEvent::StreamerPipelineEvent(event))
-                            .await;
-                    };
+                            streaming_session
+                                .host_event_sender
+                                .send(HostEvent::StreamerPipelineEvent(event))
+                                .await;
+                        }
+                    }
                 }
-                StateMachineEvent::HostEvents { session_id, notification } => match notification {
+                StateMachineEvent::HostEvents {
+                    session_id,
+                    notification,
+                } => match notification {
                     host_events::Notification::ConnectionLost => {
                         warn!("Control Websocket disconnected for session {}", session_id);
 
                         let mut ctrl = ctrl.lock().await;
 
-                        let ret = ctrl.stop().await;
+                        let ret = ctrl.stop(session_id).await;
                         if let Err(err) = ret {
-                            warn!("Fail to stop Controller: {err:?}");
+                            warn!("Fail to stop session {}: {err:?}", session_id);
                         }
                     }
                 },

@@ -117,17 +117,8 @@ async fn login(ctrl: web::Data<Mutex<Controller>>, req: HttpRequest) -> HttpResp
 
     let mut ctrl = ctrl.lock().await;
 
-    // Single-session enforcement: terminate existing session before creating new one
-    if let Some(existing) = &ctrl.client_session {
-        warn!(
-            "Login attempt on an existing session from user \'{}\"",
-            existing.username
-        );
-
-        let _ = ctrl.stop().await;
-    }
-
-    ctrl.client_session = Some(client_session);
+    // Multi-session support: allow multiple simultaneous sessions
+    ctrl.sessions.insert(uuid, client_session);
 
     HttpResponse::Ok().json(body)
 }
@@ -323,19 +314,26 @@ async fn websocket_service(
 
         let displays = ctrl.displays.convert();
 
-        let Some(client_session) = ctrl.client_session.as_mut() else {
-            error!("No client session attached to websocket connection");
-            return;
-        };
+        // Find the session that matches this websocket token
+        let session_entry = ctrl.sessions.iter_mut().find(|(_, session)| {
+            !session.auth_tokens.websocket.is_empty() && session.auth_tokens.websocket == token
+        });
 
-        // Validate one-time token (must exactly match the login-generated token)
-        if client_session.auth_tokens.websocket != token {
+        let Some((session_id, client_session)) = session_entry else {
             error!("Client websocket token is invalid: \"{token}\"");
             pending_sender.reject().await;
             return;
-        }
+        };
 
-        let session_id = client_session.uid;
+        let session_id = *session_id;
+
+        // Token is valid, consume it (one-time use)
+        client_session.auth_tokens.websocket.clear();
+        info!(
+            "Websocket token validated and consumed for session {}",
+            session_id
+        );
+
         let Ok(sender) = pending_sender.accept(session_id, state_machine_proxy).await else {
             error!("Could not accept websocket connection");
             return;
@@ -358,10 +356,14 @@ async fn enumerate_displays(ctrl: web::Data<Mutex<Controller>>) -> HttpResponse 
 }
 
 #[post("/stop_streaming")]
-async fn stop_streaming(ctrl: web::Data<Mutex<Controller>>, _user: Identity) -> HttpResponse {
+async fn stop_streaming(ctrl: web::Data<Mutex<Controller>>, user: Identity) -> HttpResponse {
+    let Ok(uid) = user.uid() else {
+        return HttpResponse::Unauthorized().finish();
+    };
+
     let mut ctrl = ctrl.lock().await;
 
-    let ret = ctrl.stop_streaming().await;
+    let ret = ctrl.stop_streaming(uid).await;
     match ret {
         Ok(_) => {
             info!("Stream stopped");
@@ -376,11 +378,15 @@ async fn stop_streaming(ctrl: web::Data<Mutex<Controller>>, _user: Identity) -> 
 
 #[post("/logout")]
 async fn logout(ctrl: web::Data<Mutex<Controller>>, user: Identity) -> HttpResponse {
+    let Ok(uid) = user.uid() else {
+        return HttpResponse::Unauthorized().finish();
+    };
+
     user.logout();
 
     let mut ctrl = ctrl.lock().await;
 
-    let ret = ctrl.stop().await;
+    let ret = ctrl.stop(uid).await;
     match ret {
         Ok(_) => {
             info!("Session stopped");
@@ -403,32 +409,37 @@ pub(crate) struct SetBitrate {
 pub(crate) async fn set_bitrate(
     ctrl: web::Data<Mutex<Controller>>,
     request: web::Json<SetBitrate>,
-    _user: Identity,
+    user: Identity,
 ) -> HttpResponse {
     info!("Set bitrate: {}", request.bitrate);
 
+    let Ok(uid) = user.uid() else {
+        return HttpResponse::Unauthorized().finish();
+    };
+
     let mut ctrl = ctrl.lock().await;
 
-    if ctrl.services.video.is_empty() {
+    let Some(session) = ctrl.sessions.get_mut(&uid) else {
+        warn!("Session not found");
+        return HttpResponse::Forbidden().finish();
+    };
+
+    if session.services.video.is_empty() {
         warn!("No video streaming started");
         return HttpResponse::Forbidden().finish();
     }
 
-    let splitted_bitrate = request.bitrate / ctrl.services.video.len() as u32;
+    let splitted_bitrate = request.bitrate / session.services.video.len() as u32;
 
-    for avserver in &mut ctrl.services.video {
+    for avserver in &mut session.services.video {
         let ret = avserver.video_set_bitrate(splitted_bitrate as _).await;
         if let Err(err) = ret {
             warn!("Failed to set bitrate for one video avserver: {err:?}");
         }
     }
 
-    if let Some(session) = ctrl
-        .client_session
-        .as_ref()
-        .and_then(|s| s.stream_session.as_ref())
-    {
-        session
+    if let Some(stream_session) = session.stream_session.as_ref() {
+        stream_session
             .host_event_sender
             .send(HostEvent::BitrateChanged {
                 bitrate: request.bitrate,

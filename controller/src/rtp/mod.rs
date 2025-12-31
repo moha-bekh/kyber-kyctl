@@ -11,11 +11,16 @@ use crate::{avservice, inputservice, Controller, DataPlaneBackend};
 
 pub async fn generate_video_sdp(
     ctrl: &mut Controller,
+    session_id: uuid::Uuid,
     request: requests::GenerateSdpRequest,
 ) -> Result<String> {
     let state_machine_proxy = ctrl.state_machine_proxy()?;
 
-    let avservice = avservice::Handler::new(avservice::HandlerType::VideoSdp, None, state_machine_proxy);
+    let avservice = avservice::Handler::new(
+        avservice::HandlerType::VideoSdp,
+        Some(session_id),
+        state_machine_proxy,
+    );
     avservice
         .rtp_generate_video_sdp(
             &ctrl.process_factory,
@@ -26,7 +31,20 @@ pub async fn generate_video_sdp(
         .await
 }
 
-pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Result<()> {
+pub async fn start(
+    ctrl: &mut Controller,
+    session_id: uuid::Uuid,
+    request: requests::StartRequest,
+) -> Result<()> {
+    let state_machine_proxy = ctrl.state_machine_proxy()?;
+    let process_factory = ctrl.process_factory.clone();
+    let displays = ctrl.displays.convert();
+
+    // Start services first (before accessing session)
+    let mut avservice_video = None;
+    let mut avservice_audio = None;
+    let mut inputservice_handler = None;
+
     // SDP file will contain some required parameters on client side.
     if let Some(video_request) = request.video {
         info!(
@@ -34,11 +52,14 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
             request.ip, video_request.port
         );
 
-        let mut avservice =
-            avservice::Handler::new(avservice::HandlerType::Video, None, ctrl.state_machine_proxy()?);
+        let mut avservice = avservice::Handler::new(
+            avservice::HandlerType::Video,
+            Some(session_id),
+            state_machine_proxy.clone(),
+        );
         avservice
             .rtp_start_video(
-                &ctrl.process_factory,
+                &process_factory,
                 video_request.display_id,
                 request.ip.clone(),
                 video_request.port,
@@ -48,26 +69,29 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
             )
             .await?;
 
-        ctrl.services.video = vec![avservice];
+        avservice_video = Some(avservice);
     }
 
     if let Some(config) = request.audio {
         info!("Start audio. ip: {} - port: {}", request.ip, config.port);
 
-        let mut avservice_audio =
-            avservice::Handler::new(avservice::HandlerType::Audio, None, ctrl.state_machine_proxy()?);
-        avservice_audio
-            .rtp_start_audio(&ctrl.process_factory, request.ip, config.port)
+        let mut avservice = avservice::Handler::new(
+            avservice::HandlerType::Audio,
+            Some(session_id),
+            state_machine_proxy.clone(),
+        );
+        avservice
+            .rtp_start_audio(&process_factory, request.ip, config.port)
             .await?;
 
-        ctrl.services.audio = Some(avservice_audio);
+        avservice_audio = Some(avservice);
     }
 
     if let Some(inputs_request) = request.inputs {
         let mut inputservice = inputservice::Handler::new();
 
         let host_config = inputservice_types::HostConfig {
-            display_list: ctrl.displays.convert(),
+            display_list: displays,
         };
 
         let service_config = inputservice_types::ServiceConfig {
@@ -77,17 +101,23 @@ pub async fn start(ctrl: &mut Controller, request: requests::StartRequest) -> Re
         };
 
         inputservice
-            .start_tcp(&ctrl.process_factory, host_config, service_config)
+            .start_tcp(&process_factory, host_config, service_config)
             .await?;
 
-        ctrl.services.input = Some(inputservice);
+        inputservice_handler = Some(inputservice);
     } else {
         warn!("Input server disabled");
     }
 
-    let Some(client_session) = ctrl.client_session.as_mut() else {
-        return Err(Error::SessionNotOpened);
-    };
+    // Single session access to store all services
+    let client_session = ctrl.get_session(&session_id)?;
+
+    if let Some(avservice) = avservice_video {
+        client_session.services.video = vec![avservice];
+    }
+    client_session.services.audio = avservice_audio;
+    client_session.services.input = inputservice_handler;
+
     let Some(streaming_session) = client_session.stream_session.as_mut() else {
         return Err(Error::ControlPlaneNotOpened);
     };
