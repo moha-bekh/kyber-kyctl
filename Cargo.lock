@@ -2067,7 +2067,6 @@ dependencies = [
  "async-trait",
  "bytes",
  "kymux-types",
- "kyproto",
  "kyutil",
  "log",
  "tokio",
