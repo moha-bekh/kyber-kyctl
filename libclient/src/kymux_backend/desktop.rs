@@ -63,7 +63,7 @@ impl KymuxClosedTask {
         Self { stop_tx }
     }
 
-    async fn stop(self) -> Result<()> {
+    fn stop(self) -> Result<()> {
         let ret = self.stop_tx.send(());
         if ret.is_err() {
             warn!("ClosedTask already stopped");
@@ -434,7 +434,7 @@ impl BackendDriver for KymuxBackend {
 
     async fn stop(&mut self) -> Result<()> {
         if let Some(closed_task) = self.closed_task.take() {
-            let ret = closed_task.stop().await;
+            let ret = closed_task.stop();
             if let Err(err) = ret {
                 warn!("Failed to stop KymuxClosedTask: {err:?}");
             }

@@ -109,7 +109,7 @@ impl KymuxClosedTask {
         Self { stop_tx }
     }
 
-    async fn stop(self) -> Result<()> {
+    fn stop(self) -> Result<()> {
         let ret = self.stop_tx.send(());
         if ret.is_err() {
             warn!("ClosedTask already stopped");
