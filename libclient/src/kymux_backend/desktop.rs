@@ -1,26 +1,12 @@
-use std::collections::HashMap;
-use std::net::SocketAddr;
-use std::sync::Arc;
-
 use async_trait::async_trait;
-use log::{error, info, warn};
-use tokio::sync::oneshot;
-use tokio::task;
+use log::info;
 
 use kymux::{kycom, kyproto};
 
-use super::metrics;
-use super::{KymuxBackendConfig, KymuxTransportBackend};
-use crate::enums::Message;
-use crate::kymux_backend::host_service;
-use crate::kymux_backend::host_service::{
-    StartSessionAudioResponse, StartSessionResponse, StartSessionVideoResponse,
-};
-use crate::metrics::MetricsProducer;
+use super::{KymuxBackendConfig, PlatformEndpoints};
 use crate::platform::player;
 use crate::platform::{InputClient, InputPipeline};
-use crate::runtime::Duration;
-use crate::{BackendDriver, ConnectionParams, DataPlaneCloseReason, MessageSender};
+use crate::{BackendDriver, MessageSender};
 use crate::{Error, Result};
 
 struct Player(player::Player);
@@ -35,116 +21,30 @@ impl Player {
     }
 }
 
-struct KymuxClosedTask {
-    stop_tx: oneshot::Sender<()>,
-}
-
-impl KymuxClosedTask {
-    fn new(connection: Arc<kyproto::Connection>, msg_sender: MessageSender) -> Self {
-        let (stop_tx, stop_rx) = oneshot::channel();
-
-        task::spawn(async move {
-            tokio::select! {
-                _ = stop_rx => {}
-                ret = connection.closed() => {
-                    let reason = match ret {
-                        Ok(()) => DataPlaneCloseReason::Closed,
-                        Err(_) => DataPlaneCloseReason::Error,
-                    };
-
-                    let ret = msg_sender.send_async(Message::DataPlaneClosed{ reason }).await;
-                    if let Err(err) = ret {
-                        warn!("Fail to send DataPlaneClosed: {err:?}");
-                    }
-                }
-            }
-        });
-
-        Self { stop_tx }
-    }
-
-    fn stop(self) -> Result<()> {
-        let ret = self.stop_tx.send(());
-        if ret.is_err() {
-            warn!("ClosedTask already stopped");
-        }
-
-        Ok(())
-    }
-}
-
-async fn connect_quinn(
-    conn_params: &ConnectionParams,
-    port: u16,
-    auth: &kyproto::ClientAuth,
-    certificate_hash: Option<String>,
-) -> Result<kyproto::Connection> {
-    let roots = if let Some(tls_config) = &conn_params.tls_config {
-        let mut roots = rustls::RootCertStore::empty();
-        roots
-            .add(tls_config.root_certificate.clone().into())
-            .map_err(|err| {
-                warn!("Failed to crate RootCertStore: {err:?}");
-                Error::Rejected
-            })?;
-
-        Some(roots)
-    } else {
-        None
-    };
-
-    let server_name = if let Some(tls_host) = &conn_params.tls_host {
-        tls_host.clone()
-    } else {
-        conn_params.host.clone()
-    };
-
-    Ok(kymux::connect_with_auth(
-        kymux::ClientConfig::Quic {
-            addr: SocketAddr::new(conn_params.addr.ip(), port),
-            roots,
-            server_name,
-            certificate_hash,
-        },
-        auth,
-    )
-    .await?)
-}
-
 fn create_video_config(
-    connection: &kyproto::Connection,
     kycom: &mut kycom::KyCom,
     backend_config: &KymuxBackendConfig<'_>,
-    host_config: &Option<Vec<StartSessionVideoResponse>>,
+    endpoints: Vec<kyproto::VideoClientEndpoint>,
 ) -> Result<Option<Vec<player::VideoConfig>>> {
-    let video_config = &backend_config.streaming_config.video;
-    if video_config.is_empty() {
-        return Ok(None);
-    }
-
-    let Some(host_config) = host_config else {
+    if endpoints.is_empty() {
         return Ok(None);
     };
 
-    let endpoint_list: HashMap<u32, u16> = host_config
-        .iter()
-        .map(|video| (video.display_id, video.endpoint))
-        .collect();
+    let video_config = &backend_config.streaming_config.video;
 
-    let video_protocol = backend_config
-        .kymux_config
-        .video_protocol
-        .unwrap_or(kyproto::VideoProtocol::Reliable);
+    assert!(!video_config.is_empty(), "called without video config");
+
+    // By construction, one endpoint is created for each video_config.
+    // If this is not the case, this is a programming error.
+    assert_eq!(
+        endpoints.len(),
+        video_config.len(),
+        "Mismatch between video_config and endpoints"
+    );
 
     let mut player_config_list = vec![];
 
-    for config in video_config {
-        let endpoint_id = *endpoint_list.get(&config.display_id).ok_or_else(|| {
-            warn!("No endpoint found for display {}", config.display_id);
-            Error::Rejected
-        })?;
-
-        let endpoint = connection.connect_video_endpoint(endpoint_id, video_protocol)?;
+    for (config, endpoint) in video_config.iter().zip(endpoints.into_iter()) {
         let uri = kycom.register_and_forward(endpoint)?.url();
 
         let player_config = player::VideoConfig {
@@ -162,26 +62,19 @@ fn create_video_config(
 }
 
 fn create_audio_config(
-    connection: &kyproto::Connection,
     kycom: &mut kycom::KyCom,
     backend_config: &KymuxBackendConfig<'_>,
-    host_config: &Option<StartSessionAudioResponse>,
+    endpoint: Option<kyproto::AudioClientEndpoint>,
 ) -> Result<Option<player::AudioConfig>> {
-    let (audio_config, host_config) = match (&backend_config.streaming_config.audio, host_config) {
-        (Some(audio_config), Some(host_config)) => (audio_config, host_config),
-        (None, None) => return Ok(None),
-        _ => {
-            error!("Invalid Audio config. Should either get a config and an endpoint, or none of them.");
-            return Err(Error::InvalidState);
-        }
+    let Some(endpoint) = endpoint else {
+        return Ok(None);
     };
 
-    let audio_protocol = backend_config
-        .kymux_config
-        .audio_protocol
-        .unwrap_or(kyproto::AudioProtocol::Reliable);
-    let endpoint_id = host_config.endpoint;
-    let endpoint = connection.connect_audio_endpoint(endpoint_id, audio_protocol)?;
+    let audio_config = backend_config
+        .streaming_config
+        .audio
+        .as_ref()
+        .expect("called without audio config");
 
     let uri = kycom.register_and_forward(endpoint)?.url();
     let player_config = player::AudioConfig {
@@ -192,51 +85,16 @@ fn create_audio_config(
     Ok(Some(player_config))
 }
 
-async fn start_metrics(
-    connection: &kyproto::Connection,
-    host_config: &StartSessionResponse,
-    metrics: MetricsProducer,
-) -> Result<()> {
-    let metrics2 = metrics.clone();
-    let metrics3 = metrics.clone();
-
-    metrics::start_connection_stats_poller(connection, metrics.clone(), Duration::from_secs(5))
-        .await;
-
-    let clock_sync_id = host_config.clock_sync.as_ref().unwrap().endpoint;
-    metrics::start_pinger(connection, clock_sync_id, metrics2, Duration::from_secs(10)).await?;
-
-    let remote_network_stats_id = host_config.metrics.as_ref().unwrap().endpoint;
-    metrics::start_remote_metrics_receiver(connection, remote_network_stats_id, metrics3).await?;
-
-    if let Some(video) = &host_config.video {
-        let endpoints = video
-            .iter()
-            .filter_map(|v| v.metrics_endpoint.map(|endpoint| (v.display_id, endpoint)));
-        for (display_id, endpoint) in endpoints {
-            metrics::start_remote_video_metrics_receiver(
-                connection,
-                display_id,
-                endpoint,
-                metrics.clone(),
-            )
-            .await?;
-        }
-    }
-
-    Ok(())
-}
-
 async fn create_player(
-    connection: &kyproto::Connection,
     kycom: &mut kycom::KyCom,
     backend_config: &KymuxBackendConfig<'_>,
-    host_config: &StartSessionResponse,
     metrics: bool,
+    video_endpoints: Vec<kyproto::VideoClientEndpoint>,
+    audio_endpoint: Option<kyproto::AudioClientEndpoint>,
 ) -> Result<Option<Player>> {
-    let video_config = create_video_config(connection, kycom, backend_config, &host_config.video)?;
+    let video_config = create_video_config(kycom, backend_config, video_endpoints)?;
 
-    let audio_config = create_audio_config(connection, kycom, backend_config, &host_config.audio)?;
+    let audio_config = create_audio_config(kycom, backend_config, audio_endpoint)?;
 
     let player = if video_config.is_some() || audio_config.is_some() {
         let audio_buffer = audio_config.as_ref().map(|config| config.audio_buffer);
@@ -269,25 +127,21 @@ async fn create_player(
 }
 
 async fn start_input(
-    connection: &kyproto::Connection,
     kycom: &mut kycom::KyCom,
     backend_config: &KymuxBackendConfig<'_>,
-    host_config: &StartSessionResponse,
     msg_sender: MessageSender,
+    endpoint: Option<kyproto::InputEndpoint>,
 ) -> Result<Option<InputService>> {
-    let (input_config, host_config) = match (
-        &backend_config.streaming_config.input,
-        &host_config.input,
-    ) {
-        (Some(input_config), Some(host_config)) => (input_config, host_config),
-        (None, None) => return Ok(None),
-        _ => {
-            error!("Invalid Input config. Should either get a config and an endpoint, or none of them.");
-            return Err(Error::InvalidState);
-        }
+    let Some(endpoint) = endpoint else {
+        return Ok(None);
     };
 
-    let endpoint = connection.connect_input_endpoint(host_config.endpoint)?;
+    let input_config = backend_config
+        .streaming_config
+        .input
+        .as_ref()
+        .expect("called without input config");
+
     let input_uri = kycom.register_and_forward(endpoint)?.url();
 
     info!("Start input. URI: {input_uri}");
@@ -312,104 +166,44 @@ struct InputService {
     client: InputClient,
 }
 
-async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kyproto::Connection> {
-    // Request remote Kymux start
-    let start_response = host_service::start_kymux(
-        backend_config.http_client,
-        backend_config.kymux_config.backend,
-        backend_config.conn_params.port,
-    )
-    .await?;
-
-    // Extract certificate hash if provided (for self-signed WebTransport certificates)
-    let certificate_hash = start_response.certificate_hash.map(|h| h.hash);
-
-    // Start Kymux connection
-    let ret = match backend_config.kymux_config.backend {
-        KymuxTransportBackend::Quic => {
-            info!(
-                "Connect using Quic backend. Port: {port}",
-                port = start_response.port
-            );
-
-            let auth = kymux::kyproto::ClientAuth::new(&start_response.token).map_err(|_| {
-                warn!("Got an invalid kymux token from controller");
-                Error::KymuxInvalidToken
-            })?;
-            connect_quinn(
-                backend_config.conn_params,
-                start_response.port,
-                &auth,
-                certificate_hash,
-            )
-            .await
-        }
-    };
-
-    ret.map_err(|err| {
-        warn!("Failed to connect to DataPlane: {err:?}");
-        Error::DataPlaneConnectFailed
-    })
-}
-
 pub(super) struct KymuxBackend {
-    connection: Arc<kyproto::Connection>,
     kycom: Option<kycom::KyCom>,
     player: Option<Player>,
     input_service: Option<InputService>,
-    closed_task: Option<KymuxClosedTask>,
 }
 
 impl KymuxBackend {
     pub(super) async fn new(
-        backend_config: KymuxBackendConfig<'_>,
-        metrics: Option<MetricsProducer>,
+        backend_config: &KymuxBackendConfig<'_>,
+        endpoints: PlatformEndpoints,
+        has_metrics: bool,
     ) -> Result<Self> {
-        let connection = start_kymux(&backend_config).await?;
-        let connection = Arc::new(connection);
-
-        let has_metrics = metrics.is_some();
-
-        // Start stream
-        let host_config = host_service::start_stream(&backend_config, has_metrics).await?;
-
-        if let Some(metrics) = metrics {
-            start_metrics(&connection, &host_config, metrics).await?;
-        }
-
         const IPC_PORTS: std::ops::Range<u16> = 9090..9100;
         let mut kycom = kycom::KyCom::start_on_any_port(IPC_PORTS).await?;
 
         // Play Video and Audio
         let player = create_player(
-            &connection,
             &mut kycom,
-            &backend_config,
-            &host_config,
+            backend_config,
             has_metrics,
+            endpoints.video,
+            endpoints.audio,
         )
         .await?;
 
         // Start input
         let input_service = start_input(
-            &connection,
             &mut kycom,
-            &backend_config,
-            &host_config,
+            backend_config,
             backend_config.msg_sender.clone(),
+            endpoints.input,
         )
         .await?;
 
-        // Monitor connection closed
-        let closed_task =
-            KymuxClosedTask::new(connection.clone(), backend_config.msg_sender.clone());
-
         Ok(Self {
-            connection,
             kycom: Some(kycom),
             player,
             input_service,
-            closed_task: Some(closed_task),
         })
     }
 }
@@ -454,13 +248,6 @@ impl BackendDriver for KymuxBackend {
     }
 
     async fn stop(&mut self) -> Result<()> {
-        if let Some(closed_task) = self.closed_task.take() {
-            let ret = closed_task.stop();
-            if let Err(err) = ret {
-                warn!("Failed to stop KymuxClosedTask: {err:?}");
-            }
-        }
-
         if let Some(player) = self.player.take() {
             player.stop().await?;
         }
@@ -472,8 +259,6 @@ impl BackendDriver for KymuxBackend {
         if let Some(kycom) = self.kycom.take() {
             kycom.stop();
         }
-
-        self.connection.close();
 
         Ok(())
     }

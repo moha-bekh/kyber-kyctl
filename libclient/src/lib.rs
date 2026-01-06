@@ -314,7 +314,9 @@ impl Handler {
                     msg_sender,
                 };
 
-                self.backend = Some(kymux_backend::new(config, self.metrics.clone()).await?);
+                let backend =
+                    Box::new(kymux_backend::KymuxBackend::new(config, self.metrics.clone()).await?);
+                self.backend = Some(backend);
             }
             #[cfg(feature = "rtp")]
             StreamingProtocol::Rtp => {
