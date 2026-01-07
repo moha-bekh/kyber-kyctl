@@ -36,15 +36,10 @@ pub(crate) struct KymuxBackendConfig<'a> {
     pub(crate) msg_sender: MessageSender,
 }
 
-#[cfg(feature = "desktop")]
-pub type BoxedKymuxBackend = Box<dyn BackendDriver + Send>;
-#[cfg(feature = "web")]
-pub type BoxedKymuxBackend = Box<dyn BackendDriver>;
-
 pub(crate) async fn new(
     config: KymuxBackendConfig<'_>,
     metrics: Option<MetricsProducer>,
-) -> Result<BoxedKymuxBackend> {
+) -> Result<Box<dyn BackendDriver>> {
     let backend = platform::KymuxBackend::new(config, metrics).await?;
     Ok(Box::new(backend))
 }

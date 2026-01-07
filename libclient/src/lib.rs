@@ -33,6 +33,7 @@ use log::{info, warn};
 use serde::{Deserialize, Serialize};
 
 pub use crate::error::{Error, Result};
+use crate::util::*;
 use enums::Message;
 pub use enums::{
     ControlPlaneCloseReason, DataPlaneCloseReason, Display, Event, StopReason, TlsRootCert,
@@ -71,7 +72,7 @@ pub(crate) struct Capabilities {
 
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
-trait BackendDriver {
+trait BackendDriver: KySend {
     fn audio_set_volume(&self, volume: f32) -> Result<()>;
 
     fn audio_set_mute(&self, mute: bool) -> Result<()>;
