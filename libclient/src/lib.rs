@@ -7,6 +7,7 @@ pub(crate) mod http;
 mod message_bus;
 pub mod metrics;
 pub(crate) mod runtime;
+mod util;
 
 #[cfg_attr(feature = "desktop", path = "./platform/desktop/mod.rs")]
 #[cfg_attr(feature = "web", path = "./platform/web/mod.rs")]
