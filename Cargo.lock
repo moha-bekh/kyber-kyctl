@@ -767,7 +767,7 @@ dependencies = [
  "log",
  "log4rs",
  "rand 0.9.0",
- "rcgen",
+ "rcgen 0.13.1",
  "rmp-serde",
  "rustls",
  "rustls-pemfile",
@@ -1743,6 +1743,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d231dfb89cfffdbc30e7fc41579ed6066ad03abda9e567ccafae602b97ec5024"
 
 [[package]]
+name = "hex"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+
+[[package]]
 name = "hkdf"
 version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2105,10 +2111,12 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bytes",
+ "hex",
  "kyutil",
  "log",
  "quinn",
  "quinn-proto",
+ "ring",
  "rustls",
  "rustls-native-certs",
  "rustls-pemfile",
@@ -2714,6 +2722,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "54077e1872c46788540de1ea3d7f4ccb1983d12f9aa909b234468676c1a36779"
 dependencies = [
  "pem",
+ "ring",
+ "rustls-pki-types",
+ "time",
+ "yasna",
+]
+
+[[package]]
+name = "rcgen"
+version = "0.14.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5fae430c6b28f1ad601274e78b7dffa0546de0b73b4cd32f46723c0c2a16f7a5"
+dependencies = [
  "ring",
  "rustls-pki-types",
  "time",
@@ -4261,13 +4281,12 @@ checksum = "ea2f10b9bb0928dfb1b42b65e1f9e36f7f54dbdf08457afefb38afcdec4fa2bb"
 [[package]]
 name = "wtransport"
 version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3e5e745c8789c20095c9061d292098d4106660efe2d172efd8ae7a369fe28e3e"
+source = "git+https://github.com/IwanBurel/wtransport?rev=8de1a86ae972baaa6ef17759b65f4f86c4fa3677#8de1a86ae972baaa6ef17759b65f4f86c4fa3677"
 dependencies = [
  "bytes",
  "pem",
  "quinn",
- "rcgen",
+ "rcgen 0.14.5",
  "rustls",
  "rustls-native-certs",
  "rustls-pemfile",
@@ -4286,8 +4305,7 @@ dependencies = [
 [[package]]
 name = "wtransport-proto"
 version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a09d89a8dba201c2439d9d5eca55a0faa08909d69da50decdb5ec00be0ac504"
+source = "git+https://github.com/IwanBurel/wtransport?rev=8de1a86ae972baaa6ef17759b65f4f86c4fa3677#8de1a86ae972baaa6ef17759b65f4f86c4fa3677"
 dependencies = [
  "httlib-huffman",
  "octets",
