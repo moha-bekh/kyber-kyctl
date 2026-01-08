@@ -154,49 +154,38 @@ async fn start_kymux(
     public_port: u16,
     statemachine_proxy: StateMachineProxy,
 ) -> Result<requests::StartKymuxResponse> {
-    // Check if data plane is already opened for this session
-    {
-        let ctrl = ctrl.lock().await;
+    // Check state and create shared infrastructure if needed (single lock)
+    let (certificate_hash, public_port) = {
+        let mut ctrl = ctrl.lock().await;
+
+        // Check if data plane is already opened for this session
         if ctrl.has_data_plane(&session_id)? {
             return Err(Error::DataPlaneAlreadyOpened);
         }
-    }
-
-    // Load network and TLS config
-    let (listening_port, public_port, tls_config, webtransport_gen_certificate) = {
-        let ctrl = ctrl.lock().await;
-
-        // If dataplane port has been overridden, use it directly.
-        // This will break controllers deployed behind a NAT.
-        let (listening_port, public_port) =
-            if let Some(dataplane_port) = ctrl.config.dataplane_port() {
-                (dataplane_port, dataplane_port)
-            } else {
-                (ctrl.config.port(), public_port)
-            };
-
-        let webtransport_gen_certificate = ctrl.config.webtransport_gen_certificate();
-
-        (
-            listening_port,
-            public_port,
-            ctrl.tls_config.clone(),
-            webtransport_gen_certificate,
-        )
-    };
-
-    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), listening_port);
-
-    // Check if shared infrastructure already exists, if not create it
-    // The common server supports both QUIC and WebTransport on the same port
-    let certificate_hash = {
-        let mut ctrl = ctrl.lock().await;
 
         if let Some(existing_infra) = &ctrl.shared_kymux_infra {
             // Infrastructure exists, reuse it
             info!("Reusing existing shared Kymux common infrastructure");
-            existing_infra.lock().await.certificate_hash.clone()
+            (
+                existing_infra.lock().await.certificate_hash.clone(),
+                public_port,
+            )
         } else {
+            // Load network and TLS config (only when creating new infra)
+            // If dataplane port has been overridden, use it directly.
+            // This will break controllers deployed behind a NAT.
+            let (listening_port, public_port) =
+                if let Some(dataplane_port) = ctrl.config.dataplane_port() {
+                    (dataplane_port, dataplane_port)
+                } else {
+                    (ctrl.config.port(), public_port)
+                };
+
+            let webtransport_gen_certificate = ctrl.config.webtransport_gen_certificate();
+            let tls_config = &ctrl.tls_config;
+
+            let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), listening_port);
+
             // Create new common infrastructure (supports both QUIC and WebTransport)
             info!(
                 "Starting common Kymux server on address {addr:?} (supports QUIC + WebTransport)"
@@ -257,7 +246,7 @@ async fn start_kymux(
             // Store shared infrastructure in Controller
             ctrl.shared_kymux_infra = Some(shared);
 
-            certificate_hash
+            (certificate_hash, public_port)
         }
     };
 
