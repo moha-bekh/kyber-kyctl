@@ -24,7 +24,6 @@ use log::warn;
 use serde::Deserialize;
 
 use kymux::{kyproto, types};
-use types::ProtocolEndpoint;
 
 use crate::metrics::{
     Metric, MetricsProducer, NetworkPing, NetworkStats, VideoMetric, VideoMetricData,

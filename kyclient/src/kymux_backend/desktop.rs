@@ -21,7 +21,7 @@
 use async_trait::async_trait;
 use log::info;
 
-use kymux::{kycom, kyproto};
+use kymux::{kycom, types};
 
 use super::{KymuxBackendConfig, PlatformEndpoints};
 use crate::platform::player;
@@ -44,7 +44,7 @@ impl Player {
 fn create_video_config(
     kycom: &mut kycom::KyCom,
     backend_config: &KymuxBackendConfig<'_>,
-    endpoints: Vec<kyproto::VideoClientEndpoint>,
+    endpoints: Vec<types::VideoClientEndpoint>,
 ) -> Result<Option<Vec<player::VideoConfig>>> {
     if endpoints.is_empty() {
         return Ok(None);
@@ -84,7 +84,7 @@ fn create_video_config(
 fn create_audio_config(
     kycom: &mut kycom::KyCom,
     backend_config: &KymuxBackendConfig<'_>,
-    endpoint: Option<kyproto::AudioClientEndpoint>,
+    endpoint: Option<types::AudioClientEndpoint>,
 ) -> Result<Option<player::AudioConfig>> {
     let Some(endpoint) = endpoint else {
         return Ok(None);
@@ -109,8 +109,8 @@ async fn create_player(
     kycom: &mut kycom::KyCom,
     backend_config: &KymuxBackendConfig<'_>,
     metrics: bool,
-    video_endpoints: Vec<kyproto::VideoClientEndpoint>,
-    audio_endpoint: Option<kyproto::AudioClientEndpoint>,
+    video_endpoints: Vec<types::VideoClientEndpoint>,
+    audio_endpoint: Option<types::AudioClientEndpoint>,
 ) -> Result<Option<Player>> {
     let video_config = create_video_config(kycom, backend_config, video_endpoints)?;
 
@@ -150,7 +150,7 @@ async fn start_input(
     kycom: &mut kycom::KyCom,
     backend_config: &KymuxBackendConfig<'_>,
     msg_sender: MessageSender,
-    endpoint: Option<kyproto::InputEndpoint>,
+    endpoint: Option<types::InputEndpoint>,
 ) -> Result<Option<InputService>> {
     let Some(endpoint) = endpoint else {
         return Ok(None);

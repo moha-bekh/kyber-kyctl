@@ -29,9 +29,7 @@ use std::time::Duration;
 
 use actix_web::web;
 use bytes::Bytes;
-use kymux::kycom;
-use kymux::kyproto::{self, ProtocolEndpoint};
-use kymux::types;
+use kymux::{kycom, kyproto, types};
 use log::{info, warn};
 use tokio::sync::{oneshot, Mutex};
 use tokio::task::{self, JoinHandle};
@@ -568,7 +566,7 @@ pub(crate) struct MetricsTask {
 
 impl MetricsTask {
     fn new(
-        endpoint: kyproto::MetricsServerEndpoint,
+        endpoint: types::MetricsServerEndpoint,
         stats_provider: kyproto::KyProtoStatsProvider,
     ) -> Self {
         let (stop_tx, stop_rx) = oneshot::channel();
@@ -729,7 +727,7 @@ async fn start_session(
 }
 
 async fn run_stats_poller(
-    endpoint: kyproto::MetricsServerEndpoint,
+    endpoint: types::MetricsServerEndpoint,
     stats_provider: kyproto::KyProtoStatsProvider,
     interval: Duration,
 ) -> Result<()> {

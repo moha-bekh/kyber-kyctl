@@ -25,7 +25,7 @@ mod desktop;
 mod web;
 
 use async_trait::async_trait;
-use kymux::kyproto;
+use kymux::{kyproto, types};
 use log::{error, info, warn};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -89,9 +89,9 @@ async fn new_platform_backend(
 }
 
 pub(crate) struct PlatformEndpoints {
-    video: Vec<kyproto::VideoClientEndpoint>,
-    audio: Option<kyproto::AudioClientEndpoint>,
-    input: Option<kyproto::InputEndpoint>,
+    video: Vec<types::VideoClientEndpoint>,
+    audio: Option<types::AudioClientEndpoint>,
+    input: Option<types::InputEndpoint>,
 }
 
 pub(crate) struct KymuxBackend {
@@ -345,7 +345,7 @@ fn create_video_endpoints(
     connection: &kyproto::Connection,
     backend_config: &KymuxBackendConfig<'_>,
     host_config: &StartSessionResponse,
-) -> Result<Vec<kyproto::VideoClientEndpoint>> {
+) -> Result<Vec<types::VideoClientEndpoint>> {
     let video_config = &backend_config.streaming_config.video;
     if video_config.is_empty() {
         return Ok(vec![]);
@@ -385,7 +385,7 @@ fn create_audio_endpoint(
     connection: &kyproto::Connection,
     backend_config: &KymuxBackendConfig<'_>,
     host_config: &StartSessionResponse,
-) -> Result<Option<kyproto::AudioClientEndpoint>> {
+) -> Result<Option<types::AudioClientEndpoint>> {
     if backend_config.streaming_config.audio.is_none() {
         return Ok(None);
     };
@@ -409,7 +409,7 @@ fn create_input_endpoint(
     connection: &kyproto::Connection,
     backend_config: &KymuxBackendConfig<'_>,
     host_config: &StartSessionResponse,
-) -> Result<Option<kyproto::InputEndpoint>> {
+) -> Result<Option<types::InputEndpoint>> {
     if backend_config.streaming_config.input.is_none() {
         return Ok(None);
     }

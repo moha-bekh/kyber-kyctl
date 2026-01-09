@@ -25,7 +25,6 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use log::{info, warn};
 
-use kymux::kyproto::{self, ProtocolEndpoint};
 use kymux::types;
 use kynput::bufferproxy::{BufferProxy, BufferProxyReceiver, BufferProxySender};
 use kynput::{InputNetworkStream, InputNetworkStreamMsg, InputNetworkStreamObserver};
@@ -147,7 +146,7 @@ async fn create_videoplayer(
     backend_config: &KymuxBackendConfig<'_>,
     close_requested: &CloseRequestState,
     metrics: bool,
-    endpoints: Vec<kyproto::VideoClientEndpoint>,
+    endpoints: Vec<types::VideoClientEndpoint>,
 ) -> Result<Option<Vec<VideoPlayerHandle>>> {
     if endpoints.is_empty() {
         return Ok(None);
@@ -206,7 +205,7 @@ async fn create_videoplayer(
 async fn create_audioplayer(
     backend_config: &KymuxBackendConfig<'_>,
     close_requested: &CloseRequestState,
-    endpoint: Option<kyproto::AudioClientEndpoint>,
+    endpoint: Option<types::AudioClientEndpoint>,
 ) -> Result<Option<AudioPlayerHandle>> {
     let Some(endpoint) = endpoint else {
         return Ok(None);
@@ -248,8 +247,8 @@ async fn create_player(
     backend_config: &KymuxBackendConfig<'_>,
     close_requested: &CloseRequestState,
     metrics: bool,
-    video_endpoints: Vec<kyproto::VideoClientEndpoint>,
-    audio_endpoint: Option<kyproto::AudioClientEndpoint>,
+    video_endpoints: Vec<types::VideoClientEndpoint>,
+    audio_endpoint: Option<types::AudioClientEndpoint>,
 ) -> Result<Option<Player>> {
     let video_player =
         create_videoplayer(backend_config, close_requested, metrics, video_endpoints).await?;
@@ -314,7 +313,7 @@ async fn input_tx_task(
 async fn start_input(
     backend_config: &KymuxBackendConfig<'_>,
     msg_sender: MessageSender,
-    endpoint: Option<kyproto::InputEndpoint>,
+    endpoint: Option<types::InputEndpoint>,
 ) -> Result<Option<InputService>> {
     let Some(endpoint) = endpoint else {
         return Ok(None);
