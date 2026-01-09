@@ -1,0 +1,109 @@
+.variables-macos-x86_64: &variables-macos-x86_64
+  HOST_ARCH: x86_64
+
+.variables-macos-arm64: &variables-macos-arm64
+  HOST_ARCH: arm64
+
+controller-build-debian-trixie-x86_64:
+  stage: build
+  image: $DEBIAN_IMAGE
+  tags:
+    - docker
+  only:
+    - main
+    - merge_requests
+    - tags
+  needs:
+    - lint
+  script: |
+    ./build-linux.sh -k -o $(pwd)/rootfs
+
+controller-clippy-debian-trixie-x86_64:
+  stage: misc
+  image: $DEBIAN_IMAGE
+  tags:
+    - docker
+  only:
+    - main
+    - merge_requests
+    - tags
+  needs:
+    - lint
+  script: |
+    ./build-linux.sh -k -c -o $(pwd)/rootfs
+
+controller-build-windows-x86_64:
+  stage: build
+  image: $WIN64_IMAGE
+  tags:
+    - docker
+  only:
+    - main
+    - merge_requests
+    - tags
+  needs:
+    - lint
+  script: |
+    ./build-win32.sh -k -w -o $(pwd)/rootfs
+
+controller-clippy-windows-x86_64:
+  stage: misc
+  image: $WIN64_IMAGE
+  tags:
+    - docker
+  only:
+    - main
+    - merge_requests
+    - tags
+  needs:
+    - lint
+  script: |
+    ./build-win32.sh -k -c -o $(pwd)/rootfs
+
+.macos-common:
+  before_script: |
+    rustup override set $MACOS_RUST_VERSION
+
+.build-macos-common:
+  extends: .macos-common
+  stage: build
+  tags:
+    - macos
+  only:
+    - main
+    - merge_requests
+    - tags
+  needs:
+    - lint
+  script: |
+    ./build-macos.sh -k -a $HOST_ARCH -o $(pwd)/rootfs
+
+.clippy-macos-common:
+  extends: .macos-common
+  stage: misc
+  tags:
+    - macos
+  only:
+    - main
+    - merge_requests
+    - tags
+  needs:
+    - lint
+  script: |
+    ./build-macos.sh -k -c -a $HOST_ARCH -o $(pwd)/rootfs
+
+controller-build-macos-x86_64:
+  extends: .build-macos-common
+  variables: *variables-macos-x86_64
+
+controller-clippy-macos-x86_64:
+  extends: .clippy-macos-common
+  variables: *variables-macos-x86_64
+
+controller-build-macos-arm64:
+  extends: .build-macos-common
+  variables: *variables-macos-arm64
+
+controller-clippy-macos-arm64:
+  extends: .clippy-macos-common
+  variables: *variables-macos-arm64
