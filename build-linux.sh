@@ -5,6 +5,9 @@ set -x
 
 BASE_DIR=$(realpath $(dirname $0))
 
+# Source common build functions
+source "$BASE_DIR/libclient-common.sh"
+
 usage()
 {
 cat << EOF
@@ -139,19 +142,10 @@ export LD_LIBRARY_PATH=$OUT_DIR/lib:$OUT_DIR/lib/x86_64-linux-gnu:$OUT_DIR/lib64
 # Build
 case "$ACTION" in
     "build")
-        cargo cinstall \
-            -p libclient \
-            --release \
-            --prefix=$OUT_DIR \
-            --features=desktop,kymux,rtp
-
-        cargo build \
-            --features=desktop,kymux,rtp
+        libclient_linux_do_build "$OUT_DIR"
     ;;
     "clippy")
-        cargo clippy \
-            --features=capi,desktop,kymux,rtp \
-            -- -D warnings -A clippy::missing_safety_doc
+        libclient_linux_do_clippy
     ;;
 esac
 

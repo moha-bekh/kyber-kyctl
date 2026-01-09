@@ -5,6 +5,9 @@ set -x
 
 BASE_DIR=$(realpath $(dirname $0))
 
+# Source common build functions
+source "$BASE_DIR/libclient-common.sh"
+
 # Architecture configuration
 HOST_ARCH="arm64"
 
@@ -179,18 +182,9 @@ export RUSTFLAGS="-L native=$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/s
 # Build
 case "$ACTION" in
     "build")
-        cargo cinstall \
-            --target $CARGO_TARGET \
-            -p libclient \
-            --release \
-            --prefix=$OUT_DIR \
-            --features=desktop,kymux,rtp
+        libclient_android_do_build "$CARGO_TARGET" "$OUT_DIR"
     ;;
     "clippy")
-        cargo clippy \
-            --target $CARGO_TARGET \
-            --features=capi,desktop,kymux,rtp \
-            -- \
-            -D warnings -A clippy::missing_safety_doc
+        libclient_android_do_clippy "$CARGO_TARGET"
     ;;
 esac

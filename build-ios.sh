@@ -7,6 +7,10 @@ realpath() {
 }
 
 BASE_DIR=$(realpath $(dirname $0))
+
+# Source common build functions
+source "$BASE_DIR/libclient-common.sh"
+
 TARGET="ios"
 
 usage()
@@ -179,13 +183,6 @@ export PKG_CONFIG_LIBDIR=$OUT_DIR/lib/pkgconfig
 # Run action
 case "$ACTION" in
     "build")
-        # Build
-        cargo cinstall -p libclient \
-            --target=$CARGO_TARGET \
-            $CARGOC_FLAGS \
-            --release \
-            --library-type=staticlib \
-            --prefix=$OUT_DIR \
-            --features=desktop,kymux,rtp
+        libclient_ios_do_build "$CARGO_TARGET" "$CARGOC_FLAGS" "$OUT_DIR"
     ;;
 esac

@@ -5,6 +5,9 @@ set -x
 
 BASE_DIR=$(realpath $(dirname $0))
 
+# Source common build functions
+source "$BASE_DIR/libclient-common.sh"
+
 # Workspace directories
 WORKSPACE_ROOT=$BASE_DIR/..
 
@@ -152,22 +155,10 @@ export PKG_CONFIG_LIBDIR=$OUT_DIR/lib/pkgconfig
 # Run action
 case "$ACTION" in
     "build")
-        cargo cinstall -p libclient \
-            --release \
-            --prefix=$OUT_DIR \
-            --target x86_64-pc-windows-gnu \
-            --dlltool x86_64-w64-mingw32-dlltool \
-            --features=desktop,kymux,rtp
-
-        cargo build \
-            --target x86_64-pc-windows-gnu \
-            --features=desktop,kymux,rtp
+        libclient_win32_do_build "$OUT_DIR"
     ;;
     "clippy")
-        cargo clippy \
-            --target x86_64-pc-windows-gnu \
-            --features=capi,desktop,kymux,rtp \
-            -- -D warnings -A clippy::missing_safety_doc
+        libclient_win32_do_clippy
     ;;
 esac
 

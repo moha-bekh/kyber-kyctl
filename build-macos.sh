@@ -12,6 +12,9 @@ HOST_ARCH="x86_64"
 
 BASE_DIR=$(realpath $(dirname $0))
 
+# Source common build functions
+source "$BASE_DIR/libclient-common.sh"
+
 usage()
 {
 cat << EOF
@@ -175,25 +178,12 @@ CARGO_TARGET=`get_cargo_target $HOST_ARCH`
 # Run action
 case "$ACTION" in
     "build")
-        # Build
-        cargo cinstall -p libclient \
-            --target $CARGO_TARGET \
-            --release \
-            --prefix=$OUT_DIR \
-            --features=desktop,kymux,rtp
-
-        cargo build \
-            --target $CARGO_TARGET  \
-            --release \
-            --features=desktop,kymux,rtp
+        libclient_macos_do_build "$CARGO_TARGET" "$OUT_DIR"
     ;;
     "clippy")
-        cargo clippy \
-            --target $CARGO_TARGET \
-            --features=capi,desktop,kymux,rtp \
-            -- -D warnings -A clippy::missing_safety_doc
+        libclient_macos_do_clippy "$CARGO_TARGET"
     ;;
     "test")
-        cargo test
+        libclient_macos_do_test
     ;;
 esac

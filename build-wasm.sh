@@ -5,6 +5,9 @@ set -x
 
 BASE_DIR=$(realpath $(dirname $0))
 
+# Source common build functions
+source "$BASE_DIR/libclient-common.sh"
+
 panic() {
     echo $1
     exit 1
@@ -98,31 +101,12 @@ fi
 # Build
 case "$ACTION" in
     "build")
-        export RUSTFLAGS=--cfg=web_sys_unstable_apis
-
-        cargo build \
-            --target wasm32-unknown-unknown \
-            -p libclient \
-            --release \
-            --features=kymux,web,websocket
+        libclient_wasm_do_build
     ;;
     "clippy")
-        export RUSTFLAGS=--cfg=web_sys_unstable_apis
-
-        cargo clippy \
-            --target wasm32-unknown-unknown \
-            -p libclient \
-            --release \
-            --features=kymux,web,websocket \
-            -- -D warnings -A clippy::missing_safety_doc -A unexpected-cfgs
+        libclient_wasm_do_clippy
     ;;
     "package-js")
-        JS_SRC_DIR=$BASE_DIR/libclient/js
-        cp \
-            $JS_SRC_DIR/audio_worklet.js \
-            $JS_SRC_DIR/spinlock.js \
-            $JS_SRC_DIR/video_renderer_worker.js \
-             \
-        $JS_OUT_DIR
+        libclient_wasm_do_package_js "$BASE_DIR" "$JS_OUT_DIR"
     ;;
 esac
