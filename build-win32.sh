@@ -105,26 +105,16 @@ if [ "$BUILD_KYBER_DEPS" = true ]; then
     echo 'libkypc = { path = "libkypc" }' >> .cargo/config.toml
 fi
 
+# Source common build functions
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/controller-common.sh"
+
 # Run action
 case "$ACTION" in
     "build")
-        cargo build \
-            --release \
-            --bins --examples \
-            --features=auth-jwt,cli \
-            --target x86_64-pc-windows-gnu \
-            $HIDE_CONSOLE_FEATURE
-
-        cp \
-            target/x86_64-pc-windows-gnu/release/controller.exe \
-            target/x86_64-pc-windows-gnu/release/service.exe \
-            target/x86_64-pc-windows-gnu/release/jwt-gen.exe \
-            $OUT_DIR/bin
+        controller_win32_do_build "$OUT_DIR" "$HIDE_CONSOLE_FEATURE"
     ;;
     "clippy")
-        cargo clippy \
-              --target x86_64-pc-windows-gnu \
-              --features=auth-jwt,cli \
-              -- -D warnings
+        controller_win32_do_clippy
     ;;
 esac

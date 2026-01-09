@@ -135,27 +135,19 @@ if [ "$BUILD_KYBER_DEPS" = true ]; then
     echo 'libkypc = { path = "libkypc" }' >> .cargo/config.toml
 fi
 
+# Source common build functions
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/controller-common.sh"
+
 # Run action
 case "$ACTION" in
     "build")
-        # Build
-        cargo build \
-            --target $CARGO_TARGET  \
-            --features=auth-jwt,cli \
-            --release
-
-        # Install
-        mkdir -p $OUT_DIR/bin
-        cp target/$CARGO_TARGET/release/controller $OUT_DIR/bin
-        cp target/$CARGO_TARGET/release/jwt-gen $OUT_DIR/bin
+        controller_macos_do_build "$CARGO_TARGET" "$OUT_DIR"
     ;;
     "clippy")
-        cargo clippy \
-            --target $CARGO_TARGET \
-            --features=auth-jwt,cli \
-            -- -D warnings
+        controller_macos_do_clippy "$CARGO_TARGET"
     ;;
     "test")
-        cargo test
+        controller_macos_do_test
     ;;
 esac
