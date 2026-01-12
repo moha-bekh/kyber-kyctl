@@ -12,7 +12,9 @@ members = [
 ]
 
 exclude = [
-    "libkynput",
+    "kymedia",
+    "kynput",
+    "kyutil",
 ]
 
 [patch.crates-io]
