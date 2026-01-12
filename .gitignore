@@ -1,8 +1,8 @@
 .cargo
-avserver
-kymux
 contrib/work
-libkynput
-libkypc
+kymedia
+kymux
+kynput
+kyutil
 rootfs*
 target
