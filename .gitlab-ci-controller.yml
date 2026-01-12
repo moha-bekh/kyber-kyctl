@@ -16,7 +16,7 @@ controller-build-debian-trixie-x86_64:
   needs:
     - lint
   script: |
-    ./build-linux.sh -k -o $(pwd)/rootfs
+    ./build-linux.sh -k -o $(pwd)/rootfs build-controller
 
 controller-clippy-debian-trixie-x86_64:
   stage: misc
@@ -30,7 +30,7 @@ controller-clippy-debian-trixie-x86_64:
   needs:
     - lint
   script: |
-    ./build-linux.sh -k -c -o $(pwd)/rootfs
+    ./build-linux.sh -k -o $(pwd)/rootfs clippy-controller
 
 controller-build-windows-x86_64:
   stage: build
@@ -44,7 +44,7 @@ controller-build-windows-x86_64:
   needs:
     - lint
   script: |
-    ./build-win32.sh -k -w -o $(pwd)/rootfs
+    ./build-win32.sh -k -w -o $(pwd)/rootfs build-controller
 
 controller-clippy-windows-x86_64:
   stage: misc
@@ -58,11 +58,14 @@ controller-clippy-windows-x86_64:
   needs:
     - lint
   script: |
-    ./build-win32.sh -k -c -o $(pwd)/rootfs
+    ./build-win32.sh -k -o $(pwd)/rootfs clippy-controller
 
 .macos-common:
   before_script: |
+    cd $CI_BUILDS_DIR/$CI_CONCURRENT_ID/kysdk
+    rm -rf kyutil kymux kynput kymedia
     rustup override set $MACOS_RUST_VERSION
+    cd $CI_BUILDS_DIR/$CI_CONCURRENT_ID/kysdk/kyctl
 
 .build-macos-common:
   extends: .macos-common
@@ -76,7 +79,7 @@ controller-clippy-windows-x86_64:
   needs:
     - lint
   script: |
-    ./build-macos.sh -k -a $HOST_ARCH -o $(pwd)/rootfs
+    ./build-macos.sh -k -a $HOST_ARCH -o $(pwd)/rootfs build-controller
 
 .clippy-macos-common:
   extends: .macos-common
@@ -90,7 +93,7 @@ controller-clippy-windows-x86_64:
   needs:
     - lint
   script: |
-    ./build-macos.sh -k -c -a $HOST_ARCH -o $(pwd)/rootfs
+    ./build-macos.sh -k -a $HOST_ARCH -o $(pwd)/rootfs clippy-controller
 
 controller-build-macos-x86_64:
   extends: .build-macos-common

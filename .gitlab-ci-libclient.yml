@@ -22,77 +22,6 @@
 .variables-android-armv7a: &variables-android-armv7a
   HOST_ARCH: armv7a
 
-contrib-debian-trixie-x86_64:
-  stage: contrib
-  image: $DEBIAN_IMAGE
-  tags:
-    - docker
-  only:
-    - main
-    - merge_requests
-    - tags
-  script: |
-    export KYBER_PREFIX=$(pwd)/rootfs
-    # Build contribs
-    ./contrib/build-linux.sh -o $KYBER_PREFIX
-    # Prepare rootfs to be shared to other jobs
-    cd $KYBER_PREFIX
-    ../scripts/change_prefix.sh $(pwd)
-    cd -
-  artifacts:
-    paths:
-      - rootfs
-
-contrib-windows-x86_64:
-  stage: contrib
-  image: $WIN64_IMAGE
-  tags:
-    - docker
-  only:
-    - main
-    - merge_requests
-    - tags
-  script: |
-    export KYBER_PREFIX=$(pwd)/rootfs
-    # Build contribs
-    ./contrib/build-win32.sh -o $KYBER_PREFIX
-    # Prepare rootfs to be shared to other jobs
-    cd $KYBER_PREFIX
-    ../scripts/change_prefix.sh $(pwd)
-    cd -
-  artifacts:
-    paths:
-      - rootfs
-
-.contrib-macos-common:
-  extends: .libclient-macos-common
-  stage: contrib
-  tags:
-    - macos
-  only:
-    - main
-    - merge_requests
-    - tags
-  script: |
-    export KYBER_PREFIX=$(pwd)/rootfs
-    # Build contribs
-    ./contrib/build-macos.sh -a $HOST_ARCH -o $KYBER_PREFIX
-    # Prepare rootfs to be shared to other jobs
-    cd $KYBER_PREFIX
-    ../scripts/change_prefix.sh $(pwd)
-    cd -
-  artifacts:
-    paths:
-      - rootfs
-
-contrib-macos-x86_64:
-  extends: .contrib-macos-common
-  variables: *variables-macos-x86_64
-
-contrib-macos-arm64:
-  extends: .contrib-macos-common
-  variables: *variables-macos-arm64
-
 libclient-build-debian-trixie-x86_64:
   stage: build
   image: $DEBIAN_IMAGE
@@ -131,7 +60,7 @@ libclient-clippy-debian-trixie-x86_64:
     ../scripts/change_prefix.sh
     cd -
     # Run clippy on libclient
-    ./build-linux.sh -k -s -c -o $ROOTFS_PATH
+    ./build-linux.sh -k -s -o $ROOTFS_PATH clippy-libclient
 
 libclient-build-windows-x86_64:
   stage: build
@@ -171,11 +100,14 @@ libclient-clippy-windows-x86_64:
     ../scripts/change_prefix.sh
     cd -
     # Run clippy on libclient
-    ./build-win32.sh -k -s -c -o $ROOTFS_PATH
+    ./build-win32.sh -k -s -o $ROOTFS_PATH clippy-libclient
 
 .libclient-macos-common:
   before_script: |
+    cd $CI_BUILDS_DIR/$CI_CONCURRENT_ID/kysdk
+    rm -rf kyutil kymux kynput kymedia
     rustup override set $MACOS_RUST_VERSION
+    cd $CI_BUILDS_DIR/$CI_CONCURRENT_ID/kysdk/kyctl
 
 .libclient-build-macos-common:
   extends: .libclient-macos-common
@@ -220,7 +152,7 @@ libclient-build-wasm:
     - lint
   script: |
     export KYBER_STAGGING_DIRECTORY=kyber-wasm-$CI_COMMIT_SHORT_SHA
-    ./build-wasm.sh -k
+    ./build-wasm.sh -k build-libclient
 
 libclient-clippy-wasm:
   stage: misc
@@ -234,7 +166,7 @@ libclient-clippy-wasm:
   needs:
     - lint
   script: |
-    ./build-wasm.sh -k -c
+    ./build-wasm.sh -k clippy-libclient
 
 .libclient-build-ios-common:
   stage: build
@@ -246,8 +178,11 @@ libclient-clippy-wasm:
     - tags
   when: manual
   script: |
+    cd $CI_BUILDS_DIR/$CI_CONCURRENT_ID/kysdk
+    rm -rf kyutil kymux kynput kymedia
     rustup override set $RUST_VERSION
-    ./build-ios.sh -k -t $BUILD_TARGET -o $(pwd)/rootfs
+    cd $CI_BUILDS_DIR/$CI_CONCURRENT_ID/kysdk/kyctl
+    ./build-ios.sh -k -t $BUILD_TARGET -o $(pwd)/rootfs build-libclient
   needs:
     - lint
 
@@ -276,7 +211,7 @@ libclient-build-visionos:
   script: |
     export KYBER_PREFIX=$(pwd)/rootfs
     # Build
-    ./build-android.sh -k -a $HOST_ARCH -o $KYBER_PREFIX
+    ./build-android.sh -k -a $HOST_ARCH -o $KYBER_PREFIX build-libclient
     # Prepare rootfs to be shared to other jobs
     cd $KYBER_PREFIX
     ../scripts/change_prefix.sh $(pwd)

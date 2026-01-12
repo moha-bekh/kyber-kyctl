@@ -1,0 +1,114 @@
+variables:
+  GIT_SUBMODULE_STRATEGY: recursive
+  GIT_CLONE_PATH: $CI_BUILDS_DIR/$CI_CONCURRENT_ID/kysdk/kyctl
+  DEBIAN_IMAGE: registry.gitlab.com/kyber.stream/ops/docker-images/debian-trixie:20260127115341
+  WASM_IMAGE: registry.gitlab.com/kyber.stream/ops/docker-images/debian-wasm:20260127120059
+  WIN64_IMAGE: registry.gitlab.com/kyber.stream/ops/docker-images/debian-win64:20260127120515
+  ANDROID_IMAGE: registry.gitlab.com/kyber.stream/ops/docker-images/debian-android:20260127114607
+  MACOS_RUST_VERSION: 1.89.0
+
+stages:
+  - lint
+  - contrib
+  - build
+  - misc
+
+lint:
+  stage: lint
+  image: $DEBIAN_IMAGE
+  tags:
+    - docker
+  only:
+    - main
+    - merge_requests
+    - tags
+  script:
+    - cargo fmt -- --check
+  cache: []
+
+contrib-debian-trixie-x86_64:
+  stage: contrib
+  image: $DEBIAN_IMAGE
+  tags:
+    - docker
+  only:
+    - main
+    - merge_requests
+    - tags
+  script: |
+    export KYBER_DIRNAME=rootfs
+    export KYBER_PREFIX=$(pwd)/$KYBER_DIRNAME
+    # Build contribs
+    ./build-linux.sh -k -d -o $KYBER_PREFIX
+    # Prepare rootfs to be shared to other jobs
+    cd $KYBER_PREFIX
+    ../scripts/change_prefix.sh $(pwd)
+    cd -
+  artifacts:
+    paths:
+      - rootfs
+    expire_in: 1 week
+
+contrib-windows-x86_64:
+  stage: contrib
+  image: $WIN64_IMAGE
+  tags:
+    - docker
+  only:
+    - main
+    - merge_requests
+    - tags
+  script: |
+    export KYBER_DIRNAME=rootfs
+    export KYBER_PREFIX=$(pwd)/$KYBER_DIRNAME
+    # Build contribs
+    ./build-win32.sh -k -d -o $KYBER_PREFIX
+    # Prepare rootfs to be shared to other jobs
+    cd $KYBER_PREFIX
+    ../scripts/change_prefix.sh $(pwd)
+    cd -
+  artifacts:
+    paths:
+      - rootfs
+    expire_in: 1 week
+
+.contrib-macos-common:
+  stage: contrib
+  tags:
+    - macos
+  only:
+    - main
+    - merge_requests
+    - tags
+  before_script: |
+    cd $CI_BUILDS_DIR/$CI_CONCURRENT_ID/kysdk
+    rm -rf kyutil kymux kynput kymedia
+    rustup override set $MACOS_RUST_VERSION
+    cd $CI_BUILDS_DIR/$CI_CONCURRENT_ID/kysdk/kyctl
+  script: |
+    export KYBER_DIRNAME=rootfs
+    export KYBER_PREFIX=$(pwd)/$KYBER_DIRNAME
+    # Build contribs
+    ./build-macos.sh -k -d -a $HOST_ARCH -o $KYBER_PREFIX
+    # Prepare rootfs to be shared to other jobs
+    cd $KYBER_PREFIX
+    ../scripts/change_prefix.sh $(pwd)
+    cd -
+  artifacts:
+    paths:
+      - rootfs
+    expire_in: 1 week
+
+contrib-macos-x86_64:
+  extends: .contrib-macos-common
+  variables:
+    HOST_ARCH: x86_64
+
+contrib-macos-arm64:
+  extends: .contrib-macos-common
+  variables:
+    HOST_ARCH: arm64
+
+include:
+  - '.gitlab-ci-controller.yml'
+  - '.gitlab-ci-libclient.yml'
