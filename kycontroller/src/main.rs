@@ -680,17 +680,8 @@ async fn real_main() -> Result<()> {
         .bind_rustls_0_23(bind_addr, server_config)?
         .run();
 
-    // Run the server with tray support (Windows only when win32-tray feature is enabled).
-    // This handles tray icon creation, command processing, and graceful shutdown.
-    #[cfg(all(windows, feature = "win32-tray"))]
-    tray::run_with_tray(server, ctrl_for_tray).await?;
-
-    // On non-Windows or without tray feature, just run the server directly
-    #[cfg(not(all(windows, feature = "win32-tray")))]
-    {
-        let _ = ctrl_for_tray; // silence unused variable warning
-        server.await?;
-    }
+    // Run server with tray support (Windows) or directly (other platforms)
+    tray::run_server(server, ctrl_for_tray).await?;
 
     session_exp_task.stop().await;
     watchdog.stop().await?;

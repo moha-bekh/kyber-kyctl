@@ -26,14 +26,13 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use crate::controller::Controller;
 use crate::error::Result;
 
-use super::super::TrayStatus;
+use super::super::status::{ShutdownSignal, TrayStatus};
 
-use actix_web::dev::Server;
+use actix_web::dev::ServerHandle;
 use log::warn;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::mpsc;
 
 /// Stub handle for unsupported platforms.
 pub struct TrayHandle {
@@ -52,14 +51,22 @@ impl TrayHandle {
     }
 }
 
-/// Run the HTTP server with tray support.
+/// Spawn the system tray (stub for unsupported platforms).
 ///
-/// On unsupported platforms, this just runs the server without tray.
-pub async fn run_with_tray(
-    server: Server,
-    _ctrl: actix_web::web::Data<Mutex<Controller>>,
-) -> Result<()> {
+/// Returns a dummy handle and a channel that will never receive signals.
+pub fn spawn(_server_handle: ServerHandle) -> Result<(TrayHandle, mpsc::Receiver<ShutdownSignal>)> {
     warn!("System tray not supported on this platform");
-    server.await?;
-    Ok(())
+    let (status_tx, _status_rx) = mpsc::channel(1);
+    let (_shutdown_tx, shutdown_rx) = mpsc::channel(1);
+    Ok((
+        TrayHandle {
+            _status_tx: status_tx,
+        },
+        shutdown_rx,
+    ))
+}
+
+/// Signal the Windows service to stop (no-op on unsupported platforms).
+pub fn signal_service_stop() {
+    // No-op on non-Windows platforms
 }

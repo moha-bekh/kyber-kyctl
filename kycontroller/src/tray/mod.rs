@@ -32,18 +32,34 @@
 //!
 //! Communication with async code uses:
 //! - Platform-specific events for efficient shutdown signaling
-//! - tokio::sync::mpsc channels for status updates
+//! - tokio::sync::mpsc channels for status updates and shutdown signals
 //!
 //! # Platform Support
 //!
 //! - Windows: Full support with tray icon, menu, and status updates
-//! - Linux/macOS: Runs server without tray (logs warning)
+//! - Linux/macOS: Stub implementation (logs warning)
 //!
 //! # Usage
 //!
 //! ```ignore
-//! // In main.rs, use the high-level run_with_tray function:
-//! tray::run_with_tray(server, ctrl.clone()).await?;
+//! // In main.rs, spawn the tray and handle shutdown signals:
+//! let server_handle = server.handle();
+//! let (tray_handle, mut shutdown_rx) = tray::spawn(server_handle.clone())?;
+//!
+//! tokio::select! {
+//!     _ = server => {}
+//!     Some(signal) = shutdown_rx.recv() => {
+//!         match signal {
+//!             ShutdownSignal::Stop => {
+//!                 tray::signal_service_stop();
+//!                 server_handle.stop(true).await;
+//!             }
+//!             ShutdownSignal::Restart => {
+//!                 server_handle.stop(true).await;
+//!             }
+//!         }
+//!     }
+//! }
 //! ```
 
 mod platform;
@@ -51,5 +67,67 @@ mod status;
 
 // These are only used on Windows with win32-tray feature
 #[allow(unused_imports)]
-pub use platform::{run_with_tray, TrayHandle};
-pub use status::TrayStatus;
+pub use platform::{signal_service_stop, spawn, TrayHandle};
+#[allow(unused_imports)]
+pub use status::{ShutdownSignal, TrayStatus};
+
+use crate::controller::Controller;
+use crate::error::Result;
+
+use actix_web::dev::Server;
+use log::{info, warn};
+use tokio::sync::Mutex;
+
+/// Run the HTTP server with optional tray support.
+///
+/// This function handles:
+/// - Spawning the tray icon (if supported)
+/// - Processing tray commands (Stop/Restart)
+/// - Graceful server shutdown
+/// - Windows service event signaling
+///
+/// On platforms without tray support, this simply runs the server.
+pub async fn run_server(
+    server: Server,
+    ctrl: actix_web::web::Data<Mutex<Controller>>,
+) -> Result<()> {
+    let server_handle = server.handle();
+
+    let mut shutdown_rx = match spawn(server_handle.clone()) {
+        Ok((tray_handle, rx)) => {
+            info!("System tray initialized");
+            tray_handle.set_status(TrayStatus::idle()).await;
+            ctrl.lock().await.set_tray_handle(tray_handle);
+            rx
+        }
+        Err(e) => {
+            warn!("Failed to initialize system tray: {e}");
+            let (_tx, rx) = tokio::sync::mpsc::channel(1);
+            rx
+        }
+    };
+
+    tokio::select! {
+        result = server => {
+            if let Err(e) = result {
+                warn!("Server error: {e}");
+            }
+        }
+        Some(signal) = shutdown_rx.recv() => {
+            match signal {
+                ShutdownSignal::Stop => {
+                    info!("Stop signal received");
+                    signal_service_stop();
+                    server_handle.stop(true).await;
+                }
+                ShutdownSignal::Restart => {
+                    info!("Restart signal received");
+                    server_handle.stop(true).await;
+                }
+            }
+        }
+    }
+
+    ctrl.lock().await.shutdown_tray().await;
+    Ok(())
+}

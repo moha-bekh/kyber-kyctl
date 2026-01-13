@@ -55,3 +55,15 @@ pub enum TrayCommand {
     /// Request to restart the controller.
     Restart,
 }
+
+/// Signal that triggers server shutdown.
+///
+/// Sent through a channel from the tray module to main.rs.
+/// Main.rs owns the server lifecycle and handles shutdown based on these signals.
+#[derive(Debug, Clone)]
+pub enum ShutdownSignal {
+    /// Stop the controller (from tray menu or service shutdown).
+    Stop,
+    /// Restart the controller (from tray menu).
+    Restart,
+}
