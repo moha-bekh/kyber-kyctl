@@ -42,10 +42,26 @@ kynputservice-types = "0.1"
 kymux = {version = "0.1", features = ["server", "backend-quinn", "backend-wtransport", "ipc", "tokio-rt"]}
 libkypc = "0.1"
 
+[target.'cfg(windows)'.dependencies]
+# Required for service shutdown handling and tray icon (always needed on Windows)
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Threading",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Shell",
+    "Win32_Graphics_Gdi",
+] }
+# System tray menu (Windows only) - we use Shell_NotifyIconW directly for the icon
+muda = { version = "0.15", optional = true }
+# Use png crate for consistency with libkynput
+png = { version = "0.17.13", optional = true }
+
 [features]
 default = ["auth-basic"]
 
 win32-hide-console = []
+win32-tray = ["dep:muda", "dep:png"]
 
 cli = ["dep:clap", "dep:humantime"]
 

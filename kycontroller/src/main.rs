@@ -47,6 +47,7 @@ mod security;
 mod session;
 mod statemachine;
 mod tls;
+mod tray;
 mod utils;
 mod watchdog;
 mod webclient;
@@ -145,6 +146,7 @@ async fn login(ctrl: web::Data<Mutex<Controller>>, req: HttpRequest) -> HttpResp
 
     // Multi-session support: allow multiple simultaneous sessions
     ctrl.sessions.insert(uuid, client_session);
+    ctrl.update_tray_status().await;
 
     HttpResponse::Ok().json(body)
 }
@@ -417,6 +419,7 @@ async fn logout(ctrl: web::Data<Mutex<Controller>>, user: Identity) -> HttpRespo
     let mut ctrl = ctrl.lock().await;
 
     let ret = ctrl.stop(uid).await;
+    ctrl.update_tray_status().await;
     match ret {
         Ok(_) => {
             info!("Session stopped");
@@ -606,75 +609,88 @@ async fn real_main() -> Result<()> {
 
     let cookie_key = cookie::Key::generate();
 
-    HttpServer::new(move || {
-        // Actix Middleware Stack: Middleware executes in REVERSE order of .wrap() calls
-        //
-        // Data Flow:
-        // Cookie → Session → IdentityInner → Identity (FromRequest)
-        let app = App::new()
-            .app_data(ctrl.clone())
-            .app_data(web::JsonConfig::default().limit(1024))
-            // Custom middleware: wraps Session in IdentityInner, enforces expiration
-            .wrap(session::identity::middleware::IdentityMiddleware {})
-            // Decrypts session cookie, provides Session object to downstream middleware
-            .wrap(
-                SessionMiddleware::builder(CookieSessionStore::default(), cookie_key.clone())
-                    .cookie_same_site(cookie_same_site)
-                    .cookie_name("__HOST-SESSION".to_owned())
-                    .build(),
-            )
-            .wrap(security::cop::CrossOriginProtection::new(
-                trusted_origins.clone(),
-            ))
-            .wrap(security::build_cors(&trusted_origins))
-            .wrap(middleware::Logger::default())
-            // Kymux
-            .service(
-                web::scope("/kymux")
-                    .service(kymux_controller::requests::start_mux)
-                    .service(kymux_controller::requests::start_session),
-            )
-            // RTP
-            .service(
-                web::scope("/rtp")
-                    .service(rtp::requests::hello)
-                    .service(rtp::requests::generate_sdp)
-                    .service(rtp::requests::start),
-            )
-            // Websocket
-            .service(
-                web::scope("/websocket")
-                    .service(ws::requests::start_handler)
-                    .service(ws::requests::inputs)
-                    .service(ws::requests::video)
-                    .service(ws::requests::audio),
-            )
-            .service(
-                web::scope("/session")
-                    .service(login)
-                    .service(renew)
-                    .service(logout),
-            )
-            .service(capabilities)
-            .service(websocket_service)
-            .service(enumerate_displays)
-            .service(stop_streaming)
-            .service(set_bitrate);
+    // Clone ctrl for use after the HttpServer closure (which moves ctrl)
+    let ctrl_for_tray = ctrl.clone();
 
-        if let Some(webclient_root) = &webclient_root {
-            app.service(web::redirect("/webclient", "/webclient/"))
-                .service(
-                    web::scope("/webclient").wrap(webclient::WebClient).service(
-                        actix_files::Files::new("", webclient_root).index_file("index.html"),
-                    ),
+    let server =
+        HttpServer::new(move || {
+            // Actix Middleware Stack: Middleware executes in REVERSE order of .wrap() calls
+            //
+            // Data Flow:
+            // Cookie → Session → IdentityInner → Identity (FromRequest)
+            let app = App::new()
+                .app_data(ctrl.clone())
+                .app_data(web::JsonConfig::default().limit(1024))
+                // Custom middleware: wraps Session in IdentityInner, enforces expiration
+                .wrap(session::identity::middleware::IdentityMiddleware {})
+                // Decrypts session cookie, provides Session object to downstream middleware
+                .wrap(
+                    SessionMiddleware::builder(CookieSessionStore::default(), cookie_key.clone())
+                        .cookie_same_site(cookie_same_site)
+                        .cookie_name("__HOST-SESSION".to_owned())
+                        .build(),
                 )
-        } else {
-            app
-        }
-    })
-    .bind_rustls_0_23(bind_addr, server_config)?
-    .run()
-    .await?;
+                .wrap(security::cop::CrossOriginProtection::new(
+                    trusted_origins.clone(),
+                ))
+                .wrap(security::build_cors(&trusted_origins))
+                .wrap(middleware::Logger::default())
+                // Kymux
+                .service(
+                    web::scope("/kymux")
+                        .service(kymux_controller::requests::start_mux)
+                        .service(kymux_controller::requests::start_session),
+                )
+                // RTP
+                .service(
+                    web::scope("/rtp")
+                        .service(rtp::requests::hello)
+                        .service(rtp::requests::generate_sdp)
+                        .service(rtp::requests::start),
+                )
+                // Websocket
+                .service(
+                    web::scope("/websocket")
+                        .service(ws::requests::start_handler)
+                        .service(ws::requests::inputs)
+                        .service(ws::requests::video)
+                        .service(ws::requests::audio),
+                )
+                .service(
+                    web::scope("/session")
+                        .service(login)
+                        .service(renew)
+                        .service(logout),
+                )
+                .service(capabilities)
+                .service(websocket_service)
+                .service(enumerate_displays)
+                .service(stop_streaming)
+                .service(set_bitrate);
+
+            if let Some(webclient_root) = &webclient_root {
+                app.service(web::redirect("/webclient", "/webclient/"))
+                    .service(web::scope("/webclient").wrap(webclient::WebClient).service(
+                        actix_files::Files::new("", webclient_root).index_file("index.html"),
+                    ))
+            } else {
+                app
+            }
+        })
+        .bind_rustls_0_23(bind_addr, server_config)?
+        .run();
+
+    // Run the server with tray support (Windows only when win32-tray feature is enabled).
+    // This handles tray icon creation, command processing, and graceful shutdown.
+    #[cfg(all(windows, feature = "win32-tray"))]
+    tray::run_with_tray(server, ctrl_for_tray).await?;
+
+    // On non-Windows or without tray feature, just run the server directly
+    #[cfg(not(all(windows, feature = "win32-tray")))]
+    {
+        let _ = ctrl_for_tray; // silence unused variable warning
+        server.await?;
+    }
 
     session_exp_task.stop().await;
     watchdog.stop().await?;

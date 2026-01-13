@@ -42,6 +42,9 @@ use crate::ws::WebsocketBackend;
 use crate::HostEventSender;
 use crate::StateMachineProxy;
 
+#[cfg(all(windows, feature = "win32-tray"))]
+use crate::tray::{TrayHandle, TrayStatus};
+
 pub(crate) enum DataPlaneBackend {
     Rtp,
     Kymux(KymuxBackend),
@@ -189,6 +192,8 @@ pub struct Controller {
     // Shared Kymux infrastructure (unified server supporting both QUIC and WebTransport on same port)
     // Always exists but can be in stopped or running state internally
     pub(crate) shared_kymux_infra: Arc<tokio::sync::Mutex<SharedKymuxInfra>>,
+    #[cfg(all(windows, feature = "win32-tray"))]
+    pub(crate) tray_handle: Option<TrayHandle>,
 }
 
 impl Controller {
@@ -205,8 +210,51 @@ impl Controller {
             sessions: HashMap::new(),
             state_machine_proxy: None,
             shared_kymux_infra: Arc::new(tokio::sync::Mutex::new(SharedKymuxInfra::new())),
+
+            #[cfg(all(windows, feature = "win32-tray"))]
+            tray_handle: None,
         }
     }
+
+    /// Set the tray handle for status updates.
+    #[cfg(all(windows, feature = "win32-tray"))]
+    pub(crate) fn set_tray_handle(&mut self, handle: TrayHandle) {
+        self.tray_handle = Some(handle);
+    }
+
+    /// Update the system tray status.
+    ///
+    /// This is async because the tray runs on a dedicated thread and
+    /// communication uses tokio channels.
+    #[cfg(all(windows, feature = "win32-tray"))]
+    pub(crate) async fn update_tray_status(&self) {
+        let Some(ref tray) = self.tray_handle else {
+            return;
+        };
+
+        let clients: Vec<String> = self.sessions.values().map(|s| s.username.clone()).collect();
+
+        tray.set_status(TrayStatus { clients }).await;
+    }
+
+    /// No-op on non-Windows platforms.
+    #[cfg(not(all(windows, feature = "win32-tray")))]
+    pub(crate) async fn update_tray_status(&self) {}
+
+    /// Shutdown the system tray (removes the icon from taskbar).
+    ///
+    /// This is async because shutdown waits for the tray thread to finish.
+    #[cfg(all(windows, feature = "win32-tray"))]
+    pub(crate) async fn shutdown_tray(&mut self) {
+        if let Some(mut tray) = self.tray_handle.take() {
+            tray.shutdown().await;
+        }
+    }
+
+    /// No-op on non-Windows platforms.
+    #[cfg(not(all(windows, feature = "win32-tray")))]
+    #[allow(dead_code)]
+    pub(crate) async fn shutdown_tray(&mut self) {}
 
     pub fn get_session<'a>(&'a mut self, uid: &uuid::Uuid) -> Result<&'a mut ClientSession> {
         self.sessions

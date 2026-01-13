@@ -108,6 +108,19 @@ pub enum Error {
     },
     #[error("No statemachine proxy")]
     NotStateMachineProxy,
+    // Tray errors are only used on Windows with win32-tray feature
+    #[allow(dead_code)]
+    #[error("Tray not supported on this platform")]
+    TrayNotSupported,
+    #[allow(dead_code)]
+    #[error("Tray icon load failed: {reason}")]
+    TrayIconLoad { reason: String },
+    #[allow(dead_code)]
+    #[error("Tray initialization failed: {reason}")]
+    TrayInit { reason: String },
+    #[allow(dead_code)]
+    #[error("Tray thread spawn failed")]
+    TrayThreadSpawn,
 }
 
 impl Error {
