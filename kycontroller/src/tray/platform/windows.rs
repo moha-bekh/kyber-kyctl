@@ -37,10 +37,27 @@ use super::super::status::{TrayCommand, TrayStatus};
 use crate::error::{Error, Result};
 
 use log::{info, warn};
+use muda::{ContextMenu, Menu};
+use std::ffi::OsStr;
+use std::os::windows::ffi::OsStrExt;
 use std::thread::JoinHandle;
 use tokio::sync::mpsc;
-use windows_sys::Win32::Foundation::CloseHandle;
+use windows_sys::Win32::Foundation::{CloseHandle, HWND, LPARAM, LRESULT, WPARAM};
+use windows_sys::Win32::Graphics::Gdi::{
+    CreateBitmap, CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, BITMAPINFO,
+    BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
+};
 use windows_sys::Win32::System::Threading::SetEvent;
+use windows_sys::Win32::UI::Shell::{
+    Shell_NotifyIconW, NIF_GUID, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY,
+    NOTIFYICONDATAW,
+};
+use windows_sys::Win32::UI::WindowsAndMessaging::{
+    CreateIconIndirect, CreateWindowExW, DefWindowProcW, DestroyIcon, DestroyWindow,
+    GetWindowLongPtrW, RegisterClassW, SetForegroundWindow, SetWindowLongPtrW, CREATESTRUCTW,
+    CW_USEDEFAULT, GWLP_USERDATA, HICON, ICONINFO, WM_LBUTTONUP, WM_NCCREATE, WM_RBUTTONUP,
+    WNDCLASSW, WS_OVERLAPPEDWINDOW,
+};
 
 /// Wrapper for Windows HANDLE that implements Send + Sync and auto-closes on drop.
 ///
@@ -184,6 +201,339 @@ enum WaitResult {
     Wake,
     /// Windows messages are available.
     WindowsMessage,
+}
+
+// ============================================================================
+// Native Tray Icon Implementation using Shell_NotifyIconW with NIF_GUID
+// ============================================================================
+
+// Thread-local storage for menu and window handle (needed by window procedure).
+thread_local! {
+    static TRAY_CONTEXT: std::cell::RefCell<Option<TrayContext>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Context for the tray window procedure to access menu and window handle.
+struct TrayContext {
+    menu: Menu,
+    hwnd: HWND,
+}
+
+/// Window procedure for the hidden tray window.
+///
+/// Handles WM_TRAYICON messages to show the context menu using muda's show_context_menu_for_hwnd.
+unsafe extern "system" fn tray_window_proc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    if msg == WM_TRAYICON {
+        let event = (lparam & 0xFFFF) as u32;
+        if event == WM_RBUTTONUP || event == WM_LBUTTONUP {
+            // Show context menu using muda's method (handles WM_COMMAND properly)
+            TRAY_CONTEXT.with(|ctx| {
+                if let Some(ref ctx) = *ctx.borrow() {
+                    // Required to make menu dismiss when clicking elsewhere
+                    SetForegroundWindow(hwnd);
+                    // Use muda's show_context_menu_for_hwnd - pass None to use cursor position
+                    ctx.menu.show_context_menu_for_hwnd(ctx.hwnd as isize, None);
+                }
+            });
+        }
+        return 0;
+    }
+
+    DefWindowProcW(hwnd, msg, wparam, lparam)
+}
+
+/// Native tray icon using Shell_NotifyIconW with NIF_GUID.
+///
+/// This implementation creates icons with a fixed GUID, allowing:
+/// - Cleanup of orphan icons from previous crashed instances
+/// - Reliable icon identification across process restarts
+struct NativeTrayIcon {
+    hwnd: HWND,
+    hicon: HICON,
+}
+
+impl NativeTrayIcon {
+    /// Create a new native tray icon.
+    ///
+    /// This also attempts to remove any orphan icon with the same GUID first.
+    fn new(icon_data: &[u8], tooltip: &str) -> Result<Self> {
+        // First, try to remove any orphan icon with our GUID
+        remove_orphan_icon();
+
+        // Register window class (ignore error if already registered)
+        let class_name = to_wide_string(TRAY_WINDOW_CLASS);
+        let wc = WNDCLASSW {
+            style: 0,
+            lpfnWndProc: Some(tray_window_proc),
+            cbClsExtra: 0,
+            cbWndExtra: 0,
+            hInstance: std::ptr::null_mut(),
+            hIcon: std::ptr::null_mut(),
+            hCursor: std::ptr::null_mut(),
+            hbrBackground: std::ptr::null_mut(),
+            lpszMenuName: std::ptr::null(),
+            lpszClassName: class_name.as_ptr(),
+        };
+        unsafe { RegisterClassW(&wc) };
+
+        // Create hidden window for receiving messages
+        let hwnd = unsafe {
+            CreateWindowExW(
+                0,
+                class_name.as_ptr(),
+                std::ptr::null(),
+                WS_OVERLAPPEDWINDOW,
+                CW_USEDEFAULT,
+                CW_USEDEFAULT,
+                CW_USEDEFAULT,
+                CW_USEDEFAULT,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null(),
+            )
+        };
+        if hwnd.is_null() {
+            return Err(Error::TrayInit {
+                reason: "Failed to create hidden window".to_string(),
+            });
+        }
+
+        // Create HICON from PNG data
+        let hicon = create_hicon_from_png(icon_data)?;
+
+        // Create the tray icon
+        let mut nid = create_notify_icon_data(hwnd, hicon, tooltip);
+        nid.uFlags = NIF_ICON | NIF_TIP | NIF_MESSAGE | NIF_GUID;
+
+        let result = unsafe { Shell_NotifyIconW(NIM_ADD, &nid) };
+        if result == 0 {
+            unsafe {
+                DestroyIcon(hicon);
+                DestroyWindow(hwnd);
+            }
+            return Err(Error::TrayInit {
+                reason: "Shell_NotifyIconW(NIM_ADD) failed".to_string(),
+            });
+        }
+
+        Ok(Self { hwnd, hicon })
+    }
+
+    /// Update the tooltip text.
+    fn set_tooltip(&self, tooltip: &str) {
+        let mut nid = create_notify_icon_data(self.hwnd, self.hicon, tooltip);
+        nid.uFlags = NIF_TIP | NIF_GUID;
+
+        unsafe { Shell_NotifyIconW(NIM_MODIFY, &nid) };
+    }
+
+    /// Get the hidden window handle.
+    fn hwnd(&self) -> HWND {
+        self.hwnd
+    }
+}
+
+impl Drop for NativeTrayIcon {
+    fn drop(&mut self) {
+        // Remove the tray icon using GUID
+        let mut nid: NOTIFYICONDATAW = unsafe { std::mem::zeroed() };
+        nid.cbSize = std::mem::size_of::<NOTIFYICONDATAW>() as u32;
+        nid.uFlags = NIF_GUID;
+        nid.guidItem = TRAY_ICON_GUID;
+        unsafe { Shell_NotifyIconW(NIM_DELETE, &nid) };
+
+        if !self.hicon.is_null() {
+            unsafe { DestroyIcon(self.hicon) };
+        }
+        if !self.hwnd.is_null() {
+            unsafe { DestroyWindow(self.hwnd) };
+        }
+    }
+}
+
+/// Convert a Rust string to a null-terminated wide string.
+fn to_wide_string(s: &str) -> Vec<u16> {
+    OsStr::new(s)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect()
+}
+
+/// Create a NOTIFYICONDATAW structure with common fields filled.
+fn create_notify_icon_data(hwnd: HWND, hicon: HICON, tooltip: &str) -> NOTIFYICONDATAW {
+    let mut nid: NOTIFYICONDATAW = unsafe { std::mem::zeroed() };
+    nid.cbSize = std::mem::size_of::<NOTIFYICONDATAW>() as u32;
+    nid.hWnd = hwnd;
+    nid.uID = 0; // Not used when NIF_GUID is set
+    nid.uCallbackMessage = WM_TRAYICON;
+    nid.hIcon = hicon;
+    nid.guidItem = TRAY_ICON_GUID;
+
+    // Copy tooltip (max 127 chars + null terminator)
+    let tooltip_wide = to_wide_string(tooltip);
+    let copy_len = tooltip_wide.len().min(nid.szTip.len());
+    nid.szTip[..copy_len].copy_from_slice(&tooltip_wide[..copy_len]);
+
+    nid
+}
+
+/// Create an HICON from PNG data using CreateIconIndirect.
+fn create_hicon_from_png(png_data: &[u8]) -> Result<HICON> {
+    // Decode PNG
+    let decoder = png::Decoder::new(png_data);
+    let mut reader = decoder.read_info().map_err(|e| Error::TrayIconLoad {
+        reason: e.to_string(),
+    })?;
+
+    let mut buf = vec![0; reader.output_buffer_size()];
+    let info = reader
+        .next_frame(&mut buf)
+        .map_err(|e| Error::TrayIconLoad {
+            reason: e.to_string(),
+        })?;
+
+    // Convert to RGBA if needed
+    let rgba_data = match info.color_type {
+        png::ColorType::Rgba => buf[..info.buffer_size()].to_vec(),
+        png::ColorType::Rgb => {
+            // Add alpha channel (fully opaque) to RGB pixels
+            let rgb_data = &buf[..info.buffer_size()];
+            let mut rgba = Vec::with_capacity((info.width * info.height * 4) as usize);
+            for chunk in rgb_data.chunks(3) {
+                rgba.extend_from_slice(chunk);
+                rgba.push(255);
+            }
+            rgba
+        }
+        other => {
+            return Err(Error::TrayIconLoad {
+                reason: format!("Unsupported color type: {:?}", other),
+            });
+        }
+    };
+
+    let width = info.width as i32;
+    let height = info.height as i32;
+
+    // Convert RGBA to BGRA (Windows DIB format) with pre-multiplied alpha
+    let mut bgra_data = Vec::with_capacity(rgba_data.len());
+    for chunk in rgba_data.chunks(4) {
+        let (r, g, b, a) = (chunk[0], chunk[1], chunk[2], chunk[3]);
+        // Pre-multiply alpha for proper transparency
+        let alpha = a as u32;
+        let premul_r = ((r as u32 * alpha) / 255) as u8;
+        let premul_g = ((g as u32 * alpha) / 255) as u8;
+        let premul_b = ((b as u32 * alpha) / 255) as u8;
+        bgra_data.push(premul_b); // Blue
+        bgra_data.push(premul_g); // Green
+        bgra_data.push(premul_r); // Red
+        bgra_data.push(a); // Alpha
+    }
+
+    // Create a compatible DC
+    let hdc = unsafe { CreateCompatibleDC(std::ptr::null_mut()) };
+    if hdc.is_null() {
+        return Err(Error::TrayIconLoad {
+            reason: "CreateCompatibleDC failed".to_string(),
+        });
+    }
+
+    // Set up BITMAPINFO for a 32-bit top-down DIB
+    let mut bmi: BITMAPINFO = unsafe { std::mem::zeroed() };
+    bmi.bmiHeader.biSize = std::mem::size_of::<BITMAPINFOHEADER>() as u32;
+    bmi.bmiHeader.biWidth = width;
+    bmi.bmiHeader.biHeight = -height; // Negative for top-down
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    // Create the color bitmap as a DIB section
+    let mut bits: *mut std::ffi::c_void = std::ptr::null_mut();
+    let hbm_color = unsafe {
+        CreateDIBSection(
+            hdc,
+            &bmi,
+            DIB_RGB_COLORS,
+            &mut bits,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if hbm_color.is_null() {
+        unsafe { DeleteDC(hdc) };
+        return Err(Error::TrayIconLoad {
+            reason: "CreateDIBSection failed".to_string(),
+        });
+    }
+
+    // Copy the BGRA data to the DIB section
+    if !bits.is_null() {
+        unsafe {
+            std::ptr::copy_nonoverlapping(bgra_data.as_ptr(), bits as *mut u8, bgra_data.len())
+        };
+    }
+
+    // Create a monochrome mask bitmap (all zeros = fully opaque when combined with 32-bit color)
+    let hbm_mask = unsafe { CreateBitmap(width, height, 1, 1, std::ptr::null()) };
+    if hbm_mask.is_null() {
+        unsafe {
+            DeleteObject(hbm_color as _);
+            DeleteDC(hdc);
+        }
+        return Err(Error::TrayIconLoad {
+            reason: "CreateBitmap for mask failed".to_string(),
+        });
+    }
+
+    // Create the icon using ICONINFO
+    let mut icon_info: ICONINFO = unsafe { std::mem::zeroed() };
+    icon_info.fIcon = 1; // TRUE = icon (not cursor)
+    icon_info.xHotspot = 0;
+    icon_info.yHotspot = 0;
+    icon_info.hbmMask = hbm_mask;
+    icon_info.hbmColor = hbm_color;
+
+    let hicon = unsafe { CreateIconIndirect(&icon_info) };
+
+    // Clean up bitmaps and DC (CreateIconIndirect makes copies)
+    unsafe {
+        DeleteObject(hbm_mask as _);
+        DeleteObject(hbm_color as _);
+        DeleteDC(hdc);
+    }
+
+    if hicon.is_null() {
+        return Err(Error::TrayIconLoad {
+            reason: "CreateIconIndirect failed".to_string(),
+        });
+    }
+
+    Ok(hicon)
+}
+
+/// Remove any orphan tray icon with our GUID.
+///
+/// This is called before creating a new tray icon to clean up icons from
+/// previous controller instances that were killed without proper cleanup.
+/// Using NIF_GUID allows Windows to identify the icon across process restarts.
+fn remove_orphan_icon() {
+    // Safety: NOTIFYICONDATAW is a POD type, zeroing is valid
+    let mut nid: NOTIFYICONDATAW = unsafe { std::mem::zeroed() };
+    nid.cbSize = std::mem::size_of::<NOTIFYICONDATAW>() as u32;
+    nid.uFlags = NIF_GUID;
+    nid.guidItem = TRAY_ICON_GUID;
+
+    // Try to delete any existing icon with our GUID
+    // This will succeed if there's an orphan icon, fail silently otherwise
+    let result = unsafe { Shell_NotifyIconW(NIM_DELETE, &nid) };
+    if result != 0 {
+        info!("Removed orphan tray icon with GUID");
+    }
 }
 
 /// Spawn the system tray thread.
