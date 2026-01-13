@@ -36,10 +36,11 @@
 use super::super::status::{TrayCommand, TrayStatus};
 use crate::error::{Error, Result};
 
-use log::{info, warn};
-use muda::{ContextMenu, Menu};
+use log::{error, info, warn};
+use muda::{ContextMenu, Menu, MenuEvent, MenuId, MenuItem};
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
+use std::thread;
 use std::thread::JoinHandle;
 use tokio::sync::mpsc;
 use windows_sys::Win32::Foundation::{CloseHandle, HWND, LPARAM, LRESULT, WPARAM};
@@ -207,38 +208,42 @@ enum WaitResult {
 // Native Tray Icon Implementation using Shell_NotifyIconW with NIF_GUID
 // ============================================================================
 
-// Thread-local storage for menu and window handle (needed by window procedure).
-thread_local! {
-    static TRAY_CONTEXT: std::cell::RefCell<Option<TrayContext>> = const { std::cell::RefCell::new(None) };
-}
-
-/// Context for the tray window procedure to access menu and window handle.
+/// Context for the tray window procedure to access the menu.
 struct TrayContext {
     menu: Menu,
-    hwnd: HWND,
 }
 
 /// Window procedure for the hidden tray window.
 ///
 /// Handles WM_TRAYICON messages to show the context menu using muda's show_context_menu_for_hwnd.
+/// Context is stored in window user data via WM_NCCREATE/GetWindowLongPtrW pattern.
 unsafe extern "system" fn tray_window_proc(
     hwnd: HWND,
     msg: u32,
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
+    // Store context pointer in window user data on creation
+    if msg == WM_NCCREATE {
+        let create_struct = &*(lparam as *const CREATESTRUCTW);
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, create_struct.lpCreateParams as isize);
+        return DefWindowProcW(hwnd, msg, wparam, lparam);
+    }
+
+    // Retrieve context from window user data
+    let userdata = GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+    if userdata == 0 {
+        return DefWindowProcW(hwnd, msg, wparam, lparam);
+    }
+    let ctx = &*(userdata as *const TrayContext);
+
     if msg == WM_TRAYICON {
         let event = (lparam & 0xFFFF) as u32;
         if event == WM_RBUTTONUP || event == WM_LBUTTONUP {
-            // Show context menu using muda's method (handles WM_COMMAND properly)
-            TRAY_CONTEXT.with(|ctx| {
-                if let Some(ref ctx) = *ctx.borrow() {
-                    // Required to make menu dismiss when clicking elsewhere
-                    SetForegroundWindow(hwnd);
-                    // Use muda's show_context_menu_for_hwnd - pass None to use cursor position
-                    ctx.menu.show_context_menu_for_hwnd(ctx.hwnd as isize, None);
-                }
-            });
+            // Required to make menu dismiss when clicking elsewhere
+            SetForegroundWindow(hwnd);
+            // Use muda's show_context_menu_for_hwnd - pass None to use cursor position
+            ctx.menu.show_context_menu_for_hwnd(hwnd as isize, None);
         }
         return 0;
     }
@@ -259,8 +264,11 @@ struct NativeTrayIcon {
 impl NativeTrayIcon {
     /// Create a new native tray icon.
     ///
+    /// The `ctx` pointer is stored in the window's user data for the window procedure.
+    /// The caller must ensure `ctx` remains valid for the lifetime of the tray icon.
+    ///
     /// This also attempts to remove any orphan icon with the same GUID first.
-    fn new(icon_data: &[u8], tooltip: &str) -> Result<Self> {
+    fn new(icon_data: &[u8], tooltip: &str, ctx: *const TrayContext) -> Result<Self> {
         // First, try to remove any orphan icon with our GUID
         remove_orphan_icon();
 
@@ -280,7 +288,8 @@ impl NativeTrayIcon {
         };
         unsafe { RegisterClassW(&wc) };
 
-        // Create hidden window for receiving messages
+        // Create hidden window for receiving messages.
+        // Pass context pointer via lpParam for WM_NCCREATE to store in user data.
         let hwnd = unsafe {
             CreateWindowExW(
                 0,
@@ -294,7 +303,7 @@ impl NativeTrayIcon {
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
-                std::ptr::null(),
+                ctx as *const std::ffi::c_void,
             )
         };
         if hwnd.is_null() {
@@ -330,11 +339,6 @@ impl NativeTrayIcon {
         nid.uFlags = NIF_TIP | NIF_GUID;
 
         unsafe { Shell_NotifyIconW(NIM_MODIFY, &nid) };
-    }
-
-    /// Get the hidden window handle.
-    fn hwnd(&self) -> HWND {
-        self.hwnd
     }
 }
 
@@ -534,6 +538,208 @@ fn remove_orphan_icon() {
     if result != 0 {
         info!("Removed orphan tray icon with GUID");
     }
+}
+
+/// Build the context menu for the tray icon.
+fn build_menu() -> Result<Menu> {
+    let menu = Menu::new();
+
+    let stop_item = MenuItem::with_id(MENU_STOP_ID, "Stop Kyber", true, None);
+    let restart_item = MenuItem::with_id(MENU_RESTART_ID, "Restart Kyber", true, None);
+
+    menu.append(&restart_item).map_err(|e| Error::TrayInit {
+        reason: e.to_string(),
+    })?;
+    menu.append(&stop_item).map_err(|e| Error::TrayInit {
+        reason: e.to_string(),
+    })?;
+
+    Ok(menu)
+}
+
+/// Wait for events using MsgWaitForMultipleObjectsEx.
+///
+/// This is more efficient than polling because the thread sleeps until:
+/// - The shutdown event is signaled
+/// - The wake event is signaled (status update available)
+/// - Windows messages arrive (for tray icon interactions)
+///
+/// # Arguments
+///
+/// * `shutdown_event` - Windows event handle for shutdown signaling
+/// * `wake_event` - Windows event handle for waking to check status updates
+///
+/// # Safety
+///
+/// This function uses unsafe Windows API calls. Safety is ensured by:
+/// - Both events are valid handles created by CreateEventW
+/// - All parameters to MsgWaitForMultipleObjectsEx are valid
+fn wait_for_events(shutdown_event: SendHandle, wake_event: SendHandle) -> WaitResult {
+    use windows_sys::Win32::Foundation::WAIT_OBJECT_0;
+    use windows_sys::Win32::System::Threading::INFINITE;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        MsgWaitForMultipleObjectsEx, MWMO_INPUTAVAILABLE, QS_ALLINPUT,
+    };
+
+    let handles = [shutdown_event.as_raw(), wake_event.as_raw()];
+
+    // Safety: both handles are valid, other parameters are constants
+    let result = unsafe {
+        MsgWaitForMultipleObjectsEx(
+            2,                   // nCount - number of handles
+            handles.as_ptr(),    // pHandles - array of handles
+            INFINITE,            // dwMilliseconds - wait indefinitely
+            QS_ALLINPUT,         // dwWakeMask - wake on any input
+            MWMO_INPUTAVAILABLE, // dwFlags - return when input is available
+        )
+    };
+
+    match result {
+        WAIT_OBJECT_0 => WaitResult::Shutdown,
+        x if x == WAIT_OBJECT_0 + 1 => WaitResult::Wake,
+        x if x == WAIT_OBJECT_0 + 2 => WaitResult::WindowsMessage,
+        _ => WaitResult::Shutdown, // Error case - treat as shutdown
+    }
+}
+
+/// Process all pending Windows messages.
+///
+/// # Safety
+///
+/// This function uses unsafe Windows API calls. Safety is ensured by:
+/// - Proper initialization of MSG struct with zeroed memory
+/// - Valid pointer passed to PeekMessageW
+/// - Standard Windows message dispatch pattern (TranslateMessage + DispatchMessageW)
+fn pump_windows_messages() {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        DispatchMessageW, PeekMessageW, TranslateMessage, MSG, PM_REMOVE,
+    };
+
+    // Safety: MSG is a POD type, zeroing is valid initialization
+    let mut msg: MSG = unsafe { std::mem::zeroed() };
+
+    // Safety: PeekMessageW with null hwnd processes all thread messages
+    // PM_REMOVE removes messages from queue after processing
+    while unsafe { PeekMessageW(&mut msg, std::ptr::null_mut(), 0, 0, PM_REMOVE) } != 0 {
+        // Safety: Standard Windows message processing pattern
+        unsafe {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+    }
+}
+
+/// Handle a menu item click event.
+fn handle_menu_event(id: &MenuId, command_tx: &mpsc::Sender<TrayCommand>) {
+    match id.as_ref() {
+        MENU_STOP_ID => {
+            info!("Tray: Stop requested");
+            let _ = command_tx.blocking_send(TrayCommand::Stop);
+        }
+        MENU_RESTART_ID => {
+            info!("Tray: Restart requested");
+            let _ = command_tx.blocking_send(TrayCommand::Restart);
+        }
+        _ => {}
+    }
+}
+
+/// Update the tray icon tooltip based on status.
+fn update_tooltip(tray: &NativeTrayIcon, status: &TrayStatus) {
+    let tooltip = status.tooltip();
+    info!("Tray status: {tooltip}");
+    tray.set_tooltip(&tooltip);
+}
+
+/// Main tray event loop (runs on dedicated thread).
+///
+/// This function must run on a dedicated OS thread because:
+/// 1. Windows tray icons require a message pump on the creating thread
+/// 2. The message pump is inherently blocking
+/// 3. muda menu library requires same-thread access
+///
+/// Communication with async code uses:
+/// - Windows event (`shutdown_event`) for shutdown signaling
+/// - Windows event (`wake_event`) for waking to check status updates
+/// - tokio::sync::mpsc channel for status updates
+fn run_tray_loop(
+    mut status_rx: mpsc::Receiver<TrayStatus>,
+    command_tx: mpsc::Sender<TrayCommand>,
+    shutdown_event: SendHandle,
+    wake_event: SendHandle,
+) -> Result<()> {
+    info!("Tray thread started");
+
+    // Build the context menu first (needed before creating the tray icon)
+    let menu = match build_menu() {
+        Ok(m) => m,
+        Err(e) => {
+            error!("Failed to build tray menu: {e}");
+            return Err(e);
+        }
+    };
+
+    // Create context for the window procedure (stored in window user data)
+    let tray_ctx = TrayContext { menu };
+
+    // Retry creating tray icon - at boot time the desktop may not be ready yet.
+    // When running as a service, controller starts before user login, so we need
+    // to wait for explorer.exe to start (can take several minutes).
+    const MAX_RETRIES: u32 = 150; // 5 minutes total (150 x 2s)
+    const RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(2);
+
+    let mut retry_count = 0u32;
+    let tray_icon = loop {
+        match NativeTrayIcon::new(ICON_BYTES, "Kyber - Starting...", &tray_ctx) {
+            Ok(tray) => break tray,
+            Err(e) => {
+                retry_count += 1;
+                if retry_count > MAX_RETRIES {
+                    return Err(Error::TrayInit {
+                        reason: format!("Failed after {} retries: {e}", MAX_RETRIES),
+                    });
+                }
+                warn!(
+                    "Tray icon creation failed (attempt {}/{}): {e}. Retrying in {:?}...",
+                    retry_count, MAX_RETRIES, RETRY_DELAY
+                );
+                thread::sleep(RETRY_DELAY);
+            }
+        }
+    };
+
+    info!("System tray icon created (using NIF_GUID for orphan cleanup)");
+
+    let menu_event_rx = MenuEvent::receiver();
+
+    // Main event loop using MsgWaitForMultipleObjectsEx
+    loop {
+        match wait_for_events(shutdown_event, wake_event) {
+            WaitResult::Shutdown => {
+                info!("Tray shutdown signal received");
+                break;
+            }
+            WaitResult::Wake => {
+                // Wake event signaled - check for status updates
+                while let Ok(status) = status_rx.try_recv() {
+                    update_tooltip(&tray_icon, &status);
+                }
+            }
+            WaitResult::WindowsMessage => {
+                // Process all pending Windows messages
+                pump_windows_messages();
+
+                // Check for menu events after processing messages
+                if let Ok(event) = menu_event_rx.try_recv() {
+                    handle_menu_event(&event.id, &command_tx);
+                }
+            }
+        }
+    }
+
+    info!("Removing tray icon");
+    // tray_icon is dropped here, which calls Shell_NotifyIconW(NIM_DELETE) with NIF_GUID
+    Ok(())
 }
 
 /// Spawn the system tray thread.

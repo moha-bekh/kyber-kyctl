@@ -23,6 +23,17 @@
 //! This module provides a system tray icon with status updates
 //! and user commands (Stop/Restart).
 //!
+//! # Architecture
+//!
+//! The tray runs in a dedicated OS thread (not a tokio task) because:
+//! - Windows requires a message pump (GetMessage/DispatchMessage loop) for tray icons
+//! - The message pump is inherently blocking and must run on the creating thread
+//! - Menu libraries require the event loop to run on the same thread that created them
+//!
+//! Communication with async code uses:
+//! - Platform-specific events for efficient shutdown signaling
+//! - tokio::sync::mpsc channels for status updates
+//!
 //! # Platform Support
 //!
 //! - Windows: Full support with tray icon, menu, and status updates
