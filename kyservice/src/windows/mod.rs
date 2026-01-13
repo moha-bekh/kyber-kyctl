@@ -63,6 +63,8 @@ struct ServiceContext {
     stop: Arc<AtomicBool>,
     _kidd_interface: Option<kidd_client::DeviceInterface>,
     sas_event: Event,
+    stop_service_event: Event,
+    shutdown_event: Event,
     controller_path: String,
     process: Option<Process>,
     restart_controller: bool,
@@ -74,6 +76,7 @@ struct ServiceContext {
 impl ServiceContext {
     const WAIT_OBJECT_1: u32 = WAIT_OBJECT_0 + 1;
     const WAIT_OBJECT_2: u32 = WAIT_OBJECT_0 + 2;
+    const WAIT_OBJECT_3: u32 = WAIT_OBJECT_0 + 3;
 
     const DEFAULT_TIMEOUT: Duration = Duration::from_secs(1);
     const RESTART_CONTROLLER_TIMEOUT: Duration = Duration::from_millis(500);
@@ -101,6 +104,8 @@ impl ServiceContext {
             stop,
             _kidd_interface,
             sas_event: Event::new("KYBER_SAS_EVENT", true)?,
+            stop_service_event: Event::new("KYBER_STOP_SERVICE_EVENT", true)?,
+            shutdown_event: Event::new("KYBER_SHUTDOWN_EVENT", true)?,
             controller_path: Self::get_controller_path()?,
             process: None,
             restart_controller: false,
@@ -135,14 +140,23 @@ impl ServiceContext {
     }
 
     fn inherited_events(&self) -> Vec<&Event> {
-        vec![&self.sas_event]
+        vec![
+            &self.sas_event,
+            &self.stop_service_event,
+            &self.shutdown_event,
+        ]
     }
 
     fn start_controller(&self, session_id: u32) -> Result<Process> {
         let inherited_events = self.inherited_events();
 
         info!("Start kycontroller.exe in session {session_id}");
-        Process::new(&self.controller_path, session_id, &inherited_events)
+        Process::new(
+            &self.controller_path,
+            session_id,
+            &inherited_events,
+            Some(&self.shutdown_event),
+        )
     }
 
     fn get_controller_path() -> Result<String> {
@@ -161,9 +175,10 @@ impl ServiceContext {
         })
     }
 
-    fn handle_sas(&self) {
-        unsafe { ResetEvent(self.sas_event.handle()) };
+    fn handle_sas(&self) -> Result<()> {
+        self.sas_event.reset()?;
         sas::send();
+        Ok(())
     }
 
     fn handle_sc_forwarder(&mut self) -> Result<()> {
@@ -180,6 +195,10 @@ impl ServiceContext {
                             warn!("Failed to kill kycontroller.exe: {err:?}");
                         }
                     }
+
+                    // Reset shutdown event before starting new controller.
+                    // The event may still be signaled from killing the previous controller.
+                    self.shutdown_event.reset()?;
 
                     self.process = Some(self.start_controller(session_id)?);
                     self.active_session_id = Some(session_id);
@@ -234,6 +253,10 @@ impl ServiceContext {
     fn handle_timeout(&mut self) -> Result<()> {
         if self.restart_controller {
             if let Some(session_id) = &self.active_session_id {
+                // Reset shutdown event before starting new controller.
+                // The event may still be signaled from killing the previous controller.
+                self.shutdown_event.reset()?;
+
                 self.process = Some(self.start_controller(*session_id)?);
             } else {
                 info!("kycontroller.exe restart requested, but there is no active session");
@@ -265,10 +288,15 @@ impl ServiceContext {
                 vec![
                     self.sas_event.handle(),
                     self.sc_forwarder_rx.handle(),
+                    self.stop_service_event.handle(),
                     process.handle(),
                 ]
             } else {
-                vec![self.sas_event.handle(), self.sc_forwarder_rx.handle()]
+                vec![
+                    self.sas_event.handle(),
+                    self.sc_forwarder_rx.handle(),
+                    self.stop_service_event.handle(),
+                ]
             };
 
             let ret = unsafe {
@@ -281,16 +309,25 @@ impl ServiceContext {
             };
 
             match ret {
+                // 0: sas_event
                 WAIT_OBJECT_0 => {
-                    self.handle_sas();
+                    if let Err(err) = self.handle_sas() {
+                        warn!("handle_sas() failed: {err:?}");
+                    }
                 }
+                // 1: sc_forwarder_rx
                 Self::WAIT_OBJECT_1 => {
-                    let ret = self.handle_sc_forwarder();
-                    if let Err(err) = ret {
+                    if let Err(err) = self.handle_sc_forwarder() {
                         warn!("handle_sc_forwarder() failed: {err:?}");
                     }
                 }
+                // 2: stop_service_event
                 Self::WAIT_OBJECT_2 => {
+                    info!("Stop service event signaled by controller");
+                    self.stop.store(true, Ordering::Relaxed);
+                }
+                // 3: process (only when running)
+                Self::WAIT_OBJECT_3 => {
                     let ret = self.handle_controller_stopped();
                     if let Err(err) = ret {
                         warn!("handle_controller_stopped() failed: {err:?}");

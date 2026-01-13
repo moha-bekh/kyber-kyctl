@@ -42,6 +42,7 @@ use log::{error, info, warn};
 use muda::{ContextMenu, Menu, MenuEvent, MenuId, MenuItem};
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
+use std::sync::OnceLock;
 use std::thread;
 use std::thread::JoinHandle;
 use tokio::sync::mpsc;
@@ -790,6 +791,12 @@ fn run_tray_loop(
 pub fn spawn(server_handle: ServerHandle) -> Result<(TrayHandle, mpsc::Receiver<ShutdownSignal>)> {
     use windows_sys::Win32::System::Threading::CreateEventW;
 
+    // Obtain service event handles upfront to ensure proper setup
+    if let Some(handle) = get_service_event_handle("KYBER_STOP_SERVICE_EVENT") {
+        SERVICE_STOP_EVENT.set(handle).ok();
+        info!("Service stop event handle obtained");
+    }
+
     let (status_tx, status_rx) = mpsc::channel::<TrayStatus>(16);
     let (shutdown_signal_tx, shutdown_signal_rx) = mpsc::channel::<ShutdownSignal>(1);
 
@@ -823,17 +830,13 @@ pub fn spawn(server_handle: ServerHandle) -> Result<(TrayHandle, mpsc::Receiver<
     let thread_handle = thread::Builder::new()
         .name("tray-icon".to_string())
         .spawn(move || {
-            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                run_tray_loop(
-                    status_rx,
-                    shutdown_signal_tx_tray,
-                    shutdown_handle,
-                    wake_handle,
-                )
-            })) {
-                Ok(Ok(())) => info!("Tray thread exited normally"),
-                Ok(Err(e)) => error!("Tray thread error: {e}"),
-                Err(_) => error!("Tray thread panicked"),
+            if let Err(e) = run_tray_loop(
+                status_rx,
+                shutdown_signal_tx_tray,
+                shutdown_handle,
+                wake_handle,
+            ) {
+                error!("Tray thread error: {e}");
             }
         })
         .map_err(|_| Error::TrayThreadSpawn)?;
@@ -852,21 +855,31 @@ pub fn spawn(server_handle: ServerHandle) -> Result<(TrayHandle, mpsc::Receiver<
     Ok((tray_handle, shutdown_signal_rx))
 }
 
+/// Get a Windows event handle from an environment variable.
+///
+/// Service.exe passes event handles to controller.exe via environment variables.
+/// Returns None if the env var is not set or cannot be parsed.
+fn get_service_event_handle(env_var: &str) -> Option<isize> {
+    std::env::var(env_var).ok()?.parse().ok()
+}
+
+/// Handle to signal service.exe to stop (obtained during spawn).
+static SERVICE_STOP_EVENT: OnceLock<isize> = OnceLock::new();
+
 /// Signal the Windows service to stop.
 ///
 /// This signals to service.exe that the controller wants to stop.
 /// Call this when stopping from the tray menu to ensure the service
 /// doesn't try to restart the controller.
+///
+/// The handle is obtained during `spawn()` to ensure proper setup validation.
 pub fn signal_service_stop() {
-    if let Ok(handle_str) = std::env::var("KYBER_STOP_SERVICE_EVENT") {
-        if let Ok(handle) = handle_str.parse::<isize>() {
-            info!("Signaling stop event to service");
-            // Safety: handle value comes from trusted parent process (service.exe)
-            unsafe { SetEvent(handle as *mut std::ffi::c_void) };
-        } else {
-            warn!("Failed to parse stop event handle: {handle_str}");
-        }
-    }
+    let Some(&handle) = SERVICE_STOP_EVENT.get() else {
+        return;
+    };
+    info!("Signaling stop event to service");
+    // Safety: handle value comes from trusted parent process (service.exe)
+    unsafe { SetEvent(handle as *mut std::ffi::c_void) };
 }
 
 /// Spawn a thread to listen for shutdown event from Windows service.
@@ -885,29 +898,28 @@ fn spawn_service_shutdown_listener(
     use windows_sys::Win32::Foundation::WAIT_OBJECT_0;
     use windows_sys::Win32::System::Threading::WaitForSingleObject;
 
-    if let Ok(handle_str) = std::env::var("KYBER_SHUTDOWN_EVENT") {
-        if let Ok(handle) = handle_str.parse::<isize>() {
-            std::thread::spawn(move || {
-                info!("Listening for shutdown event from service");
-                // Safety: handle value comes from trusted parent process
-                let result =
-                    unsafe { WaitForSingleObject(handle as *mut std::ffi::c_void, u32::MAX) };
-                if result == WAIT_OBJECT_0 {
-                    info!("Shutdown event received from service, initiating graceful shutdown");
+    let Some(handle) = get_service_event_handle("KYBER_SHUTDOWN_EVENT") else {
+        return;
+    };
 
-                    // Signal tray to shutdown FIRST - this removes the icon immediately
-                    // before server shutdown which may take time
-                    if !tray_shutdown_event.is_null() {
-                        info!("Signaling tray shutdown");
-                        unsafe { SetEvent(tray_shutdown_event.0) };
-                        // Brief pause to let tray thread process the signal
-                        std::thread::sleep(std::time::Duration::from_millis(100));
-                    }
+    std::thread::spawn(move || {
+        info!("Listening for shutdown event from service");
+        // Safety: handle value comes from trusted parent process
+        let result = unsafe { WaitForSingleObject(handle as *mut std::ffi::c_void, u32::MAX) };
+        if result == WAIT_OBJECT_0 {
+            info!("Shutdown event received from service, initiating graceful shutdown");
 
-                    // Send shutdown signal to main.rs (it owns server lifecycle)
-                    let _ = shutdown_signal_tx.blocking_send(ShutdownSignal::Stop);
-                }
-            });
+            // Signal tray to shutdown FIRST - this removes the icon immediately
+            // before server shutdown which may take time
+            if !tray_shutdown_event.is_null() {
+                info!("Signaling tray shutdown");
+                unsafe { SetEvent(tray_shutdown_event.0) };
+                // Brief pause to let tray thread process the signal
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+
+            // Send shutdown signal to main.rs (it owns server lifecycle)
+            let _ = shutdown_signal_tx.blocking_send(ShutdownSignal::Stop);
         }
-    }
+    });
 }

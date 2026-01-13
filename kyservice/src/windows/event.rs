@@ -27,7 +27,7 @@ use windows_sys::Win32::{Foundation::*, Security::*, System::Threading::*};
 use super::error::{check_win32_error, last_win32_error, Result};
 use super::Handle;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Event {
     name: String,
     handle: Arc<Handle>,
@@ -61,6 +61,13 @@ impl Event {
     pub fn set(&self) -> Result<()> {
         let ret = unsafe { SetEvent(self.handle.handle()) };
         check_win32_error!(SetEvent, ret != 0)?;
+
+        Ok(())
+    }
+
+    pub fn reset(&self) -> Result<()> {
+        let ret = unsafe { ResetEvent(self.handle.handle()) };
+        check_win32_error!(ResetEvent, ret != 0)?;
 
         Ok(())
     }

@@ -24,7 +24,7 @@ use std::mem;
 use std::os::windows::ffi::OsStrExt;
 use std::ptr;
 
-use log::warn;
+use log::{info, warn};
 use windows_sys::Win32::{
     Foundation::*,
     Security::*,
@@ -161,13 +161,22 @@ fn create_win32_env(env: Vec<(String, String)>) -> Vec<u8> {
         .collect()
 }
 
+/// Grace period to wait for controller to shutdown gracefully after signaling
+const GRACEFUL_SHUTDOWN_TIMEOUT_MS: u32 = 2000;
+
 #[derive(Debug)]
 pub struct Process {
     handle: Handle,
+    shutdown_event: Option<Event>,
 }
 
 impl Process {
-    pub fn new(path: &str, session_id: u32, inherited: &[&Event]) -> Result<Self> {
+    pub fn new(
+        path: &str,
+        session_id: u32,
+        inherited: &[&Event],
+        shutdown_event: Option<&Event>,
+    ) -> Result<Self> {
         let token = get_subprocess_token_for_session(session_id)?;
 
         let mut si: STARTUPINFOEXW = unsafe { mem::zeroed() };
@@ -224,6 +233,7 @@ impl Process {
 
         Ok(Self {
             handle: Handle::new(pi.hProcess),
+            shutdown_event: shutdown_event.cloned(),
         })
     }
 
@@ -238,6 +248,24 @@ impl Process {
     }
 
     fn kill_internal(&mut self) {
+        // Try graceful shutdown first by signaling the shutdown event
+        if let Some(ref shutdown_event) = self.shutdown_event {
+            info!("Signaling graceful shutdown to controller");
+            if let Err(e) = shutdown_event.set() {
+                warn!("Failed to signal shutdown event: {e:?}");
+            }
+
+            // Wait for process to exit gracefully
+            let result =
+                unsafe { WaitForSingleObject(self.handle(), GRACEFUL_SHUTDOWN_TIMEOUT_MS) };
+            if result == WAIT_OBJECT_0 {
+                info!("Controller exited gracefully");
+                return;
+            }
+            warn!("Controller did not exit gracefully within timeout, forcing termination");
+        }
+
+        // Fall back to forced termination
         unsafe { TerminateProcess(self.handle(), 0) };
         unsafe { WaitForSingleObject(self.handle(), 1000) };
     }
