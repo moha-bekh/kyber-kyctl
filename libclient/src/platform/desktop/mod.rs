@@ -22,6 +22,7 @@ use std::net::{SocketAddr, ToSocketAddrs};
 
 use log::{error, info};
 
+pub(crate) mod fingerprint;
 mod host_events;
 pub(crate) mod http;
 pub(crate) mod input_service;
