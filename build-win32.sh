@@ -39,6 +39,7 @@ OPTIONS:
    -d            Build only native dependencies
    -o <path>     Install the built binaries in the absolute path (Default: ./rootfs-x86_64-w64-mingw32)
    -w            Hide console window for kycontroller.exe (Windows GUI mode)
+   --no-tray     Disable Windows taskbar tray icon (enabled by default)
 
 ACTIONS:
    build                Build both kycontroller and kyclient (default)
@@ -170,8 +171,31 @@ BUILD_DEPS=true
 FORCE=false
 ACTION="build"
 HIDE_CONSOLE=false
+ENABLE_TRAY=true
 CONSOLE_FLAG=""
 OUT_DIR=$(pwd)/rootfs-x86_64-w64-mingw32
+
+# Handle long options first
+for arg in "$@"; do
+    case $arg in
+        --no-tray)
+            ENABLE_TRAY=false
+            ;;
+    esac
+done
+
+# Filter out long options for getopts
+ARGS=()
+for arg in "$@"; do
+    case $arg in
+        --no-tray)
+            ;;
+        *)
+            ARGS+=("$arg")
+            ;;
+    esac
+done
+set -- "${ARGS[@]}"
 
 while getopts "hkfsdwo:" OPTION
 do
@@ -239,13 +263,18 @@ fi
 mkdir -p $OUT_DIR/bin
 mkdir -p $OUT_DIR/share
 
-# Prepare hide console feature flag
+# Prepare feature flags
+EXTRA_FEATURES=""
 if [ "$HIDE_CONSOLE" = true ]; then
-    HIDE_CONSOLE_FEATURE="--features=win32-hide-console"
+    EXTRA_FEATURES="${EXTRA_FEATURES},win32-hide-console"
     CONSOLE_FLAG="-w"
-else
-    HIDE_CONSOLE_FEATURE=""
-    CONSOLE_FLAG=""
+fi
+if [ "$ENABLE_TRAY" = true ]; then
+    EXTRA_FEATURES="${EXTRA_FEATURES},win32-tray"
+fi
+HIDE_CONSOLE_FEATURE=""
+if [ -n "$EXTRA_FEATURES" ]; then
+    HIDE_CONSOLE_FEATURE="--features=${EXTRA_FEATURES#,}"
 fi
 
 # Build dependencies
