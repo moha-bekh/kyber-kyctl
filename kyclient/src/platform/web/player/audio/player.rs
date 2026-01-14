@@ -22,7 +22,6 @@ use crate::platform::player::audio::decoder::{AudioDecoder, AudioDecoderCallback
 use crate::platform::player::packet::{CodecPacket, HolePacket, Packet};
 use crate::platform::player::PacketSink;
 use crate::platform::AudioPlayerConfig;
-use crate::{Error, Result};
 
 use super::worklet::AudioWorklet;
 use super::{CHANNELS, SAMPLE_RATE, SAMPLE_SIZE};
@@ -68,6 +67,18 @@ where
     }
 }
 
+#[derive(Debug)]
+pub enum AudioPlayerCreationError {
+    SharedArrayBufferNotAvailable,
+    Other(JsValue),
+}
+
+impl From<JsValue> for AudioPlayerCreationError {
+    fn from(value: JsValue) -> Self {
+        Self::Other(value)
+    }
+}
+
 impl AudioPlayer {
     pub fn available() -> bool {
         AudioRegulatorSharedMemory::available()
@@ -76,7 +87,7 @@ impl AudioPlayer {
     pub async fn create(
         listener: Box<dyn AudioPlayerListener>,
         audio_player_config: &AudioPlayerConfig,
-    ) -> Result<(Self, AudioPlayerHandle)> {
+    ) -> Result<(Self, AudioPlayerHandle), AudioPlayerCreationError> {
         let listener = Rc::<dyn AudioPlayerListener>::from(listener);
         let sample_size = SAMPLE_SIZE * CHANNELS;
 
@@ -85,7 +96,7 @@ impl AudioPlayer {
         let alloc_size = 2 * SAMPLE_RATE + target_buffering;
 
         let sab = AudioRegulatorSharedMemory::create_sab(alloc_size, sample_size)
-            .map_err(|_| Error::SharedArrayBufferUndefined)?;
+            .map_err(|_| AudioPlayerCreationError::SharedArrayBufferNotAvailable)?;
 
         let memory = AudioRegulatorSharedMemory::js(sab.clone(), alloc_size, sample_size);
         let mut reg = AudioRegulatorPush::new(memory, SAMPLE_RATE, target_buffering);
@@ -163,7 +174,7 @@ impl AudioPlayer {
         Ok((player, handle))
     }
 
-    fn process_packet(&mut self, packet: Packet) -> Result<()> {
+    fn process_packet(&mut self, packet: Packet) -> Result<(), JsValue> {
         match packet {
             Packet::Media(packet) => {
                 assert!(self.audio_decoder.is_some());
@@ -207,7 +218,7 @@ impl AudioPlayer {
 }
 
 impl PacketSink for AudioPlayer {
-    fn send_packet(&mut self, packet: Packet) -> Result<()> {
+    fn send_packet(&mut self, packet: Packet) -> Result<(), JsValue> {
         if let Err(err) = self.process_packet(packet) {
             self.listener.on_event(AudioPlayerEvent::DecoderError);
             Err(err)?;

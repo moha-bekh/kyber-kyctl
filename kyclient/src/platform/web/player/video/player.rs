@@ -18,13 +18,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::platform::dom;
 use crate::platform::player::packet::{CodecPacket, Packet};
 use crate::platform::player::video::decoder::{VideoDecoder, VideoDecoderCallbacks};
 use crate::platform::player::video::renderer_worker::{RendererWorker, RendererWorkerHandle};
 use crate::platform::player::PacketSink;
 use crate::platform::VideoPlayerConfig;
-use crate::Result;
 
 use super::VideoDecoderConfig;
 
@@ -97,10 +95,16 @@ impl VideoPlayer {
         player_config: &VideoPlayerConfig,
         decoder_config: VideoDecoderConfig,
         metrics: bool,
-    ) -> Result<(Self, VideoPlayerHandle)> {
+    ) -> Result<(Self, VideoPlayerHandle), JsValue> {
         let listener = Rc::<dyn VideoPlayerListener>::from(listener);
 
-        let canvas = dom::get_canvas(&player_config.canvas)?;
+        let document = web_sys::window()
+            .and_then(|w| w.document())
+            .ok_or_else(|| JsValue::from(js_sys::Error::new("No window or document")))?;
+        let canvas = document
+            .get_element_by_id(&player_config.canvas)
+            .ok_or_else(|| JsValue::from(js_sys::Error::new("Canvas not found")))?
+            .dyn_into::<web_sys::HtmlCanvasElement>()?;
 
         let offscreen_canvas = canvas.transfer_control_to_offscreen()?;
 
@@ -181,7 +185,7 @@ impl VideoPlayer {
         Ok((player, handle))
     }
 
-    fn process_packet(&mut self, packet: Packet) -> Result<()> {
+    fn process_packet(&mut self, packet: Packet) -> Result<(), JsValue> {
         match packet {
             Packet::Media(packet) => {
                 assert!(self.video_decoder.is_some());
@@ -233,7 +237,7 @@ impl VideoPlayer {
 }
 
 impl PacketSink for VideoPlayer {
-    fn send_packet(&mut self, packet: Packet) -> Result<()> {
+    fn send_packet(&mut self, packet: Packet) -> Result<(), JsValue> {
         if let Err(err) = self.process_packet(packet) {
             self.listener.on_event(VideoPlayerEvent::DecoderError);
             Err(err)?;

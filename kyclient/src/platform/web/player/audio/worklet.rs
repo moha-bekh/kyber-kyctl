@@ -26,7 +26,6 @@ use wasm_bindgen_futures::JsFuture;
 
 use super::player::{AudioPlayerEvent, AudioPlayerListener};
 use crate::platform::reflect;
-use crate::Error;
 
 struct GainNodeConfig {
     gain: f32,
@@ -47,7 +46,7 @@ impl AudioWorklet {
         listener: Rc<dyn AudioPlayerListener>,
         alloc_size: u32,
         target_buffering: u32,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, JsValue> {
         // AudioContext
         let options = web_sys::AudioContextOptions::new();
         options.set_sample_rate(super::SAMPLE_RATE as f32);

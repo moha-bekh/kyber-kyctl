@@ -32,7 +32,8 @@ use kynput::{InputNetworkStream, InputNetworkStreamMsg, InputNetworkStreamObserv
 use super::{KymuxBackendConfig, PlatformEndpoints};
 use crate::platform::message::{AudioMessageForwarder, VideoMessageForwarder};
 use crate::platform::player::{
-    AudioPlayer, AudioPlayerHandle, PacketSink, VideoDecoderConfig, VideoPlayer, VideoPlayerHandle,
+    AudioPlayer, AudioPlayerCreationError, AudioPlayerHandle, PacketSink, VideoDecoderConfig,
+    VideoPlayer, VideoPlayerHandle,
 };
 use crate::platform::AudioPlayerConfig;
 use crate::platform::InputMsgSink;
@@ -217,8 +218,8 @@ async fn create_audioplayer(
     let (audio_player, audio_player_handle) =
         match AudioPlayer::create(listener, &audio_player_config).await {
             Ok((audio_player, audio_player_handle)) => (audio_player, audio_player_handle),
-            Err(Error::SharedArrayBufferUndefined) => return Ok(None),
-            Err(err) => return Err(err),
+            Err(AudioPlayerCreationError::SharedArrayBufferNotAvailable) => return Ok(None),
+            Err(AudioPlayerCreationError::Other(err)) => return Err(err.into()),
         };
 
     let protocol = endpoint

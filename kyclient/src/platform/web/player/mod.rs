@@ -23,7 +23,7 @@ pub mod packet;
 mod video;
 
 pub(crate) use audio::player::{
-    AudioPlayer, AudioPlayerEvent, AudioPlayerHandle, AudioPlayerListener,
+    AudioPlayer, AudioPlayerCreationError, AudioPlayerEvent, AudioPlayerHandle, AudioPlayerListener,
 };
 pub(crate) use video::player::{
     VideoPlayer, VideoPlayerEvent, VideoPlayerHandle, VideoPlayerListener, VideoPlayerMetric,
@@ -32,8 +32,8 @@ pub(crate) use video::{get_video_decoder_config, supported_video_codecs, VideoDe
 
 use packet::Packet;
 
-use crate::Result;
+use wasm_bindgen::prelude::*;
 
 pub(crate) trait PacketSink {
-    fn send_packet(&mut self, packet: Packet) -> Result<()>;
+    fn send_packet(&mut self, packet: Packet) -> Result<(), JsValue>;
 }
