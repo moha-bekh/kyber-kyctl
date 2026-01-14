@@ -249,12 +249,10 @@ pub(crate) struct VideoPlayerHandle {
 }
 
 impl VideoPlayerHandle {
-    pub async fn stop(&mut self) -> Result<()> {
+    pub async fn stop(&mut self) {
         let ret = self.renderer_worker_handle.stop();
         if let Err(err) = ret {
             warn!("Failed to stop video renderer: {err:?}");
         }
-
-        Ok(())
     }
 }

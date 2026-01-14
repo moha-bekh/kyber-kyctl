@@ -62,10 +62,7 @@ impl VideoService {
             warn!("Video ws stop failed: {err:?}");
         }
 
-        let ret = self.player_handle.stop().await;
-        if let Err(err) = ret {
-            warn!("Video player stop failed: {err:?}");
-        }
+        self.player_handle.stop().await;
     }
 }
 
@@ -83,10 +80,7 @@ impl AudioService {
             warn!("Audio ws stop failed: {err:?}");
         }
 
-        let ret = self.player_handle.stop().await;
-        if let Err(err) = ret {
-            warn!("Audio player stop failed: {err:?}");
-        }
+        self.player_handle.stop().await;
     }
 }
 
@@ -236,7 +230,7 @@ impl BackendDriver for WsBackend {
     fn audio_set_volume(&self, volume: f32) -> Result<()> {
         let audio_service = self.audio_service.as_ref().ok_or(Error::NoAudioPlayer)?;
 
-        audio_service.player_handle.set_volume(volume)?;
+        audio_service.player_handle.set_volume(volume);
 
         Ok(())
     }
@@ -244,7 +238,7 @@ impl BackendDriver for WsBackend {
     fn audio_set_mute(&self, mute: bool) -> Result<()> {
         let audio_service = self.audio_service.as_ref().ok_or(Error::NoAudioPlayer)?;
 
-        audio_service.player_handle.set_mute(mute)?;
+        audio_service.player_handle.set_mute(mute);
 
         Ok(())
     }

@@ -69,24 +69,16 @@ struct Player {
 }
 
 impl Player {
-    async fn stop(self) -> Result<()> {
+    async fn stop(self) {
         for mut video_player in self.video {
             info!("Stop video player");
-            let ret = video_player.stop().await;
-            if let Err(err) = ret {
-                warn!("Video player stop failed: {err:?}");
-            }
+            video_player.stop().await;
         }
 
         if let Some(mut audio_player) = self.audio {
             info!("Stop audio player");
-            let ret = audio_player.stop().await;
-            if let Err(err) = ret {
-                warn!("Audio player stop failed: {err:?}");
-            }
+            audio_player.stop().await;
         }
-
-        Ok(())
     }
 }
 
@@ -420,7 +412,7 @@ impl BackendDriver for KymuxWeb {
             .as_ref()
             .ok_or(Error::NoAudioPlayer)?;
 
-        audio_player.set_volume(volume)?;
+        audio_player.set_volume(volume);
 
         Ok(())
     }
@@ -434,7 +426,7 @@ impl BackendDriver for KymuxWeb {
             .as_ref()
             .ok_or(Error::NoAudioPlayer)?;
 
-        audio_player.set_mute(mute)?;
+        audio_player.set_mute(mute);
 
         Ok(())
     }
@@ -456,7 +448,7 @@ impl BackendDriver for KymuxWeb {
 
     async fn stop(&mut self) -> Result<()> {
         if let Some(player) = self.player.take() {
-            player.stop().await?;
+            player.stop().await;
         }
 
         if let Some(input_service) = self.input_service.take() {

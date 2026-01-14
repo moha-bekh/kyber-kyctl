@@ -108,7 +108,7 @@ impl AudioWorklet {
         })
     }
 
-    pub fn set_volume(&self, volume: f32) -> Result<(), Error> {
+    pub fn set_volume(&self, volume: f32) {
         let mut gain_cfg = self.gain_cfg.borrow_mut();
 
         if !gain_cfg.mute {
@@ -119,11 +119,9 @@ impl AudioWorklet {
 
         self.listener
             .on_event(AudioPlayerEvent::VolumeChanged { volume });
-
-        Ok(())
     }
 
-    pub fn set_mute(&self, mute: bool) -> Result<(), Error> {
+    pub fn set_mute(&self, mute: bool) {
         let mut gain_cfg = self.gain_cfg.borrow_mut();
 
         if mute {
@@ -136,8 +134,6 @@ impl AudioWorklet {
 
         self.listener
             .on_event(AudioPlayerEvent::MuteChanged { mute });
-
-        Ok(())
     }
 
     pub async fn stop(self) -> Result<(), JsValue> {
