@@ -25,7 +25,7 @@ use wasm_bindgen_futures::JsFuture;
 
 use super::player::{VideoPlayerEvent, VideoPlayerListener, VideoPlayerMetric};
 use crate::platform::player::packet::MediaPacket;
-use crate::runtime::Instant;
+use kywasmtime::Instant;
 
 pub struct VideoDecoder {
     listener: Rc<dyn VideoPlayerListener>,
