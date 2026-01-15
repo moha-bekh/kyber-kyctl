@@ -26,7 +26,7 @@ mod mainloop_engine;
 pub(crate) mod message;
 
 #[cfg(feature = "js-player")]
-pub(crate) mod player;
+pub mod player;
 pub(crate) mod reflect;
 mod websocket;
 

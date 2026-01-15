@@ -74,6 +74,9 @@ pub use platform::VerifyMode;
 pub use platform::{ConnectConfig, VideoPlayerConfig};
 pub(crate) use platform::{ConnectionParams, InputPipeline, MainLoopEngine};
 
+#[cfg(feature = "js-player")]
+pub use platform::player;
+
 pub fn init_crypto() {
     #[cfg(feature = "desktop")]
     rustls::crypto::ring::default_provider()
@@ -1106,13 +1109,6 @@ impl Client {
     pub fn get_state(&self) -> State {
         let state = self.state.lock().unwrap();
         (*state).clone()
-    }
-
-    #[cfg(feature = "js-player")]
-    pub async fn supported_video_codecs(
-        force_software: bool,
-    ) -> Vec<platform::player::VideoDecoderConfig> {
-        platform::player::supported_video_codecs(force_software).await
     }
 
     pub fn set_metrics_callback(&self, cb: Option<Box<MetricsCallback>>) {
