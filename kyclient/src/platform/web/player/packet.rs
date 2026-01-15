@@ -18,8 +18,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use kymux::types;
-
 #[derive(Debug)]
 pub enum Packet {
     Codec(CodecPacket),
@@ -52,32 +50,4 @@ pub struct MediaPacketHeader {
     pub is_key: bool,
     pub pts: u64,
     pub size: u32,
-}
-
-#[cfg(feature = "kymux")]
-impl From<types::AVPacket> for Packet {
-    fn from(packet: types::AVPacket) -> Self {
-        match packet {
-            types::AVPacket::Codec(packet) => Packet::Codec(CodecPacket {
-                codec: packet.header.codec,
-                rotation: packet.header.rotation,
-            }),
-            types::AVPacket::Media(packet) => Packet::Media(MediaPacket {
-                header: MediaPacketHeader {
-                    is_config: packet.header.is_config,
-                    is_key: packet.header.is_key,
-                    pts: packet.header.pts,
-                    size: packet.header.size,
-                },
-                data: {
-                    let buffer = js_sys::Uint8Array::new_with_length(packet.payload.len() as _);
-                    buffer.copy_from(&packet.payload);
-                    buffer
-                },
-            }),
-            types::AVPacket::Hole(packet) => Packet::Hole(HolePacket {
-                missing_audio_samples: packet.header.missing_audio_samples,
-            }),
-        }
-    }
 }

@@ -31,6 +31,7 @@ use kynput::{InputNetworkStream, InputNetworkStreamMsg, InputNetworkStreamObserv
 
 use super::{KymuxBackendConfig, PlatformEndpoints};
 use crate::platform::message::{AudioMessageForwarder, VideoMessageForwarder};
+use crate::platform::player::packet::*;
 use crate::platform::player::{
     self, AudioPlayer, AudioPlayerCreationError, AudioPlayerHandle, PacketSink, VideoDecoderConfig,
     VideoPlayer, VideoPlayerHandle,
@@ -105,6 +106,31 @@ async fn create_video_decoder_config(config: &VideoSessionConfig) -> Option<Vide
     Some(video_decoder_config)
 }
 
+fn to_player_packet(packet: types::AVPacket) -> player::packet::Packet {
+    match packet {
+        types::AVPacket::Codec(packet) => Packet::Codec(CodecPacket {
+            codec: packet.header.codec,
+            rotation: packet.header.rotation,
+        }),
+        types::AVPacket::Media(packet) => Packet::Media(MediaPacket {
+            header: MediaPacketHeader {
+                is_config: packet.header.is_config,
+                is_key: packet.header.is_key,
+                pts: packet.header.pts,
+                size: packet.header.size,
+            },
+            data: {
+                let buffer = js_sys::Uint8Array::new_with_length(packet.payload.len() as _);
+                buffer.copy_from(&packet.payload);
+                buffer
+            },
+        }),
+        types::AVPacket::Hole(packet) => Packet::Hole(HolePacket {
+            missing_audio_samples: packet.header.missing_audio_samples,
+        }),
+    }
+}
+
 async fn player_forward_task<Player>(
     type_: &str,
     mut recv: types::ProtocolRecv<types::AVPacket>,
@@ -128,7 +154,7 @@ async fn player_forward_task<Player>(
             }
         };
 
-        let packet = kypacket.into();
+        let packet = to_player_packet(kypacket);
         let ret = player.send_packet(packet);
         if let Err(err) = ret {
             warn!("Failed to send {type_} frame to player: {err:?}");
