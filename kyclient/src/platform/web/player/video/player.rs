@@ -58,7 +58,6 @@ impl VideoPlayer {
         player_config: &VideoPlayerConfig,
         decoder_config: VideoDecoderConfig,
         source_id: u32,
-        notify_decoded: bool,
         metrics: bool,
     ) -> Result<(Self, VideoPlayerHandle)> {
         let canvas = dom::get_canvas(&player_config.canvas)?;
@@ -88,6 +87,7 @@ impl VideoPlayer {
         let recv_dates = Rc::new(RefCell::new(VecDeque::new()));
         let recv_dates2 = recv_dates.clone();
 
+        let notify_decoded = player_config.notify_decoded;
         let message_sender2 = message_sender.clone();
         let message_sender3 = message_sender.clone();
         let cbs = VideoDecoderCallbacks {

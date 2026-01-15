@@ -177,7 +177,6 @@ async fn create_videoplayer(
             &config.player,
             video_config,
             config.display_id,
-            config.player.notify_decoded,
             metrics,
         )?;
 
