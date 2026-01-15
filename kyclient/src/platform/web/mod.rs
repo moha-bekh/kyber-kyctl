@@ -32,7 +32,7 @@ mod websocket;
 
 use log::info;
 
-use crate::{AuthCredentials, Result};
+use crate::{AuthCredentials, Result, VideoCodec};
 pub(crate) use host_events::{WsClient, WsClientBuilder};
 pub(crate) use input_service::{get_cursor_format, InputError, InputMsgSink, InputPipeline};
 pub(crate) use mainloop_engine::MainLoopEngine;
@@ -62,7 +62,6 @@ impl From<VideoPlayerConfig> for player::VideoPlayerConfig {
     fn from(config: VideoPlayerConfig) -> Self {
         Self {
             canvas: config.canvas,
-            software_decode: config.software_decode,
             notify_decoded: config.notify_decoded,
             video_buffer: config.video_buffer,
         }
@@ -89,6 +88,17 @@ impl From<AudioPlayerConfig> for player::AudioPlayerConfig {
     fn from(config: AudioPlayerConfig) -> Self {
         Self {
             audio_buffer: config.audio_buffer,
+        }
+    }
+}
+
+#[cfg(feature = "js-player")]
+impl From<VideoCodec> for player::VideoCodec {
+    fn from(codec: VideoCodec) -> Self {
+        match codec {
+            VideoCodec::H264 => player::VideoCodec::H264,
+            VideoCodec::HEVC => player::VideoCodec::HEVC,
+            VideoCodec::AV1 => player::VideoCodec::AV1,
         }
     }
 }

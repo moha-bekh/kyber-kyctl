@@ -28,7 +28,9 @@ pub(crate) use audio::player::{
 pub(crate) use video::player::{
     VideoPlayer, VideoPlayerEvent, VideoPlayerHandle, VideoPlayerListener, VideoPlayerMetric,
 };
-pub(crate) use video::{get_video_decoder_config, supported_video_codecs, VideoDecoderConfig};
+pub(crate) use video::{
+    get_video_decoder_config, supported_video_codecs, VideoCodec, VideoDecoderConfig,
+};
 
 use packet::Packet;
 
@@ -37,7 +39,6 @@ use wasm_bindgen::prelude::*;
 #[derive(Clone, Debug)]
 pub struct VideoPlayerConfig {
     pub canvas: String,
-    pub software_decode: bool,
     pub notify_decoded: bool,
     pub video_buffer: u32, // ms
 }

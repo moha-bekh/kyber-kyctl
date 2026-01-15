@@ -84,12 +84,13 @@ impl Player {
 
 async fn create_video_decoder_config(config: &VideoSessionConfig) -> Option<VideoDecoderConfig> {
     let supported_video_codecs =
-        crate::Client::supported_video_codecs(config.player.software_decode).await;
+        player::supported_video_codecs(config.player.software_decode).await;
 
+    let codec = config.codec.into();
     let supported_video_codecs: Vec<_> = supported_video_codecs
         .into_iter()
         .filter(|candidate_config| {
-            candidate_config.codec == config.codec && candidate_config.yuv444 == config.yuv444
+            candidate_config.codec == codec && candidate_config.yuv444 == config.yuv444
         })
         .collect();
 

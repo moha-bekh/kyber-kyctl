@@ -147,9 +147,13 @@ impl WsBackend {
 
         let video_config = &video_config[0];
 
-        let video_decoder_config = get_video_decoder_config(video_config)
-            .await
-            .ok_or_else(|| Error::NoValidVideoDecoderConfig)?;
+        let video_decoder_config = get_video_decoder_config(
+            video_config.codec.into(),
+            video_config.yuv444,
+            video_config.player.software_decode,
+        )
+        .await
+        .ok_or_else(|| Error::NoValidVideoDecoderConfig)?;
 
         let listener = Box::new(VideoMessageForwarder {
             message_sender: backend_config.msg_sender.clone(),

@@ -20,14 +20,19 @@
 
 use log::{error, warn};
 
-use crate::{VideoCodec, VideoSessionConfig};
-
 mod cell_buf;
 mod decoder;
 pub(super) mod player;
 mod regulator;
 mod renderer;
 mod renderer_worker;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VideoCodec {
+    H264,
+    HEVC,
+    AV1,
+}
 
 #[derive(Clone, Debug)]
 pub struct VideoDecoderConfig {
@@ -102,13 +107,15 @@ pub(crate) async fn supported_video_codecs(force_software: bool) -> Vec<VideoDec
 }
 
 pub(crate) async fn get_video_decoder_config(
-    video_config: &VideoSessionConfig,
+    codec: VideoCodec,
+    yuv444: bool,
+    software_decode: bool,
 ) -> Option<VideoDecoderConfig> {
-    let supported_video_codecs = supported_video_codecs(video_config.player.software_decode).await;
+    let supported_video_codecs = supported_video_codecs(software_decode).await;
 
     let supported_video_codecs: Vec<_> = supported_video_codecs
         .into_iter()
-        .filter(|config| config.codec == video_config.codec && config.yuv444 == video_config.yuv444)
+        .filter(|config| config.codec == codec && config.yuv444 == yuv444)
         .collect();
 
     if supported_video_codecs.len() > 1 {
