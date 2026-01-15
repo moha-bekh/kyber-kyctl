@@ -162,8 +162,8 @@ impl VideoRendererWorkerCtx {
                 let frame_w = VideoFrameWrapper { frame, rotation };
 
                 match sink {
-                    FrameSink::FrameBuf(ref mut sink) => sink.push(frame_w)?,
-                    FrameSink::Regulator(ref mut sink) => {
+                    FrameSink::FrameBuf(sink) => sink.push(frame_w)?,
+                    FrameSink::Regulator(sink) => {
                         let recv_date = reflect::get_f64(msg, "recv_date")? as u64;
                         let pts = frame_w.frame.timestamp().expect("No pts") as u64;
                         if let Err(err) = sink.push(frame_w, recv_date, pts) {
