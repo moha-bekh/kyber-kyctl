@@ -39,10 +39,9 @@ use video::VideoWsSocketHandler;
 
 use crate::platform::message::{AudioMessageForwarder, VideoMessageForwarder};
 use crate::platform::player::{
-    get_video_decoder_config, AudioPlayer, AudioPlayerCreationError, AudioPlayerHandle,
+    self, get_video_decoder_config, AudioPlayer, AudioPlayerCreationError, AudioPlayerHandle,
     VideoPlayer, VideoPlayerHandle,
 };
-use crate::platform::AudioPlayerConfig;
 use crate::platform::InputMsgSink;
 
 use crate::http::HttpClient;
@@ -158,7 +157,7 @@ impl WsBackend {
         });
         let (player, player_handle) = VideoPlayer::create(
             listener,
-            &video_config.player,
+            &video_config.player.clone().into(),
             video_decoder_config,
             metrics,
         )?;
@@ -180,7 +179,7 @@ impl WsBackend {
         };
 
         let audio_buffer = audio_config.audio_buffer();
-        let audio_player_config = AudioPlayerConfig { audio_buffer };
+        let audio_player_config = player::AudioPlayerConfig { audio_buffer };
 
         let listener = Box::new(AudioMessageForwarder {
             message_sender: backend_config.msg_sender.clone(),

@@ -20,8 +20,7 @@
 
 use crate::platform::player::audio::decoder::{AudioDecoder, AudioDecoderCallbacks};
 use crate::platform::player::packet::{CodecPacket, HolePacket, Packet};
-use crate::platform::player::PacketSink;
-use crate::platform::AudioPlayerConfig;
+use crate::platform::player::{AudioPlayerConfig, PacketSink};
 
 use super::worklet::AudioWorklet;
 use super::{CHANNELS, SAMPLE_RATE, SAMPLE_SIZE};

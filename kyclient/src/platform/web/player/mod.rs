@@ -34,6 +34,19 @@ use packet::Packet;
 
 use wasm_bindgen::prelude::*;
 
+#[derive(Clone, Debug)]
+pub struct VideoPlayerConfig {
+    pub canvas: String,
+    pub software_decode: bool,
+    pub notify_decoded: bool,
+    pub video_buffer: u32, // ms
+}
+
+#[derive(Clone, Debug)]
+pub struct AudioPlayerConfig {
+    pub audio_buffer: u32, // ms
+}
+
 pub(crate) trait PacketSink {
     fn send_packet(&mut self, packet: Packet) -> Result<(), JsValue>;
 }

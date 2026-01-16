@@ -32,10 +32,9 @@ use kynput::{InputNetworkStream, InputNetworkStreamMsg, InputNetworkStreamObserv
 use super::{KymuxBackendConfig, PlatformEndpoints};
 use crate::platform::message::{AudioMessageForwarder, VideoMessageForwarder};
 use crate::platform::player::{
-    AudioPlayer, AudioPlayerCreationError, AudioPlayerHandle, PacketSink, VideoDecoderConfig,
+    self, AudioPlayer, AudioPlayerCreationError, AudioPlayerHandle, PacketSink, VideoDecoderConfig,
     VideoPlayer, VideoPlayerHandle,
 };
-use crate::platform::AudioPlayerConfig;
 use crate::platform::InputMsgSink;
 use crate::{BackendDriver, MessageSender, VideoSessionConfig};
 use crate::{Error, Result};
@@ -170,8 +169,12 @@ async fn create_videoplayer(
             message_sender: backend_config.msg_sender.clone(),
             source_id: config.display_id,
         });
-        let (video_player, video_player_handle) =
-            VideoPlayer::create(listener, &config.player, video_config, metrics)?;
+        let (video_player, video_player_handle) = VideoPlayer::create(
+            listener,
+            &config.player.clone().into(),
+            video_config,
+            metrics,
+        )?;
 
         info!("Start video");
 
@@ -210,7 +213,7 @@ async fn create_audioplayer(
         .expect("called without audio config");
 
     let audio_buffer = audio_config.audio_buffer();
-    let audio_player_config = AudioPlayerConfig { audio_buffer };
+    let audio_player_config = player::AudioPlayerConfig { audio_buffer };
 
     let listener = Box::new(AudioMessageForwarder {
         message_sender: backend_config.msg_sender.clone(),

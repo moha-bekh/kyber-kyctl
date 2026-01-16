@@ -57,6 +57,18 @@ pub struct VideoPlayerConfig {
     pub video_buffer: u32, // ms
 }
 
+#[cfg(feature = "js-player")]
+impl From<VideoPlayerConfig> for player::VideoPlayerConfig {
+    fn from(config: VideoPlayerConfig) -> Self {
+        Self {
+            canvas: config.canvas,
+            software_decode: config.software_decode,
+            notify_decoded: config.notify_decoded,
+            video_buffer: config.video_buffer,
+        }
+    }
+}
+
 impl VideoPlayerConfig {
     pub fn print(&self) {
         info!("VideoPlayerConfig");
@@ -70,6 +82,15 @@ impl VideoPlayerConfig {
 #[derive(Clone, Debug)]
 pub struct AudioPlayerConfig {
     pub audio_buffer: u32, // ms
+}
+
+#[cfg(feature = "js-player")]
+impl From<AudioPlayerConfig> for player::AudioPlayerConfig {
+    fn from(config: AudioPlayerConfig) -> Self {
+        Self {
+            audio_buffer: config.audio_buffer,
+        }
+    }
 }
 
 #[derive(Clone)]

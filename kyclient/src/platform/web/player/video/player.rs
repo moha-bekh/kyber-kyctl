@@ -21,8 +21,7 @@
 use crate::platform::player::packet::{CodecPacket, Packet};
 use crate::platform::player::video::decoder::{VideoDecoder, VideoDecoderCallbacks};
 use crate::platform::player::video::renderer_worker::{RendererWorker, RendererWorkerHandle};
-use crate::platform::player::PacketSink;
-use crate::platform::VideoPlayerConfig;
+use crate::platform::player::{PacketSink, VideoPlayerConfig};
 
 use super::VideoDecoderConfig;
 
