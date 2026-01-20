@@ -25,8 +25,19 @@ use log::{error, info, warn};
 use vlc::MediaPlayerAudioEx;
 use vlc::MetricsEntry;
 
-use crate::error::{Error, PlayerError, Result};
 use crate::platform::WindowHandle;
+
+#[derive(Debug)]
+pub enum PlayerError {
+    NoAudioPlayer,
+    InstanceCreateFailed,
+    MediaCreateFailed,
+    MediaPlayerCreateFailed,
+    PlayFailed,
+    AlreadyStopped,
+    EvtRegisterFailed,
+    ActionFailed,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PlayerMetric {
@@ -88,7 +99,7 @@ pub(crate) fn setup_vlc_logger(instance: &vlc::Instance) {
 pub(crate) fn plug_event_manager_to_player(
     mp: &vlc::MediaPlayer,
     listener: Arc<dyn PlayerListener>,
-) -> Result<()> {
+) -> Result<(), PlayerError> {
     // Register to libvlc's event manager
     let event_manager = mp.event_manager();
 
@@ -153,7 +164,7 @@ impl Player {
         video_buffer: Option<u32>,
         audio_buffer: Option<u32>,
         metrics: bool,
-    ) -> Result<Self> {
+    ) -> Result<Self, PlayerError> {
         let listener = Arc::<dyn PlayerListener>::from(listener);
 
         let mut options = vec![
@@ -250,7 +261,7 @@ impl Player {
         map
     }
 
-    fn play_video(&mut self, config: VideoConfig) -> Result<()> {
+    fn play_video(&mut self, config: VideoConfig) -> Result<(), PlayerError> {
         info!("Play video. URI: {}", config.uri);
 
         let media = vlc::Media::new_location(&config.uri).ok_or(PlayerError::MediaCreateFailed)?;
@@ -311,7 +322,7 @@ impl Player {
         Ok(())
     }
 
-    fn play_audio(&mut self, config: AudioConfig) -> Result<()> {
+    fn play_audio(&mut self, config: AudioConfig) -> Result<(), PlayerError> {
         info!("Play audio. URI: {}", config.uri);
 
         let media = vlc::Media::new_location(&config.uri).ok_or(PlayerError::MediaCreateFailed)?;
@@ -335,10 +346,10 @@ impl Player {
         &mut self,
         video_config: Option<Vec<VideoConfig>>,
         audio_config: Option<AudioConfig>,
-    ) -> Result<()> {
+    ) -> Result<(), PlayerError> {
         if video_config.is_none() && audio_config.is_none() {
             error!("play() rejected because no video and audio conf have been provided");
-            return Err(Error::Rejected);
+            return Err(PlayerError::PlayFailed);
         }
 
         // Video playback
@@ -364,7 +375,7 @@ impl Player {
         Ok(())
     }
 
-    async fn mdp_stop_async(mdp: &vlc::MediaPlayer) -> Result<()> {
+    async fn mdp_stop_async(mdp: &vlc::MediaPlayer) -> Result<(), PlayerError> {
         let (tx, mut rx) = tokio::sync::mpsc::channel(1);
 
         let cb = move |event, _| match event {
@@ -392,7 +403,7 @@ impl Player {
         Ok(())
     }
 
-    pub(crate) async fn stop_async(&mut self) -> Result<()> {
+    pub(crate) async fn stop_async(&mut self) -> Result<(), PlayerError> {
         if let Some(audio_mediaplayer) = self.audio_mediaplayer.as_mut() {
             info!("Stop audio player");
             let ret = Self::mdp_stop_async(audio_mediaplayer).await;
@@ -409,26 +420,26 @@ impl Player {
         Ok(())
     }
 
-    pub(crate) fn audio_set_volume(&self, volume: f32) -> Result<()> {
+    pub(crate) fn audio_set_volume(&self, volume: f32) -> Result<(), PlayerError> {
         let audio_mediaplayer = self
             .audio_mediaplayer
             .as_ref()
-            .ok_or(Error::NoAudioPlayer)?;
+            .ok_or(PlayerError::NoAudioPlayer)?;
 
         let ret = audio_mediaplayer.set_volume((volume * 100.0) as i32);
         if ret.is_err() {
             warn!("Failed to set audio volume");
-            return Err(Error::Rejected);
+            return Err(PlayerError::ActionFailed);
         }
 
         Ok(())
     }
 
-    pub(crate) fn audio_set_mute(&self, mute: bool) -> Result<()> {
+    pub(crate) fn audio_set_mute(&self, mute: bool) -> Result<(), PlayerError> {
         let audio_mediaplayer = self
             .audio_mediaplayer
             .as_ref()
-            .ok_or(Error::NoAudioPlayer)?;
+            .ok_or(PlayerError::NoAudioPlayer)?;
 
         audio_mediaplayer.set_mute(mute);
 

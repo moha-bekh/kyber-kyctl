@@ -25,15 +25,8 @@ use crate::platform;
 #[cfg(feature = "kymux")]
 use kymux::{kynet, kyproto};
 
-#[derive(Debug)]
-pub enum PlayerError {
-    InstanceCreateFailed,
-    MediaCreateFailed,
-    MediaPlayerCreateFailed,
-    PlayFailed,
-    AlreadyStopped,
-    EvtRegisterFailed,
-}
+#[cfg(feature = "desktop")]
+use platform::player::PlayerError;
 
 #[derive(Debug)]
 pub enum Error {
@@ -99,6 +92,7 @@ pub enum Error {
     SharedArrayBufferUndefined,
 
     // Player errors
+    #[cfg(feature = "desktop")]
     Player(PlayerError),
     // Host service errors
     HttpClient(reqwest::Error),
@@ -117,6 +111,7 @@ impl From<std::io::Error> for Error {
     }
 }
 
+#[cfg(feature = "desktop")]
 impl From<PlayerError> for Error {
     fn from(err: PlayerError) -> Error {
         Error::Player(err)
