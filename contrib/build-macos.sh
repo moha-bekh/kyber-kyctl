@@ -155,18 +155,6 @@ download_tarball() {
     return 1
 }
 
-build_kyaudioreg() {
-    KYAUDIOREG_SRCDIR="$LIBCLIENT_ROOT/external/kyaudioreg"
-    CARGO_TARGET=$(get_cargo_target "$HOST_ARCH")
-
-    cd "$KYAUDIOREG_SRCDIR"
-    cargo cinstall \
-        --release \
-        --prefix="$OUT_DIR" \
-        --target="$CARGO_TARGET"
-    cd -
-}
-
 build_libvlc() {
     VLC_SRCDIR="$LIBCLIENT_ROOT/external/vlc"
 
@@ -350,5 +338,4 @@ export PATH=$OUT_DIR/bin:$PATH
 export PKG_CONFIG_LIBDIR=$OUT_DIR/lib/pkgconfig:$OUT_DIR/lib/${HOST_ARCH}-apple-darwin/pkgconfig
 
 # Build
-build_kyaudioreg
 build_libvlc

@@ -12,11 +12,9 @@ members = [
 ]
 
 exclude = [
-    "external/kyaudioreg",
     "libkynput",
 ]
 
 [patch.crates-io]
 kidd_client = { path = "kidd_client" }
-kyaudioreg = { path = "external/kyaudioreg" }
 vlc-rs = { path = "external/vlc-rs" }
