@@ -87,25 +87,136 @@ impl ConnectionTask {
     }
 }
 
-// Shared infrastructure for all Kymux sessions (common server supports both QUIC and WebTransport)
+/// Configuration for starting Kymux infrastructure
+pub(crate) struct KymuxInfraConfig {
+    pub(crate) listening_port: u16,
+    pub(crate) public_port: u16,
+    pub(crate) webtransport_gen_certificate: bool,
+    pub(crate) cert_chain: Vec<rustls::pki_types::CertificateDer<'static>>,
+    pub(crate) private_key: rustls::pki_types::PrivateKeyDer<'static>,
+}
+
+/// Running state of the Kymux infrastructure
+struct RunningInfra {
+    server: KymuxServer,
+    kycom: kycom::KyCom,
+    certificate_hash: Option<requests::StartKymuxCertificateHash>,
+    router: Arc<Mutex<IncomingConnectionRouter>>,
+    public_port: u16,
+}
+
+/// Shared infrastructure for all Kymux sessions (common server supports both QUIC and WebTransport)
+///
+/// This object is always alive but can be in a "stopped" or "running" state internally.
+/// When stopped, it's an empty shell. When running, it holds the server, kycom, and router.
 pub(crate) struct SharedKymuxInfra {
-    pub(crate) server: KymuxServer,
-    pub(crate) kycom: kycom::KyCom,
-    pub(crate) certificate_hash: Option<requests::StartKymuxCertificateHash>,
-    pub(crate) router: Arc<Mutex<IncomingConnectionRouter>>,
+    inner: Option<RunningInfra>,
 }
 
 impl SharedKymuxInfra {
-    pub(crate) async fn stop(self) -> Result<()> {
+    pub(crate) fn new() -> Self {
+        Self { inner: None }
+    }
+
+    /// Start the infrastructure if not already running. Returns (certificate_hash, public_port).
+    pub(crate) async fn start(
+        &mut self,
+        config: KymuxInfraConfig,
+    ) -> Result<(Option<StartKymuxCertificateHash>, u16)> {
+        if let Some(ref inner) = self.inner {
+            // Already running, return existing config
+            info!("Reusing existing shared Kymux common infrastructure");
+            return Ok((inner.certificate_hash.clone(), inner.public_port));
+        }
+
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), config.listening_port);
+
+        info!("Starting common Kymux server on address {addr:?} (supports QUIC + WebTransport)");
+
+        // Choose certificate based on config
+        let (cert_chain, private_key, certificate_hash) = if config.webtransport_gen_certificate {
+            info!("Generating short-lived certificate for WebTransport compatibility");
+
+            let wt_cert = webtransport::gen_webtransport_cert()?;
+            let cert_hash = StartKymuxCertificateHash {
+                algorithm: "sha-256".to_string(),
+                hash: wt_cert.cert_digest.clone(),
+            };
+
+            info!("Generated certificate with hash: {}", wt_cert.cert_digest);
+
+            (vec![wt_cert.cert_der], wt_cert.key_der, Some(cert_hash))
+        } else {
+            info!("Using TLS certificate from config (must be CA-signed for WebTransport)");
+            (config.cert_chain, config.private_key, None)
+        };
+
+        let server_config = kymux::ServerConfig {
+            addr,
+            cert_chain,
+            private_key,
+        };
+        let server = kymux::Server::new(server_config).await?;
+
+        // Create the connection router
+        let router = Arc::new(Mutex::new(IncomingConnectionRouter::new()));
+
+        // Create the server with the router
+        let kymux_server = KymuxServer::new(server, router.clone()).await?;
+
+        // Create shared kycom for all sessions
+        const IPC_PORTS: std::ops::Range<u16> = 9091..9100;
+        let kycom = kycom::KyCom::start_on_any_port(IPC_PORTS).await?;
+
+        self.inner = Some(RunningInfra {
+            server: kymux_server,
+            kycom,
+            certificate_hash: certificate_hash.clone(),
+            router,
+            public_port: config.public_port,
+        });
+
+        Ok((certificate_hash, config.public_port))
+    }
+
+    /// Stop the infrastructure if running. No-op if already stopped.
+    pub(crate) async fn stop(&mut self) -> Result<()> {
+        let Some(inner) = self.inner.take() else {
+            return Ok(());
+        };
+
         info!("Stopping shared Kymux infrastructure");
 
         info!("Stopping kycom");
-        self.kycom.stop();
+        inner.kycom.stop();
 
         info!("Stopping Kymux server");
-        self.server.stop().await?;
+        inner.server.stop().await?;
 
         Ok(())
+    }
+
+    /// Get mutable reference to kycom. Returns error if not running.
+    pub(crate) fn kycom_mut(&mut self) -> Result<&mut kycom::KyCom> {
+        self.inner
+            .as_mut()
+            .map(|i| &mut i.kycom)
+            .ok_or(Error::KymuxNotListening)
+    }
+
+    /// Get reference to router. Returns error if not running.
+    pub(crate) fn router(&self) -> Result<&Arc<Mutex<IncomingConnectionRouter>>> {
+        self.inner
+            .as_ref()
+            .map(|i| &i.router)
+            .ok_or(Error::KymuxNotListening)
+    }
+
+    /// Cleanup expired tokens in the router. No-op if not running.
+    pub(crate) async fn cleanup_expired(&self) {
+        if let Some(ref inner) = self.inner {
+            inner.router.lock().await.cleanup_expired();
+        }
     }
 }
 
@@ -154,102 +265,6 @@ async fn start_kymux(
     public_port: u16,
     statemachine_proxy: StateMachineProxy,
 ) -> Result<requests::StartKymuxResponse> {
-    // Check state and create shared infrastructure if needed (single lock)
-    let (certificate_hash, public_port) = {
-        let mut ctrl = ctrl.lock().await;
-
-        // Check if data plane is already opened for this session
-        if ctrl.has_data_plane(&session_id)? {
-            return Err(Error::DataPlaneAlreadyOpened);
-        }
-
-        if let Some(existing_infra) = &ctrl.shared_kymux_infra {
-            // Infrastructure exists, reuse it
-            info!("Reusing existing shared Kymux common infrastructure");
-            (
-                existing_infra.lock().await.certificate_hash.clone(),
-                public_port,
-            )
-        } else {
-            // Load network and TLS config (only when creating new infra)
-            // If dataplane port has been overridden, use it directly.
-            // This will break controllers deployed behind a NAT.
-            let (listening_port, public_port) =
-                if let Some(dataplane_port) = ctrl.config.dataplane_port() {
-                    (dataplane_port, dataplane_port)
-                } else {
-                    (ctrl.config.port(), public_port)
-                };
-
-            let webtransport_gen_certificate = ctrl.config.webtransport_gen_certificate();
-            let tls_config = &ctrl.tls_config;
-
-            let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), listening_port);
-
-            // Create new common infrastructure (supports both QUIC and WebTransport)
-            info!(
-                "Starting common Kymux server on address {addr:?} (supports QUIC + WebTransport)"
-            );
-
-            // Choose certificate based on config:
-            // - Dev mode (webtransport_gen_certificate=true): Generate short-lived cert with hash
-            //   Required for WebTransport clients using serverCertificateHashes
-            // - Prod mode (webtransport_gen_certificate=false): Use TLS cert from config
-            //   Assumes cert is signed by a trusted CA (works for both QUIC and WebTransport)
-            let (cert_chain, private_key, certificate_hash) = if webtransport_gen_certificate {
-                info!("Generating short-lived certificate for WebTransport compatibility");
-
-                let wt_cert = webtransport::gen_webtransport_cert()?;
-                let cert_hash = StartKymuxCertificateHash {
-                    algorithm: "sha-256".to_string(),
-                    hash: wt_cert.cert_digest.clone(),
-                };
-
-                info!("Generated certificate with hash: {}", wt_cert.cert_digest);
-
-                (vec![wt_cert.cert_der], wt_cert.key_der, Some(cert_hash))
-            } else {
-                info!("Using TLS certificate from config (must be CA-signed for WebTransport)");
-
-                (
-                    tls_config.cert_chain.clone(),
-                    tls_config.private_key.clone_key(),
-                    None,
-                )
-            };
-
-            let config = kymux::ServerConfig {
-                addr,
-                cert_chain,
-                private_key,
-            };
-            let server = kymux::Server::new(config).await?;
-
-            // Create the connection router first (shared between server and sessions)
-            let router = Arc::new(Mutex::new(IncomingConnectionRouter::new()));
-
-            // Create the server with the router
-            let kymux_server = KymuxServer::new(server, router.clone()).await?;
-
-            // Create shared kycom for all sessions
-            const IPC_PORTS: std::ops::Range<u16> = 9091..9100;
-            let kycom = kycom::KyCom::start_on_any_port(IPC_PORTS).await?;
-
-            let infra = SharedKymuxInfra {
-                server: kymux_server,
-                kycom,
-                certificate_hash: certificate_hash.clone(),
-                router,
-            };
-            let shared = Arc::new(tokio::sync::Mutex::new(infra));
-
-            // Store shared infrastructure in Controller
-            ctrl.shared_kymux_infra = Some(shared);
-
-            (certificate_hash, public_port)
-        }
-    };
-
     // Generate auth token for this session
     let token = {
         use rand::distr::SampleString;
@@ -259,34 +274,57 @@ async fn start_kymux(
         rand::distr::Alphanumeric.sample_string(&mut rng, TOKEN_STRING_LEN)
     };
 
-    {
-        let mut ctrl = ctrl.lock().await;
+    let mut ctrl = ctrl.lock().await;
 
-        // Register session: creates pending_auth + oneshot channel
-        let shared_infra = ctrl
-            .shared_kymux_infra
-            .as_ref()
-            .ok_or(Error::KymuxNotListening)?
-            .clone();
-
-        let connection_rx = shared_infra
-            .lock()
-            .await
-            .router
-            .lock()
-            .await
-            .register_session(token.clone(), session_id);
-
-        let client_session = ctrl.get_session(&session_id)?;
-
-        let Some(stream_session) = client_session.stream_session.as_mut() else {
-            return Err(Error::ControlPlaneNotOpened);
-        };
-
-        // Store the Receiver in KymuxBackend - start_session will await on it
-        let backend = KymuxBackend::new(connection_rx, statemachine_proxy);
-        stream_session.data_plane = Some(DataPlaneBackend::Kymux(backend));
+    // Check if data plane is already opened for this session
+    if ctrl.has_data_plane(&session_id)? {
+        return Err(Error::DataPlaneAlreadyOpened);
     }
+
+    // Build config for infrastructure
+    // If dataplane port has been overridden, use it directly.
+    // This will break controllers deployed behind a NAT.
+    let (listening_port, public_port) = if let Some(dataplane_port) = ctrl.config.dataplane_port() {
+        (dataplane_port, dataplane_port)
+    } else {
+        (ctrl.config.port(), public_port)
+    };
+
+    let infra_config = KymuxInfraConfig {
+        listening_port,
+        public_port,
+        webtransport_gen_certificate: ctrl.config.webtransport_gen_certificate(),
+        cert_chain: ctrl.tls_config.cert_chain.clone(),
+        private_key: ctrl.tls_config.private_key.clone_key(),
+    };
+
+    // Start infrastructure (no-op if already running)
+    let (certificate_hash, public_port) = ctrl
+        .shared_kymux_infra
+        .lock()
+        .await
+        .start(infra_config)
+        .await?;
+
+    // Register session: creates pending_auth + oneshot channel
+    let connection_rx = ctrl
+        .shared_kymux_infra
+        .lock()
+        .await
+        .router()?
+        .lock()
+        .await
+        .register_session(token.clone(), session_id);
+
+    let client_session = ctrl.get_session(&session_id)?;
+
+    let Some(stream_session) = client_session.stream_session.as_mut() else {
+        return Err(Error::ControlPlaneNotOpened);
+    };
+
+    // Store the Receiver in KymuxBackend - start_session will await on it
+    let backend = KymuxBackend::new(connection_rx, statemachine_proxy);
+    stream_session.data_plane = Some(DataPlaneBackend::Kymux(backend));
 
     Ok(requests::StartKymuxResponse {
         port: public_port,
@@ -557,11 +595,7 @@ async fn start_session(
     let displays = ctrl.displays.convert();
 
     // Get shared_infra from Controller (not from backend - eliminates nested Arc<Mutex>)
-    let shared_infra = ctrl
-        .shared_kymux_infra
-        .as_ref()
-        .ok_or(Error::KymuxNotListening)?
-        .clone();
+    let shared_infra = ctrl.shared_kymux_infra.clone();
 
     // Get the connection receiver from KymuxBackend (was created in start_mux)
     let connection_rx = {
@@ -599,10 +633,11 @@ async fn start_session(
     // Start services
     let (video, audio, input) = {
         let mut infra = shared_infra.lock().await;
+        let kycom = infra.kycom_mut()?;
 
         let video = start_video(
             &request,
-            &mut infra.kycom,
+            kycom,
             &connection,
             &process_factory,
             session_id,
@@ -612,7 +647,7 @@ async fn start_session(
 
         let audio = start_audio(
             &request,
-            &mut infra.kycom,
+            kycom,
             &connection,
             &process_factory,
             session_id,
@@ -622,7 +657,7 @@ async fn start_session(
 
         let input = start_input(
             &request,
-            &mut infra.kycom,
+            kycom,
             &connection,
             &process_factory,
             inputservice_types::HostConfig {

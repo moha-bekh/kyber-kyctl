@@ -21,7 +21,6 @@
 //! 3. Compares expiration to current UTC time
 //! 4. If expired: Calls `Controller::stop()` to terminate that session's streaming services
 //! 5. Cleans up expired pending authentication tokens
-//! 6. Retries shared Kymux infrastructure cleanup (in case a previous attempt failed)
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -112,18 +111,6 @@ impl ExpirationTask {
         }
 
         // Cleanup expired pending auth tokens in shared Kymux infrastructure
-        if let Some(shared_infra) = &ctrl.shared_kymux_infra {
-            shared_infra
-                .lock()
-                .await
-                .router
-                .lock()
-                .await
-                .cleanup_expired();
-        }
-
-        // Retry cleanup of shared Kymux infrastructure if a previous attempt failed
-        // (e.g., because start_session was holding a reference during session termination)
-        ctrl.cleanup_shared_kymux_infra().await;
+        ctrl.shared_kymux_infra.lock().await.cleanup_expired().await;
     }
 }

@@ -160,7 +160,8 @@ pub struct Controller {
     pub(crate) state_machine_proxy: Option<StateMachineProxy>,
 
     // Shared Kymux infrastructure (unified server supporting both QUIC and WebTransport on same port)
-    pub(crate) shared_kymux_infra: Option<Arc<tokio::sync::Mutex<SharedKymuxInfra>>>,
+    // Always exists but can be in stopped or running state internally
+    pub(crate) shared_kymux_infra: Arc<tokio::sync::Mutex<SharedKymuxInfra>>,
 }
 
 impl Controller {
@@ -176,7 +177,7 @@ impl Controller {
             tls_config,
             sessions: HashMap::new(),
             state_machine_proxy: None,
-            shared_kymux_infra: None,
+            shared_kymux_infra: Arc::new(tokio::sync::Mutex::new(SharedKymuxInfra::new())),
         }
     }
 
@@ -228,40 +229,14 @@ impl Controller {
             warn!("Failed to stop streaming services: {err:?}");
         }
 
-        // Clean up shared Kymux infrastructure when no more sessions
-        self.cleanup_shared_kymux_infra().await;
+        // Stop shared Kymux infrastructure when no more sessions
+        if self.sessions.is_empty() {
+            if let Err(err) = self.shared_kymux_infra.lock().await.stop().await {
+                warn!("Failed to stop shared Kymux infrastructure: {err:?}");
+            }
+        }
 
         Ok(())
-    }
-
-    pub(crate) async fn cleanup_shared_kymux_infra(&mut self) {
-        if !self.sessions.is_empty() {
-            return;
-        }
-
-        let Some(shared_infra) = self.shared_kymux_infra.take() else {
-            return;
-        };
-
-        // Try to get exclusive access. This can fail if another async task still
-        // holds a clone of the Arc. Known cases:
-        // - start_kymux: clones Arc while registering session and creating backend
-        // - start_session: clones Arc while waiting for connection and starting services
-        // These can race with session termination (timeout, logout) causing try_unwrap
-        // to fail. In that case, we restore the Arc and cleanup will be retried when
-        // the next session ends or when the holding task completes.
-        match Arc::try_unwrap(shared_infra) {
-            Ok(infra_mutex) => {
-                let infra = infra_mutex.into_inner();
-                if let Err(err) = infra.stop().await {
-                    warn!("Failed to stop shared Kymux infrastructure: {err:?}");
-                }
-            }
-            Err(arc) => {
-                info!("Deferring Kymux infrastructure cleanup: other references still held");
-                self.shared_kymux_infra = Some(arc);
-            }
-        }
     }
 
     pub(crate) fn has_data_plane(&self, session_id: &Uuid) -> Result<bool> {
