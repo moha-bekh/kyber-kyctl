@@ -42,25 +42,8 @@ pub(crate) async fn start_mux(
         }
     };
 
-    let state_machine_proxy = {
-        let ctrl = ctrl.lock().await;
-
-        let Some(state_machine_proxy) = ctrl.state_machine_proxy.clone() else {
-            warn!("StateMachineProxy not configured");
-            return HttpResponse::Forbidden().finish();
-        };
-
-        state_machine_proxy
-    };
-
     // Assume that the public port used for UDP is the same than the port for TCP.
-    let ret = super::start_kymux(
-        ctrl.clone(),
-        session_id,
-        request.public_streamer_port,
-        state_machine_proxy,
-    )
-    .await;
+    let ret = super::start_kymux(ctrl.clone(), session_id, request.public_streamer_port).await;
     match ret {
         Ok(ret) => {
             info!("Kymux started. Public port: {port}", port = ret.port);

@@ -220,37 +220,27 @@ impl SharedKymuxInfra {
     }
 }
 
+/// Backend for an established Kymux (QUIC/WebTransport) connection.
+///
+/// This struct is only created after the client has successfully connected and authenticated.
+/// The pending connection state (between start_mux and start_session) is stored in
+/// `StreamingSession.pending_kymux_rx` instead.
 pub(crate) struct KymuxBackend {
-    /// Receiver for the authenticated QUIC connection.
-    ///
-    /// The connection is guaranteed to be for this session: IncomingConnectionRouter
-    /// validates the auth token and routes the connection through this session-specific channel.
-    connection_rx: Option<oneshot::Receiver<Arc<kyproto::Connection>>>,
-    connection_task: Option<ConnectionTask>,
-    statemachine_proxy: StateMachineProxy,
+    connection_task: ConnectionTask,
 }
 
 impl KymuxBackend {
-    fn new(
-        connection_rx: oneshot::Receiver<Arc<kyproto::Connection>>,
-        statemachine_proxy: StateMachineProxy,
-    ) -> Self {
-        Self {
-            connection_rx: Some(connection_rx),
-            connection_task: None,
-            statemachine_proxy,
-        }
+    fn new(connection_task: ConnectionTask) -> Self {
+        Self { connection_task }
     }
 
-    pub(crate) async fn stop(mut self) -> Result<()> {
-        if let Some(task) = self.connection_task.take() {
-            info!("Stop running Kymux Connection");
+    pub(crate) async fn stop(self) -> Result<()> {
+        info!("Stop running Kymux Connection");
 
-            let ret = task.stop().await;
-            if let Err(err) = ret {
-                warn!("Kymux Closed task stop raised an error: {err:?}");
-            }
-        };
+        let ret = self.connection_task.stop().await;
+        if let Err(err) = ret {
+            warn!("Kymux Closed task stop raised an error: {err:?}");
+        }
 
         // NOTE: We don't stop the shared kycom or KymuxServer here because other sessions may still be using them
         // They will be stopped when the Controller shuts down
@@ -263,7 +253,6 @@ async fn start_kymux(
     ctrl: web::Data<Mutex<Controller>>,
     session_id: uuid::Uuid,
     public_port: u16,
-    statemachine_proxy: StateMachineProxy,
 ) -> Result<requests::StartKymuxResponse> {
     // Generate auth token for this session
     let token = {
@@ -276,7 +265,7 @@ async fn start_kymux(
 
     let mut ctrl = ctrl.lock().await;
 
-    // Check if data plane is already opened for this session
+    // Check if data plane or pending connection already exists for this session
     if ctrl.has_data_plane(&session_id)? {
         return Err(Error::DataPlaneAlreadyOpened);
     }
@@ -322,9 +311,8 @@ async fn start_kymux(
         return Err(Error::ControlPlaneNotOpened);
     };
 
-    // Store the Receiver in KymuxBackend - start_session will await on it
-    let backend = KymuxBackend::new(connection_rx, statemachine_proxy);
-    stream_session.data_plane = Some(DataPlaneBackend::Kymux(backend));
+    // Store the connection receiver - start_session will await on it and create the KymuxBackend
+    stream_session.pending_kymux_rx = Some(connection_rx);
 
     Ok(requests::StartKymuxResponse {
         port: public_port,
@@ -594,20 +582,17 @@ async fn start_session(
     let process_factory = ctrl.process_factory.clone();
     let displays = ctrl.displays.convert();
 
-    // Get shared_infra from Controller (not from backend - eliminates nested Arc<Mutex>)
+    // Get shared_infra from Controller
     let shared_infra = ctrl.shared_kymux_infra.clone();
 
-    // Get the connection receiver from KymuxBackend (was created in start_mux)
+    // Get the pending connection receiver (was created in start_mux)
     let connection_rx = {
         let client_session = ctrl.get_session(&session_id)?;
         let Some(streaming_session) = client_session.stream_session.as_mut() else {
             return Err(Error::ControlPlaneNotOpened);
         };
-        let Some(DataPlaneBackend::Kymux(backend)) = streaming_session.data_plane.as_mut() else {
-            return Err(Error::KymuxNotListening);
-        };
-        backend
-            .connection_rx
+        streaming_session
+            .pending_kymux_rx
             .take()
             .ok_or(Error::KymuxNotListening)?
     };
@@ -700,22 +685,17 @@ async fn start_session(
         None
     };
 
-    // Store connection task in the backend
+    // Create KymuxBackend now that connection is established
     {
         let client_session = ctrl.get_session(&session_id)?;
         let Some(streaming_session) = client_session.stream_session.as_mut() else {
             return Err(Error::ControlPlaneNotOpened);
         };
 
-        let Some(DataPlaneBackend::Kymux(backend)) = streaming_session.data_plane.as_mut() else {
-            return Err(Error::KymuxNotListening);
-        };
-
-        backend.connection_task = Some(ConnectionTask::new(
-            connection.clone(),
-            backend.statemachine_proxy.clone(),
-            session_id,
-        ));
+        let connection_task =
+            ConnectionTask::new(connection.clone(), state_machine_proxy, session_id);
+        let backend = KymuxBackend::new(connection_task);
+        streaming_session.data_plane = Some(DataPlaneBackend::Kymux(backend));
     }
 
     Ok(StartSessionResponse {

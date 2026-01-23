@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use kymux::kyproto;
 use log::{info, warn};
 use time::OffsetDateTime;
+use tokio::sync::oneshot;
 use uuid::Uuid;
 
 use avservice_types::Display;
@@ -29,6 +31,10 @@ pub(crate) enum DataPlaneBackend {
 pub(crate) struct StreamingSession {
     pub(crate) host_event_sender: HostEventSender,
     pub(crate) data_plane: Option<DataPlaneBackend>,
+    /// Pending Kymux connection receiver (between start_mux and start_session).
+    /// This field holds the oneshot receiver while waiting for the client to connect.
+    /// Once the connection is established, this is consumed and a KymuxBackend is created.
+    pub(crate) pending_kymux_rx: Option<oneshot::Receiver<Arc<kyproto::Connection>>>,
 }
 
 impl StreamingSession {
@@ -36,6 +42,7 @@ impl StreamingSession {
         Self {
             host_event_sender,
             data_plane: None,
+            pending_kymux_rx: None,
         }
     }
 
@@ -249,7 +256,10 @@ impl Controller {
             return Err(Error::ControlPlaneNotOpened);
         };
 
-        Ok(stream_session.data_plane.is_some())
+        // Data plane is considered active if either:
+        // - An established connection exists (data_plane is Some)
+        // - A pending connection is waiting (pending_kymux_rx is Some)
+        Ok(stream_session.data_plane.is_some() || stream_session.pending_kymux_rx.is_some())
     }
 
     pub(crate) fn display_known(&self, display_id: u32) -> bool {
