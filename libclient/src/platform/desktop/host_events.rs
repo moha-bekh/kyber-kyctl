@@ -31,7 +31,7 @@ use log::{error, info, warn};
 use tokio::{net::TcpStream, sync::oneshot, task};
 
 use crate::host_events::{self, HostEventFrame, HostEventSink};
-use crate::platform::tls;
+use crate::platform::tls::{self, VerifyMode};
 use crate::{
     ConnectionParams, ControlPlaneCapabilities, ControlPlaneCloseReason, Error, Message, Result,
 };
@@ -52,8 +52,9 @@ impl WsClient {
         let port = conn_params.port;
         let url = format!("wss://{host}:{port}/ws");
 
-        let mut stream = if let Some(tls_config) = &conn_params.tls_config {
-            Self::connect_with_rootca(url, conn_params, tls_config).await?
+        // Connect with appropriate TLS verification
+        let mut stream = if let Some(verify_mode) = &conn_params.verify_mode {
+            Self::connect_with_verify_mode(url, conn_params, verify_mode).await?
         } else {
             Self::connect_without_rootca(url).await?
         };
@@ -94,32 +95,24 @@ impl WsClient {
         Ok(Self { handle, stop_tx })
     }
 
-    async fn connect_with_rootca(
+    async fn connect_with_verify_mode(
         url: String,
         conn_params: &ConnectionParams,
-        tls_config: &tls::Config,
+        verify_mode: &VerifyMode,
     ) -> Result<WebSocketStream<ClientStream<TcpStream>>> {
-        let mut certs_store = rustls::RootCertStore::empty();
-        certs_store
-            .add(tls_config.root_certificate.clone().into())
-            .map_err(|err| {
-                warn!("Failed to crate RootCertStore: {err:?}");
-                Error::Rejected
-            })?;
-
-        let rustls_config = Arc::new(
-            rustls::ClientConfig::builder()
-                .with_root_certificates(certs_store)
-                .with_no_client_auth(),
-        );
+        let rustls_config = tls::build_client_config(verify_mode).map_err(|err| {
+            warn!("Failed to build TLS config: {err:?}");
+            Error::TlsVerificationFailed
+        })?;
 
         let stream = TcpStream::connect(conn_params.addr).await?;
-        let (stream, _) = client_async_tls_with_connector(url, stream, Some(rustls_config.into()))
-            .await
-            .map_err(|err| {
-                warn!("Failed to open websocket: {err:?}");
-                Error::Rejected
-            })?;
+        let (stream, _) =
+            client_async_tls_with_connector(url, stream, Some(Arc::new(rustls_config).into()))
+                .await
+                .map_err(|err| {
+                    warn!("Failed to open websocket: {err:?}");
+                    Error::Rejected
+                })?;
 
         Ok(stream)
     }

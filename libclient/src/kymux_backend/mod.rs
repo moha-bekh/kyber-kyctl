@@ -270,34 +270,14 @@ async fn connect_quinn(
     auth: &kyproto::ClientAuth,
     certificate_hash: Option<host_service::StartKymuxCertificateHash>,
 ) -> Result<kyproto::Connection> {
-    // Extract certificate hash if provided (for self-signed WebTransport certificates)
+    // Data plane uses certificate hash from server, not control plane TLS config
     let certificate_hash = certificate_hash.map(|h| h.hash);
-
-    let roots = if let Some(tls_config) = &conn_params.tls_config {
-        let mut roots = rustls::RootCertStore::empty();
-        roots
-            .add(tls_config.root_certificate.clone().into())
-            .map_err(|err| {
-                warn!("Failed to crate RootCertStore: {err:?}");
-                Error::Rejected
-            })?;
-
-        Some(roots)
-    } else {
-        None
-    };
-
-    let server_name = if let Some(tls_host) = &conn_params.tls_host {
-        tls_host.clone()
-    } else {
-        conn_params.host.clone()
-    };
 
     Ok(kymux::connect_with_auth(
         kymux::ClientConfig::Quic {
             addr: std::net::SocketAddr::new(conn_params.addr.ip(), port),
-            roots,
-            server_name,
+            roots: None,
+            server_name: conn_params.host.clone(),
             certificate_hash,
         },
         auth,
