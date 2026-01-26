@@ -25,7 +25,8 @@ use std::os::raw::{c_char, c_int, c_void};
 use std::ptr;
 use std::sync::atomic::AtomicPtr;
 
-use log::warn;
+use log::{error, warn};
+use std::io::BufReader;
 
 use kymux::kyproto;
 use libkynput_rs::Pipeline;
@@ -33,8 +34,10 @@ use libkynput_rs::Pipeline;
 use crate::metrics::{
     Metric, MetricsJSONProducer, NetworkPing, NetworkStats, VideoMetric, VideoMetricData,
 };
+use crate::platform::tls::get_resource_path;
+use crate::platform::VerifyMode;
+use crate::MetricsCallback;
 use crate::VideoCodec;
-use crate::{MetricsCallback, TlsRootCert};
 
 #[allow(non_camel_case_types)]
 pub type Display = super::Display;
@@ -319,7 +322,7 @@ pub unsafe extern "C" fn libclient_connect_config_default(
         port: crate::STREAMER_PORT,
         credentials: crate::AuthCredentials::default(),
         tls_host: None,
-        tls_root_cert: None,
+        verify_mode: None,
         auto_reconnection: false,
     };
 
@@ -362,30 +365,82 @@ pub unsafe extern "C" fn libclient_connect_config_set_tls_root_cert(
     libclient_connect_config_set_tls_root_cert_path(config, tls_root_cert)
 }
 
+/// Set TLS root certificate from a PEM file path.
+///
+/// This C API is preserved for backward compatibility with Android and iOS clients.
+/// Internally converts to `VerifyMode::RootCert` - the old `tls_config` codepath
+/// has been removed in favor of the unified `verify_mode` system.
+///
+/// The path is resolved relative to the executable directory if it's a relative path.
 #[no_mangle]
 pub unsafe extern "C" fn libclient_connect_config_set_tls_root_cert_path(
     config: *mut libclient_ConnectConfig,
     path: *const c_char,
 ) -> c_int {
-    let Ok(tls_root_cert) = CStr::from_ptr(path).to_str() else {
-        warn!("Fail to convert Root TLS certificate");
+    let Ok(path_str) = CStr::from_ptr(path).to_str() else {
+        warn!("Fail to convert Root TLS certificate path");
         return -1;
     };
 
-    (*config).config.tls_root_cert = Some(TlsRootCert::Path(tls_root_cert.into()));
+    let resolved_path = get_resource_path(path_str);
+
+    let Ok(file) = std::fs::File::open(&resolved_path) else {
+        warn!(
+            "Failed to open TLS root certificate file: {:?}",
+            resolved_path
+        );
+        return -1;
+    };
+
+    let mut reader = BufReader::new(file);
+
+    // Parse PEM and extract DER bytes
+    let root_certificate = match rustls_pemfile::read_one(&mut reader) {
+        Ok(Some(rustls_pemfile::Item::X509Certificate(cert))) => cert.to_vec(),
+        Ok(_) => {
+            error!("{:?} doesn't contain a X509 Certificate", resolved_path);
+            return -1;
+        }
+        Err(e) => {
+            error!(
+                "Failed to parse TLS certificate {:?}: {:?}",
+                resolved_path, e
+            );
+            return -1;
+        }
+    };
+
+    (*config).config.verify_mode = Some(VerifyMode::RootCert { root_certificate });
 
     0
 }
 
+/// Set TLS root certificate from raw PEM bytes.
+///
+/// This C API is preserved for backward compatibility with Android and iOS clients.
+/// Internally converts to `VerifyMode::RootCert`.
 #[no_mangle]
 pub unsafe extern "C" fn libclient_connect_config_set_tls_root_cert_bytes(
     config: *mut libclient_ConnectConfig,
     bytes: *const c_char,
     len: libc::size_t,
 ) -> c_int {
-    let bytes = std::slice::from_raw_parts(bytes as *const u8, len).to_vec();
+    let bytes = std::slice::from_raw_parts(bytes as *const u8, len);
 
-    (*config).config.tls_root_cert = Some(TlsRootCert::Bytes(bytes));
+    // Parse PEM and extract DER bytes
+    let root_certificate = match rustls_pemfile::read_one_from_slice(bytes) {
+        Ok(Some((rustls_pemfile::Item::X509Certificate(cert), _))) => cert.to_vec(),
+        Ok(_) => {
+            error!("Given bytes don't contain a X509 Certificate");
+            return -1;
+        }
+        Err(e) => {
+            error!("Failed to parse TLS certificate bytes: {:?}", e);
+            return -1;
+        }
+    };
+
+    (*config).config.verify_mode = Some(VerifyMode::RootCert { root_certificate });
 
     0
 }
@@ -411,6 +466,262 @@ pub unsafe extern "C" fn libclient_connect_config_unref(cfg: *mut libclient_Conn
     if !cfg.is_null() {
         let _ = Box::from_raw(cfg);
     }
+}
+
+/// Set TLS certificate fingerprint for pinning verification.
+/// The fingerprint should be in format "sha256:xx:xx:xx:..."
+#[no_mangle]
+pub unsafe extern "C" fn libclient_connect_config_set_tls_fingerprint(
+    config: *mut libclient_ConnectConfig,
+    fingerprint: *const c_char,
+) -> c_int {
+    let Ok(fingerprint) = CStr::from_ptr(fingerprint).to_str() else {
+        warn!("Fail to convert TLS fingerprint");
+        return -1;
+    };
+
+    result_to_c_int((*config).config.set_tls_fingerprint(fingerprint))
+}
+
+/// Skip TLS verification (DANGER - for testing only)
+#[no_mangle]
+pub unsafe extern "C" fn libclient_connect_config_skip_tls_verification(
+    config: *mut libclient_ConnectConfig,
+) {
+    (*config).config.skip_tls_verification();
+}
+
+/// TOFU prompt type
+#[repr(C)]
+#[allow(non_camel_case_types)]
+pub enum libclient_TofuPromptType {
+    UnknownHost,
+    CertificateChanged,
+}
+
+/// TOFU prompt data passed to callback
+#[repr(C)]
+#[allow(non_camel_case_types)]
+pub struct libclient_TofuPrompt {
+    pub prompt_type: libclient_TofuPromptType,
+    pub hostname: *const c_char,
+    pub fingerprint: *const c_char,          // For UnknownHost
+    pub expected_fingerprint: *const c_char, // For CertificateChanged
+    pub actual_fingerprint: *const c_char,   // For CertificateChanged
+}
+
+/// TOFU callback type - returns true to accept, false to reject
+#[allow(non_camel_case_types)]
+pub type libclient_TofuCallback = Option<
+    unsafe extern "C" fn(prompt: *const libclient_TofuPrompt, userdata: *mut c_void) -> bool,
+>;
+
+/// Wrapper for raw pointer to make it Send + Sync.
+/// SAFETY: The caller must ensure the pointer remains valid and thread-safe.
+#[derive(Clone, Copy)]
+struct SendSyncPtr(*mut c_void);
+unsafe impl Send for SendSyncPtr {}
+unsafe impl Sync for SendSyncPtr {}
+
+impl SendSyncPtr {
+    fn as_ptr(self) -> *mut c_void {
+        self.0
+    }
+}
+
+/// Enable TOFU (Trust-On-First-Use) verification with callback
+#[no_mangle]
+pub unsafe extern "C" fn libclient_connect_config_enable_tofu(
+    config: *mut libclient_ConnectConfig,
+    callback: libclient_TofuCallback,
+    userdata: *mut c_void,
+) -> c_int {
+    use crate::platform::tls::TofuPrompt;
+
+    let Some(callback) = callback else {
+        warn!("TOFU callback is null");
+        return -1;
+    };
+
+    // Wrap the C callback in a Rust closure
+    // SAFETY: userdata must remain valid for the lifetime of the connection
+    let userdata = SendSyncPtr(userdata);
+    let prompt_callback = move |prompt: TofuPrompt| -> bool {
+        let userdata = userdata.as_ptr();
+
+        let (prompt_type, hostname_cstr, fingerprint_cstr, expected_cstr, actual_cstr) =
+            match &prompt {
+                TofuPrompt::UnknownHost {
+                    hostname,
+                    fingerprint,
+                } => {
+                    let hostname_cstr = CString::new(hostname.as_str()).unwrap_or_default();
+                    let fingerprint_cstr = CString::new(fingerprint.as_str()).unwrap_or_default();
+                    (
+                        libclient_TofuPromptType::UnknownHost,
+                        hostname_cstr,
+                        fingerprint_cstr,
+                        CString::default(),
+                        CString::default(),
+                    )
+                }
+                TofuPrompt::CertificateChanged {
+                    hostname,
+                    expected_fingerprint,
+                    actual_fingerprint,
+                } => {
+                    let hostname_cstr = CString::new(hostname.as_str()).unwrap_or_default();
+                    let expected_cstr =
+                        CString::new(expected_fingerprint.as_str()).unwrap_or_default();
+                    let actual_cstr = CString::new(actual_fingerprint.as_str()).unwrap_or_default();
+                    (
+                        libclient_TofuPromptType::CertificateChanged,
+                        hostname_cstr,
+                        CString::default(),
+                        expected_cstr,
+                        actual_cstr,
+                    )
+                }
+            };
+
+        let c_prompt = libclient_TofuPrompt {
+            prompt_type,
+            hostname: hostname_cstr.as_ptr(),
+            fingerprint: fingerprint_cstr.as_ptr(),
+            expected_fingerprint: expected_cstr.as_ptr(),
+            actual_fingerprint: actual_cstr.as_ptr(),
+        };
+
+        unsafe { callback(&c_prompt, userdata) }
+    };
+
+    result_to_c_int((*config).config.enable_tofu(prompt_callback))
+}
+
+/// Enable TOFU with auto-accept for new hosts
+#[no_mangle]
+pub unsafe extern "C" fn libclient_connect_config_enable_tofu_auto_accept(
+    config: *mut libclient_ConnectConfig,
+) -> c_int {
+    result_to_c_int((*config).config.enable_tofu_auto_accept())
+}
+
+/// Enable strict known_hosts mode (reject unknown hosts)
+#[no_mangle]
+pub unsafe extern "C" fn libclient_connect_config_enable_known_hosts_strict(
+    config: *mut libclient_ConnectConfig,
+) -> c_int {
+    result_to_c_int((*config).config.enable_known_hosts_strict())
+}
+
+/// Add a host to known_hosts file
+#[no_mangle]
+pub unsafe extern "C" fn libclient_known_hosts_add(
+    hostname: *const c_char,
+    fingerprint: *const c_char,
+) -> c_int {
+    use crate::platform::known_hosts;
+
+    let Ok(hostname) = CStr::from_ptr(hostname).to_str() else {
+        warn!("Fail to convert hostname");
+        return -1;
+    };
+
+    let Ok(fingerprint) = CStr::from_ptr(fingerprint).to_str() else {
+        warn!("Fail to convert fingerprint");
+        return -1;
+    };
+
+    result_to_c_int(known_hosts::add_host(hostname, fingerprint))
+}
+
+/// Remove a host from known_hosts file
+/// Returns 0 if removed, 1 if not found, -1 on error
+#[no_mangle]
+pub unsafe extern "C" fn libclient_known_hosts_remove(hostname: *const c_char) -> c_int {
+    use crate::platform::known_hosts;
+
+    let Ok(hostname) = CStr::from_ptr(hostname).to_str() else {
+        warn!("Fail to convert hostname");
+        return -1;
+    };
+
+    match known_hosts::remove_host(hostname) {
+        Ok(true) => 0,
+        Ok(false) => 1,
+        Err(_) => -1,
+    }
+}
+
+/// Known hosts entry for listing
+#[repr(C)]
+#[allow(non_camel_case_types)]
+pub struct libclient_KnownHostEntry {
+    pub hostname: *mut c_char,
+    pub fingerprint: *mut c_char,
+}
+
+/// List all hosts in known_hosts file
+/// Returns array of entries and count, caller must free with libclient_known_hosts_list_free
+#[no_mangle]
+pub unsafe extern "C" fn libclient_known_hosts_list(
+    out_entries: *mut *mut libclient_KnownHostEntry,
+    out_count: *mut usize,
+) -> c_int {
+    use crate::platform::known_hosts;
+
+    let hosts = match known_hosts::list_hosts() {
+        Ok(h) => h,
+        Err(_) => return -1,
+    };
+
+    let count = hosts.len();
+    if count == 0 {
+        *out_entries = std::ptr::null_mut();
+        *out_count = 0;
+        return 0;
+    }
+
+    let entries = libc::malloc(count * std::mem::size_of::<libclient_KnownHostEntry>())
+        as *mut libclient_KnownHostEntry;
+    if entries.is_null() {
+        return -1;
+    }
+
+    for (i, (hostname, fingerprint)) in hosts.into_iter().enumerate() {
+        let hostname_cstr = CString::new(hostname).unwrap_or_default();
+        let fingerprint_cstr = CString::new(fingerprint).unwrap_or_default();
+
+        (*entries.add(i)).hostname = hostname_cstr.into_raw();
+        (*entries.add(i)).fingerprint = fingerprint_cstr.into_raw();
+    }
+
+    *out_entries = entries;
+    *out_count = count;
+    0
+}
+
+/// Free known hosts list returned by libclient_known_hosts_list
+#[no_mangle]
+pub unsafe extern "C" fn libclient_known_hosts_list_free(
+    entries: *mut libclient_KnownHostEntry,
+    count: usize,
+) {
+    if entries.is_null() {
+        return;
+    }
+
+    for i in 0..count {
+        let entry = &mut *entries.add(i);
+        if !entry.hostname.is_null() {
+            let _ = CString::from_raw(entry.hostname);
+        }
+        if !entry.fingerprint.is_null() {
+            let _ = CString::from_raw(entry.fingerprint);
+        }
+    }
+
+    libc::free(entries as *mut c_void);
 }
 
 #[cfg(feature = "rtp")]
