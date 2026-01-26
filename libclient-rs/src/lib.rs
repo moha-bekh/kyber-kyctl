@@ -27,6 +27,22 @@ use std::sync::atomic::{self, AtomicPtr};
 use log::{error, warn};
 
 pub use libclient_common::metrics::Metric;
+
+/// TOFU (Trust-On-First-Use) prompt for certificate verification decisions.
+#[derive(Clone, Debug)]
+pub enum TofuPrompt {
+    /// A new host was encountered that is not in known_hosts.
+    UnknownHost {
+        hostname: String,
+        fingerprint: String,
+    },
+    /// A known host presented a different certificate than expected.
+    CertificateChanged {
+        hostname: String,
+        expected_fingerprint: String,
+        actual_fingerprint: String,
+    },
+}
 use libclient_common::metrics::{NetworkPing, NetworkStats, VideoMetric, VideoMetricData};
 use libclient_sys as sys;
 use libkynput_rs::Pipeline;
@@ -731,8 +747,12 @@ impl AuthCredentials {
     }
 }
 
+type TofuCallbackPtr = *mut Box<dyn Fn(TofuPrompt) -> bool + Send + Sync>;
+
 pub struct ConnectConfig {
     ptr: *mut sys::libclient_ConnectConfig,
+    /// Stores the TOFU callback pointer for cleanup on drop.
+    tofu_callback_ptr: Cell<Option<TofuCallbackPtr>>,
 }
 
 impl ConnectConfig {
@@ -743,7 +763,10 @@ impl ConnectConfig {
             let mut ptr: *mut _ = std::mem::zeroed();
             let ret = sys::libclient_connect_config_default(chost.as_ptr(), &mut ptr);
             if ret == 0 {
-                Ok(Self { ptr })
+                Ok(Self {
+                    ptr,
+                    tofu_callback_ptr: Cell::new(None),
+                })
             } else {
                 Err(Error::Generic)
             }
@@ -793,10 +816,127 @@ impl ConnectConfig {
     pub fn set_auto_reconnection(&self, enabled: bool) {
         unsafe { sys::libclient_connect_config_set_auto_reconnection(self.ptr, enabled) }
     }
+
+    /// Set TLS certificate fingerprint for pinning verification.
+    /// The fingerprint should be in format "sha256:xx:xx:xx:..."
+    pub fn set_tls_cert_fingerprint(&self, fingerprint: &str) -> Result<()> {
+        let cfingerprint = to_cstr(fingerprint);
+
+        let ret = unsafe {
+            sys::libclient_connect_config_set_tls_fingerprint(self.ptr, cfingerprint.as_ptr())
+        };
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err(Error::Generic)
+        }
+    }
+
+    /// Enable TOFU (Trust-On-First-Use) verification with a callback.
+    /// The callback receives a TofuPrompt and should return true to accept or false to reject.
+    pub fn enable_tofu<F>(&self, callback: F) -> Result<()>
+    where
+        F: Fn(TofuPrompt) -> bool + Send + Sync + 'static,
+    {
+        // Free any previous callback
+        if let Some(old_ptr) = self.tofu_callback_ptr.get() {
+            unsafe {
+                let _ = Box::from_raw(old_ptr);
+            }
+            self.tofu_callback_ptr.set(None);
+        }
+
+        // Store callback as a boxed trait object, then box again to get a thin pointer
+        // This allows us to properly drop it later without knowing the concrete type
+        let callback: Box<dyn Fn(TofuPrompt) -> bool + Send + Sync> = Box::new(callback);
+        let callback_box = Box::new(callback);
+        let callback_ptr = Box::into_raw(callback_box);
+
+        let ret = unsafe {
+            sys::libclient_connect_config_enable_tofu(
+                self.ptr,
+                Some(tofu_callback_trampoline),
+                callback_ptr as *mut c_void,
+            )
+        };
+
+        if ret == 0 {
+            // Store pointer for cleanup on drop
+            self.tofu_callback_ptr.set(Some(callback_ptr));
+            Ok(())
+        } else {
+            // Clean up callback on error
+            unsafe {
+                let _ = Box::from_raw(callback_ptr);
+            }
+            Err(Error::Generic)
+        }
+    }
+
+    /// Skip TLS verification (DANGER - for testing only).
+    pub fn tls_skip_verification(&self) {
+        unsafe { sys::libclient_connect_config_skip_tls_verification(self.ptr) }
+    }
+}
+
+/// Trampoline function for TOFU callbacks
+unsafe extern "C" fn tofu_callback_trampoline(
+    prompt: *const sys::libclient_TofuPrompt,
+    userdata: *mut c_void,
+) -> bool {
+    // userdata points to Box<Box<dyn Fn(TofuPrompt) -> bool>>
+    let callback = &*(userdata as *const Box<dyn Fn(TofuPrompt) -> bool>);
+    let prompt = &*prompt;
+
+    // Convert C prompt to Rust TofuPrompt
+    let rust_prompt = match prompt.prompt_type {
+        sys::libclient_TofuPromptType_LIBCLIENT_TOFU_PROMPT_TYPE_UNKNOWN_HOST => {
+            let hostname = CStr::from_ptr(prompt.hostname)
+                .to_str()
+                .unwrap_or("")
+                .to_string();
+            let fingerprint = CStr::from_ptr(prompt.fingerprint)
+                .to_str()
+                .unwrap_or("")
+                .to_string();
+            TofuPrompt::UnknownHost {
+                hostname,
+                fingerprint,
+            }
+        }
+        sys::libclient_TofuPromptType_LIBCLIENT_TOFU_PROMPT_TYPE_CERTIFICATE_CHANGED => {
+            let hostname = CStr::from_ptr(prompt.hostname)
+                .to_str()
+                .unwrap_or("")
+                .to_string();
+            let expected_fingerprint = CStr::from_ptr(prompt.expected_fingerprint)
+                .to_str()
+                .unwrap_or("")
+                .to_string();
+            let actual_fingerprint = CStr::from_ptr(prompt.actual_fingerprint)
+                .to_str()
+                .unwrap_or("")
+                .to_string();
+            TofuPrompt::CertificateChanged {
+                hostname,
+                expected_fingerprint,
+                actual_fingerprint,
+            }
+        }
+        _ => return false, // Unknown prompt type
+    };
+
+    callback(rust_prompt)
 }
 
 impl Drop for ConnectConfig {
     fn drop(&mut self) {
+        // Free the TOFU callback if one was registered and not transferred to Client
+        if let Some(callback_ptr) = self.tofu_callback_ptr.get() {
+            unsafe {
+                let _ = Box::from_raw(callback_ptr);
+            }
+        }
         unsafe { sys::libclient_connect_config_unref(self.ptr) }
     }
 }
@@ -804,15 +944,25 @@ impl Drop for ConnectConfig {
 pub struct Client {
     ptr: *mut sys::libclient_Client,
     metrics_cb: Cell<Option<Box<Box<MetricsCallback>>>>,
+    /// TOFU callback pointer transferred from ConnectConfig.
+    /// Must stay alive for the lifetime of the client.
+    tofu_callback_ptr: Cell<Option<TofuCallbackPtr>>,
 }
 
 impl Client {
     pub fn new(connect_config: &ConnectConfig, metrics: bool) -> Result<Self> {
         let ptr = unsafe { sys::libclient_client_new(connect_config.ptr, metrics) };
         if !ptr.is_null() {
+            // Transfer TOFU callback ownership from ConnectConfig to Client.
+            // The callback must stay alive for the lifetime of the Client since
+            // the TofuVerifier holds a reference to it through the C API.
+            let tofu_callback_ptr = connect_config.tofu_callback_ptr.get();
+            connect_config.tofu_callback_ptr.set(None); // Prevent double-free in ConnectConfig::drop
+
             Ok(Self {
                 ptr,
                 metrics_cb: Cell::new(None),
+                tofu_callback_ptr: Cell::new(tofu_callback_ptr),
             })
         } else {
             Err(Error::Generic)
@@ -934,6 +1084,13 @@ impl Drop for Client {
     fn drop(&mut self) {
         if self.metrics_cb.take().is_some() {
             self.set_metrics_callback(None);
+        }
+
+        // Free the TOFU callback if one was transferred from ConnectConfig
+        if let Some(callback_ptr) = self.tofu_callback_ptr.get() {
+            unsafe {
+                let _ = Box::from_raw(callback_ptr);
+            }
         }
     }
 }
@@ -1216,4 +1373,64 @@ impl Drop for MetricsJSONProducer {
         let ptr = self.ptr.load(atomic::Ordering::Relaxed);
         unsafe { sys::libclient_metrics_json_producer_unref(ptr) };
     }
+}
+
+/// Add a host to the known_hosts file.
+pub fn known_hosts_add(hostname: &str, fingerprint: &str) -> Result<()> {
+    let chostname = to_cstr(hostname);
+    let cfingerprint = to_cstr(fingerprint);
+
+    let ret = unsafe { sys::libclient_known_hosts_add(chostname.as_ptr(), cfingerprint.as_ptr()) };
+    if ret == 0 {
+        Ok(())
+    } else {
+        Err(Error::Generic)
+    }
+}
+
+/// Remove a host from the known_hosts file.
+/// Returns Ok(true) if removed, Ok(false) if not found.
+pub fn known_hosts_remove(hostname: &str) -> Result<bool> {
+    let chostname = to_cstr(hostname);
+
+    let ret = unsafe { sys::libclient_known_hosts_remove(chostname.as_ptr()) };
+    match ret {
+        0 => Ok(true),
+        1 => Ok(false),
+        _ => Err(Error::Generic),
+    }
+}
+
+/// List all hosts in the known_hosts file.
+/// Returns a vector of (hostname, fingerprint) pairs.
+pub fn known_hosts_list() -> Result<Vec<(String, String)>> {
+    let mut entries: *mut sys::libclient_KnownHostEntry = std::ptr::null_mut();
+    let mut count: usize = 0;
+
+    let ret = unsafe { sys::libclient_known_hosts_list(&mut entries, &mut count) };
+    if ret != 0 {
+        return Err(Error::Generic);
+    }
+
+    let mut result = Vec::with_capacity(count);
+    for i in 0..count {
+        unsafe {
+            let entry = &*entries.add(i);
+            let hostname = CStr::from_ptr(entry.hostname)
+                .to_str()
+                .unwrap_or("")
+                .to_string();
+            let fingerprint = CStr::from_ptr(entry.fingerprint)
+                .to_str()
+                .unwrap_or("")
+                .to_string();
+            result.push((hostname, fingerprint));
+        }
+    }
+
+    unsafe {
+        sys::libclient_known_hosts_list_free(entries, count);
+    }
+
+    Ok(result)
 }
