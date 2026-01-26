@@ -19,14 +19,15 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::net::{SocketAddr, ToSocketAddrs};
+use std::sync::Arc;
 
 use log::{error, info};
 
 pub(crate) mod fingerprint;
-pub(crate) mod known_hosts;
 mod host_events;
 pub(crate) mod http;
 pub(crate) mod input_service;
+pub(crate) mod known_hosts;
 mod mainloop_engine;
 pub(crate) mod player;
 pub(crate) mod tls;
@@ -37,19 +38,72 @@ pub(crate) use input_service::{get_cursor_format, InputClient, InputError, Input
 pub(crate) use mainloop_engine::MainLoopEngine;
 pub(crate) use window_handle::WindowHandle;
 
-use crate::{AuthCredentials, Error, Result, TlsRootCert};
+use crate::{AuthCredentials, Error, Result};
+
+// Re-export TOFU types for public API
+pub use tls::{TofuPrompt, TofuVerifier, VerifyMode};
 
 #[derive(Clone, Debug)]
 pub struct ConnectConfig {
     pub host: String,
     pub port: u16,
     pub tls_host: Option<String>,
-    pub tls_root_cert: Option<TlsRootCert>,
+    /// TLS verification mode.
+    pub verify_mode: Option<VerifyMode>,
     pub credentials: AuthCredentials,
     /// Enable automatic reconnection on connection loss. Default: false.
     /// When enabled, the client will emit `Reconnecting`, `Reconnected`, and
     /// `ReconnectionFailed` events that the application must handle.
     pub auto_reconnection: bool,
+}
+
+impl ConnectConfig {
+    /// Set fingerprint-based TLS verification.
+    pub fn set_tls_fingerprint(&mut self, fingerprint: &str) -> Result<()> {
+        // Validate fingerprint format
+        if fingerprint::parse(fingerprint).is_none() {
+            return Err(Error::TlsInvalidFingerprint);
+        }
+        self.verify_mode = Some(VerifyMode::Fingerprint {
+            fingerprint: fingerprint.to_string(),
+        });
+        Ok(())
+    }
+
+    /// Enable TOFU (Trust-On-First-Use) verification with a prompt callback.
+    pub fn enable_tofu<F>(&mut self, prompt_callback: F) -> Result<()>
+    where
+        F: Fn(TofuPrompt) -> bool + Send + Sync + 'static,
+    {
+        let verifier = TofuVerifier::new(prompt_callback)?;
+        self.verify_mode = Some(VerifyMode::Tofu {
+            verifier: Arc::new(verifier),
+        });
+        Ok(())
+    }
+
+    /// Enable TOFU with auto-accept for new hosts.
+    pub fn enable_tofu_auto_accept(&mut self) -> Result<()> {
+        let verifier = TofuVerifier::auto_accept()?;
+        self.verify_mode = Some(VerifyMode::Tofu {
+            verifier: Arc::new(verifier),
+        });
+        Ok(())
+    }
+
+    /// Enable strict known_hosts mode (reject unknown hosts).
+    pub fn enable_known_hosts_strict(&mut self) -> Result<()> {
+        let verifier = TofuVerifier::strict()?;
+        self.verify_mode = Some(VerifyMode::Tofu {
+            verifier: Arc::new(verifier),
+        });
+        Ok(())
+    }
+
+    /// Skip TLS verification (DANGER - testing only).
+    pub fn skip_tls_verification(&mut self) {
+        self.verify_mode = Some(VerifyMode::SkipVerification);
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -81,7 +135,7 @@ pub(crate) struct ConnectionParams {
     pub(crate) port: u16,
     pub(crate) addr: std::net::SocketAddr,
     pub(crate) tls_host: Option<String>,
-    pub(crate) tls_config: Option<tls::Config>,
+    pub(crate) verify_mode: Option<VerifyMode>,
     pub(crate) credentials: AuthCredentials,
 }
 
@@ -89,18 +143,12 @@ impl ConnectionParams {
     pub(crate) fn new(connect_config: ConnectConfig) -> Result<Self> {
         let addr = Self::resolve_streamer_host(&connect_config.host, connect_config.port)?;
 
-        let tls_config = if let Some(tls_root_cert) = &connect_config.tls_root_cert {
-            Some(tls::load_tls_config(tls_root_cert)?)
-        } else {
-            None
-        };
-
         Ok(Self {
             host: connect_config.host,
             port: connect_config.port,
             addr,
             tls_host: connect_config.tls_host.clone(),
-            tls_config,
+            verify_mode: connect_config.verify_mode,
             credentials: connect_config.credentials,
         })
     }

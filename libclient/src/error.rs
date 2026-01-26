@@ -73,6 +73,8 @@ pub enum Error {
     TaskJoin(tokio::task::JoinError),
     FileNotFound(PathBuf),
     TlsInvalidFile,
+    TlsInvalidFingerprint,
+    TlsVerificationFailed,
     InvalidState,
 
     #[cfg(feature = "web")]
