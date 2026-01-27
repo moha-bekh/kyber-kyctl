@@ -1,6 +1,7 @@
 .cargo
 avserver
 kymux
+contrib/work
 libkynput
 libkypc
 rootfs*

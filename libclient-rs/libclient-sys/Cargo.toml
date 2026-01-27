@@ -1,0 +1,12 @@
+[package]
+name = "libclient-sys"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libc = "0.2.153"
+libkynput-sys = "0.1.0"
+
+[build-dependencies]
+bindgen = {version = "0.69", optional = false }
+pkg-config = "0.3"

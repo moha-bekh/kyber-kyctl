@@ -1,0 +1,137 @@
+[package]
+name = "libclient"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-trait = "0.1.78"
+async-tungstenite = { version = "0.28.0", features = ["tokio-rustls-native-certs", "tokio-runtime"], optional = true }
+base64 = "0.22.0"
+bytes = { version = "1.5.0", optional = true }
+futures = "0.3.30"
+js-sys = { version = "=0.3.77", optional = true }
+raw-window-handle = { version = "0.5.0", optional = true }
+libc = "0.2.153"
+libclient-common = { version = "0.1.0", path = "../libclient-common" }
+log = {version = "0.4.21", features = ["std"] }
+reqwest = { version = "0.12.7", default-features = false, features = ["json"] }
+rustls = { version = "0.23.31", optional = true, default-features = false, features = ["logging", "ring", "std", "tls12"] }
+rustls-pemfile = { version = "2.1.3", optional = true }
+serde = {version = "1.0.197", features = ["derive"] }
+serde_json = { version = "1.0.114", features = ["preserve_order"] }
+tokio = { version = "1.47.1", features = ["macros", "sync", "io-util"] }
+wasm-bindgen = { version = "0.2.84", optional = true }
+wasm-bindgen-futures = { version = "0.4.37", optional = true }
+
+kyaudioreg = { version = "0.1.0", optional = true }
+kymux = { version = "0.1.0", optional = true }
+kywasmtime = { git = "https://github.com/rom1v/kywasmtime.git", tag = "0.1", optional = true }
+libkynput = { version = "0.1.0", optional = true }
+libkynput-rs = { version = "0.1.0", optional = true }
+libkynput-sys = { version = "0.1.0", optional = true }
+rmp-serde = { version = "1.1.2", optional = true }
+
+[target.'cfg(any(target_os = "android", target_os = "linux", target_os = "macos", target_os = "windows"))'.dependencies.vlc-rs]
+version = "0.3.0"
+optional = true
+
+[target.'cfg(any(target_os = "android", target_os = "ios", target_os = "tvos", target_os = "visionos"))'.dependencies.vlc-rs]
+version = "0.3.0"
+default-features = false
+optional = true
+
+[target.'cfg(target_os = "android")'.dependencies]
+android_logger = "0.15"
+
+[target.'cfg(target_family = "wasm")'.dependencies.web-sys]
+version = "=0.3.77"
+optional = true
+features = [
+    "BinaryType",
+    "CloseEvent",
+    "ErrorEvent",
+    "MessageEvent",
+    "WebSocket",
+]
+
+[build-dependencies]
+vergen = { version = "8.3.1", features = ["build", "git", "gix"] }
+
+[features]
+capi = []
+default = []
+desktop = [
+    "dep:async-tungstenite",
+    "dep:raw-window-handle",
+    "dep:libkynput-rs",
+    "dep:libkynput-sys",
+    "dep:rustls",
+    "dep:rustls-pemfile",
+    "dep:vlc-rs",
+    "kymux?/backend-quinn",
+    "kymux?/ipc",
+    "kymux?/tokio-rt",
+    "reqwest/cookies",
+    "reqwest/rustls-tls",
+    "reqwest/rustls-tls-native-roots",
+    "tokio/rt-multi-thread",
+    "tokio/fs",
+    "tokio/io-util",
+]
+js-player = [
+    "kyaudioreg/js",
+    "web-sys/AudioContext",
+    "web-sys/AudioContextOptions",
+    "web-sys/AudioData",
+    "web-sys/AudioDataCopyToOptions",
+    "web-sys/AudioDecoder",
+    "web-sys/AudioDecoderInit",
+    "web-sys/AudioDecoderConfig",
+    "web-sys/AudioDestinationNode",
+    "web-sys/AudioParam",
+    "web-sys/AudioSampleFormat",
+    "web-sys/AudioWorklet",
+    "web-sys/AudioWorkletNode",
+    "web-sys/AudioWorkletNodeOptions",
+    "web-sys/DedicatedWorkerGlobalScope",
+    "web-sys/EncodedAudioChunk",
+    "web-sys/EncodedAudioChunkInit",
+    "web-sys/EncodedAudioChunkType",
+    "web-sys/EncodedVideoChunk",
+    "web-sys/EncodedVideoChunkInit",
+    "web-sys/EncodedVideoChunkType",
+    "web-sys/FileSystemDirectoryHandle",
+    "web-sys/FileSystemFileHandle",
+    "web-sys/FileSystemGetFileOptions",
+    "web-sys/FileSystemWritableFileStream",
+    "web-sys/GainNode",
+    "web-sys/HardwareAcceleration",
+    "web-sys/OffscreenCanvas",
+    "web-sys/OffscreenCanvasRenderingContext2d",
+    "web-sys/Performance",
+    "web-sys/StorageManager",
+    "web-sys/VideoDecoder",
+    "web-sys/VideoDecoderConfig",
+    "web-sys/VideoDecoderInit",
+    "web-sys/VideoFrame",
+    "web-sys/Worker",
+    "web-sys/WorkerOptions",
+    "web-sys/WorkerType",
+]
+kymux = [
+    "dep:kymux",
+    "rmp-serde"
+]
+rtp = []
+web = [
+    "dep:bytes",
+    "dep:js-sys",
+    "dep:kywasmtime",
+    "dep:libkynput",
+    "dep:wasm-bindgen",
+    "dep:wasm-bindgen-futures",
+    "dep:web-sys",
+    "kymux?/backend-webtransport-js",
+    "kymux?/js",
+]
+websocket = ["js-player"]

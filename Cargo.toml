@@ -6,7 +6,17 @@ members = [
     "controller",
     "kidd_client",
     "windows_service",
+    "libclient",
+    "libclient-common",
+    "libclient-rs",
+]
+
+exclude = [
+    "external/kyaudioreg",
+    "libkynput",
 ]
 
 [patch.crates-io]
 kidd_client = { path = "kidd_client" }
+kyaudioreg = { path = "external/kyaudioreg" }
+vlc-rs = { path = "external/vlc-rs" }

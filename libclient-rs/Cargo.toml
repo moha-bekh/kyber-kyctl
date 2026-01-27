@@ -1,0 +1,17 @@
+[package]
+name = "libclient-rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libc = "0.2.153"
+log = "0.4.21"
+
+libclient-common = { version = "0.1.0", path = "../libclient-common" }
+libclient-sys = { path = "libclient-sys" }
+libkynput-rs = "0.1.0"
+
+[features]
+default = ["kymux","rtp"]
+kymux = []
+rtp = []
