@@ -27,15 +27,23 @@ use vlc::MetricsEntry;
 
 use super::window_handle::WindowHandle;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum PlayerError {
+    #[error("No audio player available")]
     NoAudioPlayer,
+    #[error("Failed to create instance")]
     InstanceCreateFailed,
+    #[error("Failed to create media")]
     MediaCreateFailed,
+    #[error("Failed to create media player")]
     MediaPlayerCreateFailed,
+    #[error("Failed to play")]
     PlayFailed,
+    #[error("Already stopped")]
     AlreadyStopped,
+    #[error("Failed to register event")]
     EvtRegisterFailed,
+    #[error("Action failed")]
     ActionFailed,
 }
 
