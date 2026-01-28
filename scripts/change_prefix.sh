@@ -56,7 +56,7 @@ fi
 
 # process [dir] [filemask] [text_only|check]
 process() {
-    for file in `find $1 \( ! -name \`basename $1\` -o -type f \) -prune -type f -name "$2"`
+    for file in `find $1 -type f -name "$2"`
     do
         if [ -n "$3" -a "$3" = "text_only" ]
         then
@@ -82,4 +82,4 @@ process() {
 
 process bin/ "*" text_only
 process lib/ "*.la"
-process lib/pkgconfig/ "*.pc" check
+process lib/ "*.pc" check
