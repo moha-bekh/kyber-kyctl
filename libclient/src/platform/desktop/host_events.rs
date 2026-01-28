@@ -6,7 +6,7 @@ use async_tungstenite::{
     tungstenite::Message as tungstenite_Message,
     WebSocketStream,
 };
-use futures::{SinkExt, StreamExt};
+use futures::StreamExt;
 use log::{error, info, warn};
 use tokio::{net::TcpStream, sync::oneshot, task};
 
