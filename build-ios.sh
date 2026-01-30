@@ -96,6 +96,7 @@ libkypc = { path = "../kyutil/libkypc" }
 libkynput = { path = "../kynput/libkynput" }
 libkynput-rs = { path = "../kynput/libkynput-rs" }
 libkynput-sys = { path = "../kynput/libkynput-rs/libkynput-sys" }
+vlc-rs = { path = "../kymedia/external/vlc-rs" }
 EOF
 }
 
@@ -202,6 +203,14 @@ checkout_deps() {
     git_clone "kyber.stream/core/kymedia.git"
 
     cd "$KYCTL_DIR"
+
+    # Always regenerate dependency configs if directories exist
+    if [ -d "../kynput" ]; then
+        generate_kynput_cargo_config
+    fi
+    if [ -d "../kymedia" ]; then
+        generate_kymedia_cargo_config
+    fi
 }
 
 build_deps() {
@@ -214,9 +223,8 @@ build_deps() {
     fi
 
     # Build kymedia
-    VLC_CONTRIB_TARGET=$(get_vlc_target $TARGET)
     cd ../kymedia
-    ./build-ios.sh -t $TARGET -o external/vlc/contrib/$VLC_CONTRIB_TARGET
+    ./build-ios.sh -t $TARGET -o $OUT_DIR
     cd -
 
     # Build kynput

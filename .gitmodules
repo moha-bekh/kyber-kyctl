@@ -1,9 +1,0 @@
-[submodule "external/vlc-rs"]
-	path = external/vlc-rs
-	url = ../../deps/vlc-rs.git
-[submodule "external/vlc"]
-	path = external/vlc
-	url = ../../deps/vlc.git
-[submodule "libclient/external/libvlcjni"]
-	path = external/libvlcjni
-	url = ../../deps/libvlcjni.git
