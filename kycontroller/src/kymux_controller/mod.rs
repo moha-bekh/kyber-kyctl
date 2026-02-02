@@ -23,7 +23,7 @@ pub(crate) mod requests;
 mod server;
 mod webtransport;
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -39,6 +39,7 @@ use libkypc::process::ProcessFactory;
 pub(crate) use server::{IncomingConnectionRouter, KymuxServer};
 
 use crate::avservice;
+use crate::config::ListenMode;
 use crate::error::{Error, Result};
 use crate::inputservice;
 use crate::utils::TypeConvert;
@@ -108,6 +109,7 @@ impl ConnectionTask {
 
 /// Configuration for starting Kymux infrastructure
 pub(crate) struct KymuxInfraConfig {
+    pub(crate) listen_mode: ListenMode,
     pub(crate) listening_port: u16,
     pub(crate) public_port: u16,
     pub(crate) webtransport_gen_certificate: bool,
@@ -148,7 +150,14 @@ impl SharedKymuxInfra {
             return Ok((inner.certificate_hash.clone(), inner.public_port));
         }
 
-        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), config.listening_port);
+        let ip_addr = match config.listen_mode {
+            ListenMode::Ipv4 => IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+            // Enable dual-stack: accept both IPv4 and IPv6 on this socket.
+            // On Linux this is the default; on Windows it must be set explicitly.
+            ListenMode::DualStack => IpAddr::V6(Ipv6Addr::UNSPECIFIED),
+        };
+
+        let addr = SocketAddr::new(ip_addr, config.listening_port);
 
         info!("Starting common Kymux server on address {addr:?} (supports QUIC + WebTransport)");
 
@@ -299,6 +308,7 @@ async fn start_kymux(
     };
 
     let infra_config = KymuxInfraConfig {
+        listen_mode: ctrl.config.listen_mode(),
         listening_port,
         public_port,
         webtransport_gen_certificate: ctrl.config.webtransport_gen_certificate(),

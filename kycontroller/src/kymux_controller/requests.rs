@@ -52,7 +52,7 @@ pub(crate) struct StartKymuxResponse {
 pub(crate) async fn start_mux(
     user: Identity,
     ctrl: web::Data<Mutex<Controller>>,
-    request: web::Json<StartKymux>,
+    data: web::Json<StartKymux>,
 ) -> HttpResponse {
     let session_id = match user.uid() {
         Ok(uid) => uid,
@@ -63,7 +63,7 @@ pub(crate) async fn start_mux(
     };
 
     // Assume that the public port used for UDP is the same than the port for TCP.
-    let ret = super::start_kymux(ctrl.clone(), session_id, request.public_streamer_port).await;
+    let ret = super::start_kymux(ctrl.clone(), session_id, data.public_streamer_port).await;
     match ret {
         Ok(ret) => {
             info!("Kymux started. Public port: {port}", port = ret.port);
