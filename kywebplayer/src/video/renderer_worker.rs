@@ -258,6 +258,7 @@ impl RendererWorker {
     const TYPE_FRAME: &'static str = "frame";
 
     pub fn create(
+        app_crate_name: &str,
         listener: Rc<dyn VideoPlayerListener>,
     ) -> Result<(RendererWorker, RendererWorkerHandle), JsValue> {
         // This is a library, but the path of the wasm-bindings JavaScript file
@@ -268,8 +269,8 @@ impl RendererWorker {
             .location();
         let origin = location.origin()?;
         let pathname = location.pathname()?;
-        let js_file = "libclient_wasm.js";
-        let wasm_js_url = format!("{origin}{pathname}{js_file}");
+        let sanitized_crate_name = app_crate_name.replace("-", "_");
+        let wasm_js_url = format!("{origin}{pathname}{sanitized_crate_name}.js");
         let worker_code = format!(
             r#"import init, {{ VideoRendererWorkerCtx }} from "{wasm_js_url}";
 let ctx;

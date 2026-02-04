@@ -38,6 +38,7 @@ use wasm_bindgen::prelude::*;
 #[derive(Clone, Debug)]
 pub struct VideoPlayerConfig {
     pub canvas: String,
+    pub app_crate_name: String,
     pub notify_decoded: bool,
     pub video_buffer: u32, // ms
 }

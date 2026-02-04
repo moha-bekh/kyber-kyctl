@@ -196,9 +196,15 @@ async fn create_videoplayer(
             message_sender: backend_config.msg_sender.clone(),
             source_id: config.display_id,
         });
+        let player_config = player::VideoPlayerConfig {
+            canvas: config.player.canvas.clone(),
+            app_crate_name: "kyclient-wasm".to_string(),
+            notify_decoded: config.player.notify_decoded,
+            video_buffer: config.player.video_buffer,
+        };
         let (video_player, video_player_handle) = VideoPlayer::create(
             listener,
-            &config.player.clone().into(),
+            &player_config,
             video_config,
             metrics,
         )?;

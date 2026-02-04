@@ -107,7 +107,8 @@ impl VideoPlayer {
 
         let offscreen_canvas = canvas.transfer_control_to_offscreen()?;
 
-        let (renderer_worker, renderer_worker_handle) = RendererWorker::create(listener.clone())?;
+        let (renderer_worker, renderer_worker_handle) =
+            RendererWorker::create(&player_config.app_crate_name, listener.clone())?;
         renderer_worker.start(offscreen_canvas, player_config.video_buffer, metrics)?;
 
         let video_rotation = Rc::new(AtomicU8::new(0));

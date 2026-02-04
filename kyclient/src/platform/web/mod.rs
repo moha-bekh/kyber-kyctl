@@ -56,17 +56,6 @@ pub struct VideoPlayerConfig {
     pub video_buffer: u32, // ms
 }
 
-#[cfg(feature = "js-player")]
-impl From<VideoPlayerConfig> for player::VideoPlayerConfig {
-    fn from(config: VideoPlayerConfig) -> Self {
-        Self {
-            canvas: config.canvas,
-            notify_decoded: config.notify_decoded,
-            video_buffer: config.video_buffer,
-        }
-    }
-}
-
 impl VideoPlayerConfig {
     pub fn print(&self) {
         info!("VideoPlayerConfig");

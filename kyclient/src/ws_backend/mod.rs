@@ -159,9 +159,15 @@ impl WsBackend {
             message_sender: backend_config.msg_sender.clone(),
             source_id: video_config.display_id,
         });
+        let player_config = player::VideoPlayerConfig {
+            canvas: video_config.player.canvas.clone(),
+            app_crate_name: "kyclient-wasm".to_string(),
+            notify_decoded: video_config.player.notify_decoded,
+            video_buffer: video_config.player.video_buffer,
+        };
         let (player, player_handle) = VideoPlayer::create(
             listener,
-            &video_config.player.clone().into(),
+            &player_config,
             video_decoder_config,
             metrics,
         )?;
