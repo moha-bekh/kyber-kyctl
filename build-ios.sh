@@ -55,9 +55,9 @@ git_clone() {
     local DIR_NAME=$(basename ${REPO} .git)
 
     if [[ -z "${CI_JOB_TOKEN}" ]]; then
-        local FULL_REPO_URI="git@gitlab.com:${REPO}"
+        local FULL_REPO_URI="git@gitlab.com:${ROOT_NAMESPACE}/${REPO}"
     else
-        local FULL_REPO_URI="https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com/${REPO}"
+        local FULL_REPO_URI="https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.com/${ROOT_NAMESPACE}/${REPO}"
     fi
 
     echo "Repo: '${FULL_REPO_URI}'"
@@ -197,10 +197,10 @@ checkout_deps() {
     local KYCTL_DIR=$(pwd)
     cd ..
 
-    git_clone "kyber.stream/core/kymux.git"
-    git_clone "kyber.stream/core/kyutil.git"
-    git_clone "kyber.stream/core/kynput.git"
-    git_clone "kyber.stream/core/kymedia.git"
+    git_clone "core/kymux.git"
+    git_clone "core/kyutil.git"
+    git_clone "core/kynput.git"
+    git_clone "core/kymedia.git"
 
     cd "$KYCTL_DIR"
 
