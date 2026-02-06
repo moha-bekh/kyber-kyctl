@@ -1,3 +1,4 @@
+#!/bin/bash
 # Project Kyber: build-win32.sh
 # Copyright © 2022-2026 Kyber SAS
 # SPDX-License-Identifier: LicenseRef-Kyber-Commercial OR AGPL-3.0
@@ -17,8 +18,6 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
-
-#!/bin/bash
 
 set -e
 set -x

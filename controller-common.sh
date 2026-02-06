@@ -1,3 +1,4 @@
+#!/bin/bash
 # Project Kyber: controller-common.sh
 # Copyright © 2022-2026 Kyber SAS
 # SPDX-License-Identifier: LicenseRef-Kyber-Commercial OR AGPL-3.0
@@ -18,7 +19,6 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#!/bin/bash
 # Common build functions for all platforms
 # Functions are prefixed by platform (linux_, macos_, win32_) to avoid conflicts
 
