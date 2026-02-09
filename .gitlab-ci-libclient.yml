@@ -40,7 +40,7 @@ libclient-build-debian-trixie-x86_64:
     ../scripts/change_prefix.sh
     cd -
     # Build libclient
-    ./build-linux.sh -k -s -o $ROOTFS_PATH
+    ./build-linux.sh -k -s -o $ROOTFS_PATH build-libclient
 
 libclient-clippy-debian-trixie-x86_64:
   stage: misc
@@ -80,7 +80,7 @@ libclient-build-windows-x86_64:
     ../scripts/change_prefix.sh
     cd -
     # Build libclient
-    ./build-win32.sh -k -s -o $ROOTFS_PATH
+    ./build-win32.sh -k -s -o $ROOTFS_PATH build-libclient
 
 libclient-clippy-windows-x86_64:
   stage: misc
@@ -125,7 +125,7 @@ libclient-clippy-windows-x86_64:
     ../scripts/change_prefix.sh
     cd -
     # Build libclient
-    ./build-macos.sh -k -s -a $HOST_ARCH -o $ROOTFS_PATH
+    ./build-macos.sh -k -s -a $HOST_ARCH -o $ROOTFS_PATH build-libclient
 
 libclient-build-macos-x86_64:
   extends: .libclient-build-macos-common
