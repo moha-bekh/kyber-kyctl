@@ -129,6 +129,7 @@ libclient-clippy-windows-x86_64:
 
 libclient-build-macos-x86_64:
   extends: .libclient-build-macos-common
+  when: manual
   variables: *variables-macos-x86_64
   needs:
     - contrib-macos-x86_64

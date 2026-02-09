@@ -101,6 +101,7 @@ contrib-windows-x86_64:
 
 contrib-macos-x86_64:
   extends: .contrib-macos-common
+  when: manual
   variables:
     HOST_ARCH: x86_64
 
