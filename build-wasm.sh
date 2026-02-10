@@ -86,7 +86,7 @@ generate_kyctl_cargo_config() {
     mkdir -p .cargo
     cat > .cargo/config.toml << 'EOF'
 [patch.crates-io]
-avservice-types = { path = "../kymedia/avservice-types" }
+kyavservice-types = { path = "../kymedia/kyavservice-types" }
 kynputservice-types = { path = "../kynput/kynputservice-types" }
 keycode = { path = "../kynput/external/keycode/keycode" }
 keycode_macro = { path = "../kynput/external/keycode/keycode_macro" }

@@ -23,7 +23,7 @@ use log::info;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
-use avservice_types::VideoCodec;
+use kyavservice_types::VideoCodec;
 use kynputservice_types::CursorFormat;
 
 use crate::utils::generate_session_id;

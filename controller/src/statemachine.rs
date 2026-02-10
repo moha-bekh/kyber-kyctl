@@ -35,7 +35,7 @@ pub(crate) enum StateMachineEvent {
     AvService {
         /// None means the event targets all sessions (e.g., from watchdog)
         session_id: Option<Uuid>,
-        event: avservice_types::Event,
+        event: kyavservice_types::Event,
     },
     AvServiceStopped {
         /// None means global (e.g., watchdog stopped)
@@ -126,7 +126,7 @@ impl StateMachine {
             match evt {
                 StateMachineEvent::AvService {
                     session_id,
-                    event: avservice_types::Event::DisplayListUpdated { displays },
+                    event: kyavservice_types::Event::DisplayListUpdated { displays },
                 } => {
                     info!(
                         "Got display update (session: {:?}): {displays:?}",
@@ -182,7 +182,7 @@ impl StateMachine {
                 }
                 StateMachineEvent::AvService {
                     session_id,
-                    event: avservice_types::Event::PipelineEvent(event),
+                    event: kyavservice_types::Event::PipelineEvent(event),
                 } => {
                     // PipelineEvent is session-specific, ignore if no session_id
                     let Some(sid) = session_id else {

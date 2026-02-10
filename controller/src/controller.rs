@@ -27,7 +27,7 @@ use time::OffsetDateTime;
 use tokio::sync::oneshot;
 use uuid::Uuid;
 
-use avservice_types::Display;
+use kyavservice_types::Display;
 use libkypc::process::ProcessFactory;
 
 use crate::auth;

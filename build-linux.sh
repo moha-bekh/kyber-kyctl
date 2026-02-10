@@ -90,7 +90,7 @@ generate_kyctl_cargo_config() {
     mkdir -p .cargo
     cat > .cargo/config.toml << 'EOF'
 [patch.crates-io]
-avservice-types = { path = "../kymedia/avservice-types" }
+kyavservice-types = { path = "../kymedia/kyavservice-types" }
 kynputservice-types = { path = "../kynput/kynputservice-types" }
 kyaudioreg = { path = "../kymedia/kyaudioreg" }
 kycom = { path = "../kymux/kycom" }

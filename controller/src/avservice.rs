@@ -24,7 +24,7 @@ use std::sync::Arc;
 use log::{debug, info, warn};
 use tokio::{sync::oneshot, task};
 
-use avservice_types::{Command, Display, Event, VideoCodec};
+use kyavservice_types::{Command, Display, Event, VideoCodec};
 use libkypc::{
     process::{Process, ProcessFactory},
     CommandSender, Commander, EventReceiver,
@@ -80,7 +80,7 @@ impl ReceiverTask {
     async fn task_entry(
         type_: HandlerType,
         session_id: Option<uuid::Uuid>,
-        receiver: EventReceiver<avservice_types::Event>,
+        receiver: EventReceiver<kyavservice_types::Event>,
         statemachine_proxy: StateMachineProxy,
         stop_rx: oneshot::Receiver<()>,
     ) {
@@ -94,7 +94,7 @@ impl ReceiverTask {
     async fn process_receiver(
         type_: HandlerType,
         session_id: Option<uuid::Uuid>,
-        mut receiver: EventReceiver<avservice_types::Event>,
+        mut receiver: EventReceiver<kyavservice_types::Event>,
         statemachine_proxy: StateMachineProxy,
     ) {
         while let Ok(event) = receiver.recv().await {

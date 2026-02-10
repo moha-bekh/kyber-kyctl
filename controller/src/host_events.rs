@@ -114,11 +114,11 @@ pub enum StreamerPipelineType {
     Video,
 }
 
-impl From<avservice_types::PipelineType> for StreamerPipelineType {
-    fn from(t: avservice_types::PipelineType) -> Self {
+impl From<kyavservice_types::PipelineType> for StreamerPipelineType {
+    fn from(t: kyavservice_types::PipelineType) -> Self {
         match t {
-            avservice_types::PipelineType::Audio => Self::Audio,
-            avservice_types::PipelineType::Video => Self::Video,
+            kyavservice_types::PipelineType::Audio => Self::Audio,
+            kyavservice_types::PipelineType::Video => Self::Video,
         }
     }
 }
@@ -131,12 +131,12 @@ pub enum StreamerPipelineStage {
     Encoder,
 }
 
-impl From<avservice_types::PipelineStage> for StreamerPipelineStage {
-    fn from(t: avservice_types::PipelineStage) -> Self {
+impl From<kyavservice_types::PipelineStage> for StreamerPipelineStage {
+    fn from(t: kyavservice_types::PipelineStage) -> Self {
         match t {
-            avservice_types::PipelineStage::Initialization => Self::Initialization,
-            avservice_types::PipelineStage::Acquisition => Self::Acquisition,
-            avservice_types::PipelineStage::Encoder => Self::Encoder,
+            kyavservice_types::PipelineStage::Initialization => Self::Initialization,
+            kyavservice_types::PipelineStage::Acquisition => Self::Acquisition,
+            kyavservice_types::PipelineStage::Encoder => Self::Encoder,
         }
     }
 }
@@ -147,10 +147,10 @@ pub enum StreamerPipelineEventType {
     Error,
 }
 
-impl From<avservice_types::PipelineEventType> for StreamerPipelineEventType {
-    fn from(event: avservice_types::PipelineEventType) -> Self {
+impl From<kyavservice_types::PipelineEventType> for StreamerPipelineEventType {
+    fn from(event: kyavservice_types::PipelineEventType) -> Self {
         match event {
-            avservice_types::PipelineEventType::Error => Self::Error,
+            kyavservice_types::PipelineEventType::Error => Self::Error,
         }
     }
 }
@@ -162,8 +162,8 @@ pub struct StreamerPipelineEvent {
     pub event: StreamerPipelineEventType,
 }
 
-impl From<avservice_types::PipelineEvent> for StreamerPipelineEvent {
-    fn from(event: avservice_types::PipelineEvent) -> Self {
+impl From<kyavservice_types::PipelineEvent> for StreamerPipelineEvent {
+    fn from(event: kyavservice_types::PipelineEvent) -> Self {
         Self {
             type_: event.type_.into(),
             stage: event.stage.into(),

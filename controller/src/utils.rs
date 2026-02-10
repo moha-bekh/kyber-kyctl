@@ -70,7 +70,7 @@ where
     }
 }
 
-impl TypeConvert<host_events::Display> for avservice_types::Display {
+impl TypeConvert<host_events::Display> for kyavservice_types::Display {
     fn convert(&self) -> host_events::Display {
         host_events::Display {
             id: self.id,
@@ -83,7 +83,7 @@ impl TypeConvert<host_events::Display> for avservice_types::Display {
     }
 }
 
-impl TypeConvert<kynputservice_types::Display> for avservice_types::Display {
+impl TypeConvert<kynputservice_types::Display> for kyavservice_types::Display {
     fn convert(&self) -> kynputservice_types::Display {
         kynputservice_types::Display {
             id: self.id,

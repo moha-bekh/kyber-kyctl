@@ -33,7 +33,7 @@ impl Watchdog {
     pub(crate) async fn new(
         process_factory: &Arc<ProcessFactory>,
         statemachine_proxy: StateMachineProxy,
-    ) -> Result<(Self, Vec<avservice_types::Display>)> {
+    ) -> Result<(Self, Vec<kyavservice_types::Display>)> {
         // Watchdog is global, not tied to any user session
         let mut avservice = avservice::Handler::new(
             avservice::HandlerType::EnumerateDisplays,
