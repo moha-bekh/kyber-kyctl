@@ -167,7 +167,7 @@ async fn start_input(
     info!("Start input. URI: {input_uri}");
 
     let create_stream_cb =
-        |target, msg_sink| libkynput_rs::kymux::new_stream(target, msg_sink, &input_uri);
+        |target, msg_sink| kynput_rs::kymux::new_stream(target, msg_sink, &input_uri);
 
     let client = InputClient::new(
         msg_sender,

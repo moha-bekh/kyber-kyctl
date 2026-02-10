@@ -22,7 +22,7 @@ use std::sync::Arc;
 
 use log::{debug, info, warn};
 
-use inputservice_types::{Command, Event, HostConfig, ServiceConfig};
+use kynputservice_types::{Command, Event, HostConfig, ServiceConfig};
 use libkypc::{
     process::{Process, ProcessFactory},
     CommandSender, Commander, EventReceiver,
@@ -54,7 +54,7 @@ impl Handler {
     async fn spawn_process(process_factory: &Arc<ProcessFactory>) -> Result<Inner> {
         debug!("Run Input Server");
 
-        let exe_path = utils::get_executable_path("inputserver");
+        let exe_path = utils::get_executable_path("kynputserver");
 
         let (child, mut commander): (_, Commander<Command, Event>) =
             process_factory.spawn(exe_path, None).await?;

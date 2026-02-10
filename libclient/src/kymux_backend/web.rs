@@ -26,8 +26,8 @@ use async_trait::async_trait;
 use log::{info, warn};
 
 use kymux::kyproto::{self, ProtocolEndpoint};
-use libkynput::bufferproxy::{BufferProxy, BufferProxyReceiver, BufferProxySender};
-use libkynput::{InputNetworkStream, InputNetworkStreamMsg, InputNetworkStreamObserver};
+use kynput::bufferproxy::{BufferProxy, BufferProxyReceiver, BufferProxySender};
+use kynput::{InputNetworkStream, InputNetworkStreamMsg, InputNetworkStreamObserver};
 
 use super::{KymuxBackendConfig, PlatformEndpoints};
 use crate::platform::player::{
@@ -59,7 +59,7 @@ impl CloseRequestState {
 
 struct InputService {
     proxy: Arc<BufferProxy>,
-    pipeline: Arc<libkynput::InputPipeline>,
+    pipeline: Arc<kynput::InputPipeline>,
 }
 
 struct Player {
@@ -256,7 +256,7 @@ async fn create_player(
 
 async fn input_rx_task(
     mut endpoint_rx: kyproto::ProtocolRecv<kyproto::InputPacket>,
-    libkynput_tx: BufferProxySender,
+    kynput_tx: BufferProxySender,
 ) -> Result<()> {
     loop {
         match endpoint_rx.recv().await {
@@ -267,7 +267,7 @@ async fn input_rx_task(
                 packed_pkt.put_u8(pkt.type_);
                 packed_pkt.put_slice(&pkt.payload);
 
-                libkynput_tx.send(packed_pkt.to_vec()).await?;
+                kynput_tx.send(packed_pkt.to_vec()).await?;
             }
             Ok(None) => {
                 info!("Input Rx task: EOS");
@@ -285,9 +285,9 @@ async fn input_rx_task(
 
 async fn input_tx_task(
     mut endpoint_tx: kyproto::ProtocolSend<kyproto::InputPacket>,
-    mut libkynput_rx: BufferProxyReceiver,
+    mut kynput_rx: BufferProxyReceiver,
 ) -> Result<()> {
-    while let Ok(buf) = libkynput_rx.recv().await {
+    while let Ok(buf) = kynput_rx.recv().await {
         endpoint_tx
             .send(kyproto::InputPacket {
                 type_: buf[0],
@@ -323,7 +323,7 @@ async fn start_input(
 
     // Configure pipeline
     let mut input_proxy = BufferProxy::new();
-    let (libkynput_tx, libkynput_rx) = input_proxy.split()?;
+    let (kynput_tx, kynput_rx) = input_proxy.split()?;
     #[allow(clippy::arc_with_non_send_sync)]
     let input_proxy = Arc::new(input_proxy);
 
@@ -335,10 +335,10 @@ async fn start_input(
 
     wasm_bindgen_futures::spawn_local(async move {
         tokio::select! {
-            ret = input_rx_task(endpoint_rx, libkynput_tx) => {
+            ret = input_rx_task(endpoint_rx, kynput_tx) => {
                 info!("End of Input Rx task. Result: {ret:?}");
             },
-            ret = input_tx_task(endpoint_tx, libkynput_rx) => {
+            ret = input_tx_task(endpoint_tx, kynput_rx) => {
                 info!("End of Input Tx task. Result: {ret:?}");
             },
         }

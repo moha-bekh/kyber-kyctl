@@ -30,8 +30,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use log::{info, warn};
 
-use libkynput::bufferproxy::BufferProxy;
-use libkynput::InputNetworkStream;
+use kynput::bufferproxy::BufferProxy;
+use kynput::InputNetworkStream;
 
 use audio::AudioWsSocketHandler;
 use input::InputWebSocketHandler;
@@ -92,7 +92,7 @@ impl AudioService {
 struct InputService {
     websocket: Rc<InputWebSocketHandler>,
     proxy: Arc<BufferProxy>,
-    pipeline: Arc<libkynput::InputPipeline>,
+    pipeline: Arc<kynput::InputPipeline>,
 }
 
 impl InputService {
@@ -199,9 +199,9 @@ impl WsBackend {
             return Ok(None);
         };
 
-        // Create and configure libkynput network proxy
+        // Create and configure kynput network proxy
         let mut input_proxy = BufferProxy::new();
-        let (libkynput_tx, libkynput_rx) = input_proxy.split()?;
+        let (kynput_tx, kynput_rx) = input_proxy.split()?;
         #[allow(clippy::arc_with_non_send_sync)]
         let input_proxy = Arc::new(input_proxy);
 
@@ -216,7 +216,7 @@ impl WsBackend {
             host = backend_config.http_client.host()
         );
         let input_websocket =
-            InputWebSocketHandler::new(&inputs_url, libkynput_tx, libkynput_rx, msg_sink)?;
+            InputWebSocketHandler::new(&inputs_url, kynput_tx, kynput_rx, msg_sink)?;
 
         Ok(Some(InputService {
             websocket: input_websocket,

@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 libc = "0.2.153"
-libkynput-sys = "0.1.0"
+kynput-sys = "0.1.0"
 
 [build-dependencies]
 bindgen = {version = "0.69", optional = false }

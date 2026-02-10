@@ -23,6 +23,6 @@
 #![allow(non_snake_case)]
 #![no_std]
 
-use libkynput_sys::libkynput_Pipeline;
+use kynput_sys::kynput_Pipeline;
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));

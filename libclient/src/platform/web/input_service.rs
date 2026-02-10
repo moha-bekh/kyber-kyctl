@@ -22,7 +22,7 @@ use std::sync::Arc;
 
 use log::warn;
 
-use libkynput::{InputNetworkStreamMsg, InputNetworkStreamObserver, InputType, InputTypeMetadata};
+use kynput::{InputNetworkStreamMsg, InputNetworkStreamObserver, InputType, InputTypeMetadata};
 
 use crate::{CursorFormat, Message, MessageSender};
 
@@ -53,8 +53,8 @@ impl InputNetworkStreamObserver for InputMsgSink {
     }
 }
 
-pub(crate) type InputError = libkynput::Error;
-pub(crate) type InputPipeline = Arc<libkynput::InputPipeline>;
+pub(crate) type InputError = kynput::Error;
+pub(crate) type InputPipeline = Arc<kynput::InputPipeline>;
 
 pub(crate) fn get_cursor_format(pipeline: &InputPipeline) -> Option<CursorFormat> {
     let Some(InputTypeMetadata::Cursor { format }) =
@@ -64,8 +64,8 @@ pub(crate) fn get_cursor_format(pipeline: &InputPipeline) -> Option<CursorFormat
     };
 
     match format {
-        libkynput::CursorFormat::None => None,
-        libkynput::CursorFormat::Raw => Some(CursorFormat::Raw),
-        libkynput::CursorFormat::Png => Some(CursorFormat::Png),
+        kynput::CursorFormat::None => None,
+        kynput::CursorFormat::Raw => Some(CursorFormat::Raw),
+        kynput::CursorFormat::Png => Some(CursorFormat::Png),
     }
 }

@@ -31,10 +31,10 @@ fn main() {
         // Use libc
         .ctypes_prefix("libc")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
-        .blocklist_item(r"(\w*libkynput\w*)");
+        .blocklist_item(r"(\w*kynput\w*)");
 
     // Set header include paths
-    let libs = ["libkynput", "libclient"];
+    let libs = ["kynput", "libclient"];
 
     for lib in libs {
         let pkg_config_library = pkg_config::Config::new().probe(lib).unwrap();

@@ -868,9 +868,9 @@ dependencies = [
  "bytes",
  "clap",
  "humantime",
- "inputservice-types",
  "jsonwebtoken",
  "kymux",
+ "kynputservice-types",
  "libkypc",
  "log",
  "log4rs",
@@ -2417,13 +2417,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bd4f5b4d1c00331c5245163aacfe5f20be75b564c7112d45893d4ae038119eb0"
 
 [[package]]
-name = "inputservice-types"
-version = "0.1.0"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "io-kit-sys"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2698,6 +2691,68 @@ dependencies = [
 ]
 
 [[package]]
+name = "kynput"
+version = "0.1.0"
+dependencies = [
+ "android_logger",
+ "async-trait",
+ "base64 0.22.1",
+ "bytes",
+ "core-foundation 0.9.4",
+ "enum-iterator",
+ "env_logger 0.11.8",
+ "evdev-rs",
+ "input",
+ "input-linux-sys",
+ "io-kit-sys",
+ "js-sys",
+ "keycode",
+ "kycom",
+ "libc",
+ "log",
+ "mio 0.6.23",
+ "png",
+ "raw-window-handle",
+ "regex",
+ "tokio",
+ "users",
+ "vigem-client",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "windows-sys 0.52.0",
+ "x11",
+ "xcb",
+]
+
+[[package]]
+name = "kynput-rs"
+version = "0.1.0"
+dependencies = [
+ "enum-iterator",
+ "kynput-sys",
+ "libc",
+ "log",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "kynput-sys"
+version = "0.1.0"
+dependencies = [
+ "bindgen 0.72.1",
+ "libc",
+ "pkg-config",
+]
+
+[[package]]
+name = "kynputservice-types"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "kyproto"
 version = "0.1.0"
 dependencies = [
@@ -2774,12 +2829,12 @@ dependencies = [
  "js-sys",
  "kyaudioreg",
  "kymux",
+ "kynput",
+ "kynput-rs",
+ "kynput-sys",
  "kywasmtime",
  "libc",
  "libclient-common",
- "libkynput",
- "libkynput-rs",
- "libkynput-sys",
  "log",
  "raw-window-handle",
  "reqwest",
@@ -2788,6 +2843,8 @@ dependencies = [
  "rustls-pemfile",
  "serde",
  "serde_json",
+ "sha2",
+ "tempfile",
  "tokio",
  "vergen",
  "vlc-rs",
@@ -2808,10 +2865,10 @@ dependencies = [
 name = "libclient-rs"
 version = "0.1.0"
 dependencies = [
+ "kynput-rs",
  "libc",
  "libclient-common",
  "libclient-sys",
- "libkynput-rs",
  "log",
 ]
 
@@ -2820,62 +2877,7 @@ name = "libclient-sys"
 version = "0.1.0"
 dependencies = [
  "bindgen 0.69.5",
- "libc",
- "libkynput-sys",
- "pkg-config",
-]
-
-[[package]]
-name = "libkynput"
-version = "0.1.0"
-dependencies = [
- "android_logger",
- "async-trait",
- "base64 0.22.1",
- "bytes",
- "core-foundation 0.9.4",
- "enum-iterator",
- "env_logger 0.11.8",
- "evdev-rs",
- "input",
- "input-linux-sys",
- "io-kit-sys",
- "js-sys",
- "keycode",
- "kycom",
- "libc",
- "log",
- "mio 0.6.23",
- "png",
- "raw-window-handle",
- "regex",
- "tokio",
- "users",
- "vigem-client",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
- "windows-sys 0.52.0",
- "x11",
- "xcb",
-]
-
-[[package]]
-name = "libkynput-rs"
-version = "0.1.0"
-dependencies = [
- "enum-iterator",
- "libc",
- "libkynput-sys",
- "log",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "libkynput-sys"
-version = "0.1.0"
-dependencies = [
- "bindgen 0.72.1",
+ "kynput-sys",
  "libc",
  "pkg-config",
 ]

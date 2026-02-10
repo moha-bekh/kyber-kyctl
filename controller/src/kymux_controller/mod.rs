@@ -455,7 +455,7 @@ async fn start_input(
     kycom: &mut kycom::KyCom,
     connection: &kyproto::Connection,
     process_factory: &Arc<ProcessFactory>,
-    host_config: inputservice_types::HostConfig,
+    host_config: kynputservice_types::HostConfig,
 ) -> Result<Option<StartSessionInputResponse>> {
     let Some(inputs_request) = &request.inputs else {
         warn!("Input server disabled");
@@ -469,7 +469,7 @@ async fn start_input(
 
     info!("Start Inputservice. Endpoint: {endpoint_id:X}");
 
-    let service_config = inputservice_types::ServiceConfig {
+    let service_config = kynputservice_types::ServiceConfig {
         cursor_format: inputs_request.cursor_format.clone(),
         gamepad_force_xbox360: inputs_request.gamepad_force_xbox360,
         clipboard: inputs_request.clipboard,
@@ -480,7 +480,7 @@ async fn start_input(
         .start_kymux(process_factory, host_config, service_config, uri)
         .await?
     {
-        Some(inputservice_types::Event::Connected { clipboard }) => (clipboard,),
+        Some(kynputservice_types::Event::Connected { clipboard }) => (clipboard,),
         _ => (false,),
     };
 
@@ -665,7 +665,7 @@ async fn start_session(
             kycom,
             &connection,
             &process_factory,
-            inputservice_types::HostConfig {
+            kynputservice_types::HostConfig {
                 display_list: displays,
             },
         )

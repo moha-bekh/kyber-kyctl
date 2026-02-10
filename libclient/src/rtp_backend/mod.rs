@@ -252,7 +252,7 @@ impl RtpBackend {
         let streamer_ip = backend_config.conn_params.addr.ip().to_string();
 
         let create_stream_cb =
-            |_target, msg_sink| libkynput_rs::tcp::new_client(&streamer_ip, msg_sink);
+            |_target, msg_sink| kynput_rs::tcp::new_client(&streamer_ip, msg_sink);
 
         let client = InputClient::new(
             backend_config.msg_sender.clone(),

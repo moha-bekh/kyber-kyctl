@@ -27,8 +27,8 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::{CloseEvent, MessageEvent};
 
-use libkynput::bufferproxy::{BufferProxyReceiver, BufferProxySender};
-use libkynput::{InputNetworkStreamMsg, InputNetworkStreamObserver};
+use kynput::bufferproxy::{BufferProxyReceiver, BufferProxySender};
+use kynput::{InputNetworkStreamMsg, InputNetworkStreamObserver};
 
 use crate::platform::{WebSocket, WebSocketHandler};
 use crate::Result;

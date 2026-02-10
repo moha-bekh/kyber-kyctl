@@ -9,7 +9,7 @@ log = "0.4.21"
 
 libclient-common = { version = "0.1.0", path = "../libclient-common" }
 libclient-sys = { path = "libclient-sys" }
-libkynput-rs = "0.1.0"
+kynput-rs = "0.1.0"
 
 [features]
 default = ["kymux","rtp"]

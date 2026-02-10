@@ -29,7 +29,7 @@ use log::{error, warn};
 use std::io::BufReader;
 
 use kymux::kyproto;
-use libkynput_rs::Pipeline;
+use kynput_rs::Pipeline;
 
 use crate::metrics::{
     Metric, MetricsJSONProducer, NetworkPing, NetworkStats, VideoMetric, VideoMetricData,
@@ -876,7 +876,7 @@ pub unsafe extern "C" fn libclient_audio_session_config_set_audio_buffer(
 
 #[no_mangle]
 pub unsafe extern "C" fn libclient_input_session_config_default(
-    pipeline: *mut libkynput_sys::libkynput_Pipeline,
+    pipeline: *mut kynput_sys::kynput_Pipeline,
     out_config: *mut *mut libclient_InputSessionConfig,
 ) -> c_int {
     let pipeline = Pipeline::from_ptr(pipeline);

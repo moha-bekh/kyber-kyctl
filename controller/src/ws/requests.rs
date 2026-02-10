@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use avservice_types::VideoCodec;
-use inputservice_types::CursorFormat;
+use kynputservice_types::CursorFormat;
 
 use crate::utils::generate_session_id;
 use crate::{session::identity::Identity, Controller};

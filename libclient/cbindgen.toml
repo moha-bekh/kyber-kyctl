@@ -1,7 +1,7 @@
 include_guard = "LIBCLIENT_H"
 no_includes = true
 sys_includes = ["stdbool.h", "stdint.h"]
-includes = ["libkynput.h"]
+includes = ["kynput.h"]
 tab_width = 4
 style = "Type"
 language = "C"

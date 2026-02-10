@@ -83,9 +83,9 @@ impl TypeConvert<host_events::Display> for avservice_types::Display {
     }
 }
 
-impl TypeConvert<inputservice_types::Display> for avservice_types::Display {
-    fn convert(&self) -> inputservice_types::Display {
-        inputservice_types::Display {
+impl TypeConvert<kynputservice_types::Display> for avservice_types::Display {
+    fn convert(&self) -> kynputservice_types::Display {
+        kynputservice_types::Display {
             id: self.id,
             width: self.width,
             height: self.height,

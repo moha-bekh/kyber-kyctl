@@ -20,7 +20,7 @@
 
 use log::{info, warn};
 
-use libkynput_rs::{
+use kynput_rs::{
     Consumer, InputTarget, InputType, InputTypeMetadata, NetworkStream, NetworkStreamMsg,
     NetworkStreamObserver, Pipeline,
 };
@@ -92,8 +92,8 @@ impl InputClient {
     }
 }
 
-pub(crate) type InputError = libkynput_rs::Error;
-pub(crate) type InputPipeline = libkynput_rs::Pipeline;
+pub(crate) type InputError = kynput_rs::Error;
+pub(crate) type InputPipeline = kynput_rs::Pipeline;
 
 pub(crate) fn get_cursor_format(pipeline: &Pipeline) -> Option<CursorFormat> {
     let Some(InputTypeMetadata::Cursor { format }) =
@@ -103,7 +103,7 @@ pub(crate) fn get_cursor_format(pipeline: &Pipeline) -> Option<CursorFormat> {
     };
 
     match format {
-        libkynput_rs::CursorFormat::Raw => Some(CursorFormat::Raw),
-        libkynput_rs::CursorFormat::Png => Some(CursorFormat::Png),
+        kynput_rs::CursorFormat::Raw => Some(CursorFormat::Raw),
+        kynput_rs::CursorFormat::Png => Some(CursorFormat::Png),
     }
 }

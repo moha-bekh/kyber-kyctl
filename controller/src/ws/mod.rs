@@ -132,11 +132,11 @@ async fn start_handler(
 
     // Start InputServer
     let inputservice = if let Some(inputs_request) = &request.inputs {
-        let host_config = inputservice_types::HostConfig {
+        let host_config = kynputservice_types::HostConfig {
             display_list: ctrl.displays.convert(),
         };
 
-        let service_config = inputservice_types::ServiceConfig {
+        let service_config = kynputservice_types::ServiceConfig {
             cursor_format: inputs_request.cursor_format.clone(),
             gamepad_force_xbox360: inputs_request.gamepad_force_xbox360,
             clipboard: inputs_request.clipboard,

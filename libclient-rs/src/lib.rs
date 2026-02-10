@@ -43,9 +43,9 @@ pub enum TofuPrompt {
         actual_fingerprint: String,
     },
 }
+use kynput_rs::Pipeline;
 use libclient_common::metrics::{NetworkPing, NetworkStats, VideoMetric, VideoMetricData};
 use libclient_sys as sys;
-use libkynput_rs::Pipeline;
 
 #[derive(Debug)]
 pub enum Error {

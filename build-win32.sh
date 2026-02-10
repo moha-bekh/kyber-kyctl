@@ -92,14 +92,14 @@ generate_kyctl_cargo_config() {
     cat > .cargo/config.toml << 'EOF'
 [patch.crates-io]
 avservice-types = { path = "../kymedia/avservice-types" }
-inputservice-types = { path = "../kynput/inputservice-types" }
+kynputservice-types = { path = "../kynput/kynputservice-types" }
 kyaudioreg = { path = "../kymedia/kyaudioreg" }
 kycom = { path = "../kymux/kycom" }
 kymux = { path = "../kymux/kymux" }
 libkypc = { path = "../kyutil/libkypc" }
-libkynput = { path = "../kynput/libkynput" }
-libkynput-rs = { path = "../kynput/libkynput-rs" }
-libkynput-sys = { path = "../kynput/libkynput-rs/libkynput-sys" }
+kynput = { path = "../kynput/kynput" }
+kynput-rs = { path = "../kynput/kynput-rs" }
+kynput-sys = { path = "../kynput/kynput-rs/kynput-sys" }
 vlc-rs = { path = "../kymedia/external/vlc-rs" }
 EOF
 }

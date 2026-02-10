@@ -147,7 +147,7 @@ impl StateMachine {
                     }
 
                     // Update inputservice(s)
-                    let host_config = inputservice_types::HostConfig {
+                    let host_config = kynputservice_types::HostConfig {
                         display_list: displays.convert(),
                     };
 
