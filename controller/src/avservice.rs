@@ -161,7 +161,7 @@ impl Handler {
         Self {
             type_,
             session_id,
-            avserver_path: utils::get_executable_path("avserver"),
+            avserver_path: utils::get_executable_path("kyavserver"),
             inner: None,
             statemachine_proxy,
         }
