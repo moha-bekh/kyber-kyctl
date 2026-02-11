@@ -2627,6 +2627,72 @@ dependencies = [
 ]
 
 [[package]]
+name = "kyclient"
+version = "0.1.0"
+dependencies = [
+ "android_logger",
+ "async-trait",
+ "async-tungstenite",
+ "base64 0.22.1",
+ "bytes",
+ "futures",
+ "js-sys",
+ "kyaudioreg",
+ "kyclient-common",
+ "kymux",
+ "kynput",
+ "kynput-rs",
+ "kynput-sys",
+ "kywasmtime",
+ "libc",
+ "log",
+ "raw-window-handle",
+ "reqwest",
+ "rmp-serde",
+ "rustls",
+ "rustls-pemfile",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "vergen",
+ "vlc-rs",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
+name = "kyclient-common"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "kyclient-rs"
+version = "0.1.0"
+dependencies = [
+ "kyclient-common",
+ "kyclient-sys",
+ "kynput-rs",
+ "libc",
+ "log",
+]
+
+[[package]]
+name = "kyclient-sys"
+version = "0.1.0"
+dependencies = [
+ "bindgen 0.69.5",
+ "kynput-sys",
+ "libc",
+ "pkg-config",
+]
+
+[[package]]
 name = "kycom"
 version = "0.1.0"
 dependencies = [
@@ -2815,72 +2881,6 @@ name = "libc"
 version = "0.2.180"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bcc35a38544a891a5f7c865aca548a982ccb3b8650a5b06d0fd33a10283c56fc"
-
-[[package]]
-name = "libclient"
-version = "0.1.0"
-dependencies = [
- "android_logger",
- "async-trait",
- "async-tungstenite",
- "base64 0.22.1",
- "bytes",
- "futures",
- "js-sys",
- "kyaudioreg",
- "kymux",
- "kynput",
- "kynput-rs",
- "kynput-sys",
- "kywasmtime",
- "libc",
- "libclient-common",
- "log",
- "raw-window-handle",
- "reqwest",
- "rmp-serde",
- "rustls",
- "rustls-pemfile",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "tokio",
- "vergen",
- "vlc-rs",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
-]
-
-[[package]]
-name = "libclient-common"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "libclient-rs"
-version = "0.1.0"
-dependencies = [
- "kynput-rs",
- "libc",
- "libclient-common",
- "libclient-sys",
- "log",
-]
-
-[[package]]
-name = "libclient-sys"
-version = "0.1.0"
-dependencies = [
- "bindgen 0.69.5",
- "kynput-sys",
- "libc",
- "pkg-config",
-]
 
 [[package]]
 name = "libkypc"

@@ -39,10 +39,10 @@ OPTIONS:
    -o <path>     Install the built binaries in the absolute path (Default: ./rootfs-<target>)
 
 ACTIONS:
-   build                Build libclient (default)
-   build-libclient      Build libclient only
+   build                Build kyclient (default)
+   build-kyclient      Build kyclient only
 
-Note: iOS/tvOS/visionOS builds only support libclient, not controller
+Note: iOS/tvOS/visionOS builds only support kyclient, not controller
 EOF
 }
 
@@ -286,7 +286,7 @@ fi
 
 # iOS doesn't support controller builds
 if [ "$ACTION" = "build-controller" ] || [ "$ACTION" = "clippy-controller" ]; then
-    echo "Error: iOS/tvOS/visionOS builds only support libclient, not controller"
+    echo "Error: iOS/tvOS/visionOS builds only support kyclient, not controller"
     usage
     exit 1
 fi
@@ -318,19 +318,19 @@ export PKG_CONFIG_LIBDIR=$OUT_DIR/lib/pkgconfig
 
 # Source common build functions
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/libclient-common.sh"
+source "$SCRIPT_DIR/kyclient-common.sh"
 
 # Run action
 case "$ACTION" in
-    "build"|"build-libclient")
-        libclient_ios_do_build "$CARGO_TARGET" "$CARGOC_FLAGS" "$OUT_DIR"
+    "build"|"build-kyclient")
+        kyclient_ios_do_build "$CARGO_TARGET" "$CARGOC_FLAGS" "$OUT_DIR"
     ;;
     "none")
         echo "No action requested"
     ;;
     *)
         echo "Error: Invalid action '$ACTION'"
-        echo "Valid actions: build, build-libclient"
+        echo "Valid actions: build, build-kyclient"
         usage
         exit 1
     ;;

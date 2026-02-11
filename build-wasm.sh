@@ -39,10 +39,10 @@ OPTIONS:
    -o <path>     Install the built binaries in the absolute path (Default: ./rootfs-wasm32)
 
 ACTIONS:
-   build                Build libclient (default)
-   build-libclient      Build libclient only
-   clippy               Run clippy on libclient
-   clippy-libclient     Run clippy on libclient only
+   build                Build kyclient (default)
+   build-kyclient      Build kyclient only
+   clippy               Run clippy on kyclient
+   clippy-kyclient     Run clippy on kyclient only
 EOF
 }
 
@@ -197,25 +197,25 @@ fi
 
 # Source common build functions
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/libclient-common.sh"
+source "$SCRIPT_DIR/kyclient-common.sh"
 
 # Run action
 case "$ACTION" in
-    "build"|"build-libclient")
-        libclient_wasm_do_build
+    "build"|"build-kyclient")
+        kyclient_wasm_do_build
     ;;
-    "clippy"|"clippy-libclient")
-        libclient_wasm_do_clippy
+    "clippy"|"clippy-kyclient")
+        kyclient_wasm_do_clippy
     ;;
     "package-js")
-        libclient_wasm_do_package_js "$SCRIPT_DIR" "$JS_OUT_DIR"
+        kyclient_wasm_do_package_js "$SCRIPT_DIR" "$JS_OUT_DIR"
     ;;
     "none")
         echo "No action requested"
     ;;
     *)
         echo "Error: Invalid action '$ACTION'"
-        echo "Valid actions: build, build-libclient, clippy, clippy-libclient"
+        echo "Valid actions: build, build-kyclient, clippy, clippy-kyclient"
         usage
         exit 1
     ;;

@@ -26,7 +26,7 @@ use std::sync::atomic::{self, AtomicPtr};
 
 use log::{error, warn};
 
-pub use libclient_common::metrics::Metric;
+pub use kyclient_common::metrics::Metric;
 
 /// TOFU (Trust-On-First-Use) prompt for certificate verification decisions.
 #[derive(Clone, Debug)]
@@ -43,9 +43,9 @@ pub enum TofuPrompt {
         actual_fingerprint: String,
     },
 }
+use kyclient_common::metrics::{NetworkPing, NetworkStats, VideoMetric, VideoMetricData};
+use kyclient_sys as sys;
 use kynput_rs::Pipeline;
-use libclient_common::metrics::{NetworkPing, NetworkStats, VideoMetric, VideoMetricData};
-use libclient_sys as sys;
 
 #[derive(Debug)]
 pub enum Error {
@@ -54,7 +54,7 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-pub type Display = sys::libclient_Display;
+pub type Display = sys::kyclient_Display;
 
 pub type MetricsCallback = dyn FnMut(Metric) + Send + Sync;
 
@@ -72,16 +72,16 @@ impl KymuxVideoProtocol {
     fn to_u32(self) -> u32 {
         match self {
             Self::Reliable => {
-                sys::libclient_KymuxVideoProtocol_LIBCLIENT_KYMUX_VIDEO_PROTOCOL_RELIABLE
+                sys::kyclient_KymuxVideoProtocol_KYCLIENT_KYMUX_VIDEO_PROTOCOL_RELIABLE
             }
             Self::GopStream => {
-                sys::libclient_KymuxVideoProtocol_LIBCLIENT_KYMUX_VIDEO_PROTOCOL_GOP_STREAM
+                sys::kyclient_KymuxVideoProtocol_KYCLIENT_KYMUX_VIDEO_PROTOCOL_GOP_STREAM
             }
             Self::Unreliable => {
-                sys::libclient_KymuxVideoProtocol_LIBCLIENT_KYMUX_VIDEO_PROTOCOL_UNRELIABLE
+                sys::kyclient_KymuxVideoProtocol_KYCLIENT_KYMUX_VIDEO_PROTOCOL_UNRELIABLE
             }
             Self::UnreliableFec => {
-                sys::libclient_KymuxVideoProtocol_LIBCLIENT_KYMUX_VIDEO_PROTOCOL_UNRELIABLE_FEC
+                sys::kyclient_KymuxVideoProtocol_KYCLIENT_KYMUX_VIDEO_PROTOCOL_UNRELIABLE_FEC
             }
         }
     }
@@ -100,13 +100,13 @@ impl KymuxAudioProtocol {
     fn to_u32(self) -> u32 {
         match self {
             Self::Reliable => {
-                sys::libclient_KymuxAudioProtocol_LIBCLIENT_KYMUX_AUDIO_PROTOCOL_RELIABLE
+                sys::kyclient_KymuxAudioProtocol_KYCLIENT_KYMUX_AUDIO_PROTOCOL_RELIABLE
             }
             Self::Unreliable => {
-                sys::libclient_KymuxAudioProtocol_LIBCLIENT_KYMUX_AUDIO_PROTOCOL_UNRELIABLE
+                sys::kyclient_KymuxAudioProtocol_KYCLIENT_KYMUX_AUDIO_PROTOCOL_UNRELIABLE
             }
             Self::UnreliableFec => {
-                sys::libclient_KymuxAudioProtocol_LIBCLIENT_KYMUX_AUDIO_PROTOCOL_UNRELIABLE_FEC
+                sys::kyclient_KymuxAudioProtocol_KYCLIENT_KYMUX_AUDIO_PROTOCOL_UNRELIABLE_FEC
             }
         }
     }
@@ -131,47 +131,47 @@ pub enum VideoCodec {
 }
 
 impl VideoCodec {
-    pub fn from_u32(u: sys::libclient_VideoCodec) -> Option<Self> {
+    pub fn from_u32(u: sys::kyclient_VideoCodec) -> Option<Self> {
         match u {
-            sys::libclient_VideoCodec_LIBCLIENT_VIDEO_CODEC_H264 => Some(Self::H264),
-            sys::libclient_VideoCodec_LIBCLIENT_VIDEO_CODEC_HEVC => Some(Self::HEVC),
-            sys::libclient_VideoCodec_LIBCLIENT_VIDEO_CODEC_AV1 => Some(Self::AV1),
+            sys::kyclient_VideoCodec_KYCLIENT_VIDEO_CODEC_H264 => Some(Self::H264),
+            sys::kyclient_VideoCodec_KYCLIENT_VIDEO_CODEC_HEVC => Some(Self::HEVC),
+            sys::kyclient_VideoCodec_KYCLIENT_VIDEO_CODEC_AV1 => Some(Self::AV1),
             _ => None,
         }
     }
 
     fn to_u32(self) -> u32 {
         match self {
-            Self::H264 => sys::libclient_VideoCodec_LIBCLIENT_VIDEO_CODEC_H264,
-            Self::HEVC => sys::libclient_VideoCodec_LIBCLIENT_VIDEO_CODEC_HEVC,
-            Self::AV1 => sys::libclient_VideoCodec_LIBCLIENT_VIDEO_CODEC_AV1,
+            Self::H264 => sys::kyclient_VideoCodec_KYCLIENT_VIDEO_CODEC_H264,
+            Self::HEVC => sys::kyclient_VideoCodec_KYCLIENT_VIDEO_CODEC_HEVC,
+            Self::AV1 => sys::kyclient_VideoCodec_KYCLIENT_VIDEO_CODEC_AV1,
         }
     }
 }
 
 pub struct WindowHandle {
-    pub ptr: *mut sys::libclient_WindowHandle,
+    pub ptr: *mut sys::kyclient_WindowHandle,
 }
 
 impl WindowHandle {
     #[cfg(target_os = "linux")]
     pub fn from_x11(handle: u64) -> Self {
         Self {
-            ptr: unsafe { sys::libclient_windowshandle_from_x11(handle) },
+            ptr: unsafe { sys::kyclient_windowshandle_from_x11(handle) },
         }
     }
 
     #[cfg(target_os = "macos")]
     pub fn from_ns_view(handle: u64) -> Self {
         Self {
-            ptr: unsafe { sys::libclient_windowshandle_from_ns_view(handle) },
+            ptr: unsafe { sys::kyclient_windowshandle_from_ns_view(handle) },
         }
     }
 
     #[cfg(target_os = "windows")]
     pub fn from_hwnd(hwnd: u64) -> Self {
         Self {
-            ptr: unsafe { sys::libclient_windowshandle_from_hwnd(hwnd) },
+            ptr: unsafe { sys::kyclient_windowshandle_from_hwnd(hwnd) },
         }
     }
 }
@@ -258,20 +258,17 @@ struct EventSinkData {
 }
 
 impl EventSinkData {
-    pub unsafe extern "C" fn on_event_cb(
-        event: *const sys::libclient_Event,
-        userdata: *mut c_void,
-    ) {
+    pub unsafe extern "C" fn on_event_cb(event: *const sys::kyclient_Event, userdata: *mut c_void) {
         let data: &EventSinkData = &*(userdata as *mut _);
 
-        let event_type = unsafe { sys::libclient_event_get_type(event) };
+        let event_type = unsafe { sys::kyclient_event_get_type(event) };
         match event_type {
-            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_CONTROL_PLANE_CONNECTED => {
+            sys::kyclient_EventType_KYCLIENT_EVENT_TYPE_CONTROL_PLANE_CONNECTED => {
                 let mut cdisplays: *mut Display = std::ptr::null_mut();
                 let mut len: u32 = 0;
 
                 let ret = unsafe {
-                    sys::libclient_event_unpack_control_plane_connected(
+                    sys::kyclient_event_unpack_control_plane_connected(
                         event,
                         &mut cdisplays,
                         &mut len as *mut _,
@@ -286,23 +283,23 @@ impl EventSinkData {
                 data.sink.on_event(Event::ControlPlaneConnected {
                     displays: displays.to_vec(),
                 });
-                unsafe { sys::libclient_event_free_displays(cdisplays) };
+                unsafe { sys::kyclient_event_free_displays(cdisplays) };
             }
-            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_CONTROL_PLANE_CONNECT_FAILED => {
+            sys::kyclient_EventType_KYCLIENT_EVENT_TYPE_CONTROL_PLANE_CONNECT_FAILED => {
                 data.sink.on_event(Event::ControlPlaneConnectFailed);
             }
-            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_DATA_PLANE_CONNECT_FAILED => {
+            sys::kyclient_EventType_KYCLIENT_EVENT_TYPE_DATA_PLANE_CONNECT_FAILED => {
                 data.sink.on_event(Event::DataPlaneConnectFailed);
             }
-            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_DATA_PLANE_CLOSED => {
+            sys::kyclient_EventType_KYCLIENT_EVENT_TYPE_DATA_PLANE_CLOSED => {
                 data.sink.on_event(Event::DataPlaneClosed);
             }
-            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_RECONNECTING => {
+            sys::kyclient_EventType_KYCLIENT_EVENT_TYPE_RECONNECTING => {
                 let mut attempt: u32 = 0;
                 let mut max_attempts: u32 = 0;
 
                 let ret = unsafe {
-                    sys::libclient_event_unpack_reconnecting(event, &mut attempt, &mut max_attempts)
+                    sys::kyclient_event_unpack_reconnecting(event, &mut attempt, &mut max_attempts)
                 };
                 if ret != 0 {
                     warn!("Fail to unpack EventType::Reconnecting");
@@ -314,11 +311,11 @@ impl EventSinkData {
                     max_attempts,
                 });
             }
-            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_RECONNECTED => {
+            sys::kyclient_EventType_KYCLIENT_EVENT_TYPE_RECONNECTED => {
                 let mut should_restart_streaming: bool = false;
 
                 let ret = unsafe {
-                    sys::libclient_event_unpack_reconnected(event, &mut should_restart_streaming)
+                    sys::kyclient_event_unpack_reconnected(event, &mut should_restart_streaming)
                 };
                 if ret != 0 {
                     warn!("Fail to unpack EventType::Reconnected");
@@ -329,14 +326,14 @@ impl EventSinkData {
                     should_restart_streaming,
                 });
             }
-            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_RECONNECTION_FAILED => {
+            sys::kyclient_EventType_KYCLIENT_EVENT_TYPE_RECONNECTION_FAILED => {
                 data.sink.on_event(Event::ReconnectionFailed);
             }
-            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_STOPPED => {
+            sys::kyclient_EventType_KYCLIENT_EVENT_TYPE_STOPPED => {
                 let mut c_reason = mem::MaybeUninit::uninit();
 
                 let ret =
-                    unsafe { sys::libclient_event_unpack_stopped(event, c_reason.as_mut_ptr()) };
+                    unsafe { sys::kyclient_event_unpack_stopped(event, c_reason.as_mut_ptr()) };
                 if ret != 0 {
                     warn!("Fail to unpack EventType::Stopped");
                     return;
@@ -344,19 +341,19 @@ impl EventSinkData {
 
                 let c_reason = c_reason.assume_init();
                 let reason = match c_reason {
-                    sys::libclient_StopReason_LIBCLIENT_STOP_REASON_REQUESTED => {
+                    sys::kyclient_StopReason_KYCLIENT_STOP_REASON_REQUESTED => {
                         StopReason::Requested
                     }
-                    sys::libclient_StopReason_LIBCLIENT_STOP_REASON_CONTROL_PLANE_CLOSED => {
+                    sys::kyclient_StopReason_KYCLIENT_STOP_REASON_CONTROL_PLANE_CLOSED => {
                         StopReason::ControlPlaneClosed
                     }
-                    sys::libclient_StopReason_LIBCLIENT_STOP_REASON_CONTROL_PLANE_IO_ERROR => {
+                    sys::kyclient_StopReason_KYCLIENT_STOP_REASON_CONTROL_PLANE_IO_ERROR => {
                         StopReason::ControlPlaneIoError
                     }
-                    sys::libclient_StopReason_LIBCLIENT_STOP_REASON_CONTROL_PLANE_TIMEOUT => {
+                    sys::kyclient_StopReason_KYCLIENT_STOP_REASON_CONTROL_PLANE_TIMEOUT => {
                         StopReason::ControlPlaneTimeout
                     }
-                    sys::libclient_StopReason_LIBCLIENT_STOP_REASON_DECODE_ERROR => {
+                    sys::kyclient_StopReason_KYCLIENT_STOP_REASON_DECODE_ERROR => {
                         StopReason::DecodeError
                     }
                     _ => {
@@ -367,12 +364,12 @@ impl EventSinkData {
 
                 data.sink.on_event(Event::Stopped { reason });
             }
-            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_DISPLAY_LIST_UPDATED => {
+            sys::kyclient_EventType_KYCLIENT_EVENT_TYPE_DISPLAY_LIST_UPDATED => {
                 let mut cdisplays: *mut Display = std::ptr::null_mut();
                 let mut len: u32 = 0;
 
                 let ret = unsafe {
-                    sys::libclient_event_unpack_display_list_updated(
+                    sys::kyclient_event_unpack_display_list_updated(
                         event,
                         &mut cdisplays,
                         &mut len as *mut _,
@@ -387,30 +384,30 @@ impl EventSinkData {
                 data.sink.on_event(Event::DisplayListUpdated {
                     displays: displays.to_vec(),
                 });
-                unsafe { sys::libclient_event_free_displays(cdisplays) };
+                unsafe { sys::kyclient_event_free_displays(cdisplays) };
             }
-            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_INPUT_SERVICE_CONNECTED => {
+            sys::kyclient_EventType_KYCLIENT_EVENT_TYPE_INPUT_SERVICE_CONNECTED => {
                 data.sink.on_event(Event::InputServiceConnected);
             }
-            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_INPUT_SERVICE_DISCONNECTED => {
+            sys::kyclient_EventType_KYCLIENT_EVENT_TYPE_INPUT_SERVICE_DISCONNECTED => {
                 data.sink.on_event(Event::InputServiceDisconnected);
             }
-            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_STREAMING_STARTED => {
+            sys::kyclient_EventType_KYCLIENT_EVENT_TYPE_STREAMING_STARTED => {
                 data.sink.on_event(Event::StreamingStarted);
             }
-            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_STREAMING_START_FAILED => {
+            sys::kyclient_EventType_KYCLIENT_EVENT_TYPE_STREAMING_START_FAILED => {
                 data.sink.on_event(Event::StreamingStartFailed);
             }
-            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_STREAMING_STOPPED => {
+            sys::kyclient_EventType_KYCLIENT_EVENT_TYPE_STREAMING_STOPPED => {
                 data.sink.on_event(Event::StreamingStopped);
             }
-            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_STREAMER_PIPELINE_EVENT => {
+            sys::kyclient_EventType_KYCLIENT_EVENT_TYPE_STREAMER_PIPELINE_EVENT => {
                 let mut c_type = mem::MaybeUninit::uninit();
                 let mut c_stage = mem::MaybeUninit::uninit();
                 let mut c_event = mem::MaybeUninit::uninit();
 
                 let ret = unsafe {
-                    sys::libclient_event_unpack_streamer_pipeline_event(
+                    sys::kyclient_event_unpack_streamer_pipeline_event(
                         event,
                         c_type.as_mut_ptr(),
                         c_stage.as_mut_ptr(),
@@ -424,13 +421,13 @@ impl EventSinkData {
 
                 let c_type = c_type.assume_init();
                 let type_ = match c_type {
-                    sys::libclient_StreamerPipelineType_LIBCLIENT_STREAMER_PIPELINE_TYPE_ENUMERATE_DISPLAYS => {
+                    sys::kyclient_StreamerPipelineType_KYCLIENT_STREAMER_PIPELINE_TYPE_ENUMERATE_DISPLAYS => {
                         StreamerPipelineType::EnumerateDisplays
                     }
-                    sys::libclient_StreamerPipelineType_LIBCLIENT_STREAMER_PIPELINE_TYPE_AUDIO => {
+                    sys::kyclient_StreamerPipelineType_KYCLIENT_STREAMER_PIPELINE_TYPE_AUDIO => {
                         StreamerPipelineType::Audio
                     }
-                    sys::libclient_StreamerPipelineType_LIBCLIENT_STREAMER_PIPELINE_TYPE_VIDEO => {
+                    sys::kyclient_StreamerPipelineType_KYCLIENT_STREAMER_PIPELINE_TYPE_VIDEO => {
                         StreamerPipelineType::Video
                     }
                     _ => {
@@ -441,16 +438,16 @@ impl EventSinkData {
 
                 let c_stage = c_stage.assume_init();
                 let stage = match c_stage {
-                    sys::libclient_StreamerPipelineStage_LIBCLIENT_STREAMER_PIPELINE_STAGE_PROCESS => {
+                    sys::kyclient_StreamerPipelineStage_KYCLIENT_STREAMER_PIPELINE_STAGE_PROCESS => {
                         StreamerPipelineStage::Process
                     }
-                    sys::libclient_StreamerPipelineStage_LIBCLIENT_STREAMER_PIPELINE_STAGE_INITIALIZATION => {
+                    sys::kyclient_StreamerPipelineStage_KYCLIENT_STREAMER_PIPELINE_STAGE_INITIALIZATION => {
                         StreamerPipelineStage::Initialization
                     }
-                    sys::libclient_StreamerPipelineStage_LIBCLIENT_STREAMER_PIPELINE_STAGE_ACQUISITION => {
+                    sys::kyclient_StreamerPipelineStage_KYCLIENT_STREAMER_PIPELINE_STAGE_ACQUISITION => {
                         StreamerPipelineStage::Acquisition
                     }
-                    sys::libclient_StreamerPipelineStage_LIBCLIENT_STREAMER_PIPELINE_STAGE_ENCODER => {
+                    sys::kyclient_StreamerPipelineStage_KYCLIENT_STREAMER_PIPELINE_STAGE_ENCODER => {
                         StreamerPipelineStage::Encoder
                     }
                     _ => {
@@ -461,10 +458,10 @@ impl EventSinkData {
 
                 let c_event = c_event.assume_init();
                 let event = match c_event {
-                    sys::libclient_StreamerPipelineEventType_LIBCLIENT_STREAMER_PIPELINE_EVENT_TYPE_STOPPED => {
+                    sys::kyclient_StreamerPipelineEventType_KYCLIENT_STREAMER_PIPELINE_EVENT_TYPE_STOPPED => {
                         StreamerPipelineEventType::Stopped
                     }
-                    sys::libclient_StreamerPipelineEventType_LIBCLIENT_STREAMER_PIPELINE_EVENT_TYPE_ERROR => {
+                    sys::kyclient_StreamerPipelineEventType_KYCLIENT_STREAMER_PIPELINE_EVENT_TYPE_ERROR => {
                         StreamerPipelineEventType::Error
                     }
                     _ => {
@@ -479,11 +476,11 @@ impl EventSinkData {
                     event,
                 });
             }
-            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_AUDIO_VOLUME_CHANGED => {
+            sys::kyclient_EventType_KYCLIENT_EVENT_TYPE_AUDIO_VOLUME_CHANGED => {
                 let mut volume = mem::MaybeUninit::uninit();
 
                 let ret = unsafe {
-                    sys::libclient_event_unpack_audio_volume_changed(event, volume.as_mut_ptr())
+                    sys::kyclient_event_unpack_audio_volume_changed(event, volume.as_mut_ptr())
                 };
                 if ret != 0 {
                     warn!("Fail to unpack EventType::AudioVolumeChanged");
@@ -493,11 +490,11 @@ impl EventSinkData {
                 let volume = volume.assume_init();
                 data.sink.on_event(Event::AudioVolumeChanged { volume });
             }
-            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_AUDIO_MUTE_CHANGED => {
+            sys::kyclient_EventType_KYCLIENT_EVENT_TYPE_AUDIO_MUTE_CHANGED => {
                 let mut mute = mem::MaybeUninit::uninit();
 
                 let ret = unsafe {
-                    sys::libclient_event_unpack_audio_mute_changed(event, mute.as_mut_ptr())
+                    sys::kyclient_event_unpack_audio_mute_changed(event, mute.as_mut_ptr())
                 };
                 if ret != 0 {
                     warn!("Fail to unpack EventType::AudioMuteChanged");
@@ -507,11 +504,11 @@ impl EventSinkData {
                 let mute = mute.assume_init();
                 data.sink.on_event(Event::AudioMuteChanged { mute });
             }
-            sys::libclient_EventType_LIBCLIENT_EVENT_TYPE_BITRATE_CHANGED => {
+            sys::kyclient_EventType_KYCLIENT_EVENT_TYPE_BITRATE_CHANGED => {
                 let mut bitrate = mem::MaybeUninit::uninit();
 
                 let ret = unsafe {
-                    sys::libclient_event_unpack_bitrate_changed(event, bitrate.as_mut_ptr())
+                    sys::kyclient_event_unpack_bitrate_changed(event, bitrate.as_mut_ptr())
                 };
                 if ret != 0 {
                     warn!("Fail to unpack EventType::BitrateChanged");
@@ -522,7 +519,7 @@ impl EventSinkData {
                 data.sink.on_event(Event::BitrateChanged { bitrate });
             }
             _ => {
-                error!("Invalid libclient_EventType {}", event_type)
+                error!("Invalid kyclient_EventType {}", event_type)
             }
         }
     }
@@ -533,7 +530,7 @@ fn to_cstr(s: &str) -> CString {
 }
 
 pub struct VideoPlayerConfig {
-    ptr: *mut sys::libclient_VideoPlayerConfig,
+    ptr: *mut sys::kyclient_VideoPlayerConfig,
 }
 
 impl VideoPlayerConfig {
@@ -546,7 +543,7 @@ impl VideoPlayerConfig {
 
         unsafe {
             let mut ptr: *mut _ = std::mem::zeroed();
-            let ret = sys::libclient_video_player_config_default(window_handle, &mut ptr);
+            let ret = sys::kyclient_video_player_config_default(window_handle, &mut ptr);
             if ret == 0 {
                 Ok(Self { ptr })
             } else {
@@ -556,29 +553,29 @@ impl VideoPlayerConfig {
     }
 
     pub fn set_software_decode(&self, software_decode: bool) {
-        unsafe { sys::libclient_video_player_config_set_software_decode(self.ptr, software_decode) }
+        unsafe { sys::kyclient_video_player_config_set_software_decode(self.ptr, software_decode) }
     }
 
     pub fn set_video_buffer(&self, video_buffer: u32) {
-        unsafe { sys::libclient_video_player_config_set_video_buffer(self.ptr, video_buffer) }
+        unsafe { sys::kyclient_video_player_config_set_video_buffer(self.ptr, video_buffer) }
     }
 }
 
 impl Drop for VideoPlayerConfig {
     fn drop(&mut self) {
-        unsafe { sys::libclient_video_player_config_unref(self.ptr) }
+        unsafe { sys::kyclient_video_player_config_unref(self.ptr) }
     }
 }
 
 pub struct VideoSessionConfig {
-    ptr: *mut sys::libclient_VideoSessionConfig,
+    ptr: *mut sys::kyclient_VideoSessionConfig,
 }
 
 impl VideoSessionConfig {
     pub fn default(display_id: u32, player: VideoPlayerConfig) -> Result<Self> {
         unsafe {
             let mut ptr: *mut _ = std::mem::zeroed();
-            let ret = sys::libclient_video_session_config_default(display_id, player.ptr, &mut ptr);
+            let ret = sys::kyclient_video_session_config_default(display_id, player.ptr, &mut ptr);
             if ret == 0 {
                 Ok(Self { ptr })
             } else {
@@ -588,33 +585,33 @@ impl VideoSessionConfig {
     }
 
     pub fn set_codec(&self, codec: VideoCodec) {
-        unsafe { sys::libclient_video_session_config_set_codec(self.ptr, codec.to_u32()) }
+        unsafe { sys::kyclient_video_session_config_set_codec(self.ptr, codec.to_u32()) }
     }
 
     pub fn set_yuv444(&self, yuv444: bool) {
-        unsafe { sys::libclient_video_session_config_set_yuv444(self.ptr, yuv444) }
+        unsafe { sys::kyclient_video_session_config_set_yuv444(self.ptr, yuv444) }
     }
 
     pub fn set_intra_refresh(&self, intra_refresh: bool) {
-        unsafe { sys::libclient_video_session_config_set_intra_refresh(self.ptr, intra_refresh) }
+        unsafe { sys::kyclient_video_session_config_set_intra_refresh(self.ptr, intra_refresh) }
     }
 }
 
 impl Drop for VideoSessionConfig {
     fn drop(&mut self) {
-        unsafe { sys::libclient_video_session_config_unref(self.ptr) }
+        unsafe { sys::kyclient_video_session_config_unref(self.ptr) }
     }
 }
 
 pub struct AudioSessionConfig {
-    ptr: *mut sys::libclient_AudioSessionConfig,
+    ptr: *mut sys::kyclient_AudioSessionConfig,
 }
 
 impl AudioSessionConfig {
     pub fn new_default() -> Result<Self> {
         unsafe {
             let mut ptr: *mut _ = std::mem::zeroed();
-            let ret = sys::libclient_audio_session_config_default(&mut ptr);
+            let ret = sys::kyclient_audio_session_config_default(&mut ptr);
             if ret == 0 {
                 Ok(Self { ptr })
             } else {
@@ -624,19 +621,19 @@ impl AudioSessionConfig {
     }
 
     pub fn set_audio_buffer(&self, audio_buffer: u32) {
-        unsafe { sys::libclient_audio_session_config_set_audio_buffer(self.ptr, audio_buffer) }
+        unsafe { sys::kyclient_audio_session_config_set_audio_buffer(self.ptr, audio_buffer) }
     }
 }
 
 pub struct InputSessionConfig {
-    ptr: *mut sys::libclient_InputSessionConfig,
+    ptr: *mut sys::kyclient_InputSessionConfig,
 }
 
 impl InputSessionConfig {
     pub fn default(pipeline: &Pipeline) -> Result<Self> {
         unsafe {
             let mut ptr: *mut _ = std::mem::zeroed();
-            let ret = sys::libclient_input_session_config_default(pipeline.to_ptr(), &mut ptr);
+            let ret = sys::kyclient_input_session_config_default(pipeline.to_ptr(), &mut ptr);
             if ret == 0 {
                 Ok(Self { ptr })
             } else {
@@ -646,35 +643,35 @@ impl InputSessionConfig {
     }
 
     pub fn gamepad_force_xbox360(&self, force: bool) {
-        unsafe { sys::libclient_input_session_config_gamepad_force_xbox360(self.ptr, force) };
+        unsafe { sys::kyclient_input_session_config_gamepad_force_xbox360(self.ptr, force) };
     }
 
     pub fn clipboard(&self, enable: bool) {
-        unsafe { sys::libclient_input_session_config_clipboard(self.ptr, enable) };
+        unsafe { sys::kyclient_input_session_config_clipboard(self.ptr, enable) };
     }
 }
 
 impl Drop for InputSessionConfig {
     fn drop(&mut self) {
-        unsafe { sys::libclient_input_session_config_unref(self.ptr) }
+        unsafe { sys::kyclient_input_session_config_unref(self.ptr) }
     }
 }
 
 pub struct StreamingSessionConfig {
-    ptr: *mut sys::libclient_StreamingSessionConfig,
+    ptr: *mut sys::kyclient_StreamingSessionConfig,
 }
 
 impl StreamingSessionConfig {
     pub fn default(protocol: StreamingProtocol) -> Result<Self> {
         let streaming_protocol = match protocol {
             #[cfg(feature = "rtp")]
-            StreamingProtocol::Rtp => unsafe { sys::libclient_streaming_protocol_rtp() },
+            StreamingProtocol::Rtp => unsafe { sys::kyclient_streaming_protocol_rtp() },
             #[cfg(feature = "kymux")]
             StreamingProtocol::Kymux {
                 video_protocol,
                 audio_protocol,
             } => unsafe {
-                sys::libclient_streaming_protocol_kymux(
+                sys::kyclient_streaming_protocol_kymux(
                     video_protocol.to_u32(),
                     audio_protocol.to_u32(),
                 )
@@ -683,8 +680,8 @@ impl StreamingSessionConfig {
 
         unsafe {
             let mut ptr: *mut _ = std::mem::zeroed();
-            let ret = sys::libclient_streaming_session_config_default(streaming_protocol, &mut ptr);
-            sys::libclient_streaming_protocol_unref(streaming_protocol);
+            let ret = sys::kyclient_streaming_session_config_default(streaming_protocol, &mut ptr);
+            sys::kyclient_streaming_protocol_unref(streaming_protocol);
 
             if ret == 0 {
                 Ok(Self { ptr })
@@ -695,25 +692,25 @@ impl StreamingSessionConfig {
     }
 
     pub fn get_bitrate(&self) -> u32 {
-        unsafe { sys::libclient_streaming_session_config_get_bitrate(self.ptr) }
+        unsafe { sys::kyclient_streaming_session_config_get_bitrate(self.ptr) }
     }
 
     pub fn set_bitrate(&self, bitrate: u32) {
-        unsafe { sys::libclient_streaming_session_config_set_bitrate(self.ptr, bitrate) }
+        unsafe { sys::kyclient_streaming_session_config_set_bitrate(self.ptr, bitrate) }
     }
 
     pub fn add_video(&self, config: VideoSessionConfig) {
-        unsafe { sys::libclient_streaming_session_config_add_video(self.ptr, config.ptr) }
+        unsafe { sys::kyclient_streaming_session_config_add_video(self.ptr, config.ptr) }
 
         mem::forget(config);
     }
 
     pub fn set_audio(&self, config: AudioSessionConfig) {
-        unsafe { sys::libclient_streaming_session_config_set_audio(self.ptr, config.ptr) }
+        unsafe { sys::kyclient_streaming_session_config_set_audio(self.ptr, config.ptr) }
     }
 
     pub fn set_input(&self, config: InputSessionConfig) {
-        unsafe { sys::libclient_streaming_session_config_set_input(self.ptr, config.ptr) }
+        unsafe { sys::kyclient_streaming_session_config_set_input(self.ptr, config.ptr) }
 
         mem::forget(config);
     }
@@ -721,7 +718,7 @@ impl StreamingSessionConfig {
 
 impl Drop for StreamingSessionConfig {
     fn drop(&mut self) {
-        unsafe { sys::libclient_streaming_session_config_unref(self.ptr) }
+        unsafe { sys::kyclient_streaming_session_config_unref(self.ptr) }
     }
 }
 
@@ -732,25 +729,25 @@ pub enum AuthCredentials {
 }
 
 impl AuthCredentials {
-    fn as_raw(&self) -> *mut sys::libclient_AuthCredentials {
+    fn as_raw(&self) -> *mut sys::kyclient_AuthCredentials {
         let (type_, creds) = match self {
             AuthCredentials::Basic { username } => {
-                (sys::libclient_AuthType_LIBCLIENT_AUTH_TYPE_BASIC, username)
+                (sys::kyclient_AuthType_KYCLIENT_AUTH_TYPE_BASIC, username)
             }
             AuthCredentials::Jwt { token } => {
-                (sys::libclient_AuthType_LIBCLIENT_AUTH_TYPE_JWT, token)
+                (sys::kyclient_AuthType_KYCLIENT_AUTH_TYPE_JWT, token)
             }
         };
 
         let creds = to_cstr(creds);
-        unsafe { sys::libclient_auth_credential_new(type_, creds.as_ptr()) }
+        unsafe { sys::kyclient_auth_credential_new(type_, creds.as_ptr()) }
     }
 }
 
 type TofuCallbackPtr = *mut Box<dyn Fn(TofuPrompt) -> bool + Send + Sync>;
 
 pub struct ConnectConfig {
-    ptr: *mut sys::libclient_ConnectConfig,
+    ptr: *mut sys::kyclient_ConnectConfig,
     /// Stores the TOFU callback pointer for cleanup on drop.
     tofu_callback_ptr: Cell<Option<TofuCallbackPtr>>,
 }
@@ -761,7 +758,7 @@ impl ConnectConfig {
 
         unsafe {
             let mut ptr: *mut _ = std::mem::zeroed();
-            let ret = sys::libclient_connect_config_default(chost.as_ptr(), &mut ptr);
+            let ret = sys::kyclient_connect_config_default(chost.as_ptr(), &mut ptr);
             if ret == 0 {
                 Ok(Self {
                     ptr,
@@ -776,7 +773,7 @@ impl ConnectConfig {
     pub fn set_credentials(&self, credentials: &AuthCredentials) -> Result<()> {
         let credentials = credentials.as_raw();
 
-        let ret = unsafe { sys::libclient_connect_config_set_credentials(self.ptr, credentials) };
+        let ret = unsafe { sys::kyclient_connect_config_set_credentials(self.ptr, credentials) };
         if ret == 0 {
             Ok(())
         } else {
@@ -787,8 +784,7 @@ impl ConnectConfig {
     pub fn set_tls_host(&self, tls_host: &str) -> Result<()> {
         let ctlshost = to_cstr(tls_host);
 
-        let ret =
-            unsafe { sys::libclient_connect_config_set_tls_host(self.ptr, ctlshost.as_ptr()) };
+        let ret = unsafe { sys::kyclient_connect_config_set_tls_host(self.ptr, ctlshost.as_ptr()) };
         if ret == 0 {
             Ok(())
         } else {
@@ -800,7 +796,7 @@ impl ConnectConfig {
         let ctls_root_cert = to_cstr(tls_root_cert);
 
         let ret = unsafe {
-            sys::libclient_connect_config_set_tls_root_cert(self.ptr, ctls_root_cert.as_ptr())
+            sys::kyclient_connect_config_set_tls_root_cert(self.ptr, ctls_root_cert.as_ptr())
         };
         if ret == 0 {
             Ok(())
@@ -810,11 +806,11 @@ impl ConnectConfig {
     }
 
     pub fn set_streamer_port(&self, port: u16) {
-        unsafe { sys::libclient_connect_config_set_streamer_port(self.ptr, port) }
+        unsafe { sys::kyclient_connect_config_set_streamer_port(self.ptr, port) }
     }
 
     pub fn set_auto_reconnection(&self, enabled: bool) {
-        unsafe { sys::libclient_connect_config_set_auto_reconnection(self.ptr, enabled) }
+        unsafe { sys::kyclient_connect_config_set_auto_reconnection(self.ptr, enabled) }
     }
 
     /// Set TLS certificate fingerprint for pinning verification.
@@ -823,7 +819,7 @@ impl ConnectConfig {
         let cfingerprint = to_cstr(fingerprint);
 
         let ret = unsafe {
-            sys::libclient_connect_config_set_tls_fingerprint(self.ptr, cfingerprint.as_ptr())
+            sys::kyclient_connect_config_set_tls_fingerprint(self.ptr, cfingerprint.as_ptr())
         };
         if ret == 0 {
             Ok(())
@@ -853,7 +849,7 @@ impl ConnectConfig {
         let callback_ptr = Box::into_raw(callback_box);
 
         let ret = unsafe {
-            sys::libclient_connect_config_enable_tofu(
+            sys::kyclient_connect_config_enable_tofu(
                 self.ptr,
                 Some(tofu_callback_trampoline),
                 callback_ptr as *mut c_void,
@@ -875,13 +871,13 @@ impl ConnectConfig {
 
     /// Skip TLS verification (DANGER - for testing only).
     pub fn tls_skip_verification(&self) {
-        unsafe { sys::libclient_connect_config_skip_tls_verification(self.ptr) }
+        unsafe { sys::kyclient_connect_config_skip_tls_verification(self.ptr) }
     }
 }
 
 /// Trampoline function for TOFU callbacks
 unsafe extern "C" fn tofu_callback_trampoline(
-    prompt: *const sys::libclient_TofuPrompt,
+    prompt: *const sys::kyclient_TofuPrompt,
     userdata: *mut c_void,
 ) -> bool {
     // userdata points to Box<Box<dyn Fn(TofuPrompt) -> bool>>
@@ -890,7 +886,7 @@ unsafe extern "C" fn tofu_callback_trampoline(
 
     // Convert C prompt to Rust TofuPrompt
     let rust_prompt = match prompt.prompt_type {
-        sys::libclient_TofuPromptType_LIBCLIENT_TOFU_PROMPT_TYPE_UNKNOWN_HOST => {
+        sys::kyclient_TofuPromptType_KYCLIENT_TOFU_PROMPT_TYPE_UNKNOWN_HOST => {
             let hostname = CStr::from_ptr(prompt.hostname)
                 .to_str()
                 .unwrap_or("")
@@ -904,7 +900,7 @@ unsafe extern "C" fn tofu_callback_trampoline(
                 fingerprint,
             }
         }
-        sys::libclient_TofuPromptType_LIBCLIENT_TOFU_PROMPT_TYPE_CERTIFICATE_CHANGED => {
+        sys::kyclient_TofuPromptType_KYCLIENT_TOFU_PROMPT_TYPE_CERTIFICATE_CHANGED => {
             let hostname = CStr::from_ptr(prompt.hostname)
                 .to_str()
                 .unwrap_or("")
@@ -937,12 +933,12 @@ impl Drop for ConnectConfig {
                 let _ = Box::from_raw(callback_ptr);
             }
         }
-        unsafe { sys::libclient_connect_config_unref(self.ptr) }
+        unsafe { sys::kyclient_connect_config_unref(self.ptr) }
     }
 }
 
 pub struct Client {
-    ptr: *mut sys::libclient_Client,
+    ptr: *mut sys::kyclient_Client,
     metrics_cb: Cell<Option<Box<Box<MetricsCallback>>>>,
     /// TOFU callback pointer transferred from ConnectConfig.
     /// Must stay alive for the lifetime of the client.
@@ -951,7 +947,7 @@ pub struct Client {
 
 impl Client {
     pub fn new(connect_config: &ConnectConfig, metrics: bool) -> Result<Self> {
-        let ptr = unsafe { sys::libclient_client_new(connect_config.ptr, metrics) };
+        let ptr = unsafe { sys::kyclient_client_new(connect_config.ptr, metrics) };
         if !ptr.is_null() {
             // Transfer TOFU callback ownership from ConnectConfig to Client.
             // The callback must stay alive for the lifetime of the Client since
@@ -970,7 +966,7 @@ impl Client {
     }
 
     pub fn stop(&self) -> Result<()> {
-        let ret = unsafe { sys::libclient_client_stop(self.ptr) };
+        let ret = unsafe { sys::kyclient_client_stop(self.ptr) };
         if ret == 0 {
             Ok(())
         } else {
@@ -979,7 +975,7 @@ impl Client {
     }
 
     pub fn disconnect_and_stop(&self, stop_session: bool) -> Result<()> {
-        let ret = unsafe { sys::libclient_client_disconnect_and_stop(self.ptr, stop_session) };
+        let ret = unsafe { sys::kyclient_client_disconnect_and_stop(self.ptr, stop_session) };
         if ret == 0 {
             Ok(())
         } else {
@@ -988,7 +984,7 @@ impl Client {
     }
 
     pub fn connect(&self) -> Result<()> {
-        let ret = unsafe { sys::libclient_client_connect(self.ptr) };
+        let ret = unsafe { sys::kyclient_client_connect(self.ptr) };
         if ret == 0 {
             Ok(())
         } else {
@@ -997,7 +993,7 @@ impl Client {
     }
 
     pub fn disconnect(&self) -> Result<()> {
-        let ret = unsafe { sys::libclient_client_disconnect(self.ptr) };
+        let ret = unsafe { sys::kyclient_client_disconnect(self.ptr) };
         if ret == 0 {
             Ok(())
         } else {
@@ -1006,7 +1002,7 @@ impl Client {
     }
 
     pub fn start_streaming(&self, session_config: &StreamingSessionConfig) -> Result<()> {
-        let ret = unsafe { sys::libclient_client_start_streaming(self.ptr, session_config.ptr) };
+        let ret = unsafe { sys::kyclient_client_start_streaming(self.ptr, session_config.ptr) };
         if ret == 0 {
             Ok(())
         } else {
@@ -1015,7 +1011,7 @@ impl Client {
     }
 
     pub fn stop_streaming(&self) -> Result<()> {
-        let ret = unsafe { sys::libclient_client_stop_streaming(self.ptr) };
+        let ret = unsafe { sys::kyclient_client_stop_streaming(self.ptr) };
         if ret == 0 {
             Ok(())
         } else {
@@ -1024,7 +1020,7 @@ impl Client {
     }
 
     pub fn audio_set_volume(&self, volume: f32) -> Result<()> {
-        let ret = unsafe { sys::libclient_client_audio_set_volume(self.ptr, volume) };
+        let ret = unsafe { sys::kyclient_client_audio_set_volume(self.ptr, volume) };
         if ret == 0 {
             Ok(())
         } else {
@@ -1033,7 +1029,7 @@ impl Client {
     }
 
     pub fn audio_set_mute(&self, mute: bool) -> Result<()> {
-        let ret = unsafe { sys::libclient_client_audio_set_mute(self.ptr, mute) };
+        let ret = unsafe { sys::kyclient_client_audio_set_mute(self.ptr, mute) };
         if ret == 0 {
             Ok(())
         } else {
@@ -1042,7 +1038,7 @@ impl Client {
     }
 
     pub fn set_bitrate(&self, bitrate: u32) -> Result<()> {
-        let ret = unsafe { sys::libclient_client_set_bitrate(self.ptr, bitrate) };
+        let ret = unsafe { sys::kyclient_client_set_bitrate(self.ptr, bitrate) };
         if ret == 0 {
             Ok(())
         } else {
@@ -1051,12 +1047,12 @@ impl Client {
     }
 
     pub fn set_event_handler(&self, sink: Box<dyn EventSink>) -> Result<()> {
-        let handler = sys::libclient_EventHandler {
+        let handler = sys::kyclient_EventHandler {
             on_event: Some(EventSinkData::on_event_cb),
             userdata: Box::into_raw(Box::new(EventSinkData { sink })) as *mut _,
         };
 
-        let ret = unsafe { sys::libclient_client_set_event_handler(self.ptr, handler) };
+        let ret = unsafe { sys::kyclient_client_set_event_handler(self.ptr, handler) };
         if ret == 0 {
             Ok(())
         } else {
@@ -1070,11 +1066,11 @@ impl Client {
                 let mut cb = Box::new(cb);
                 let userdata = &mut *cb as *mut _ as *mut c_void;
                 self.metrics_cb.set(Some(cb));
-                sys::libclient_client_set_metrics_callback(self.ptr, Some(metrics_cb), userdata);
+                sys::kyclient_client_set_metrics_callback(self.ptr, Some(metrics_cb), userdata);
             }
         } else {
             unsafe {
-                sys::libclient_client_set_metrics_callback(self.ptr, None, std::ptr::null_mut());
+                sys::kyclient_client_set_metrics_callback(self.ptr, None, std::ptr::null_mut());
             }
         }
     }
@@ -1096,7 +1092,7 @@ impl Drop for Client {
 }
 
 extern "C" fn log_cb(
-    level: sys::libclient_LogLevel,
+    level: sys::kyclient_LogLevel,
     target: *const libc::c_char,
     line: *const libc::c_char,
     _userdata: *mut libc::c_void,
@@ -1105,11 +1101,11 @@ extern "C" fn log_cb(
     let line = unsafe { CStr::from_ptr(line).to_str().unwrap() };
 
     let level = match level {
-        sys::libclient_LogLevel_LIBCLIENT_LOG_LEVEL_ERROR => Some(log::Level::Error),
-        sys::libclient_LogLevel_LIBCLIENT_LOG_LEVEL_WARN => Some(log::Level::Warn),
-        sys::libclient_LogLevel_LIBCLIENT_LOG_LEVEL_INFO => Some(log::Level::Info),
-        sys::libclient_LogLevel_LIBCLIENT_LOG_LEVEL_DEBUG => Some(log::Level::Debug),
-        sys::libclient_LogLevel_LIBCLIENT_LOG_LEVEL_TRACE => Some(log::Level::Trace),
+        sys::kyclient_LogLevel_KYCLIENT_LOG_LEVEL_ERROR => Some(log::Level::Error),
+        sys::kyclient_LogLevel_KYCLIENT_LOG_LEVEL_WARN => Some(log::Level::Warn),
+        sys::kyclient_LogLevel_KYCLIENT_LOG_LEVEL_INFO => Some(log::Level::Info),
+        sys::kyclient_LogLevel_KYCLIENT_LOG_LEVEL_DEBUG => Some(log::Level::Debug),
+        sys::kyclient_LogLevel_KYCLIENT_LOG_LEVEL_TRACE => Some(log::Level::Trace),
         _ => None,
     };
 
@@ -1118,12 +1114,12 @@ extern "C" fn log_cb(
 
 pub fn init() {
     unsafe {
-        sys::libclient_set_log_cb(Some(log_cb), std::ptr::null_mut());
-        sys::libclient_init_crypto();
+        sys::kyclient_set_log_cb(Some(log_cb), std::ptr::null_mut());
+        sys::kyclient_init_crypto();
     }
 }
 
-fn to_c_metric(metric: &Metric) -> sys::libclient_Metric {
+fn to_c_metric(metric: &Metric) -> sys::kyclient_Metric {
     let map_value = |v: Option<u64>| -> i64 {
         if let Some(v) = v {
             v as i64
@@ -1136,41 +1132,41 @@ fn to_c_metric(metric: &Metric) -> sys::libclient_Metric {
         Metric::Video(metric) => {
             let data = match metric.data {
                 VideoMetricData::FrameAcquired => {
-                    sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_ACQUIRED
+                    sys::kyclient_VideoMetricData_KYCLIENT_VIDEO_METRIC_DATA_FRAME_ACQUIRED
                 }
                 VideoMetricData::FrameEncoding => {
-                    sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_ENCODING
+                    sys::kyclient_VideoMetricData_KYCLIENT_VIDEO_METRIC_DATA_FRAME_ENCODING
                 }
                 VideoMetricData::FrameEncoded => {
-                    sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_ENCODED
+                    sys::kyclient_VideoMetricData_KYCLIENT_VIDEO_METRIC_DATA_FRAME_ENCODED
                 }
                 VideoMetricData::FrameSent => {
-                    sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_SENT
+                    sys::kyclient_VideoMetricData_KYCLIENT_VIDEO_METRIC_DATA_FRAME_SENT
                 }
                 VideoMetricData::FrameReceived => {
-                    sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_RECEIVED
+                    sys::kyclient_VideoMetricData_KYCLIENT_VIDEO_METRIC_DATA_FRAME_RECEIVED
                 }
                 VideoMetricData::FrameDecoding => {
-                    sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_DECODING
+                    sys::kyclient_VideoMetricData_KYCLIENT_VIDEO_METRIC_DATA_FRAME_DECODING
                 }
                 VideoMetricData::FrameDecoded => {
-                    sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_DECODED
+                    sys::kyclient_VideoMetricData_KYCLIENT_VIDEO_METRIC_DATA_FRAME_DECODED
                 }
                 VideoMetricData::FramePrepared => {
-                    sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_PREPARED
+                    sys::kyclient_VideoMetricData_KYCLIENT_VIDEO_METRIC_DATA_FRAME_PREPARED
                 }
                 VideoMetricData::FrameDisplayed => {
-                    sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_DISPLAYED
+                    sys::kyclient_VideoMetricData_KYCLIENT_VIDEO_METRIC_DATA_FRAME_DISPLAYED
                 }
                 VideoMetricData::FrameSkipped => {
-                    sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_SKIPPED
+                    sys::kyclient_VideoMetricData_KYCLIENT_VIDEO_METRIC_DATA_FRAME_SKIPPED
                 }
             };
 
-            sys::libclient_Metric {
-                type_: sys::libclient_MetricType_LIBCLIENT_METRIC_TYPE_VIDEO,
-                data: sys::libclient_MetricData {
-                    video: sys::libclient_VideoMetric {
+            sys::kyclient_Metric {
+                type_: sys::kyclient_MetricType_KYCLIENT_METRIC_TYPE_VIDEO,
+                data: sys::kyclient_MetricData {
+                    video: sys::kyclient_VideoMetric {
                         source_id: metric.source_id,
                         pts: metric.pts,
                         ts: metric.ts,
@@ -1179,29 +1175,29 @@ fn to_c_metric(metric: &Metric) -> sys::libclient_Metric {
                 },
             }
         }
-        Metric::NetworkLocal(metric) => sys::libclient_Metric {
-            type_: sys::libclient_MetricType_LIBCLIENT_METRIC_TYPE_NETWORK_LOCAL,
-            data: sys::libclient_MetricData {
-                network_local: sys::libclient_NetworkStats {
+        Metric::NetworkLocal(metric) => sys::kyclient_Metric {
+            type_: sys::kyclient_MetricType_KYCLIENT_METRIC_TYPE_NETWORK_LOCAL,
+            data: sys::kyclient_MetricData {
+                network_local: sys::kyclient_NetworkStats {
                     rtt_micros: map_value(metric.rtt_micros),
                     packets_lost: map_value(metric.packets_lost),
                     dropped_packets: map_value(metric.dropped_packets),
                 },
             },
         },
-        Metric::NetworkPing(metric) => sys::libclient_Metric {
-            type_: sys::libclient_MetricType_LIBCLIENT_METRIC_TYPE_NETWORK_PING,
-            data: sys::libclient_MetricData {
-                network_ping: sys::libclient_NetworkPing {
+        Metric::NetworkPing(metric) => sys::kyclient_Metric {
+            type_: sys::kyclient_MetricType_KYCLIENT_METRIC_TYPE_NETWORK_PING,
+            data: sys::kyclient_MetricData {
+                network_ping: sys::kyclient_NetworkPing {
                     offset_micros: metric.offset_micros,
                     delay_micros: metric.delay_micros,
                 },
             },
         },
-        Metric::NetworkRemote(metric) => sys::libclient_Metric {
-            type_: sys::libclient_MetricType_LIBCLIENT_METRIC_TYPE_NETWORK_REMOTE,
-            data: sys::libclient_MetricData {
-                network_local: sys::libclient_NetworkStats {
+        Metric::NetworkRemote(metric) => sys::kyclient_Metric {
+            type_: sys::kyclient_MetricType_KYCLIENT_METRIC_TYPE_NETWORK_REMOTE,
+            data: sys::kyclient_MetricData {
+                network_local: sys::kyclient_NetworkStats {
                     rtt_micros: map_value(metric.rtt_micros),
                     packets_lost: map_value(metric.packets_lost),
                     dropped_packets: map_value(metric.dropped_packets),
@@ -1212,24 +1208,24 @@ fn to_c_metric(metric: &Metric) -> sys::libclient_Metric {
 }
 
 // Cannot implement From due to the orphan rule:
-//  - native Rust structures are in libclient-common
-//  - Rust wrappers generated from C code are un libclient-sys
+//  - native Rust structures are in kyclient-common
+//  - Rust wrappers generated from C code are un kyclient-sys
 
-fn from_metric(metric: &sys::libclient_Metric) -> Metric {
+fn from_metric(metric: &sys::kyclient_Metric) -> Metric {
     match metric.type_ {
-        sys::libclient_MetricType_LIBCLIENT_METRIC_TYPE_VIDEO => {
+        sys::kyclient_MetricType_KYCLIENT_METRIC_TYPE_VIDEO => {
             let video_metric = from_video_metric(unsafe { &metric.data.video });
             Metric::Video(video_metric)
         }
-        sys::libclient_MetricType_LIBCLIENT_METRIC_TYPE_NETWORK_LOCAL => {
+        sys::kyclient_MetricType_KYCLIENT_METRIC_TYPE_NETWORK_LOCAL => {
             let network_stats = from_network_stats(unsafe { &metric.data.network_local });
             Metric::NetworkLocal(network_stats)
         }
-        sys::libclient_MetricType_LIBCLIENT_METRIC_TYPE_NETWORK_PING => {
+        sys::kyclient_MetricType_KYCLIENT_METRIC_TYPE_NETWORK_PING => {
             let network_ping = from_network_ping(unsafe { &metric.data.network_ping });
             Metric::NetworkPing(network_ping)
         }
-        sys::libclient_MetricType_LIBCLIENT_METRIC_TYPE_NETWORK_REMOTE => {
+        sys::kyclient_MetricType_KYCLIENT_METRIC_TYPE_NETWORK_REMOTE => {
             let network_stats = from_network_stats(unsafe { &metric.data.network_remote });
             Metric::NetworkRemote(network_stats)
         }
@@ -1237,7 +1233,7 @@ fn from_metric(metric: &sys::libclient_Metric) -> Metric {
     }
 }
 
-fn from_video_metric(video_metric: &sys::libclient_VideoMetric) -> VideoMetric {
+fn from_video_metric(video_metric: &sys::kyclient_VideoMetric) -> VideoMetric {
     VideoMetric {
         source_id: video_metric.source_id,
         pts: video_metric.pts,
@@ -1246,43 +1242,43 @@ fn from_video_metric(video_metric: &sys::libclient_VideoMetric) -> VideoMetric {
     }
 }
 
-fn from_video_metric_data(video_metric_data: &sys::libclient_VideoMetricData) -> VideoMetricData {
+fn from_video_metric_data(video_metric_data: &sys::kyclient_VideoMetricData) -> VideoMetricData {
     match *video_metric_data {
-        sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_ACQUIRED => {
+        sys::kyclient_VideoMetricData_KYCLIENT_VIDEO_METRIC_DATA_FRAME_ACQUIRED => {
             VideoMetricData::FrameAcquired
         }
-        sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_ENCODING => {
+        sys::kyclient_VideoMetricData_KYCLIENT_VIDEO_METRIC_DATA_FRAME_ENCODING => {
             VideoMetricData::FrameEncoding
         }
-        sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_ENCODED => {
+        sys::kyclient_VideoMetricData_KYCLIENT_VIDEO_METRIC_DATA_FRAME_ENCODED => {
             VideoMetricData::FrameEncoded
         }
-        sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_SENT => {
+        sys::kyclient_VideoMetricData_KYCLIENT_VIDEO_METRIC_DATA_FRAME_SENT => {
             VideoMetricData::FrameSent
         }
-        sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_RECEIVED => {
+        sys::kyclient_VideoMetricData_KYCLIENT_VIDEO_METRIC_DATA_FRAME_RECEIVED => {
             VideoMetricData::FrameReceived
         }
-        sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_DECODING => {
+        sys::kyclient_VideoMetricData_KYCLIENT_VIDEO_METRIC_DATA_FRAME_DECODING => {
             VideoMetricData::FrameDecoding
         }
-        sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_DECODED => {
+        sys::kyclient_VideoMetricData_KYCLIENT_VIDEO_METRIC_DATA_FRAME_DECODED => {
             VideoMetricData::FrameDecoded
         }
-        sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_PREPARED => {
+        sys::kyclient_VideoMetricData_KYCLIENT_VIDEO_METRIC_DATA_FRAME_PREPARED => {
             VideoMetricData::FramePrepared
         }
-        sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_DISPLAYED => {
+        sys::kyclient_VideoMetricData_KYCLIENT_VIDEO_METRIC_DATA_FRAME_DISPLAYED => {
             VideoMetricData::FrameDisplayed
         }
-        sys::libclient_VideoMetricData_LIBCLIENT_VIDEO_METRIC_DATA_FRAME_SKIPPED => {
+        sys::kyclient_VideoMetricData_KYCLIENT_VIDEO_METRIC_DATA_FRAME_SKIPPED => {
             VideoMetricData::FrameSkipped
         }
         v => panic!("Unexpected video metric data type: {v}"),
     }
 }
 
-fn from_network_stats(network_stats: &sys::libclient_NetworkStats) -> NetworkStats {
+fn from_network_stats(network_stats: &sys::kyclient_NetworkStats) -> NetworkStats {
     let map_value = |v: i64| -> Option<u64> {
         if v >= 0 {
             Some(v as u64)
@@ -1298,21 +1294,21 @@ fn from_network_stats(network_stats: &sys::libclient_NetworkStats) -> NetworkSta
     }
 }
 
-fn from_network_ping(network_ping: &sys::libclient_NetworkPing) -> NetworkPing {
+fn from_network_ping(network_ping: &sys::kyclient_NetworkPing) -> NetworkPing {
     NetworkPing {
         offset_micros: network_ping.offset_micros,
         delay_micros: network_ping.delay_micros,
     }
 }
 
-extern "C" fn metrics_cb(metric: *const sys::libclient_Metric, userdata: *mut c_void) {
+extern "C" fn metrics_cb(metric: *const sys::kyclient_Metric, userdata: *mut c_void) {
     let cb: &mut MetricsCallback = unsafe { &mut **(userdata as *mut Box<MetricsCallback>) };
     let metric = from_metric(unsafe { &*metric });
     cb(metric);
 }
 
 pub struct MetricsJSONProducer {
-    ptr: AtomicPtr<sys::libclient_metrics_json_producer>,
+    ptr: AtomicPtr<sys::kyclient_metrics_json_producer>,
 }
 
 impl Default for MetricsJSONProducer {
@@ -1323,7 +1319,7 @@ impl Default for MetricsJSONProducer {
 
 impl MetricsJSONProducer {
     pub fn new() -> Self {
-        let ptr = unsafe { sys::libclient_metrics_json_producer_new() };
+        let ptr = unsafe { sys::kyclient_metrics_json_producer_new() };
         Self {
             ptr: AtomicPtr::new(ptr),
         }
@@ -1334,13 +1330,13 @@ impl MetricsJSONProducer {
         let metric = to_c_metric(metric);
 
         let c_json_list =
-            unsafe { sys::libclient_metrics_json_producer_push(ptr, &metric as *const _) };
+            unsafe { sys::kyclient_metrics_json_producer_push(ptr, &metric as *const _) };
 
         let c_values = unsafe {
             let mut c_values = MaybeUninit::uninit();
             let mut c_values_count = MaybeUninit::uninit();
 
-            sys::libclient_metrics_json_values(
+            sys::kyclient_metrics_json_values(
                 c_json_list,
                 c_values.as_mut_ptr(),
                 c_values_count.as_mut_ptr(),
@@ -1361,7 +1357,7 @@ impl MetricsJSONProducer {
             .collect();
 
         unsafe {
-            sys::libclient_metrics_json_unref(c_json_list);
+            sys::kyclient_metrics_json_unref(c_json_list);
         }
 
         values
@@ -1371,7 +1367,7 @@ impl MetricsJSONProducer {
 impl Drop for MetricsJSONProducer {
     fn drop(&mut self) {
         let ptr = self.ptr.load(atomic::Ordering::Relaxed);
-        unsafe { sys::libclient_metrics_json_producer_unref(ptr) };
+        unsafe { sys::kyclient_metrics_json_producer_unref(ptr) };
     }
 }
 
@@ -1380,7 +1376,7 @@ pub fn known_hosts_add(hostname: &str, fingerprint: &str) -> Result<()> {
     let chostname = to_cstr(hostname);
     let cfingerprint = to_cstr(fingerprint);
 
-    let ret = unsafe { sys::libclient_known_hosts_add(chostname.as_ptr(), cfingerprint.as_ptr()) };
+    let ret = unsafe { sys::kyclient_known_hosts_add(chostname.as_ptr(), cfingerprint.as_ptr()) };
     if ret == 0 {
         Ok(())
     } else {
@@ -1393,7 +1389,7 @@ pub fn known_hosts_add(hostname: &str, fingerprint: &str) -> Result<()> {
 pub fn known_hosts_remove(hostname: &str) -> Result<bool> {
     let chostname = to_cstr(hostname);
 
-    let ret = unsafe { sys::libclient_known_hosts_remove(chostname.as_ptr()) };
+    let ret = unsafe { sys::kyclient_known_hosts_remove(chostname.as_ptr()) };
     match ret {
         0 => Ok(true),
         1 => Ok(false),
@@ -1404,10 +1400,10 @@ pub fn known_hosts_remove(hostname: &str) -> Result<bool> {
 /// List all hosts in the known_hosts file.
 /// Returns a vector of (hostname, fingerprint) pairs.
 pub fn known_hosts_list() -> Result<Vec<(String, String)>> {
-    let mut entries: *mut sys::libclient_KnownHostEntry = std::ptr::null_mut();
+    let mut entries: *mut sys::kyclient_KnownHostEntry = std::ptr::null_mut();
     let mut count: usize = 0;
 
-    let ret = unsafe { sys::libclient_known_hosts_list(&mut entries, &mut count) };
+    let ret = unsafe { sys::kyclient_known_hosts_list(&mut entries, &mut count) };
     if ret != 0 {
         return Err(Error::Generic);
     }
@@ -1429,7 +1425,7 @@ pub fn known_hosts_list() -> Result<Vec<(String, String)>> {
     }
 
     unsafe {
-        sys::libclient_known_hosts_list_free(entries, count);
+        sys::kyclient_known_hosts_list_free(entries, count);
     }
 
     Ok(result)

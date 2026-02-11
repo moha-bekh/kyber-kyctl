@@ -41,12 +41,12 @@ OPTIONS:
    -o <path>     Install the built binaries in the absolute path (Default: ./rootfs-<target>)
 
 ACTIONS:
-   build                Build libclient (default)
-   build-libclient      Build libclient only
-   clippy               Run clippy on libclient
-   clippy-libclient     Run clippy on libclient only
+   build                Build kyclient (default)
+   build-kyclient      Build kyclient only
+   clippy               Run clippy on kyclient
+   clippy-kyclient     Run clippy on kyclient only
 
-Note: Android builds only support libclient, not controller
+Note: Android builds only support kyclient, not controller
 EOF
 }
 
@@ -263,7 +263,7 @@ fi
 
 # Android doesn't support controller builds
 if [ "$ACTION" = "build-controller" ] || [ "$ACTION" = "clippy-controller" ]; then
-    echo "Error: Android builds only support libclient, not controller"
+    echo "Error: Android builds only support kyclient, not controller"
     usage
     exit 1
 fi
@@ -322,22 +322,22 @@ export RUSTFLAGS="-L native=$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/s
 
 # Source common build functions
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/libclient-common.sh"
+source "$SCRIPT_DIR/kyclient-common.sh"
 
 # Run action
 case "$ACTION" in
-    "build"|"build-libclient")
-        libclient_android_do_build "$CARGO_TARGET" "$OUT_DIR"
+    "build"|"build-kyclient")
+        kyclient_android_do_build "$CARGO_TARGET" "$OUT_DIR"
     ;;
-    "clippy"|"clippy-libclient")
-        libclient_android_do_clippy "$CARGO_TARGET"
+    "clippy"|"clippy-kyclient")
+        kyclient_android_do_clippy "$CARGO_TARGET"
     ;;
     "none")
         echo "No action requested"
     ;;
     *)
         echo "Error: Invalid action '$ACTION'"
-        echo "Valid actions: build, build-libclient, clippy, clippy-libclient"
+        echo "Valid actions: build, build-kyclient, clippy, clippy-kyclient"
         usage
         exit 1
     ;;

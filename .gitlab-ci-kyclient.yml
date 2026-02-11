@@ -22,7 +22,7 @@
 .variables-android-armv7a: &variables-android-armv7a
   HOST_ARCH: armv7a
 
-libclient-build-debian-trixie-x86_64:
+kyclient-build-debian-trixie-x86_64:
   stage: build
   image: $DEBIAN_IMAGE
   tags:
@@ -39,10 +39,10 @@ libclient-build-debian-trixie-x86_64:
     cd $ROOTFS_PATH
     ../scripts/change_prefix.sh
     cd -
-    # Build libclient
-    ./build-linux.sh -k -s -o $ROOTFS_PATH build-libclient
+    # Build kyclient
+    ./build-linux.sh -k -s -o $ROOTFS_PATH build-kyclient
 
-libclient-clippy-debian-trixie-x86_64:
+kyclient-clippy-debian-trixie-x86_64:
   stage: misc
   image: $DEBIAN_IMAGE
   tags:
@@ -59,10 +59,10 @@ libclient-clippy-debian-trixie-x86_64:
     cd $ROOTFS_PATH
     ../scripts/change_prefix.sh
     cd -
-    # Run clippy on libclient
-    ./build-linux.sh -k -s -o $ROOTFS_PATH clippy-libclient
+    # Run clippy on kyclient
+    ./build-linux.sh -k -s -o $ROOTFS_PATH clippy-kyclient
 
-libclient-build-windows-x86_64:
+kyclient-build-windows-x86_64:
   stage: build
   image: $WIN64_IMAGE
   tags:
@@ -79,10 +79,10 @@ libclient-build-windows-x86_64:
     cd $ROOTFS_PATH
     ../scripts/change_prefix.sh
     cd -
-    # Build libclient
-    ./build-win32.sh -k -s -o $ROOTFS_PATH build-libclient
+    # Build kyclient
+    ./build-win32.sh -k -s -o $ROOTFS_PATH build-kyclient
 
-libclient-clippy-windows-x86_64:
+kyclient-clippy-windows-x86_64:
   stage: misc
   image: $WIN64_IMAGE
   tags:
@@ -99,18 +99,18 @@ libclient-clippy-windows-x86_64:
     cd $ROOTFS_PATH
     ../scripts/change_prefix.sh
     cd -
-    # Run clippy on libclient
-    ./build-win32.sh -k -s -o $ROOTFS_PATH clippy-libclient
+    # Run clippy on kyclient
+    ./build-win32.sh -k -s -o $ROOTFS_PATH clippy-kyclient
 
-.libclient-macos-common:
+.kyclient-macos-common:
   before_script: |
     cd $CI_BUILDS_DIR/$CI_CONCURRENT_ID/kysdk
     rm -rf kyutil kymux kynput kymedia
     rustup override set $MACOS_RUST_VERSION
     cd $CI_BUILDS_DIR/$CI_CONCURRENT_ID/kysdk/kyctl
 
-.libclient-build-macos-common:
-  extends: .libclient-macos-common
+.kyclient-build-macos-common:
+  extends: .kyclient-macos-common
   stage: build
   tags:
     - macos
@@ -124,23 +124,23 @@ libclient-clippy-windows-x86_64:
     cd $ROOTFS_PATH
     ../scripts/change_prefix.sh
     cd -
-    # Build libclient
-    ./build-macos.sh -k -s -a $HOST_ARCH -o $ROOTFS_PATH build-libclient
+    # Build kyclient
+    ./build-macos.sh -k -s -a $HOST_ARCH -o $ROOTFS_PATH build-kyclient
 
-libclient-build-macos-x86_64:
-  extends: .libclient-build-macos-common
+kyclient-build-macos-x86_64:
+  extends: .kyclient-build-macos-common
   when: manual
   variables: *variables-macos-x86_64
   needs:
     - contrib-macos-x86_64
 
-libclient-build-macos-arm64:
-  extends: .libclient-build-macos-common
+kyclient-build-macos-arm64:
+  extends: .kyclient-build-macos-common
   variables: *variables-macos-arm64
   needs:
     - contrib-macos-arm64
 
-libclient-build-wasm:
+kyclient-build-wasm:
   stage: build
   image: $WASM_IMAGE
   tags:
@@ -153,9 +153,9 @@ libclient-build-wasm:
     - lint
   script: |
     export KYBER_STAGGING_DIRECTORY=kyber-wasm-$CI_COMMIT_SHORT_SHA
-    ./build-wasm.sh -k build-libclient
+    ./build-wasm.sh -k build-kyclient
 
-libclient-clippy-wasm:
+kyclient-clippy-wasm:
   stage: misc
   image: $WASM_IMAGE
   tags:
@@ -167,9 +167,9 @@ libclient-clippy-wasm:
   needs:
     - lint
   script: |
-    ./build-wasm.sh -k clippy-libclient
+    ./build-wasm.sh -k clippy-kyclient
 
-.libclient-build-ios-common:
+.kyclient-build-ios-common:
   stage: build
   tags:
     - macos
@@ -183,23 +183,23 @@ libclient-clippy-wasm:
     rm -rf kyutil kymux kynput kymedia
     rustup override set $RUST_VERSION
     cd $CI_BUILDS_DIR/$CI_CONCURRENT_ID/kysdk/kyctl
-    ./build-ios.sh -k -t $BUILD_TARGET -o $(pwd)/rootfs build-libclient
+    ./build-ios.sh -k -t $BUILD_TARGET -o $(pwd)/rootfs build-kyclient
   needs:
     - lint
 
-libclient-build-ios:
-  extends: .libclient-build-ios-common
+kyclient-build-ios:
+  extends: .kyclient-build-ios-common
   variables: *variables-ios
 
-libclient-build-tvos:
-  extends: .libclient-build-ios-common
+kyclient-build-tvos:
+  extends: .kyclient-build-ios-common
   variables: *variables-tvos
 
-libclient-build-visionos:
-  extends: .libclient-build-ios-common
+kyclient-build-visionos:
+  extends: .kyclient-build-ios-common
   variables: *variables-visionos
 
-.libclient-build-android-common:
+.kyclient-build-android-common:
   stage: build
   image: $ANDROID_IMAGE
   tags:
@@ -212,17 +212,17 @@ libclient-build-visionos:
   script: |
     export KYBER_PREFIX=$(pwd)/rootfs
     # Build
-    ./build-android.sh -k -a $HOST_ARCH -o $KYBER_PREFIX build-libclient
+    ./build-android.sh -k -a $HOST_ARCH -o $KYBER_PREFIX build-kyclient
     # Prepare rootfs to be shared to other jobs
     cd $KYBER_PREFIX
     ../scripts/change_prefix.sh $(pwd)
   needs:
     - lint
 
-libclient-build-android-arm64:
-  extends: .libclient-build-android-common
+kyclient-build-android-arm64:
+  extends: .kyclient-build-android-common
   variables: *variables-android-arm64
 
-libclient-build-android-armv7a:
-  extends: .libclient-build-android-common
+kyclient-build-android-armv7a:
+  extends: .kyclient-build-android-common
   variables: *variables-android-armv7a

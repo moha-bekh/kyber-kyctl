@@ -6,7 +6,7 @@ Cross-platform remote desktop control tool using QUIC-based streaming.
 
 kyctl is a cross-platform remote desktop control application consisting of:
 - **controller**: Server/host application that runs on the machine being controlled
-- **libclient**: Client application that connects to the controller to view and control the remote desktop
+- **kyclient**: Client application that connects to the controller to view and control the remote desktop
 
 The system uses QUIC protocol for low-latency streaming and supports keyboard, mouse, audio, and video streaming.
 
@@ -86,12 +86,12 @@ Note that there are some options in the build script to avoid some build steps:
 * `-o`: Output directory (must be absolute path)
 
 Available build actions (default: build):
-* `build` - Build both controller and libclient
+* `build` - Build both controller and kyclient
 * `build-controller` - Build controller only
-* `build-libclient` - Build libclient only
-* `clippy` - Run clippy on both controller and libclient
+* `build-kyclient` - Build kyclient only
+* `clippy` - Run clippy on both controller and kyclient
 * `clippy-controller` - Run clippy on controller only
-* `clippy-libclient` - Run clippy on libclient only
+* `clippy-kyclient` - Run clippy on kyclient only
 
 ### Windows
 
@@ -132,12 +132,12 @@ Note that there are some options in the build script to avoid some build steps:
 * `-o`: Output directory (must be absolute path)
 
 Available build actions (default: build):
-* `build` - Build both controller and libclient
+* `build` - Build both controller and kyclient
 * `build-controller` - Build controller only
-* `build-libclient` - Build libclient only
-* `clippy` - Run clippy on both controller and libclient
+* `build-kyclient` - Build kyclient only
+* `clippy` - Run clippy on both controller and kyclient
 * `clippy-controller` - Run clippy on controller only
-* `clippy-libclient` - Run clippy on libclient only
+* `clippy-kyclient` - Run clippy on kyclient only
 
 ### macOS
 
@@ -181,12 +181,12 @@ Note that there are some options in the build script to avoid some build steps:
 * `-o <path>`: Output directory (must be absolute path)
 
 Available build actions (default: build):
-* `build` - Build both controller and libclient
+* `build` - Build both controller and kyclient
 * `build-controller` - Build controller only
-* `build-libclient` - Build libclient only
-* `clippy` - Run clippy on both controller and libclient
+* `build-kyclient` - Build kyclient only
+* `clippy` - Run clippy on both controller and kyclient
 * `clippy-controller` - Run clippy on controller only
-* `clippy-libclient` - Run clippy on libclient only
+* `clippy-kyclient` - Run clippy on kyclient only
 
 ## Some tips
 

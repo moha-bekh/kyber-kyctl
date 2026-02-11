@@ -1,5 +1,5 @@
 [package]
-name = "libclient"
+name = "kyclient"
 version = "0.1.0"
 edition = "2021"
 
@@ -12,7 +12,7 @@ futures = "0.3.30"
 js-sys = { version = "=0.3.77", optional = true }
 raw-window-handle = { version = "0.5.0", optional = true }
 libc = "0.2.153"
-libclient-common = { version = "0.1.0", path = "../libclient-common" }
+kyclient-common = { version = "0.1.0", path = "../kyclient-common" }
 log = {version = "0.4.21", features = ["std"] }
 reqwest = { version = "0.12.7", default-features = false, features = ["json"] }
 rustls = { version = "0.23.31", optional = true, default-features = false, features = ["logging", "ring", "std", "tls12"] }

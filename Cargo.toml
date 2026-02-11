@@ -6,9 +6,9 @@ members = [
     "controller",
     "kidd_client",
     "windows_service",
-    "libclient",
-    "libclient-common",
-    "libclient-rs",
+    "kyclient",
+    "kyclient-common",
+    "kyclient-rs",
 ]
 
 exclude = [

@@ -42,12 +42,12 @@ OPTIONS:
    -o <path>     Install the built binaries in the absolute path (Default: ./rootfs-<arch>-apple-darwin)
 
 ACTIONS:
-   build                Build both controller and libclient (default)
+   build                Build both controller and kyclient (default)
    build-controller     Build controller only
-   build-libclient      Build libclient only
-   clippy               Run clippy on both controller and libclient
+   build-kyclient      Build kyclient only
+   clippy               Run clippy on both controller and kyclient
    clippy-controller    Run clippy on controller only
-   clippy-libclient     Run clippy on libclient only
+   clippy-kyclient     Run clippy on kyclient only
    test                 Run tests
 EOF
 }
@@ -279,29 +279,29 @@ fi
 # Source common build functions
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/controller-common.sh"
-source "$SCRIPT_DIR/libclient-common.sh"
+source "$SCRIPT_DIR/kyclient-common.sh"
 
 # Run action
 case "$ACTION" in
     "build")
         controller_macos_do_build "$CARGO_TARGET" "$OUT_DIR"
-        libclient_macos_do_build "$CARGO_TARGET" "$OUT_DIR"
+        kyclient_macos_do_build "$CARGO_TARGET" "$OUT_DIR"
     ;;
     "build-controller")
         controller_macos_do_build "$CARGO_TARGET" "$OUT_DIR"
     ;;
-    "build-libclient")
-        libclient_macos_do_build "$CARGO_TARGET" "$OUT_DIR"
+    "build-kyclient")
+        kyclient_macos_do_build "$CARGO_TARGET" "$OUT_DIR"
     ;;
     "clippy")
         controller_macos_do_clippy "$CARGO_TARGET"
-        libclient_macos_do_clippy "$CARGO_TARGET"
+        kyclient_macos_do_clippy "$CARGO_TARGET"
     ;;
     "clippy-controller")
         controller_macos_do_clippy "$CARGO_TARGET"
     ;;
-    "clippy-libclient")
-        libclient_macos_do_clippy "$CARGO_TARGET"
+    "clippy-kyclient")
+        kyclient_macos_do_clippy "$CARGO_TARGET"
     ;;
     "test")
         echo "Test functionality not yet implemented"
@@ -311,7 +311,7 @@ case "$ACTION" in
     ;;
     *)
         echo "Error: Invalid action '$ACTION'"
-        echo "Valid actions: build, build-controller, build-libclient, clippy, clippy-controller, clippy-libclient, test"
+        echo "Valid actions: build, build-controller, build-kyclient, clippy, clippy-controller, clippy-kyclient, test"
         usage
         exit 1
     ;;

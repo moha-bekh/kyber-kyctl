@@ -63,7 +63,7 @@ pub use event_manager::EventSink;
 use host_events::HostEventReceiver;
 pub use host_events::{StreamerPipelineEventType, StreamerPipelineStage, StreamerPipelineType};
 use http::HttpClient;
-pub use libclient_common::metrics::Metric;
+pub use kyclient_common::metrics::Metric;
 pub(crate) use message_bus::{MessageReceiver, MessageSender};
 use metrics::{MetricsCollector, MetricsProducer};
 pub use platform::{ConnectConfig, VideoPlayerConfig};
@@ -119,7 +119,7 @@ impl Default for AuthCredentials {
         };
 
         let version = env!("VERGEN_GIT_DESCRIBE");
-        let username = format!("libclient-{os}-{version}");
+        let username = format!("kyclient-{os}-{version}");
 
         Self::Basic { username }
     }

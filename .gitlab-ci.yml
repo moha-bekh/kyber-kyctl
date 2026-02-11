@@ -112,4 +112,4 @@ contrib-macos-arm64:
 
 include:
   - '.gitlab-ci-controller.yml'
-  - '.gitlab-ci-libclient.yml'
+  - '.gitlab-ci-kyclient.yml'

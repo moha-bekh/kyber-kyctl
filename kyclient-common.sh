@@ -1,5 +1,5 @@
 #!/bin/bash
-# Project Kyber: libclient-common.sh
+# Project Kyber: kyclient-common.sh
 # Copyright © 2022-2026 Kyber SAS
 # SPDX-License-Identifier: LicenseRef-Kyber-Commercial OR AGPL-3.0
 #
@@ -23,37 +23,37 @@
 # Functions are prefixed by platform (linux_, win32_, macos_, android_, ios_, wasm_) to avoid conflicts
 
 # Linux platform functions
-libclient_linux_do_build()
+kyclient_linux_do_build()
 {
     local out_dir=$1
 
     cargo cinstall \
-        -p libclient \
+        -p kyclient \
         --release \
         --prefix="$out_dir" \
         --features=desktop,kymux,rtp
 
     cargo build \
-        -p libclient \
+        -p kyclient \
         --release \
         --features=desktop,kymux,rtp
 }
 
-libclient_linux_do_clippy()
+kyclient_linux_do_clippy()
 {
     cargo clippy \
-        -p libclient \
+        -p kyclient \
         --features=capi,desktop,kymux,rtp \
         -- -D warnings -A clippy::missing_safety_doc
 }
 
 # Win32 platform functions
-libclient_win32_do_build()
+kyclient_win32_do_build()
 {
     local out_dir=$1
 
     cargo cinstall \
-        -p libclient \
+        -p kyclient \
         --release \
         --prefix="$out_dir" \
         --target x86_64-pc-windows-gnu \
@@ -61,91 +61,91 @@ libclient_win32_do_build()
         --features=desktop,kymux,rtp
 
     cargo build \
-        -p libclient \
+        -p kyclient \
         --target x86_64-pc-windows-gnu \
         --release \
         --features=desktop,kymux,rtp
 }
 
-libclient_win32_do_clippy()
+kyclient_win32_do_clippy()
 {
     cargo clippy \
-        -p libclient \
+        -p kyclient \
         --target x86_64-pc-windows-gnu \
         --features=capi,desktop,kymux,rtp \
         -- -D warnings -A clippy::missing_safety_doc
 }
 
 # macOS platform functions
-libclient_macos_do_build()
+kyclient_macos_do_build()
 {
     local cargo_target=$1
     local out_dir=$2
 
     cargo cinstall \
-        -p libclient \
+        -p kyclient \
         --target "$cargo_target" \
         --release \
         --prefix="$out_dir" \
         --features=desktop,kymux,rtp
 
     cargo build \
-        -p libclient \
+        -p kyclient \
         --target "$cargo_target" \
         --release \
         --features=desktop,kymux,rtp
 }
 
-libclient_macos_do_clippy()
+kyclient_macos_do_clippy()
 {
     local cargo_target=$1
 
     cargo clippy \
-        -p libclient \
+        -p kyclient \
         --target "$cargo_target" \
         --features=capi,desktop,kymux,rtp \
         -- -D warnings -A clippy::missing_safety_doc
 }
 
-libclient_macos_do_test()
+kyclient_macos_do_test()
 {
-    cargo test -p libclient
+    cargo test -p kyclient
 }
 
 # Android platform functions
-libclient_android_do_build()
+kyclient_android_do_build()
 {
     local cargo_target=$1
     local out_dir=$2
 
     cargo cinstall \
         --target "$cargo_target" \
-        -p libclient \
+        -p kyclient \
         --release \
         --prefix="$out_dir" \
         --features=desktop,kymux,rtp
 }
 
-libclient_android_do_clippy()
+kyclient_android_do_clippy()
 {
     local cargo_target=$1
 
     cargo clippy \
-        -p libclient \
+        -p kyclient \
         --target "$cargo_target" \
         --features=capi,desktop,kymux,rtp \
         -- -D warnings -A clippy::missing_safety_doc
 }
 
 # iOS platform functions
-libclient_ios_do_build()
+kyclient_ios_do_build()
 {
     local cargo_target=$1
     local cargoc_flags=$2
     local out_dir=$3
 
     cargo cinstall \
-        -p libclient \
+        -p kyclient \
         --target="$cargo_target" \
         $cargoc_flags \
         --release \
@@ -155,35 +155,35 @@ libclient_ios_do_build()
 }
 
 # WASM platform functions
-libclient_wasm_do_build()
+kyclient_wasm_do_build()
 {
     export RUSTFLAGS=--cfg=web_sys_unstable_apis
 
     cargo build \
         --target wasm32-unknown-unknown \
-        -p libclient \
+        -p kyclient \
         --release \
         --features=kymux,web,websocket
 }
 
-libclient_wasm_do_clippy()
+kyclient_wasm_do_clippy()
 {
     export RUSTFLAGS=--cfg=web_sys_unstable_apis
 
     cargo clippy \
         --target wasm32-unknown-unknown \
-        -p libclient \
+        -p kyclient \
         --release \
         --features=kymux,web,websocket \
         -- -D warnings -A clippy::missing_safety_doc -A unexpected-cfgs
 }
 
-libclient_wasm_do_package_js()
+kyclient_wasm_do_package_js()
 {
     local base_dir=$1
     local js_out_dir=$2
 
-    local js_src_dir="$base_dir/libclient/js"
+    local js_src_dir="$base_dir/kyclient/js"
 
     cp \
         "$js_src_dir/audio_worklet.js" \

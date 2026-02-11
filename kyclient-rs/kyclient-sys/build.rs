@@ -34,7 +34,7 @@ fn main() {
         .blocklist_item(r"(\w*kynput\w*)");
 
     // Set header include paths
-    let libs = ["kynput", "libclient"];
+    let libs = ["kynput", "kyclient"];
 
     for lib in libs {
         let pkg_config_library = pkg_config::Config::new().probe(lib).unwrap();

@@ -1,4 +1,4 @@
-import init, { VideoRendererWorkerCtx } from "./libclient_wasm.js";
+import init, { VideoRendererWorkerCtx } from "./kyclient_wasm.js";
 
 let ctx;
 let initialized_promise = init().then(() => {

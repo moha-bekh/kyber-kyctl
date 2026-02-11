@@ -1,4 +1,4 @@
-include_guard = "LIBCLIENT_H"
+include_guard = "KYCLIENT_H"
 no_includes = true
 sys_includes = ["stdbool.h", "stdint.h"]
 includes = ["kynput.h"]
@@ -15,8 +15,8 @@ rename_variants = "ScreamingSnakeCase"
 prefix_with_name = true
 
 [export.rename]
-"Display" = "libclient_Display"
-"Event" = "libclient_Event"
-"LogCb" = "libclient_LogCb"
-"LogLevel" = "libclient_LogLevel"
-"VideoCodec" = "libclient_VideoCodec"
+"Display" = "kyclient_Display"
+"Event" = "kyclient_Event"
+"LogCb" = "kyclient_LogCb"
+"LogLevel" = "kyclient_LogLevel"
+"VideoCodec" = "kyclient_VideoCodec"

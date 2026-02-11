@@ -41,12 +41,12 @@ OPTIONS:
    -w            Hide console window for controller.exe (Windows GUI mode)
 
 ACTIONS:
-   build                Build both controller and libclient (default)
+   build                Build both controller and kyclient (default)
    build-controller     Build controller only
-   build-libclient      Build libclient only
-   clippy               Run clippy on both controller and libclient
+   build-kyclient      Build kyclient only
+   clippy               Run clippy on both controller and kyclient
    clippy-controller    Run clippy on controller only
-   clippy-libclient     Run clippy on libclient only
+   clippy-kyclient     Run clippy on kyclient only
    test                 Run tests
 EOF
 }
@@ -258,29 +258,29 @@ fi
 # Source common build functions
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/controller-common.sh"
-source "$SCRIPT_DIR/libclient-common.sh"
+source "$SCRIPT_DIR/kyclient-common.sh"
 
 # Run action
 case "$ACTION" in
     "build")
         controller_win32_do_build "$OUT_DIR" "$HIDE_CONSOLE_FEATURE"
-        libclient_win32_do_build "$OUT_DIR"
+        kyclient_win32_do_build "$OUT_DIR"
     ;;
     "build-controller")
         controller_win32_do_build "$OUT_DIR" "$HIDE_CONSOLE_FEATURE"
     ;;
-    "build-libclient")
-        libclient_win32_do_build "$OUT_DIR"
+    "build-kyclient")
+        kyclient_win32_do_build "$OUT_DIR"
     ;;
     "clippy")
         controller_win32_do_clippy
-        libclient_win32_do_clippy
+        kyclient_win32_do_clippy
     ;;
     "clippy-controller")
         controller_win32_do_clippy
     ;;
-    "clippy-libclient")
-        libclient_win32_do_clippy
+    "clippy-kyclient")
+        kyclient_win32_do_clippy
     ;;
     "test")
         echo "Test functionality not yet implemented"
@@ -290,7 +290,7 @@ case "$ACTION" in
     ;;
     *)
         echo "Error: Invalid action '$ACTION'"
-        echo "Valid actions: build, build-controller, build-libclient, clippy, clippy-controller, clippy-libclient, test"
+        echo "Valid actions: build, build-controller, build-kyclient, clippy, clippy-controller, clippy-kyclient, test"
         usage
         exit 1
     ;;
