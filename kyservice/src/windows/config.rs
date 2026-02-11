@@ -93,7 +93,7 @@ pub(crate) struct Config {
 #[derive(Debug, Default, Deserialize)]
 struct Root {
     #[serde(default)]
-    windows_service: Config,
+    kyservice: Config,
 }
 
 pub(crate) fn load() -> Result<Config> {
@@ -115,7 +115,7 @@ pub(crate) fn load() -> Result<Config> {
         Error::ConfigParseFail
     })?;
 
-    Ok(config.windows_service)
+    Ok(config.kyservice)
 }
 
 pub(crate) const DEFAULT_MONITOR_MODES: &[MonitorMode] = &[

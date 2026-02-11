@@ -1,8 +1,8 @@
-# Kyber Windows Service
+# Kyber Service
 
-## What is Kyber Windows Service
+## What is Kyber Service
 
-Kyber Windows Service is the component that is registered as a Windows Service and that starts the Controller executable.
+Kyber Service is the component that is registered as a Windows Service and that starts the Kycontroller executable.
 
 The goals of the service are:
 * Get the required credentials to get access to the Secure Desktop
@@ -16,7 +16,7 @@ The goals of the service are:
 The default behavior of the service is to plug a virtual monitor if there is no monitor detected. However, this behavior can be changed.
 
 ```toml
-[windows_service.kidd]
+[kyservice.kidd]
 # Enable or disable Kidd
 #
 # Possible values
@@ -43,7 +43,7 @@ The default behavior of the service is to plug a virtual monitor if there is no 
 
 # Add one or more display mode for the plugged monitor.
 # The section can be specified multiple times to add multiple modes.
-#[[windows_service.kidd.extra_modes]]
+#[[kyservice.kidd.extra_modes]]
 #width = 1920
 #height = 800
 #vsync = 60

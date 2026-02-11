@@ -2842,6 +2842,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "kyservice"
+version = "0.1.0"
+dependencies = [
+ "env_logger 0.9.3",
+ "kidd_client",
+ "log",
+ "log4rs",
+ "serde",
+ "toml 0.7.8",
+ "vergen",
+ "windows-service",
+ "windows-sys 0.52.0",
+]
+
+[[package]]
 name = "kyutil"
 version = "0.1.0"
 dependencies = [
@@ -4061,21 +4076,6 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
-]
-
-[[package]]
-name = "service"
-version = "0.1.0"
-dependencies = [
- "env_logger 0.9.3",
- "kidd_client",
- "log",
- "log4rs",
- "serde",
- "toml 0.7.8",
- "vergen",
- "windows-service",
- "windows-sys 0.52.0",
 ]
 
 [[package]]
