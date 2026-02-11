@@ -4,7 +4,7 @@
 .variables-macos-arm64: &variables-macos-arm64
   HOST_ARCH: arm64
 
-controller-build-debian-trixie-x86_64:
+kycontroller-build-debian-trixie-x86_64:
   stage: build
   image: $DEBIAN_IMAGE
   tags:
@@ -16,9 +16,9 @@ controller-build-debian-trixie-x86_64:
   needs:
     - lint
   script: |
-    ./build-linux.sh -k -o $(pwd)/rootfs build-controller
+    ./build-linux.sh -k -o $(pwd)/rootfs build-kycontroller
 
-controller-clippy-debian-trixie-x86_64:
+kycontroller-clippy-debian-trixie-x86_64:
   stage: misc
   image: $DEBIAN_IMAGE
   tags:
@@ -30,9 +30,9 @@ controller-clippy-debian-trixie-x86_64:
   needs:
     - lint
   script: |
-    ./build-linux.sh -k -o $(pwd)/rootfs clippy-controller
+    ./build-linux.sh -k -o $(pwd)/rootfs clippy-kycontroller
 
-controller-build-windows-x86_64:
+kycontroller-build-windows-x86_64:
   stage: build
   image: $WIN64_IMAGE
   tags:
@@ -44,9 +44,9 @@ controller-build-windows-x86_64:
   needs:
     - lint
   script: |
-    ./build-win32.sh -k -w -o $(pwd)/rootfs build-controller
+    ./build-win32.sh -k -w -o $(pwd)/rootfs build-kycontroller
 
-controller-clippy-windows-x86_64:
+kycontroller-clippy-windows-x86_64:
   stage: misc
   image: $WIN64_IMAGE
   tags:
@@ -58,7 +58,7 @@ controller-clippy-windows-x86_64:
   needs:
     - lint
   script: |
-    ./build-win32.sh -k -o $(pwd)/rootfs clippy-controller
+    ./build-win32.sh -k -o $(pwd)/rootfs clippy-kycontroller
 
 .macos-common:
   before_script: |
@@ -79,7 +79,7 @@ controller-clippy-windows-x86_64:
   needs:
     - lint
   script: |
-    ./build-macos.sh -k -a $HOST_ARCH -o $(pwd)/rootfs build-controller
+    ./build-macos.sh -k -a $HOST_ARCH -o $(pwd)/rootfs build-kycontroller
 
 .clippy-macos-common:
   extends: .macos-common
@@ -93,22 +93,22 @@ controller-clippy-windows-x86_64:
   needs:
     - lint
   script: |
-    ./build-macos.sh -k -a $HOST_ARCH -o $(pwd)/rootfs clippy-controller
+    ./build-macos.sh -k -a $HOST_ARCH -o $(pwd)/rootfs clippy-kycontroller
 
-controller-build-macos-x86_64:
+kycontroller-build-macos-x86_64:
   extends: .build-macos-common
   when: manual
   variables: *variables-macos-x86_64
 
-controller-clippy-macos-x86_64:
+kycontroller-clippy-macos-x86_64:
   extends: .clippy-macos-common
   when: manual
   variables: *variables-macos-x86_64
 
-controller-build-macos-arm64:
+kycontroller-build-macos-arm64:
   extends: .build-macos-common
   variables: *variables-macos-arm64
 
-controller-clippy-macos-arm64:
+kycontroller-clippy-macos-arm64:
   extends: .clippy-macos-common
   variables: *variables-macos-arm64

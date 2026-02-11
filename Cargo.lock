@@ -847,43 +847,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "controller"
-version = "0.1.0"
-dependencies = [
- "actix-cors",
- "actix-files",
- "actix-session",
- "actix-utils",
- "actix-web",
- "actix-ws",
- "base64 0.22.1",
- "bytes",
- "clap",
- "humantime",
- "jsonwebtoken",
- "kyavservice-types",
- "kymux",
- "kynputservice-types",
- "libkypc",
- "log",
- "log4rs",
- "rand 0.9.2",
- "rcgen 0.13.2",
- "rmp-serde",
- "rustls",
- "rustls-pemfile",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 1.0.69",
- "time",
- "tokio",
- "toml 0.8.23",
- "uuid",
- "vergen",
-]
-
-[[package]]
 name = "convert_case"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2703,6 +2666,43 @@ dependencies = [
  "log",
  "tokio",
  "url",
+]
+
+[[package]]
+name = "kycontroller"
+version = "0.1.0"
+dependencies = [
+ "actix-cors",
+ "actix-files",
+ "actix-session",
+ "actix-utils",
+ "actix-web",
+ "actix-ws",
+ "base64 0.22.1",
+ "bytes",
+ "clap",
+ "humantime",
+ "jsonwebtoken",
+ "kyavservice-types",
+ "kymux",
+ "kynputservice-types",
+ "libkypc",
+ "log",
+ "log4rs",
+ "rand 0.9.2",
+ "rcgen 0.13.2",
+ "rmp-serde",
+ "rustls",
+ "rustls-pemfile",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 1.0.69",
+ "time",
+ "tokio",
+ "toml 0.8.23",
+ "uuid",
+ "vergen",
 ]
 
 [[package]]

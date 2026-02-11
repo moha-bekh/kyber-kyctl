@@ -679,7 +679,7 @@ async fn real_main() -> Result<()> {
 
 #[actix_web::main]
 async fn main() -> Result<()> {
-    let _log_handle = setup_logs("controller", LevelFilter::Info);
+    let _log_handle = setup_logs("kycontroller", LevelFilter::Info);
     info!("Kyber controller. Revision {}", env!("VERGEN_GIT_DESCRIBE"));
 
     let ret = real_main().await;

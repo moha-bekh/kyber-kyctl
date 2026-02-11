@@ -92,8 +92,8 @@ pub(crate) fn load() -> Result<Config> {
         Error::ConfigParseFail
     })?;
 
-    let Some(controller_conf) = content.get("controller") else {
-        info!("No controller section found. Use default configuration");
+    let Some(controller_conf) = content.get("kycontroller") else {
+        info!("No kycontroller section found. Use default configuration");
         return Ok(Config::default());
     };
 

@@ -42,7 +42,7 @@ ACTIONS:
    build                Build kyclient (default)
    build-kyclient      Build kyclient only
 
-Note: iOS/tvOS/visionOS builds only support kyclient, not controller
+Note: iOS/tvOS/visionOS builds only support kyclient, not kycontroller
 EOF
 }
 
@@ -284,9 +284,9 @@ if [ -z "$OUT_DIR" ]; then
     OUT_DIR=$(pwd)/rootfs-${CARGO_TARGET}
 fi
 
-# iOS doesn't support controller builds
-if [ "$ACTION" = "build-controller" ] || [ "$ACTION" = "clippy-controller" ]; then
-    echo "Error: iOS/tvOS/visionOS builds only support kyclient, not controller"
+# iOS doesn't support kycontroller builds
+if [ "$ACTION" = "build-kycontroller" ] || [ "$ACTION" = "clippy-kycontroller" ]; then
+    echo "Error: iOS/tvOS/visionOS builds only support kyclient, not kycontroller"
     usage
     exit 1
 fi

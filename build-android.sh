@@ -46,7 +46,7 @@ ACTIONS:
    clippy               Run clippy on kyclient
    clippy-kyclient     Run clippy on kyclient only
 
-Note: Android builds only support kyclient, not controller
+Note: Android builds only support kyclient, not kycontroller
 EOF
 }
 
@@ -261,9 +261,9 @@ if [ -z "$OUT_DIR" ]; then
     OUT_DIR=$(pwd)/rootfs-${CARGO_TARGET}
 fi
 
-# Android doesn't support controller builds
-if [ "$ACTION" = "build-controller" ] || [ "$ACTION" = "clippy-controller" ]; then
-    echo "Error: Android builds only support kyclient, not controller"
+# Android doesn't support kycontroller builds
+if [ "$ACTION" = "build-kycontroller" ] || [ "$ACTION" = "clippy-kycontroller" ]; then
+    echo "Error: Android builds only support kyclient, not kycontroller"
     usage
     exit 1
 fi

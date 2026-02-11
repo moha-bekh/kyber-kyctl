@@ -42,11 +42,11 @@ OPTIONS:
    -o <path>     Install the built binaries in the absolute path (Default: ./rootfs-<arch>-apple-darwin)
 
 ACTIONS:
-   build                Build both controller and kyclient (default)
-   build-controller     Build controller only
+   build                Build both kycontroller and kyclient (default)
+   build-kycontroller   Build kycontroller only
    build-kyclient      Build kyclient only
-   clippy               Run clippy on both controller and kyclient
-   clippy-controller    Run clippy on controller only
+   clippy               Run clippy on both kycontroller and kyclient
+   clippy-kycontroller  Run clippy on kycontroller only
    clippy-kyclient     Run clippy on kyclient only
    test                 Run tests
 EOF
@@ -246,8 +246,8 @@ fi
 
 CARGO_TARGET=$(get_cargo_target $HOST_ARCH)
 
-# Skip dependencies for controller-only builds (controller doesn't need native deps)
-if [ "$ACTION" = "build-controller" ] || [ "$ACTION" = "clippy-controller" ]; then
+# Skip dependencies for kycontroller-only builds (kycontroller doesn't need native deps)
+if [ "$ACTION" = "build-kycontroller" ] || [ "$ACTION" = "clippy-kycontroller" ]; then
     BUILD_DEPS=false
 fi
 
@@ -278,27 +278,27 @@ fi
 
 # Source common build functions
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/controller-common.sh"
+source "$SCRIPT_DIR/kycontroller-common.sh"
 source "$SCRIPT_DIR/kyclient-common.sh"
 
 # Run action
 case "$ACTION" in
     "build")
-        controller_macos_do_build "$CARGO_TARGET" "$OUT_DIR"
+        kycontroller_macos_do_build "$CARGO_TARGET" "$OUT_DIR"
         kyclient_macos_do_build "$CARGO_TARGET" "$OUT_DIR"
     ;;
-    "build-controller")
-        controller_macos_do_build "$CARGO_TARGET" "$OUT_DIR"
+    "build-kycontroller")
+        kycontroller_macos_do_build "$CARGO_TARGET" "$OUT_DIR"
     ;;
     "build-kyclient")
         kyclient_macos_do_build "$CARGO_TARGET" "$OUT_DIR"
     ;;
     "clippy")
-        controller_macos_do_clippy "$CARGO_TARGET"
+        kycontroller_macos_do_clippy "$CARGO_TARGET"
         kyclient_macos_do_clippy "$CARGO_TARGET"
     ;;
-    "clippy-controller")
-        controller_macos_do_clippy "$CARGO_TARGET"
+    "clippy-kycontroller")
+        kycontroller_macos_do_clippy "$CARGO_TARGET"
     ;;
     "clippy-kyclient")
         kyclient_macos_do_clippy "$CARGO_TARGET"
@@ -311,7 +311,7 @@ case "$ACTION" in
     ;;
     *)
         echo "Error: Invalid action '$ACTION'"
-        echo "Valid actions: build, build-controller, build-kyclient, clippy, clippy-controller, clippy-kyclient, test"
+        echo "Valid actions: build, build-kycontroller, build-kyclient, clippy, clippy-kycontroller, clippy-kyclient, test"
         usage
         exit 1
     ;;

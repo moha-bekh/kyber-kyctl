@@ -3,7 +3,7 @@
 resolver = "2"
 
 members = [
-    "controller",
+    "kycontroller",
     "kidd_client",
     "windows_service",
     "kyclient",

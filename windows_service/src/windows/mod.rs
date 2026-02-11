@@ -141,7 +141,7 @@ impl ServiceContext {
     fn start_controller(&self, session_id: u32) -> Result<Process> {
         let inherited_events = self.inherited_events();
 
-        info!("Start controller.exe in session {session_id}");
+        info!("Start kycontroller.exe in session {session_id}");
         Process::new(&self.controller_path, session_id, &inherited_events)
     }
 
@@ -154,9 +154,9 @@ impl ServiceContext {
             return Err(Error::Rejected);
         };
 
-        let controller_path = Path::new(&exe_path).join("controller.exe");
+        let controller_path = Path::new(&exe_path).join("kycontroller.exe");
         controller_path.into_os_string().into_string().map_err(|_| {
-            warn!("Controller path contains invalid Unicode data");
+            warn!("kycontroller path contains invalid Unicode data");
             Error::InvalidUnicodeData
         })
     }
@@ -174,10 +174,10 @@ impl ServiceContext {
                     notification: SessionNotification { session_id, .. },
                 } => {
                     if let Some(process) = self.process.take() {
-                        warn!("Console connected. Kill existing controller.exe");
+                        warn!("Console connected. Kill existing kycontroller.exe");
                         let ret = process.kill();
                         if let Err(err) = ret {
-                            warn!("Failed to kill controller.exe: {err:?}");
+                            warn!("Failed to kill kycontroller.exe: {err:?}");
                         }
                     }
 
@@ -214,13 +214,13 @@ impl ServiceContext {
 
     fn handle_controller_stopped(&mut self) -> Result<()> {
         // On log out, all the process from the current session are
-        // stopped. Because we attach controller.exe to the current
-        // interactive session, it is killed. On restart, controller.exe
+        // stopped. Because we attach kycontroller.exe to the current
+        // interactive session, it is killed. On restart, kycontroller.exe
         // will be attached to the new session login screen.
         //
         // The current service isn't killed because it is attached to
         // the special Session 0.
-        info!("controller.exe stopped");
+        info!("kycontroller.exe stopped");
 
         if self.active_session_id.is_some() {
             self.restart_controller = true;
@@ -236,7 +236,7 @@ impl ServiceContext {
             if let Some(session_id) = &self.active_session_id {
                 self.process = Some(self.start_controller(*session_id)?);
             } else {
-                info!("controller.exe restart requested, but there is no active session");
+                info!("kycontroller.exe restart requested, but there is no active session");
             }
 
             self.restart_controller = false;
@@ -382,15 +382,15 @@ fn service_handler(_arguments: Vec<OsString>) -> Result<()> {
         warn!("Service exited with error: '{:?}'", ret);
     }
 
-    // Stop any running controller.exe
+    // Stop any running ky.exe
     if let Some(process) = ctx.process.take() {
-        info!("Service stop requested, kill controller.exe");
+        info!("Service stop requested, kill kycontroller.exe");
         let ret = process.kill();
         if let Err(err) = ret {
-            warn!("Failed to kill controller.exe: {err:?}");
+            warn!("Failed to kill kycontroller.exe: {err:?}");
         }
 
-        info!("controller.exe killed");
+        info!("kycontroller.exe killed");
     }
 
     info!("Service stopped");

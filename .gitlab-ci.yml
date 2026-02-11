@@ -111,5 +111,5 @@ contrib-macos-arm64:
     HOST_ARCH: arm64
 
 include:
-  - '.gitlab-ci-controller.yml'
+  - '.gitlab-ci-kycontroller.yml'
   - '.gitlab-ci-kyclient.yml'
