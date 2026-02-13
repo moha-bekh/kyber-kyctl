@@ -20,31 +20,35 @@
 
 use base64::{prelude::BASE64_STANDARD, Engine};
 
-use super::{Error, Session};
+use super::{Backend, Error, Session};
 
-/// Authenticates a user without password validation.
-///
-/// # Parameters
-/// - `username`: The username to authenticate (no validation performed)
-///
-/// # Returns
-/// A session with no expiration time (valid indefinitely until logout)
-pub fn authenticate(credentials: &str) -> Result<Session, Error> {
-    let decoded = BASE64_STANDARD
-        .decode(credentials)
-        .or(Err(Error::InvalidCredentialsFormat))?;
+pub struct Basic;
 
-    let username = std::str::from_utf8(&decoded)
-        .or(Err(Error::InvalidCredentialsFormat))?
-        .split(':')
-        .next()
-        .ok_or(Error::MissingField {
-            field: "username".to_owned(),
-        })?
-        .to_owned();
+impl Backend for Basic {
+    /// Authenticates a user without password validation.
+    ///
+    /// # Parameters
+    /// - `username`: The username to authenticate (no validation performed)
+    ///
+    /// # Returns
+    /// A session with no expiration time (valid indefinitely until logout)
+    fn authenticate(&self, credentials: &str) -> Result<Session, Error> {
+        let decoded = BASE64_STANDARD
+            .decode(credentials)
+            .or(Err(Error::InvalidCredentialsFormat))?;
 
-    Ok(Session {
-        username,
-        expiration: None,
-    })
+        let username = std::str::from_utf8(&decoded)
+            .or(Err(Error::InvalidCredentialsFormat))?
+            .split(':')
+            .next()
+            .ok_or(Error::MissingField {
+                field: "username".to_owned(),
+            })?
+            .to_owned();
+
+        Ok(Session {
+            username,
+            expiration: None,
+        })
+    }
 }

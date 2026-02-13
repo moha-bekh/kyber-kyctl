@@ -55,6 +55,12 @@ pub enum AuthenticationType {
     Jwt,
 }
 
+pub trait Backend {
+    /// Validates credentials and returns a session on success.
+    // TODO(Tham): This will likely need an upgrade to `async` for OIDC support.
+    fn authenticate(&self, credentials: &str) -> Result<Session, Error>;
+}
+
 /// Parsed HTTP `Authorization` header.
 pub struct AuthorizationHeader<'hdr> {
     pub kind: AuthenticationType,
@@ -111,7 +117,7 @@ pub struct Session {
 pub fn authenticate(header: &AuthorizationHeader) -> Result<Session, Error> {
     match header.kind {
         #[cfg(feature = "auth-basic")]
-        AuthenticationType::Basic => basic::authenticate(header.creds),
+        AuthenticationType::Basic => basic::Basic.authenticate(header.creds),
         #[cfg(feature = "auth-jwt")]
         AuthenticationType::Jwt => jwt::authenticate(header.creds),
     }

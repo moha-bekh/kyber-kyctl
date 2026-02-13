@@ -58,6 +58,8 @@
 
 use std::{fs::File, io::Read, sync::OnceLock};
 
+use crate::auth::Backend;
+
 use super::{Error, Session};
 use jsonwebtoken::{
     decode,
@@ -120,7 +122,7 @@ struct Claims {
     sub: String,
 }
 
-struct BackendContext {
+struct Jwt {
     /// Cryptographic key for JWT signature verification
     key: DecodingKey,
     /// Validation rules (required claims, audience, expiration checks)
@@ -130,7 +132,35 @@ struct BackendContext {
 /// Global backend context singleton.
 ///
 /// Initialized by `init()` at application startup.
-static BACKEND: OnceLock<BackendContext> = OnceLock::new();
+static BACKEND: OnceLock<Jwt> = OnceLock::new();
+
+impl Backend for Jwt {
+    fn authenticate(&self, token: &str) -> Result<Session, Error> {
+        let jwt = decode::<Claims>(token, &self.key, &self.validation);
+
+        // Special handling: Extract expiration timestamp from expired tokens
+        // The jsonwebtoken library doesn't expose the exp claim in the error,
+        // so we re-decode without expiration validation to get the timestamp.
+        if let Err(e) = &jwt {
+            if matches!(e.kind(), ErrorKind::ExpiredSignature) {
+                let mut validation = self.validation.clone();
+                validation.validate_exp = false;
+                let expired = decode::<Claims>(token, &self.key, &validation)?;
+                let at = OffsetDateTime::from_unix_timestamp(expired.claims.exp)
+                    .or(Err(Error::InvalidCredentialsFormat))?;
+                return Err(Error::Expired { at });
+            }
+        }
+
+        let jwt = jwt?;
+        let exp = OffsetDateTime::from_unix_timestamp(jwt.claims.exp)
+            .or(Err(Error::InvalidCredentialsFormat))?;
+        Ok(Session {
+            username: jwt.claims.sub,
+            expiration: Some(exp),
+        })
+    }
+}
 
 /// Validates a JWT token and extracts user session information.
 ///
@@ -157,31 +187,8 @@ static BACKEND: OnceLock<BackendContext> = OnceLock::new();
 /// - `Ok(Session)`: Valid token with extracted username and expiration
 /// - `Err(Error)`: Validation failed (expired, invalid signature, missing claims, etc.)
 pub fn authenticate(token: &str) -> Result<Session, Error> {
-    let BackendContext { key, validation } = BACKEND.get().expect("Backend not initialized");
-
-    let jwt = decode::<Claims>(token, key, validation);
-
-    // Special handling: Extract expiration timestamp from expired tokens
-    // The jsonwebtoken library doesn't expose the exp claim in the error,
-    // so we re-decode without expiration validation to get the timestamp.
-    if let Err(e) = &jwt {
-        if matches!(e.kind(), ErrorKind::ExpiredSignature) {
-            let mut validation = validation.clone();
-            validation.validate_exp = false;
-            let expired = decode::<Claims>(token, key, &validation)?;
-            let at = OffsetDateTime::from_unix_timestamp(expired.claims.exp)
-                .or(Err(Error::InvalidCredentialsFormat))?;
-            return Err(Error::Expired { at });
-        }
-    }
-
-    let jwt = jwt?;
-    let exp = OffsetDateTime::from_unix_timestamp(jwt.claims.exp)
-        .or(Err(Error::InvalidCredentialsFormat))?;
-    Ok(Session {
-        username: jwt.claims.sub,
-        expiration: Some(exp),
-    })
+    let jwt = BACKEND.get().expect("Backend not initialized");
+    jwt.authenticate(token)
 }
 
 /// Creates a decoding key from raw bytes based on the algorithm.
@@ -232,7 +239,7 @@ pub(super) fn init(config: &Config) {
     validation.leeway = 0;
 
     BACKEND
-        .set(BackendContext { key, validation })
+        .set(Jwt { key, validation })
         .or(Err(()))
         .expect("Cannot call init() twice");
 
