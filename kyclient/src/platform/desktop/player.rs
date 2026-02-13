@@ -19,15 +19,55 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use log::{error, info, warn};
 use vlc::MediaPlayerAudioEx;
 use vlc::MetricsEntry;
 
 use crate::error::{Error, PlayerError, Result};
-use crate::metrics::{Metric, VideoMetric, VideoMetricData};
 use crate::platform::WindowHandle;
-use crate::{Message, MessageSender};
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PlayerMetric {
+    FrameReceived,
+    FrameDecoding,
+    FrameDecoded,
+    FrameSkipped,
+    FramePrepared,
+    FrameDisplayed,
+}
+
+#[derive(Clone, Debug)]
+pub enum PlayerEvent {
+    PlayerStarted,
+    PlayerStopped,
+    AudioVolumeChanged {
+        volume: f32,
+    },
+    AudioMuteChanged {
+        mute: bool,
+    },
+    Metric {
+        source_id: u32,
+        pts: u64,
+        ts: i64,
+        data: PlayerMetric,
+    },
+}
+
+pub trait PlayerListener: Send + Sync {
+    fn on_event(&self, event: PlayerEvent);
+}
+
+impl<F> PlayerListener for F
+where
+    F: Fn(PlayerEvent) + Send + Sync + 'static,
+{
+    fn on_event(&self, event: PlayerEvent) {
+        self(event)
+    }
+}
 
 #[allow(dead_code)]
 pub(crate) fn setup_vlc_logger(instance: &vlc::Instance) {
@@ -47,28 +87,26 @@ pub(crate) fn setup_vlc_logger(instance: &vlc::Instance) {
 
 pub(crate) fn plug_event_manager_to_player(
     mp: &vlc::MediaPlayer,
-    message_sender: MessageSender,
+    listener: Arc<dyn PlayerListener>,
 ) -> Result<()> {
     // Register to libvlc's event manager
     let event_manager = mp.event_manager();
 
+    let listener2 = listener.clone();
     let cb = move |event, _| {
-        let msg = match event {
-            vlc::Event::MediaPlayerPlaying => Some(Message::PlayerStarted),
-            vlc::Event::MediaPlayerStopped => Some(Message::PlayerStopped),
-            vlc::Event::MediaPlayerMuted => Some(Message::AudioMuteChanged { mute: true }),
-            vlc::Event::MediaPlayerUnmuted => Some(Message::AudioMuteChanged { mute: false }),
+        let event = match event {
+            vlc::Event::MediaPlayerPlaying => Some(PlayerEvent::PlayerStarted),
+            vlc::Event::MediaPlayerStopped => Some(PlayerEvent::PlayerStopped),
+            vlc::Event::MediaPlayerMuted => Some(PlayerEvent::AudioMuteChanged { mute: true }),
+            vlc::Event::MediaPlayerUnmuted => Some(PlayerEvent::AudioMuteChanged { mute: false }),
             vlc::Event::MediaPlayerAudioVolume(volume) => {
-                Some(Message::AudioVolumeChanged { volume })
+                Some(PlayerEvent::AudioVolumeChanged { volume })
             }
             _ => None,
         };
 
-        if let Some(msg) = msg {
-            let ret = message_sender.send(msg);
-            if ret.is_err() {
-                warn!("Failed to send vlc::Event to MessageSender");
-            }
+        if let Some(event) = event {
+            listener2.on_event(event);
         }
     };
 
@@ -105,17 +143,19 @@ pub(crate) struct Player {
     instance: vlc::Instance,
     video_mediaplayer: Vec<vlc::MediaPlayer>,
     audio_mediaplayer: Option<vlc::MediaPlayer>,
-    message_sender: MessageSender,
+    listener: Arc<dyn PlayerListener>,
     metrics: bool,
 }
 
 impl Player {
     pub(crate) fn new(
-        message_sender: MessageSender,
+        listener: Box<dyn PlayerListener>,
         video_buffer: Option<u32>,
         audio_buffer: Option<u32>,
         metrics: bool,
     ) -> Result<Self> {
+        let listener = Arc::<dyn PlayerListener>::from(listener);
+
         let mut options = vec![
             "--0latency".to_string(),
             "--low-delay".to_string(),
@@ -142,69 +182,63 @@ impl Player {
             instance,
             video_mediaplayer: vec![],
             audio_mediaplayer: None,
-            message_sender,
+            listener,
             metrics,
         })
     }
 
-    fn on_metrics(source_id: u32, map: HashMap<String, i64>, message_sender: &MessageSender) {
+    fn on_metrics(source_id: u32, map: HashMap<String, i64>, listener: &dyn PlayerListener) {
         let Some(pts) = map.get("pts").map(|&v| u64::try_from(v).unwrap()) else {
             warn!("Metrics without pts: ignoring");
             return;
         };
         if let Some(&ts) = map.get("received") {
-            let metric = Metric::Video(VideoMetric {
+            listener.on_event(PlayerEvent::Metric {
                 source_id,
                 pts,
                 ts,
-                data: VideoMetricData::FrameReceived,
+                data: PlayerMetric::FrameReceived,
             });
-            Self::send_metric(message_sender, metric);
         }
         if let Some(&ts) = map.get("decoding") {
-            let metric = Metric::Video(VideoMetric {
+            listener.on_event(PlayerEvent::Metric {
                 source_id,
                 pts,
                 ts,
-                data: VideoMetricData::FrameDecoding,
+                data: PlayerMetric::FrameDecoding,
             });
-            Self::send_metric(message_sender, metric);
         }
         if let Some(&ts) = map.get("decoded") {
-            let metric = Metric::Video(VideoMetric {
+            listener.on_event(PlayerEvent::Metric {
                 source_id,
                 pts,
                 ts,
-                data: VideoMetricData::FrameDecoded,
+                data: PlayerMetric::FrameDecoded,
             });
-            Self::send_metric(message_sender, metric);
         }
         if let Some(&ts) = map.get("prepared") {
-            let metric = Metric::Video(VideoMetric {
+            listener.on_event(PlayerEvent::Metric {
                 source_id,
                 pts,
                 ts,
-                data: VideoMetricData::FramePrepared,
+                data: PlayerMetric::FramePrepared,
             });
-            Self::send_metric(message_sender, metric);
         }
         if let Some(&ts) = map.get("displayed") {
-            let metric = Metric::Video(VideoMetric {
+            listener.on_event(PlayerEvent::Metric {
                 source_id,
                 pts,
                 ts,
-                data: VideoMetricData::FrameDisplayed,
+                data: PlayerMetric::FrameDisplayed,
             });
-            Self::send_metric(message_sender, metric);
         }
         if let Some(&ts) = map.get("skipped") {
-            let metric = Metric::Video(VideoMetric {
+            listener.on_event(PlayerEvent::Metric {
                 source_id,
                 pts,
                 ts,
-                data: VideoMetricData::FrameSkipped,
+                data: PlayerMetric::FrameSkipped,
             });
-            Self::send_metric(message_sender, metric);
         }
     }
 
@@ -214,13 +248,6 @@ impl Player {
             map.insert(key, value);
         }
         map
-    }
-
-    fn send_metric(message_sender: &MessageSender, metric: Metric) {
-        let msg = Message::Metric(metric);
-        if let Err(err) = message_sender.send(msg) {
-            warn!("Failed to send metric to MessageSender: {err:?}");
-        }
     }
 
     fn play_video(&mut self, config: VideoConfig) -> Result<()> {
@@ -239,10 +266,10 @@ impl Player {
         if self.metrics {
             // Note: VLC metrics are disabled if the metrics callback is not set
             let source_id = config.source_id;
-            let message_sender2 = self.message_sender.clone();
+            let listener2 = self.listener.clone();
             mp.set_metrics_callback(move |entries| {
                 let map = Self::metrics_to_map(entries);
-                Self::on_metrics(source_id, map, &message_sender2);
+                Self::on_metrics(source_id, map, &*listener2);
             });
         }
 
@@ -274,7 +301,7 @@ impl Player {
             }
         }
 
-        plug_event_manager_to_player(&mp, self.message_sender.clone())?;
+        plug_event_manager_to_player(&mp, self.listener.clone())?;
 
         // Play
         mp.play().or(Err(PlayerError::PlayFailed))?;
@@ -294,7 +321,7 @@ impl Player {
             vlc::MediaPlayer::new(&self.instance).ok_or(PlayerError::MediaPlayerCreateFailed)?;
         mp.set_media(&media);
 
-        plug_event_manager_to_player(&mp, self.message_sender.clone())?;
+        plug_event_manager_to_player(&mp, self.listener.clone())?;
 
         // Play
         mp.play().or(Err(PlayerError::PlayFailed))?;

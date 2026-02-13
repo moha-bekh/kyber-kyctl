@@ -28,6 +28,7 @@ use async_trait::async_trait;
 use log::{debug, info};
 
 use crate::http::HttpClient;
+use crate::platform::message::MessageForwarder;
 use crate::platform::player;
 use crate::platform::{InputClient, InputPipeline};
 use crate::{BackendDriver, Error, MessageSender, PeerInfo, Result, StreamingSessionConfig};
@@ -162,12 +163,10 @@ impl RtpBackend {
                 None
             };
 
-            let mut player = player::Player::new(
-                backend_config.msg_sender.clone(),
-                video_buffer,
-                audio_buffer,
-                metrics,
-            )?;
+            let listener = Box::new(MessageForwarder {
+                message_sender: backend_config.msg_sender.clone(),
+            });
+            let mut player = player::Player::new(listener, video_buffer, audio_buffer, metrics)?;
             player.play(vlc_videoconfig, vlc_audioconfig)?;
 
             Some(player)

@@ -24,6 +24,7 @@ use log::info;
 use kymux::{kycom, types};
 
 use super::{KymuxBackendConfig, PlatformEndpoints};
+use crate::platform::message::MessageForwarder;
 use crate::platform::player;
 use crate::platform::{InputClient, InputPipeline};
 use crate::{BackendDriver, MessageSender};
@@ -130,12 +131,10 @@ async fn create_player(
             None
         };
 
-        let mut player = player::Player::new(
-            backend_config.msg_sender.clone(),
-            video_buffer,
-            audio_buffer,
-            metrics,
-        )?;
+        let listener = Box::new(MessageForwarder {
+            message_sender: backend_config.msg_sender.clone(),
+        });
+        let mut player = player::Player::new(listener, video_buffer, audio_buffer, metrics)?;
         player.play(video_config, audio_config)?;
 
         Some(Player(player))
