@@ -172,20 +172,4 @@ pub enum Error {
 mod jwt;
 
 #[cfg(feature = "auth-basic")]
-mod basic {
-    use super::{Error, Session};
-
-    /// Authenticates a user without password validation.
-    ///
-    /// # Parameters
-    /// - `username`: The username to authenticate (no validation performed)
-    ///
-    /// # Returns
-    /// A session with no expiration time (valid indefinitely until logout)
-    pub fn authenticate(username: &str) -> Result<Session, Error> {
-        Ok(Session {
-            username: username.to_owned(),
-            expiration: None,
-        })
-    }
-}
+mod basic;
