@@ -113,15 +113,15 @@ struct Capabilities {
 /// the new session. This enforces a single-session-per-instance policy.
 #[post("/login")]
 async fn login(ctrl: web::Data<Mutex<Controller>>, req: HttpRequest) -> HttpResponse {
-    let Some(Ok((auth_type, auth_creds))) = req
+    let Some(parser_hdr) = req
         .headers()
         .get(actix_web::http::header::AUTHORIZATION)
-        .map(auth::from_authorization_header)
+        .and_then(auth::AuthorizationHeader::from_header)
     else {
         return HttpResponse::BadRequest().json("Invalid authentication type");
     };
 
-    let auth_session = match auth::authenticate(&auth_type, &auth_creds) {
+    let auth_session = match auth::authenticate(&parser_hdr) {
         Ok(session) => session,
         Err(err) => {
             error!("Authentication failed: {err}");
@@ -188,15 +188,15 @@ async fn renew(
     req: HttpRequest,
     user: Identity,
 ) -> HttpResponse {
-    let Some(Ok((auth_type, auth_creds))) = req
+    let Some(parser_hdr) = req
         .headers()
         .get(actix_web::http::header::AUTHORIZATION)
-        .map(auth::from_authorization_header)
+        .and_then(auth::AuthorizationHeader::from_header)
     else {
         return HttpResponse::BadRequest().json("Invalid authentication type");
     };
 
-    let auth_session = match auth::authenticate(&auth_type, &auth_creds) {
+    let auth_session = match auth::authenticate(&parser_hdr) {
         Ok(session) => session,
         Err(err) => {
             error!("Authentication failed: {err}");

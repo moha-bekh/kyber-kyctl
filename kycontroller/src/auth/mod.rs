@@ -43,8 +43,7 @@
 //!   → Identity::login() creates cookie
 //! ```
 
-use actix_web::http::header::HeaderValue;
-use serde::Deserialize;
+use actix_web::http;
 use time::OffsetDateTime;
 
 /// Authentication method extracted from the Authorization header.
@@ -56,40 +55,37 @@ pub enum AuthenticationType {
     Jwt,
 }
 
-/// Parses the HTTP Authorization header to extract authentication type and credentials.
-///
-/// Supports multiple authentication schemes based on enabled Cargo features:
-///
-/// ## JWT (Bearer scheme - RFC 6750)
-/// ```text
-/// Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-/// ```
-/// Returns: `(AuthenticationType::Jwt, "<jwt-token>")`
-///
-/// ## Basic Auth (RFC 7617)
-/// ```text
-/// Authorization: Basic dXNlcm5hbWU6cGFzc3dvcmQ=
-/// ```
-/// Where the base64-encoded value is `username:password`.
-/// The password portion is ignored (development-only mode).
-/// Returns: `(AuthenticationType::Basic, "<username>")`
-pub(crate) fn from_authorization_header(
-    header: &HeaderValue,
-) -> Result<(AuthenticationType, String), ()> {
-    let Ok(header) = header.to_str() else {
-        return Err(());
-    };
+/// Parsed HTTP `Authorization` header.
+pub struct AuthorizationHeader<'hdr> {
+    pub kind: AuthenticationType,
+    pub creds: &'hdr str,
+}
 
-    #[cfg(feature = "auth-jwt")]
-    if let Some(jwt) = header.strip_prefix("Bearer").map(str::trim) {
-        return Ok((AuthenticationType::Jwt, jwt.to_owned()));
-    }
+impl<'hdr> AuthorizationHeader<'hdr> {
+    /// Extracts method and credentials from an `Authorization` header value.
+    pub fn from_header(header: &'hdr http::header::HeaderValue) -> Option<Self> {
+        let Ok(header) = header.to_str() else {
+            return None;
+        };
 
-    #[cfg(feature = "auth-basic")]
-    if let Some(creds) = header.strip_prefix("Basic").map(str::trim) {
-        return Ok((AuthenticationType::Basic, creds.to_owned()));
+        #[cfg(feature = "auth-jwt")]
+        if let Some(creds) = header.strip_prefix("Bearer").map(str::trim) {
+            return Some(AuthorizationHeader {
+                kind: AuthenticationType::Jwt,
+                creds,
+            });
+        }
+
+        #[cfg(feature = "auth-basic")]
+        if let Some(creds) = header.strip_prefix("Basic").map(str::trim) {
+            return Some(AuthorizationHeader {
+                kind: AuthenticationType::Basic,
+                creds,
+            });
+        }
+
+        None
     }
-    Err(())
 }
 
 /// Common Kyber authenticated session.
@@ -112,17 +108,17 @@ pub struct Session {
 /// # Returns
 /// - `Ok(Session)`: Valid credentials with username and optional expiration
 /// - `Err(Error)`: Authentication failed (invalid credentials, expired token, etc.)
-pub fn authenticate(auth_type: &AuthenticationType, credentials: &str) -> Result<Session, Error> {
-    match auth_type {
+pub fn authenticate(header: &AuthorizationHeader) -> Result<Session, Error> {
+    match header.kind {
         #[cfg(feature = "auth-basic")]
-        AuthenticationType::Basic => basic::authenticate(credentials),
+        AuthenticationType::Basic => basic::authenticate(header.creds),
         #[cfg(feature = "auth-jwt")]
-        AuthenticationType::Jwt => jwt::authenticate(credentials),
+        AuthenticationType::Jwt => jwt::authenticate(header.creds),
     }
 }
 
 /// Configuration for authentication backends loaded from TOML.
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, serde::Deserialize, Default)]
 #[serde(default)]
 pub struct Config {
     #[cfg(feature = "auth-jwt")]
