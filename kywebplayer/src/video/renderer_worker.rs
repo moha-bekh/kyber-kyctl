@@ -260,13 +260,42 @@ impl RendererWorker {
     pub fn create(
         listener: Rc<dyn VideoPlayerListener>,
     ) -> Result<(RendererWorker, RendererWorkerHandle), JsValue> {
+        // This is a library, but the path of the wasm-bindings JavaScript file
+        // depends on the top-level crate name, so the worker code must be
+        // generated dynamically.
+        let location = web_sys::window()
+            .ok_or_else(|| JsValue::from(js_sys::Error::new("No window")))?
+            .location();
+        let origin = location.origin()?;
+        let pathname = location.pathname()?;
+        let js_file = "libclient_wasm.js";
+        let wasm_js_url = format!("{origin}{pathname}{js_file}");
+        let worker_code = format!(
+            r#"import init, {{ VideoRendererWorkerCtx }} from "{wasm_js_url}";
+let ctx;
+let initialized_promise = init().then(() => {{
+    ctx = VideoRendererWorkerCtx.new();
+}});
+
+// The onmessage callback must be set immediately to avoid a race condition (if
+// a message is posted while the callback is not set, it will be missed), but
+// the actual callback execution must wait until Wasm is initialized.
+self.onmessage = async (event) => {{
+    await initialized_promise;
+    ctx.on_message(event);
+}}"#
+        );
+
+        let blob_parts = js_sys::Array::of1(&JsValue::from_str(&worker_code));
+        let props = web_sys::BlobPropertyBag::new();
+        props.set_type("text/javascript");
+        let blob = web_sys::Blob::new_with_str_sequence_and_options(&blob_parts, &props)?;
+        let url = web_sys::Url::create_object_url_with_blob(&blob)?;
+        info!("url = {url}");
+
         let options = web_sys::WorkerOptions::new();
         options.set_type(web_sys::WorkerType::Module);
-
-        let worker = Rc::new(web_sys::Worker::new_with_options(
-            "./video_renderer_worker.js",
-            &options,
-        )?);
+        let worker = Rc::new(web_sys::Worker::new_with_options(&url, &options)?);
 
         let worker_message_cb =
             Closure::<dyn FnMut(_)>::new(move |event: web_sys::MessageEvent| {

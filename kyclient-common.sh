@@ -188,6 +188,5 @@ kyclient_wasm_do_package_js()
     cp \
         "$js_src_dir/audio_worklet.js" \
         "$js_src_dir/spinlock.js" \
-        "$js_src_dir/video_renderer_worker.js" \
         "$js_out_dir"
 }
