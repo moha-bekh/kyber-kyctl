@@ -56,7 +56,7 @@
 //! key = { plain = "your-secret-key-here" }
 //! ```
 
-use std::{fs::File, io::Read, sync::OnceLock};
+use std::{fs::File, io::Read};
 
 use crate::auth::Backend;
 
@@ -122,19 +122,38 @@ struct Claims {
     sub: String,
 }
 
-struct Jwt {
+pub struct Jwt {
     /// Cryptographic key for JWT signature verification
     key: DecodingKey,
     /// Validation rules (required claims, audience, expiration checks)
     validation: Validation,
 }
 
-/// Global backend context singleton.
-///
-/// Initialized by `init()` at application startup.
-static BACKEND: OnceLock<Jwt> = OnceLock::new();
-
 impl Backend for Jwt {
+    /// Validates a JWT token and extracts user session information.
+    ///
+    /// ## Validation Process
+    ///
+    /// 1. Decode the JWT header and payload
+    /// 2. Verify the cryptographic signature
+    /// 3. Validate required claims (`sub`, `exp`, `aud`)
+    /// 4. Check expiration time (zero leeway)
+    /// 5. Extract username from `sub` claim
+    /// 6. Extract expiration from `exp` claim
+    ///
+    /// ## Special Handling for Expired Tokens
+    ///
+    /// When a token is expired, the `jsonwebtoken` crate doesn't expose the expiration
+    /// timestamp in the error. To provide a helpful error message, we re-decode the token
+    /// *without* expiration validation to extract the timestamp, then return an `Error::Expired`
+    /// with the exact expiration time.
+    ///
+    /// # Parameters
+    /// - `token`: The JWT token string
+    ///
+    /// # Returns
+    /// - `Ok(Session)`: Valid token with extracted username and expiration
+    /// - `Err(Error)`: Validation failed (expired, invalid signature, missing claims, etc.)
     fn authenticate(&self, token: &str) -> Result<Session, Error> {
         let jwt = decode::<Claims>(token, &self.key, &self.validation);
 
@@ -162,33 +181,44 @@ impl Backend for Jwt {
     }
 }
 
-/// Validates a JWT token and extracts user session information.
-///
-/// ## Validation Process
-///
-/// 1. Decode the JWT header and payload
-/// 2. Verify the cryptographic signature
-/// 3. Validate required claims (`sub`, `exp`, `aud`)
-/// 4. Check expiration time (zero leeway)
-/// 5. Extract username from `sub` claim
-/// 6. Extract expiration from `exp` claim
-///
-/// ## Special Handling for Expired Tokens
-///
-/// When a token is expired, the `jsonwebtoken` crate doesn't expose the expiration
-/// timestamp in the error. To provide a helpful error message, we re-decode the token
-/// *without* expiration validation to extract the timestamp, then return an `Error::Expired`
-/// with the exact expiration time.
-///
-/// # Parameters
-/// - `token`: The JWT token string
-///
-/// # Returns
-/// - `Ok(Session)`: Valid token with extracted username and expiration
-/// - `Err(Error)`: Validation failed (expired, invalid signature, missing claims, etc.)
-pub fn authenticate(token: &str) -> Result<Session, Error> {
-    let jwt = BACKEND.get().expect("Backend not initialized");
-    jwt.authenticate(token)
+impl Jwt {
+    /// Initializes the JWT backend.
+    ///
+    /// This must be called exactly once at application startup before any authentication
+    /// requests are processed.
+    ///
+    /// # Panics
+    /// - If called more than once (programming error)
+    /// - If the key file cannot be read
+    /// - If the RSA PEM format is invalid (RS256 only)
+    pub fn new(config: &Config) -> Self {
+        let key = match &config.key {
+            ConfigKey::Plain(key) => decode_key(config.algorithm, key.as_bytes()),
+            ConfigKey::File(path) => {
+                let mut key = Vec::new();
+                let mut file = File::open(path).expect("Invalid key path");
+                file.read_to_end(&mut key)
+                    .expect("Failed to read key content");
+                // Trim leading and trailing whitespace (including newlines) as the jsonwebtoken
+                // crate doesn't handle them.
+                let key = key.as_slice().trim_ascii();
+                decode_key(config.algorithm, key)
+            }
+        };
+
+        let mut validation = Validation::new(config.algorithm);
+        validation.set_required_spec_claims(&["exp", "sub", "aud"]);
+        validation.set_audience(&["kyber"]);
+
+        validation.leeway = 0;
+
+        log::info!(
+            "JWT backend initialized with algorithm {:?}",
+            config.algorithm
+        );
+
+        Self { key, validation }
+    }
 }
 
 /// Creates a decoding key from raw bytes based on the algorithm.
@@ -206,47 +236,6 @@ fn decode_key(algorithm: Algorithm, key: &[u8]) -> DecodingKey {
         Algorithm::RS256 => DecodingKey::from_rsa_pem(key).expect("Invalid RSA PEM"),
         _ => panic!("Unsupported JWT algorithm (currently supported: HS256, RS256)"),
     }
-}
-
-/// Initializes the JWT backend.
-///
-/// This must be called exactly once at application startup before any authentication
-/// requests are processed.
-///
-/// # Panics
-/// - If called more than once (programming error)
-/// - If the key file cannot be read
-/// - If the RSA PEM format is invalid (RS256 only)
-pub(super) fn init(config: &Config) {
-    let key = match &config.key {
-        ConfigKey::Plain(key) => decode_key(config.algorithm, key.as_bytes()),
-        ConfigKey::File(path) => {
-            let mut key = Vec::new();
-            let mut file = File::open(path).expect("Invalid key path");
-            file.read_to_end(&mut key)
-                .expect("Failed to read key content");
-            // Trim leading and trailing whitespace (including newlines) as the jsonwebtoken
-            // crate doesn't handle them.
-            let key = key.as_slice().trim_ascii();
-            decode_key(config.algorithm, key)
-        }
-    };
-
-    let mut validation = Validation::new(config.algorithm);
-    validation.set_required_spec_claims(&["exp", "sub", "aud"]);
-    validation.set_audience(&["kyber"]);
-
-    validation.leeway = 0;
-
-    BACKEND
-        .set(Jwt { key, validation })
-        .or(Err(()))
-        .expect("Cannot call init() twice");
-
-    log::info!(
-        "JWT backend initialized with algorithm {:?}",
-        config.algorithm
-    );
 }
 
 impl From<JWTError> for Error {

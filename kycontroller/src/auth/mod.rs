@@ -43,11 +43,15 @@
 //!   → Identity::login() creates cookie
 //! ```
 
+use std::sync::OnceLock;
+
 use actix_web::http;
 use time::OffsetDateTime;
 
+use crate::auth::registry::BackendRegistry;
+
 /// Authentication method extracted from the Authorization header.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum AuthenticationType {
     #[cfg(feature = "auth-basic")]
     Basic,
@@ -102,33 +106,31 @@ pub struct Session {
     pub expiration: Option<OffsetDateTime>,
 }
 
-/// Routes authentication to the appropriate backend based on type.
-///
-/// This is the main entry point for credential validation. It dispatches to
-/// the backend module corresponding to the authentication type.
-///
-/// # Parameters
-/// - `auth_type`: The authentication method (Basic, JWT, etc.)
-/// - `credentials`: The extracted credentials (username, JWT token, etc.)
-///
-/// # Returns
-/// - `Ok(Session)`: Valid credentials with username and optional expiration
-/// - `Err(Error)`: Authentication failed (invalid credentials, expired token, etc.)
-pub fn authenticate(header: &AuthorizationHeader) -> Result<Session, Error> {
-    match header.kind {
-        #[cfg(feature = "auth-basic")]
-        AuthenticationType::Basic => basic::Basic.authenticate(header.creds),
-        #[cfg(feature = "auth-jwt")]
-        AuthenticationType::Jwt => jwt::authenticate(header.creds),
-    }
-}
-
 /// Configuration for authentication backends loaded from TOML.
 #[derive(Debug, serde::Deserialize, Default)]
 #[serde(default)]
 pub struct Config {
     #[cfg(feature = "auth-jwt")]
-    jwt: jwt::Config,
+    basic: OptionalBackendConfig<()>,
+    #[cfg(feature = "auth-jwt")]
+    jwt: OptionalBackendConfig<jwt::Config>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(default)]
+struct OptionalBackendConfig<T> {
+    enabled: bool,
+    #[serde(flatten)]
+    inner: T,
+}
+
+impl<T: Default> Default for OptionalBackendConfig<T> {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            inner: Default::default(),
+        }
+    }
 }
 
 /// Initializes all enabled authentication backends.
@@ -137,9 +139,20 @@ pub struct Config {
 /// requests are processed. Each backend performs one-time initialization such as
 /// loading cryptographic keys.
 pub fn init(config: &Config) {
-    #[cfg(feature = "auth-jwt")]
-    jwt::init(&config.jwt);
+    BACKEND_REGISTRY
+        .set(BackendRegistry::new(&config))
+        .or(Err(()))
+        .expect("Cannot call init() twice");
 }
+
+/// Returns the initialized backend registry.
+///
+/// Panics if called before [`init`].
+pub fn registry<'a>() -> &'a BackendRegistry {
+    BACKEND_REGISTRY.get().expect("Backends not initialized")
+}
+
+static BACKEND_REGISTRY: OnceLock<registry::BackendRegistry> = OnceLock::new();
 
 /// Authentication errors returned by backend validation.
 #[derive(Debug, thiserror::Error)]
@@ -160,6 +173,8 @@ pub enum Error {
     #[error("Missing mandatory field: {field}")]
     MissingField { field: String },
 }
+
+mod registry;
 
 // JWT authentication backend (conditionally compiled)
 #[cfg(feature = "auth-jwt")]

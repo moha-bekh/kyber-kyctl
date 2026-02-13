@@ -121,7 +121,11 @@ async fn login(ctrl: web::Data<Mutex<Controller>>, req: HttpRequest) -> HttpResp
         return HttpResponse::BadRequest().json("Invalid authentication type");
     };
 
-    let auth_session = match auth::authenticate(&parser_hdr) {
+    let Some(auth_backend) = auth::registry().backend(parser_hdr.kind) else {
+        return HttpResponse::Unauthorized().json("Disabled authentication scheme");
+    };
+
+    let auth_session = match auth_backend.authenticate(parser_hdr.creds) {
         Ok(session) => session,
         Err(err) => {
             error!("Authentication failed: {err}");
@@ -196,7 +200,11 @@ async fn renew(
         return HttpResponse::BadRequest().json("Invalid authentication type");
     };
 
-    let auth_session = match auth::authenticate(&parser_hdr) {
+    let Some(auth_backend) = auth::registry().backend(parser_hdr.kind) else {
+        return HttpResponse::Unauthorized().json("Disabled authentication scheme");
+    };
+
+    let auth_session = match auth_backend.authenticate(parser_hdr.creds) {
         Ok(session) => session,
         Err(err) => {
             error!("Authentication failed: {err}");
