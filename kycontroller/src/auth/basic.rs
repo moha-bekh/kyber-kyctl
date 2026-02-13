@@ -18,6 +18,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use base64::{prelude::BASE64_STANDARD, Engine};
+
 use super::{Error, Session};
 
 /// Authenticates a user without password validation.
@@ -27,9 +29,22 @@ use super::{Error, Session};
 ///
 /// # Returns
 /// A session with no expiration time (valid indefinitely until logout)
-pub fn authenticate(username: &str) -> Result<Session, Error> {
+pub fn authenticate(credentials: &str) -> Result<Session, Error> {
+    let decoded = BASE64_STANDARD
+        .decode(credentials)
+        .or(Err(Error::InvalidCredentialsFormat))?;
+
+    let username = std::str::from_utf8(&decoded)
+        .or(Err(Error::InvalidCredentialsFormat))?
+        .split(':')
+        .next()
+        .ok_or(Error::MissingField {
+            field: "username".to_owned(),
+        })?
+        .to_owned();
+
     Ok(Session {
-        username: username.to_owned(),
+        username,
         expiration: None,
     })
 }

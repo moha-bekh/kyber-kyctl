@@ -87,14 +87,6 @@ pub(crate) fn from_authorization_header(
 
     #[cfg(feature = "auth-basic")]
     if let Some(creds) = header.strip_prefix("Basic").map(str::trim) {
-        use base64::{prelude::BASE64_STANDARD, Engine};
-
-        let decoded = BASE64_STANDARD.decode(creds).or(Err(()))?;
-        let creds = std::str::from_utf8(&decoded)
-            .map_err(|_| ())?
-            .split(':')
-            .next()
-            .ok_or(())?;
         return Ok((AuthenticationType::Basic, creds.to_owned()));
     }
     Err(())
