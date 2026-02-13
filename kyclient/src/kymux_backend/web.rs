@@ -26,6 +26,7 @@ use async_trait::async_trait;
 use log::{info, warn};
 
 use kymux::kyproto::{self, ProtocolEndpoint};
+use kymux::types;
 use kynput::bufferproxy::{BufferProxy, BufferProxyReceiver, BufferProxySender};
 use kynput::{InputNetworkStream, InputNetworkStreamMsg, InputNetworkStreamObserver};
 
@@ -113,7 +114,7 @@ async fn create_video_decoder_config(config: &VideoSessionConfig) -> Option<Vide
 
 async fn player_forward_task<Player>(
     type_: &str,
-    mut recv: kyproto::ProtocolRecv<kyproto::AVPacket>,
+    mut recv: types::ProtocolRecv<types::AVPacket>,
     mut player: Player,
     close_requested: CloseRequestState,
 ) where
@@ -255,7 +256,7 @@ async fn create_player(
 }
 
 async fn input_rx_task(
-    mut endpoint_rx: kyproto::ProtocolRecv<kyproto::InputPacket>,
+    mut endpoint_rx: types::ProtocolRecv<types::InputPacket>,
     kynput_tx: BufferProxySender,
 ) -> Result<()> {
     loop {
@@ -284,12 +285,12 @@ async fn input_rx_task(
 }
 
 async fn input_tx_task(
-    mut endpoint_tx: kyproto::ProtocolSend<kyproto::InputPacket>,
+    mut endpoint_tx: types::ProtocolSend<types::InputPacket>,
     mut kynput_rx: BufferProxyReceiver,
 ) -> Result<()> {
     while let Ok(buf) = kynput_rx.recv().await {
         endpoint_tx
-            .send(kyproto::InputPacket {
+            .send(types::InputPacket {
                 type_: buf[0],
                 payload: bytes::Bytes::copy_from_slice(&buf[1..]),
             })

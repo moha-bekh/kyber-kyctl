@@ -18,7 +18,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use kymux::kyproto;
+use kymux::types;
 
 #[derive(Debug)]
 pub enum Packet {
@@ -55,14 +55,14 @@ pub struct MediaPacketHeader {
 }
 
 #[cfg(feature = "kymux")]
-impl From<kyproto::AVPacket> for Packet {
-    fn from(packet: kyproto::AVPacket) -> Self {
+impl From<types::AVPacket> for Packet {
+    fn from(packet: types::AVPacket) -> Self {
         match packet {
-            kyproto::AVPacket::Codec(packet) => Packet::Codec(CodecPacket {
+            types::AVPacket::Codec(packet) => Packet::Codec(CodecPacket {
                 codec: packet.header.codec,
                 rotation: packet.header.rotation,
             }),
-            kyproto::AVPacket::Media(packet) => Packet::Media(MediaPacket {
+            types::AVPacket::Media(packet) => Packet::Media(MediaPacket {
                 header: MediaPacketHeader {
                     is_config: packet.header.is_config,
                     is_key: packet.header.is_key,
@@ -75,7 +75,7 @@ impl From<kyproto::AVPacket> for Packet {
                     buffer
                 },
             }),
-            kyproto::AVPacket::Hole(packet) => Packet::Hole(HolePacket {
+            types::AVPacket::Hole(packet) => Packet::Hole(HolePacket {
                 missing_audio_samples: packet.header.missing_audio_samples,
             }),
         }

@@ -24,6 +24,7 @@ use log::warn;
 use serde::Deserialize;
 
 use kymux::kyproto::{self, ProtocolEndpoint};
+use kymux::types;
 
 use crate::metrics::{
     Metric, MetricsProducer, NetworkPing, NetworkStats, VideoMetric, VideoMetricData,
@@ -122,7 +123,7 @@ pub(crate) async fn start_remote_metrics_receiver(
 }
 
 async fn run_metrics_receiver(
-    mut protocol: kyproto::ProtocolRecv<kyproto::MetricsPacket>,
+    mut protocol: types::ProtocolRecv<types::MetricsPacket>,
     metrics: MetricsProducer,
 ) -> Result<()> {
     while let Some(packet) = protocol
@@ -150,7 +151,7 @@ struct RemoteVideoMetrics {
 
 async fn run_remote_video_metrics_receiver(
     source_id: u32,
-    mut protocol: kyproto::ProtocolRecv<kyproto::MetricsPacket>,
+    mut protocol: types::ProtocolRecv<types::MetricsPacket>,
     metrics: MetricsProducer,
 ) -> Result<()> {
     while let Some(packet) = protocol
