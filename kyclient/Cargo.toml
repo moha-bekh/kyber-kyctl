@@ -9,7 +9,6 @@ async-tungstenite = { version = "0.33.0", features = ["tokio-rustls-platform-ver
 bytes = { version = "1.5.0", optional = true }
 futures = "0.3.30"
 js-sys = { version = "=0.3.77", optional = true }
-raw-window-handle = { version = "0.5.0", optional = true }
 libc = "0.2.153"
 kyclient-common = { version = "0.1.0", path = "../kyclient-common" }
 log = {version = "0.4.21", features = ["std"] }
@@ -25,21 +24,13 @@ wasm-bindgen = { version = "0.2.84", optional = true }
 wasm-bindgen-futures = { version = "0.4.37", optional = true }
 
 kymux = { version = "0.1.0", optional = true }
+kyvlcplayer = { path = "../kyvlcplayer", optional = true }
 kywasmtime = { git = "https://github.com/rom1v/kywasmtime.git", tag = "0.1", optional = true }
 kynput = { version = "0.1.0", optional = true }
 kynput-rs = { version = "0.1.0", optional = true }
 kynput-sys = { version = "0.1.0", optional = true }
 kywebplayer = { path = "../kywebplayer", optional = true }
 rmp-serde = { version = "1.1.2", optional = true }
-
-[target.'cfg(any(target_os = "android", target_os = "linux", target_os = "macos", target_os = "windows"))'.dependencies.vlc-rs]
-version = "0.3.0"
-optional = true
-
-[target.'cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))'.dependencies.vlc-rs]
-version = "0.3.0"
-default-features = false
-optional = true
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.15"
@@ -65,14 +56,13 @@ capi = []
 default = []
 desktop = [
     "dep:async-tungstenite",
-    "dep:raw-window-handle",
     "dep:kynput-rs",
     "dep:kynput-sys",
+    "dep:kyvlcplayer",
     "dep:rustls",
     "dep:rustls-pemfile",
     "dep:rustls-platform-verifier",
     "dep:sha2",
-    "dep:vlc-rs",
     "kymux?/backend-quinn",
     "kymux?/ipc",
     "kymux?/tokio-rt",

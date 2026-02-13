@@ -1,0 +1,17 @@
+[package]
+name = "kyvlcplayer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libc = "0.2.153"
+log = "0.4.21"
+raw-window-handle = "0.5.0"
+tokio = { version = "1.47.1", features = ["macros", "sync", "io-util"] }
+
+[target.'cfg(any(target_os = "android", target_os = "linux", target_os = "macos", target_os = "windows"))'.dependencies.vlc-rs]
+version = "0.3.0"
+
+[target.'cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))'.dependencies.vlc-rs]
+version = "0.3.0"
+default-features = false

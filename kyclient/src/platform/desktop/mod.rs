@@ -29,14 +29,13 @@ pub(crate) mod input_service;
 pub(crate) mod known_hosts;
 mod mainloop_engine;
 pub(crate) mod message;
-pub(crate) mod player;
+pub use kyvlcplayer as player;
 pub(crate) mod tls;
-pub(crate) mod window_handle;
 
 pub(crate) use host_events::{WsClient, WsClientBuilder};
 pub(crate) use input_service::{get_cursor_format, InputClient, InputError, InputPipeline};
 pub(crate) use mainloop_engine::MainLoopEngine;
-pub(crate) use window_handle::WindowHandle;
+pub(crate) use player::WindowHandle;
 
 use crate::{AuthCredentials, Error, Result};
 

@@ -25,7 +25,7 @@ use log::{error, info, warn};
 use vlc::MediaPlayerAudioEx;
 use vlc::MetricsEntry;
 
-use crate::platform::WindowHandle;
+use super::window_handle::WindowHandle;
 
 #[derive(Debug)]
 pub enum PlayerError {
@@ -81,7 +81,7 @@ where
 }
 
 #[allow(dead_code)]
-pub(crate) fn setup_vlc_logger(instance: &vlc::Instance) {
+fn setup_vlc_logger(instance: &vlc::Instance) {
     instance.set_log(
         |level: vlc::LogLevel, _log_ctx: vlc::Log, msg: std::borrow::Cow<str>| {
             let level = match level {
@@ -96,7 +96,7 @@ pub(crate) fn setup_vlc_logger(instance: &vlc::Instance) {
     );
 }
 
-pub(crate) fn plug_event_manager_to_player(
+fn plug_event_manager_to_player(
     mp: &vlc::MediaPlayer,
     listener: Arc<dyn PlayerListener>,
 ) -> Result<(), PlayerError> {
@@ -137,20 +137,20 @@ pub(crate) fn plug_event_manager_to_player(
     Ok(())
 }
 
-pub(crate) struct VideoConfig {
-    pub(crate) source_id: u32,
-    pub(crate) software_decode: bool,
-    pub(crate) window_handle: WindowHandle,
-    pub(crate) uri: String,
-    pub(crate) video_buffer: u32, // ms
+pub struct VideoConfig {
+    pub source_id: u32,
+    pub software_decode: bool,
+    pub window_handle: WindowHandle,
+    pub uri: String,
+    pub video_buffer: u32, // ms
 }
 
-pub(crate) struct AudioConfig {
-    pub(crate) uri: String,
-    pub(crate) audio_buffer: u32, // ms
+pub struct AudioConfig {
+    pub uri: String,
+    pub audio_buffer: u32, // ms
 }
 
-pub(crate) struct Player {
+pub struct Player {
     instance: vlc::Instance,
     video_mediaplayer: Vec<vlc::MediaPlayer>,
     audio_mediaplayer: Option<vlc::MediaPlayer>,
@@ -159,7 +159,7 @@ pub(crate) struct Player {
 }
 
 impl Player {
-    pub(crate) fn new(
+    pub fn new(
         listener: Box<dyn PlayerListener>,
         video_buffer: Option<u32>,
         audio_buffer: Option<u32>,
@@ -342,7 +342,7 @@ impl Player {
         Ok(())
     }
 
-    pub(crate) fn play(
+    pub fn play(
         &mut self,
         video_config: Option<Vec<VideoConfig>>,
         audio_config: Option<AudioConfig>,
@@ -403,7 +403,7 @@ impl Player {
         Ok(())
     }
 
-    pub(crate) async fn stop_async(&mut self) -> Result<(), PlayerError> {
+    pub async fn stop_async(&mut self) -> Result<(), PlayerError> {
         if let Some(audio_mediaplayer) = self.audio_mediaplayer.as_mut() {
             info!("Stop audio player");
             let ret = Self::mdp_stop_async(audio_mediaplayer).await;
@@ -420,7 +420,7 @@ impl Player {
         Ok(())
     }
 
-    pub(crate) fn audio_set_volume(&self, volume: f32) -> Result<(), PlayerError> {
+    pub fn audio_set_volume(&self, volume: f32) -> Result<(), PlayerError> {
         let audio_mediaplayer = self
             .audio_mediaplayer
             .as_ref()
@@ -435,7 +435,7 @@ impl Player {
         Ok(())
     }
 
-    pub(crate) fn audio_set_mute(&self, mute: bool) -> Result<(), PlayerError> {
+    pub fn audio_set_mute(&self, mute: bool) -> Result<(), PlayerError> {
         let audio_mediaplayer = self
             .audio_mediaplayer
             .as_ref()
