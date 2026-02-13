@@ -23,6 +23,7 @@ mod host_events;
 pub(crate) mod http;
 mod input_service;
 mod mainloop_engine;
+pub(crate) mod message;
 
 #[cfg(feature = "js-player")]
 pub(crate) mod player;

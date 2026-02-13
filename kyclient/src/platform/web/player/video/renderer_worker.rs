@@ -25,11 +25,10 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::MessageEvent;
 
-use crate::metrics::{Metric, VideoMetric, VideoMetricData};
 use crate::platform::reflect;
-use crate::{Message, MessageSender};
 
 use super::cell_buf::{self, CellBufConsumer, CellBufProducer};
+use super::player::{VideoPlayerEvent, VideoPlayerListener, VideoPlayerMetric};
 use super::regulator::{self, VideoRegulatorPull, VideoRegulatorPush};
 use super::renderer::{RenderResult, Renderer};
 
@@ -259,8 +258,7 @@ impl RendererWorker {
     const TYPE_FRAME: &'static str = "frame";
 
     pub fn create(
-        message_sender: MessageSender,
-        source_id: u32,
+        listener: Rc<dyn VideoPlayerListener>,
     ) -> Result<(RendererWorker, RendererWorkerHandle), JsValue> {
         let options = web_sys::WorkerOptions::new();
         options.set_type(web_sys::WorkerType::Module);
@@ -272,7 +270,7 @@ impl RendererWorker {
 
         let worker_message_cb =
             Closure::<dyn FnMut(_)>::new(move |event: web_sys::MessageEvent| {
-                let ret = Self::handle_worker_message(event, &message_sender, source_id);
+                let ret = Self::handle_worker_message(event, &*listener);
                 if let Err(err) = ret {
                     warn!("VideoDemuxerWorker failed to process message: {err:?}");
                 }
@@ -290,8 +288,7 @@ impl RendererWorker {
 
     fn handle_worker_message(
         event: web_sys::MessageEvent,
-        message_sender: &MessageSender,
-        source_id: u32,
+        listener: &dyn VideoPlayerListener,
     ) -> Result<(), JsValue> {
         let msg = &event.data().dyn_into::<js_sys::Object>()?;
         let msg_type = reflect::get_string(msg, "type")?;
@@ -303,20 +300,17 @@ impl RendererWorker {
                 let frame_coded_width = reflect::get_f64(msg, "frame_coded_width")?;
                 let frame_coded_height = reflect::get_f64(msg, "frame_coded_height")?;
 
-                Self::message_sender_send(
-                    message_sender,
-                    Message::CanvasResized {
-                        width: width as _,
-                        height: height as _,
-                        frame_coded_width: frame_coded_width as _,
-                        frame_coded_height: frame_coded_height as _,
-                    },
-                );
+                listener.on_event(VideoPlayerEvent::CanvasResized {
+                    width: width as _,
+                    height: height as _,
+                    frame_coded_width: frame_coded_width as _,
+                    frame_coded_height: frame_coded_height as _,
+                });
             }
             "metric" => {
                 let metric_type = match reflect::get_string(msg, "metric_type")?.as_str() {
-                    "frame_skipped" => VideoMetricData::FrameSkipped,
-                    "frame_displayed" => VideoMetricData::FrameDisplayed,
+                    "frame_skipped" => VideoPlayerMetric::FrameSkipped,
+                    "frame_displayed" => VideoPlayerMetric::FrameDisplayed,
                     metric_type => {
                         return Err(JsValue::from(format!(
                             "Unexpected metric type: {metric_type}"
@@ -326,25 +320,11 @@ impl RendererWorker {
                 let pts = reflect::get_f64(msg, "pts")? as u64;
                 let ts = reflect::get_f64(msg, "ts")? as i64;
 
-                if metric_type == VideoMetricData::FrameDisplayed {
-                    // Generate a fake "prepared" event for consistency with the
-                    // desktop version using VLC
-                    let metric = Metric::Video(VideoMetric {
-                        source_id,
-                        pts,
-                        ts,
-                        data: VideoMetricData::FramePrepared,
-                    });
-                    Self::message_sender_send(message_sender, Message::Metric(metric));
-                }
-
-                let metric = Metric::Video(VideoMetric {
-                    source_id,
+                listener.on_event(VideoPlayerEvent::Metric {
                     pts,
                     ts,
                     data: metric_type,
                 });
-                Self::message_sender_send(message_sender, Message::Metric(metric));
             }
             _ => {
                 warn!("Got unknown message type: {msg_type:?}");
@@ -397,13 +377,6 @@ impl RendererWorker {
             .post_message_with_transfer(&msg, &transfer.into())?;
 
         Ok(())
-    }
-
-    fn message_sender_send(message_sender: &MessageSender, msg: Message) {
-        let ret = message_sender.send(msg.clone());
-        if let Err(err) = ret {
-            warn!("Failed to send {msg:?}: {err:?}");
-        }
     }
 }
 

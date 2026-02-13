@@ -37,6 +37,7 @@ use audio::AudioWsSocketHandler;
 use input::InputWebSocketHandler;
 use video::VideoWsSocketHandler;
 
+use crate::platform::message::{AudioMessageForwarder, VideoMessageForwarder};
 use crate::platform::player::{
     get_video_decoder_config, AudioPlayer, AudioPlayerHandle, VideoPlayer, VideoPlayerHandle,
 };
@@ -154,11 +155,14 @@ impl WsBackend {
 
         let video_decoder_config = get_video_decoder_config(video_config).await?;
 
+        let listener = Box::new(VideoMessageForwarder {
+            message_sender: backend_config.msg_sender.clone(),
+            source_id: video_config.display_id,
+        });
         let (player, player_handle) = VideoPlayer::create(
-            backend_config.msg_sender.clone(),
+            listener,
             &video_config.player,
             video_decoder_config,
-            video_config.display_id,
             metrics,
         )?;
 
@@ -181,8 +185,10 @@ impl WsBackend {
         let audio_buffer = audio_config.audio_buffer();
         let audio_player_config = AudioPlayerConfig { audio_buffer };
 
-        let (player, player_handle) =
-            AudioPlayer::create(backend_config.msg_sender.clone(), &audio_player_config).await?;
+        let listener = Box::new(AudioMessageForwarder {
+            message_sender: backend_config.msg_sender.clone(),
+        });
+        let (player, player_handle) = AudioPlayer::create(listener, &audio_player_config).await?;
 
         let url = format!(
             "wss://{host}/websocket/audio",

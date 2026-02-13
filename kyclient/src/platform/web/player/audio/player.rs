@@ -22,7 +22,7 @@ use crate::platform::player::audio::decoder::{AudioDecoder, AudioDecoderCallback
 use crate::platform::player::packet::{CodecPacket, HolePacket, Packet};
 use crate::platform::player::PacketSink;
 use crate::platform::AudioPlayerConfig;
-use crate::{Error, Message, MessageSender, Result};
+use crate::{Error, Result};
 
 use super::worklet::AudioWorklet;
 use super::{CHANNELS, SAMPLE_RATE, SAMPLE_SIZE};
@@ -40,12 +40,32 @@ use wasm_bindgen::prelude::*;
 use log::{debug, error, info, warn};
 
 pub struct AudioPlayer {
-    message_sender: MessageSender,
+    listener: Rc<dyn AudioPlayerListener>,
     cbs: Option<AudioDecoderCallbacks>,
     audio_decoder: Option<AudioDecoder>,
     push_seq: u64,
     holes: Holes,
     hole: u32,
+}
+
+#[derive(Clone, Debug)]
+pub enum AudioPlayerEvent {
+    VolumeChanged { volume: f32 },
+    MuteChanged { mute: bool },
+    DecoderError,
+}
+
+pub trait AudioPlayerListener {
+    fn on_event(&self, event: AudioPlayerEvent);
+}
+
+impl<F> AudioPlayerListener for F
+where
+    F: Fn(AudioPlayerEvent) + 'static,
+{
+    fn on_event(&self, event: AudioPlayerEvent) {
+        self(event)
+    }
 }
 
 impl AudioPlayer {
@@ -54,9 +74,10 @@ impl AudioPlayer {
     }
 
     pub async fn create(
-        message_sender: MessageSender,
+        listener: Box<dyn AudioPlayerListener>,
         audio_player_config: &AudioPlayerConfig,
     ) -> Result<(Self, AudioPlayerHandle)> {
+        let listener = Rc::<dyn AudioPlayerListener>::from(listener);
         let sample_size = SAMPLE_SIZE * CHANNELS;
 
         let target_buffering =
@@ -73,7 +94,7 @@ impl AudioPlayer {
         let holes2 = holes.clone();
         let mut push_seq = 0u64;
 
-        let message_sender2 = message_sender.clone();
+        let listener2 = listener.clone();
         let cbs = AudioDecoderCallbacks {
             output: Box::new(move |frame: web_sys::AudioData| {
                 let Some(format) = frame.format() else {
@@ -118,17 +139,17 @@ impl AudioPlayer {
             error: Box::new(move |error| {
                 info!("audio decoding error: {error:?}");
 
-                Self::message_sender_send(&message_sender2, Message::AudioDecodeError);
+                listener2.on_event(AudioPlayerEvent::DecoderError);
 
                 Ok(())
             }),
         };
 
         let audio_worklet =
-            AudioWorklet::start(sab, message_sender.clone(), alloc_size, target_buffering).await?;
+            AudioWorklet::start(sab, listener.clone(), alloc_size, target_buffering).await?;
 
         let player = Self {
-            message_sender,
+            listener,
             cbs: Some(cbs),
             audio_decoder: None,
             push_seq: 0,
@@ -183,19 +204,12 @@ impl AudioPlayer {
 
         Ok(())
     }
-
-    fn message_sender_send(message_sender: &MessageSender, msg: Message) {
-        let ret = message_sender.send(msg.clone());
-        if let Err(err) = ret {
-            warn!("Failed to send {msg:?}: {err:?}");
-        }
-    }
 }
 
 impl PacketSink for AudioPlayer {
     fn send_packet(&mut self, packet: Packet) -> Result<()> {
         if let Err(err) = self.process_packet(packet) {
-            Self::message_sender_send(&self.message_sender, Message::AudioDecodeError);
+            self.listener.on_event(AudioPlayerEvent::DecoderError);
             Err(err)?;
         }
 

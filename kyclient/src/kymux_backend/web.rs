@@ -30,6 +30,7 @@ use kynput::bufferproxy::{BufferProxy, BufferProxyReceiver, BufferProxySender};
 use kynput::{InputNetworkStream, InputNetworkStreamMsg, InputNetworkStreamObserver};
 
 use super::{KymuxBackendConfig, PlatformEndpoints};
+use crate::platform::message::{AudioMessageForwarder, VideoMessageForwarder};
 use crate::platform::player::{
     AudioPlayer, AudioPlayerHandle, PacketSink, VideoDecoderConfig, VideoPlayer, VideoPlayerHandle,
 };
@@ -172,13 +173,12 @@ async fn create_videoplayer(
             Error::Rejected
         })?;
 
-        let (video_player, video_player_handle) = VideoPlayer::create(
-            backend_config.msg_sender.clone(),
-            &config.player,
-            video_config,
-            config.display_id,
-            metrics,
-        )?;
+        let listener = Box::new(VideoMessageForwarder {
+            message_sender: backend_config.msg_sender.clone(),
+            source_id: config.display_id,
+        });
+        let (video_player, video_player_handle) =
+            VideoPlayer::create(listener, &config.player, video_config, metrics)?;
 
         info!("Start video");
 
@@ -219,8 +219,11 @@ async fn create_audioplayer(
     let audio_buffer = audio_config.audio_buffer();
     let audio_player_config = AudioPlayerConfig { audio_buffer };
 
+    let listener = Box::new(AudioMessageForwarder {
+        message_sender: backend_config.msg_sender.clone(),
+    });
     let (audio_player, audio_player_handle) =
-        match AudioPlayer::create(backend_config.msg_sender.clone(), &audio_player_config).await {
+        match AudioPlayer::create(listener, &audio_player_config).await {
             Ok((audio_player, audio_player_handle)) => (audio_player, audio_player_handle),
             Err(Error::SharedArrayBufferUndefined) => return Ok(None),
             Err(err) => return Err(err),

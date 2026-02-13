@@ -19,21 +19,20 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use log::{error, info, warn};
+use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
-use crate::metrics::{Metric, VideoMetric, VideoMetricData};
+use super::player::{VideoPlayerEvent, VideoPlayerListener, VideoPlayerMetric};
 use crate::platform::player::packet::MediaPacket;
 use crate::runtime::Instant;
-use crate::{Message, MessageSender};
 
 pub struct VideoDecoder {
-    message_sender: MessageSender,
+    listener: Rc<dyn VideoPlayerListener>,
     _output_closure: Closure<dyn FnMut(web_sys::VideoFrame) -> Result<(), JsValue>>,
     _error_closure: Closure<dyn FnMut(js_sys::Error) -> Result<(), JsValue>>,
     video_decoder: web_sys::VideoDecoder,
     pending_config: Option<Vec<u8>>,
-    source_id: u32,
     codec: String,
     hardware_acceleration: bool,
     metrics: bool,
@@ -46,9 +45,8 @@ pub struct VideoDecoderCallbacks {
 
 impl VideoDecoder {
     pub fn new(
-        message_sender: MessageSender,
+        listener: Rc<dyn VideoPlayerListener>,
         cbs: VideoDecoderCallbacks,
-        source_id: u32,
         codec: String,
         hardware_acceleration: bool,
         metrics: bool,
@@ -61,12 +59,11 @@ impl VideoDecoder {
             web_sys::VideoDecoder::new(&web_sys::VideoDecoderInit::new(error_fn, output_fn))?;
 
         Ok(Self {
-            message_sender,
+            listener,
             _output_closure: output_closure,
             _error_closure: error_closure,
             video_decoder,
             pending_config: None,
-            source_id,
             codec,
             hardware_acceleration,
             metrics,
@@ -119,15 +116,12 @@ impl VideoDecoder {
             ))?;
 
             if self.metrics {
-                let metric = Metric::Video(VideoMetric {
-                    source_id: self.source_id,
+                let metric = VideoPlayerEvent::Metric {
                     pts: header.pts,
                     ts: Instant::now().raw_us() as i64,
-                    data: VideoMetricData::FrameDecoding,
-                });
-                if let Err(err) = self.message_sender.send(Message::Metric(metric)) {
-                    warn!("Failed to send decoding metric: {err:?}");
-                }
+                    data: VideoPlayerMetric::FrameDecoding,
+                };
+                self.listener.on_event(metric);
             }
 
             let ret = self.video_decoder.decode(&chunk);

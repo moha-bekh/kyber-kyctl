@@ -18,14 +18,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::metrics::{Metric, VideoMetric, VideoMetricData};
 use crate::platform::dom;
 use crate::platform::player::packet::{CodecPacket, Packet};
 use crate::platform::player::video::decoder::{VideoDecoder, VideoDecoderCallbacks};
 use crate::platform::player::video::renderer_worker::{RendererWorker, RendererWorkerHandle};
 use crate::platform::player::PacketSink;
 use crate::platform::VideoPlayerConfig;
-use crate::{Message, MessageSender, Result};
+use crate::Result;
 
 use super::VideoDecoderConfig;
 
@@ -41,10 +40,9 @@ use wasm_bindgen::prelude::*;
 use log::{debug, error, info, warn};
 
 pub struct VideoPlayer {
-    message_sender: MessageSender,
+    listener: Rc<dyn VideoPlayerListener>,
     cbs: Option<VideoDecoderCallbacks>,
     video_decoder: Option<VideoDecoder>,
-    source_id: u32,
     codec: String,
     hardware_acceleration: bool,
     video_rotation: Rc<AtomicU8>,
@@ -52,20 +50,61 @@ pub struct VideoPlayer {
     metrics: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum VideoPlayerMetric {
+    FrameReceived,
+    FrameDecoding,
+    FrameDecoded,
+    FrameSkipped,
+    FrameDisplayed,
+}
+
+#[derive(Clone, Debug)]
+pub enum VideoPlayerEvent {
+    CanvasResized {
+        width: i32,
+        height: i32,
+        frame_coded_width: i32,
+        frame_coded_height: i32,
+    },
+    Metric {
+        pts: u64,
+        ts: i64,
+        data: VideoPlayerMetric,
+    },
+    FrameDecoded {
+        pts: u64,
+    },
+    DecoderError,
+}
+
+pub trait VideoPlayerListener {
+    fn on_event(&self, event: VideoPlayerEvent);
+}
+
+impl<F> VideoPlayerListener for F
+where
+    F: Fn(VideoPlayerEvent) + 'static,
+{
+    fn on_event(&self, event: VideoPlayerEvent) {
+        self(event)
+    }
+}
+
 impl VideoPlayer {
     pub fn create(
-        message_sender: MessageSender,
+        listener: Box<dyn VideoPlayerListener>,
         player_config: &VideoPlayerConfig,
         decoder_config: VideoDecoderConfig,
-        source_id: u32,
         metrics: bool,
     ) -> Result<(Self, VideoPlayerHandle)> {
+        let listener = Rc::<dyn VideoPlayerListener>::from(listener);
+
         let canvas = dom::get_canvas(&player_config.canvas)?;
 
         let offscreen_canvas = canvas.transfer_control_to_offscreen()?;
 
-        let (renderer_worker, renderer_worker_handle) =
-            RendererWorker::create(message_sender.clone(), source_id)?;
+        let (renderer_worker, renderer_worker_handle) = RendererWorker::create(listener.clone())?;
         renderer_worker.start(offscreen_canvas, player_config.video_buffer, metrics)?;
 
         let video_rotation = Rc::new(AtomicU8::new(0));
@@ -88,8 +127,8 @@ impl VideoPlayer {
         let recv_dates2 = recv_dates.clone();
 
         let notify_decoded = player_config.notify_decoded;
-        let message_sender2 = message_sender.clone();
-        let message_sender3 = message_sender.clone();
+        let listener2 = listener.clone();
+        let listener3 = listener.clone();
         let cbs = VideoDecoderCallbacks {
             output: Box::new(move |frame| {
                 let now = Instant::now().raw_us() as i64;
@@ -100,23 +139,18 @@ impl VideoPlayer {
                 if metrics {
                     if let Some(pts) = frame.timestamp() {
                         let pts = pts as u64;
-                        let metric = Metric::Video(VideoMetric {
-                            source_id,
+                        listener2.on_event(VideoPlayerEvent::Metric {
                             pts,
                             ts: now,
-                            data: VideoMetricData::FrameDecoded,
+                            data: VideoPlayerMetric::FrameDecoded,
                         });
-                        Self::message_sender_send(&message_sender3, Message::Metric(metric));
                     }
                 }
 
                 renderer_worker.send_frame(frame, rotation, recv_date)?;
 
                 if notify_decoded {
-                    Self::message_sender_send(
-                        &message_sender3,
-                        Message::ImageDecoded { pts: pts as u64 },
-                    );
+                    listener2.on_event(VideoPlayerEvent::FrameDecoded { pts: pts as u64 });
                 }
 
                 Ok(())
@@ -124,17 +158,16 @@ impl VideoPlayer {
             error: Box::new(move |error| {
                 info!("video decoding error: {error:?}");
 
-                Self::message_sender_send(&message_sender2, Message::VideoDecodeError);
+                listener3.on_event(VideoPlayerEvent::DecoderError);
 
                 Ok(())
             }),
         };
 
         let player = Self {
-            message_sender,
+            listener,
             cbs: Some(cbs),
             video_decoder: None,
-            source_id,
             codec,
             hardware_acceleration,
             video_rotation,
@@ -158,16 +191,12 @@ impl VideoPlayer {
                         self.recv_dates.borrow_mut().push_back(recv_date);
 
                         if self.metrics {
-                            let metric = Metric::Video(VideoMetric {
-                                source_id: self.source_id,
+                            let metric = VideoPlayerEvent::Metric {
                                 pts: packet.header.pts,
                                 ts: recv_date,
-                                data: VideoMetricData::FrameReceived,
-                            });
-                            Self::message_sender_send(
-                                &self.message_sender,
-                                Message::Metric(metric),
-                            );
+                                data: VideoPlayerMetric::FrameReceived,
+                            };
+                            self.listener.on_event(metric);
                         }
                     }
                     video_decoder.send_packet(packet)?;
@@ -188,9 +217,8 @@ impl VideoPlayer {
                     };
 
                     self.video_decoder = Some(VideoDecoder::new(
-                        self.message_sender.clone(),
+                        self.listener.clone(),
                         cbs,
-                        self.source_id,
                         self.codec.clone(),
                         self.hardware_acceleration,
                         self.metrics,
@@ -202,19 +230,12 @@ impl VideoPlayer {
 
         Ok(())
     }
-
-    fn message_sender_send(message_sender: &MessageSender, msg: Message) {
-        let ret = message_sender.send(msg.clone());
-        if let Err(err) = ret {
-            warn!("Failed to send {msg:?}: {err:?}");
-        }
-    }
 }
 
 impl PacketSink for VideoPlayer {
     fn send_packet(&mut self, packet: Packet) -> Result<()> {
         if let Err(err) = self.process_packet(packet) {
-            Self::message_sender_send(&self.message_sender, Message::VideoDecodeError);
+            self.listener.on_event(VideoPlayerEvent::DecoderError);
             Err(err)?;
         }
 

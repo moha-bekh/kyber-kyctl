@@ -19,12 +19,14 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::cell::RefCell;
+use std::rc::Rc;
 
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
 
+use super::player::{AudioPlayerEvent, AudioPlayerListener};
 use crate::platform::reflect;
-use crate::{Error, Message, MessageSender};
+use crate::Error;
 
 struct GainNodeConfig {
     gain: f32,
@@ -36,13 +38,13 @@ pub(crate) struct AudioWorklet {
     gain_node: web_sys::GainNode,
     gain_cfg: RefCell<GainNodeConfig>,
     node: web_sys::AudioWorkletNode,
-    message_sender: MessageSender,
+    listener: Rc<dyn AudioPlayerListener>,
 }
 
 impl AudioWorklet {
     pub async fn start(
         sab: js_sys::SharedArrayBuffer,
-        message_sender: MessageSender,
+        listener: Rc<dyn AudioPlayerListener>,
         alloc_size: u32,
         target_buffering: u32,
     ) -> Result<Self, Error> {
@@ -84,10 +86,10 @@ impl AudioWorklet {
         let gain_node: web_sys::GainNode = ctx.create_gain()?;
 
         let gain = gain_node.gain().value();
-        message_sender.send(Message::AudioVolumeChanged { volume: gain })?;
+        listener.on_event(AudioPlayerEvent::VolumeChanged { volume: gain });
 
         let mute = gain <= 0.0;
-        message_sender.send(Message::AudioMuteChanged { mute })?;
+        listener.on_event(AudioPlayerEvent::MuteChanged { mute });
 
         // Link everything
         node.connect_with_audio_node(&gain_node)?;
@@ -102,7 +104,7 @@ impl AudioWorklet {
             gain_node,
             gain_cfg: RefCell::new(GainNodeConfig { gain, mute }),
             node,
-            message_sender,
+            listener,
         })
     }
 
@@ -115,8 +117,8 @@ impl AudioWorklet {
 
         gain_cfg.gain = volume;
 
-        self.message_sender
-            .send(Message::AudioVolumeChanged { volume })?;
+        self.listener
+            .on_event(AudioPlayerEvent::VolumeChanged { volume });
 
         Ok(())
     }
@@ -132,8 +134,8 @@ impl AudioWorklet {
 
         gain_cfg.mute = mute;
 
-        self.message_sender
-            .send(Message::AudioMuteChanged { mute })?;
+        self.listener
+            .on_event(AudioPlayerEvent::MuteChanged { mute });
 
         Ok(())
     }
