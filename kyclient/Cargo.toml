@@ -24,12 +24,12 @@ tokio = { version = "1.47.1", features = ["macros", "sync", "io-util"] }
 wasm-bindgen = { version = "0.2.84", optional = true }
 wasm-bindgen-futures = { version = "0.4.37", optional = true }
 
-kyaudioreg = { version = "0.1.0", optional = true }
 kymux = { version = "0.1.0", optional = true }
 kywasmtime = { git = "https://github.com/rom1v/kywasmtime.git", tag = "0.1", optional = true }
 kynput = { version = "0.1.0", optional = true }
 kynput-rs = { version = "0.1.0", optional = true }
 kynput-sys = { version = "0.1.0", optional = true }
+kywebplayer = { path = "../kywebplayer", optional = true }
 rmp-serde = { version = "1.1.2", optional = true }
 
 [target.'cfg(any(target_os = "android", target_os = "linux", target_os = "macos", target_os = "windows"))'.dependencies.vlc-rs]
@@ -83,44 +83,7 @@ desktop = [
     "tokio/io-util",
 ]
 js-player = [
-    "kyaudioreg/js",
-    "web-sys/AudioContext",
-    "web-sys/AudioContextOptions",
-    "web-sys/AudioData",
-    "web-sys/AudioDataCopyToOptions",
-    "web-sys/AudioDecoder",
-    "web-sys/AudioDecoderInit",
-    "web-sys/AudioDecoderConfig",
-    "web-sys/AudioDestinationNode",
-    "web-sys/AudioParam",
-    "web-sys/AudioSampleFormat",
-    "web-sys/AudioWorklet",
-    "web-sys/AudioWorkletNode",
-    "web-sys/AudioWorkletNodeOptions",
-    "web-sys/DedicatedWorkerGlobalScope",
-    "web-sys/EncodedAudioChunk",
-    "web-sys/EncodedAudioChunkInit",
-    "web-sys/EncodedAudioChunkType",
-    "web-sys/EncodedVideoChunk",
-    "web-sys/EncodedVideoChunkInit",
-    "web-sys/EncodedVideoChunkType",
-    "web-sys/FileSystemDirectoryHandle",
-    "web-sys/FileSystemFileHandle",
-    "web-sys/FileSystemGetFileOptions",
-    "web-sys/FileSystemWritableFileStream",
-    "web-sys/GainNode",
-    "web-sys/HardwareAcceleration",
-    "web-sys/OffscreenCanvas",
-    "web-sys/OffscreenCanvasRenderingContext2d",
-    "web-sys/Performance",
-    "web-sys/StorageManager",
-    "web-sys/VideoDecoder",
-    "web-sys/VideoDecoderConfig",
-    "web-sys/VideoDecoderInit",
-    "web-sys/VideoFrame",
-    "web-sys/Worker",
-    "web-sys/WorkerOptions",
-    "web-sys/WorkerType",
+    "kywebplayer",
 ]
 kymux = [
     "dep:kymux",

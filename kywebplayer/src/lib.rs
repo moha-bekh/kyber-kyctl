@@ -20,17 +20,16 @@
 
 mod audio;
 pub mod packet;
+mod reflect;
 mod video;
 
-pub(crate) use audio::player::{
+pub use audio::player::{
     AudioPlayer, AudioPlayerCreationError, AudioPlayerEvent, AudioPlayerHandle, AudioPlayerListener,
 };
-pub(crate) use video::player::{
+pub use video::player::{
     VideoPlayer, VideoPlayerEvent, VideoPlayerHandle, VideoPlayerListener, VideoPlayerMetric,
 };
-pub(crate) use video::{
-    get_video_decoder_config, supported_video_codecs, VideoCodec, VideoDecoderConfig,
-};
+pub use video::{get_video_decoder_config, supported_video_codecs, VideoCodec, VideoDecoderConfig};
 
 use packet::Packet;
 
@@ -48,6 +47,6 @@ pub struct AudioPlayerConfig {
     pub audio_buffer: u32, // ms
 }
 
-pub(crate) trait PacketSink {
+pub trait PacketSink {
     fn send_packet(&mut self, packet: Packet) -> Result<(), JsValue>;
 }

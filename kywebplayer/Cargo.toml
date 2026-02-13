@@ -1,0 +1,56 @@
+[package]
+name = "kywebplayer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+js-sys = { version = "=0.3.77" }
+kyaudioreg = { version = "0.1.0", features = ["js"] }
+kywasmtime = { git = "https://github.com/rom1v/kywasmtime.git", tag = "0.1" }
+log = { version = "0.4.21" }
+tokio = { version = "1.47.1", features = ["macros", "sync", "io-util"] }
+wasm-bindgen = { version = "0.2.84" }
+wasm-bindgen-futures = { version = "0.4.37" }
+web-sys = { version = "=0.3.77", features = [
+    "AudioContext",
+    "AudioContextOptions",
+    "AudioData",
+    "AudioDataCopyToOptions",
+    "AudioDecoder",
+    "AudioDecoderInit",
+    "AudioDecoderConfig",
+    "AudioDestinationNode",
+    "AudioParam",
+    "AudioSampleFormat",
+    "AudioWorklet",
+    "AudioWorkletNode",
+    "AudioWorkletNodeOptions",
+    "DedicatedWorkerGlobalScope",
+    "Document",
+    "EncodedAudioChunk",
+    "EncodedAudioChunkInit",
+    "EncodedAudioChunkType",
+    "EncodedVideoChunk",
+    "EncodedVideoChunkInit",
+    "EncodedVideoChunkType",
+    "FileSystemDirectoryHandle",
+    "FileSystemFileHandle",
+    "FileSystemGetFileOptions",
+    "FileSystemWritableFileStream",
+    "GainNode",
+    "HardwareAcceleration",
+    "HtmlCanvasElement",
+    "MessageEvent",
+    "OffscreenCanvas",
+    "OffscreenCanvasRenderingContext2d",
+    "Performance",
+    "StorageManager",
+    "VideoDecoder",
+    "VideoDecoderConfig",
+    "VideoDecoderInit",
+    "VideoFrame",
+    "Window",
+    "Worker",
+    "WorkerOptions",
+    "WorkerType",
+]}

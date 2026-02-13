@@ -25,7 +25,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
 
 use super::player::{AudioPlayerEvent, AudioPlayerListener};
-use crate::platform::reflect;
+use crate::reflect;
 
 struct GainNodeConfig {
     gain: f32,

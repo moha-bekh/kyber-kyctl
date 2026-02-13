@@ -24,7 +24,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
 use super::player::{VideoPlayerEvent, VideoPlayerListener, VideoPlayerMetric};
-use crate::platform::player::packet::MediaPacket;
+use crate::packet::MediaPacket;
 use kywasmtime::Instant;
 
 pub struct VideoDecoder {
@@ -93,7 +93,10 @@ impl VideoDecoder {
             self.video_decoder.configure(&decoder_config)?;
             self.pending_config = Some(packet.data.to_vec());
 
-            info!("Video decoder configure. Codec: {}, HardwareAcceleration: {hardware_acceleration:?}", self.codec);
+            info!(
+                "Video decoder configure. Codec: {}, HardwareAcceleration: {hardware_acceleration:?}",
+                self.codec
+            );
         } else {
             let header = &packet.header;
             let type_ = if header.is_key {

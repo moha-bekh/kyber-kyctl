@@ -25,7 +25,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 use web_sys::MessageEvent;
 
-use crate::platform::reflect;
+use crate::reflect;
 
 use super::cell_buf::{self, CellBufConsumer, CellBufProducer};
 use super::player::{VideoPlayerEvent, VideoPlayerListener, VideoPlayerMetric};
@@ -314,7 +314,7 @@ impl RendererWorker {
                     metric_type => {
                         return Err(JsValue::from(format!(
                             "Unexpected metric type: {metric_type}"
-                        )))
+                        )));
                     }
                 };
                 let pts = reflect::get_f64(msg, "pts")? as u64;

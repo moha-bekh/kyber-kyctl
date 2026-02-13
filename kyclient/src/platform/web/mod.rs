@@ -26,8 +26,7 @@ mod mainloop_engine;
 pub(crate) mod message;
 
 #[cfg(feature = "js-player")]
-pub mod player;
-pub(crate) mod reflect;
+pub use kywebplayer as player;
 mod websocket;
 
 use log::info;

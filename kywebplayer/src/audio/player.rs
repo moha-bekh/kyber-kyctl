@@ -18,9 +18,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::platform::player::audio::decoder::{AudioDecoder, AudioDecoderCallbacks};
-use crate::platform::player::packet::{CodecPacket, HolePacket, Packet};
-use crate::platform::player::{AudioPlayerConfig, PacketSink};
+use crate::audio::decoder::{AudioDecoder, AudioDecoderCallbacks};
+use crate::packet::{CodecPacket, HolePacket, Packet};
+use crate::{AudioPlayerConfig, PacketSink};
 
 use super::worklet::AudioWorklet;
 use super::{CHANNELS, SAMPLE_RATE, SAMPLE_SIZE};
@@ -228,7 +228,7 @@ impl PacketSink for AudioPlayer {
 }
 
 // Used to stop the player without the full player instance
-pub(crate) struct AudioPlayerHandle {
+pub struct AudioPlayerHandle {
     audio_worklet: Option<AudioWorklet>,
 }
 

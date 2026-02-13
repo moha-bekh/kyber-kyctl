@@ -22,7 +22,7 @@ use log::{error, info, warn};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
-use crate::platform::player::packet::MediaPacket;
+use crate::packet::MediaPacket;
 
 pub struct AudioDecoder {
     _output_closure: Closure<dyn FnMut(web_sys::AudioData) -> Result<(), JsValue>>,

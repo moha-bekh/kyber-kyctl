@@ -42,7 +42,7 @@ pub struct VideoDecoderConfig {
     pub hardware_acceleration: web_sys::HardwareAcceleration,
 }
 
-pub(crate) async fn supported_video_codecs(force_software: bool) -> Vec<VideoDecoderConfig> {
+pub async fn supported_video_codecs(force_software: bool) -> Vec<VideoDecoderConfig> {
     let codecs = &[
         (VideoCodec::H264, false, "avc1.64002a"),
         (VideoCodec::H264, true, "avc1.f4002a"),
@@ -106,7 +106,7 @@ pub(crate) async fn supported_video_codecs(force_software: bool) -> Vec<VideoDec
     configs
 }
 
-pub(crate) async fn get_video_decoder_config(
+pub async fn get_video_decoder_config(
     codec: VideoCodec,
     yuv444: bool,
     software_decode: bool,

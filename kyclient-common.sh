@@ -183,7 +183,7 @@ kyclient_wasm_do_package_js()
     local base_dir=$1
     local js_out_dir=$2
 
-    local js_src_dir="$base_dir/kyclient/js"
+    local js_src_dir="$base_dir/kywebplayer/js"
 
     cp \
         "$js_src_dir/audio_worklet.js" \

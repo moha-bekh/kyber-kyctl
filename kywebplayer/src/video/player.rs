@@ -18,10 +18,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::platform::player::packet::{CodecPacket, Packet};
-use crate::platform::player::video::decoder::{VideoDecoder, VideoDecoderCallbacks};
-use crate::platform::player::video::renderer_worker::{RendererWorker, RendererWorkerHandle};
-use crate::platform::player::{PacketSink, VideoPlayerConfig};
+use crate::packet::{CodecPacket, Packet};
+use crate::video::decoder::{VideoDecoder, VideoDecoderCallbacks};
+use crate::video::renderer_worker::{RendererWorker, RendererWorkerHandle};
+use crate::{PacketSink, VideoPlayerConfig};
 
 use super::VideoDecoderConfig;
 
@@ -247,7 +247,7 @@ impl PacketSink for VideoPlayer {
 }
 
 // Used to stop the player without the full player instance
-pub(crate) struct VideoPlayerHandle {
+pub struct VideoPlayerHandle {
     renderer_worker_handle: RendererWorkerHandle,
 }
 
