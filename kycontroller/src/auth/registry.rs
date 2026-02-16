@@ -34,22 +34,22 @@ impl BackendRegistry {
     pub fn new(config: &Config) -> Self {
         Self {
             #[cfg(feature = "auth-basic")]
-            basic: config.basic.enabled.then(|| auth::basic::Basic {}),
+            basic: config.basic.enabled.then_some(auth::basic::Basic {}),
             #[cfg(feature = "auth-jwt")]
             jwt: config
                 .jwt
                 .enabled
-                .then(|| auth::jwt::Jwt::new(&config.jwt.inner)),
+                .then_some(auth::jwt::Jwt::new(&config.jwt.inner)),
         }
     }
 
     /// Returns the backend for the given method, or `None` if disabled.
-    pub fn backend(&self, method: auth::AuthenticationType) -> Option<&dyn Backend> {
+    pub fn backend(&self, method: auth::Method) -> Option<&dyn Backend> {
         match method {
             #[cfg(feature = "auth-basic")]
-            auth::AuthenticationType::Basic => self.basic.as_ref().map(|b| b as &dyn Backend),
+            auth::Method::Basic => self.basic.as_ref().map(|b| b as &dyn Backend),
             #[cfg(feature = "auth-jwt")]
-            auth::AuthenticationType::Jwt => self.jwt.as_ref().map(|b| b as &dyn Backend),
+            auth::Method::Jwt => self.jwt.as_ref().map(|b| b as &dyn Backend),
         }
     }
 }

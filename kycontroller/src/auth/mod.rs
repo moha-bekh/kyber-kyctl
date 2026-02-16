@@ -50,9 +50,9 @@ use time::OffsetDateTime;
 
 use crate::auth::registry::BackendRegistry;
 
-/// Authentication method extracted from the Authorization header.
+/// Supported authentication methods.
 #[derive(Debug, PartialEq, Eq)]
-pub enum AuthenticationType {
+pub enum Method {
     #[cfg(feature = "auth-basic")]
     Basic,
     #[cfg(feature = "auth-jwt")]
@@ -67,7 +67,7 @@ pub trait Backend {
 
 /// Parsed HTTP `Authorization` header.
 pub struct AuthorizationHeader<'hdr> {
-    pub kind: AuthenticationType,
+    pub kind: Method,
     pub creds: &'hdr str,
 }
 
@@ -81,7 +81,7 @@ impl<'hdr> AuthorizationHeader<'hdr> {
         #[cfg(feature = "auth-jwt")]
         if let Some(creds) = header.strip_prefix("Bearer").map(str::trim) {
             return Some(AuthorizationHeader {
-                kind: AuthenticationType::Jwt,
+                kind: Method::Jwt,
                 creds,
             });
         }
@@ -89,7 +89,7 @@ impl<'hdr> AuthorizationHeader<'hdr> {
         #[cfg(feature = "auth-basic")]
         if let Some(creds) = header.strip_prefix("Basic").map(str::trim) {
             return Some(AuthorizationHeader {
-                kind: AuthenticationType::Basic,
+                kind: Method::Basic,
                 creds,
             });
         }
@@ -140,7 +140,7 @@ impl<T: Default> Default for OptionalBackendConfig<T> {
 /// loading cryptographic keys.
 pub fn init(config: &Config) {
     BACKEND_REGISTRY
-        .set(BackendRegistry::new(&config))
+        .set(BackendRegistry::new(config))
         .or(Err(()))
         .expect("Cannot call init() twice");
 }
