@@ -172,6 +172,11 @@ pub enum Error {
     /// Required credential field is missing
     #[error("Missing mandatory field: {field}")]
     MissingField { field: String },
+
+    /// Identified user is not allowed in
+    #[allow(dead_code)]
+    #[error("User \"{identity}\" is not authorized")]
+    NotAuthorized { identity: String },
 }
 
 mod registry;
