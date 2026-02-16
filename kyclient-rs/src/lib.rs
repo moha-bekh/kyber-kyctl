@@ -22,6 +22,7 @@ use std::cell::Cell;
 use std::ffi::{CStr, CString};
 use std::mem::{self, MaybeUninit};
 use std::os::raw::c_void;
+use std::ptr::NonNull;
 use std::sync::atomic::{self, AtomicPtr};
 
 use log::{error, warn};
@@ -722,26 +723,20 @@ impl Drop for StreamingSessionConfig {
     }
 }
 
-#[derive(Clone, Debug)]
-pub enum AuthCredentials {
-    Basic { username: String },
-    Jwt { token: String },
-}
-
-impl AuthCredentials {
-    fn as_raw(&self) -> *mut sys::kyclient_AuthCredentials {
-        let (type_, creds) = match self {
-            AuthCredentials::Basic { username } => {
-                (sys::kyclient_AuthType_KYCLIENT_AUTH_TYPE_BASIC, username)
-            }
-            AuthCredentials::Jwt { token } => {
-                (sys::kyclient_AuthType_KYCLIENT_AUTH_TYPE_JWT, token)
-            }
-        };
-
-        let creds = to_cstr(creds);
-        unsafe { sys::kyclient_auth_credential_new(type_, creds.as_ptr()) }
-    }
+fn raw_credentials(
+    credentials: &AuthCredentials,
+) -> Result<NonNull<sys::kyclient_AuthCredentials>> {
+    let credentials = match credentials {
+        AuthCredentials::Basic { username } => {
+            let username = to_cstr(username);
+            unsafe { sys::kyclient_auth_credentials_new_basic(username.as_ptr()) }
+        }
+        AuthCredentials::Jwt { token } => {
+            let token = to_cstr(token);
+            unsafe { sys::kyclient_auth_credentials_new_jwt(token.as_ptr()) }
+        }
+    };
+    NonNull::new(credentials).ok_or(Error::Generic)
 }
 
 type TofuCallbackPtr = *mut Box<dyn Fn(TofuPrompt) -> bool + Send + Sync>;
@@ -753,12 +748,14 @@ pub struct ConnectConfig {
 }
 
 impl ConnectConfig {
-    pub fn default(host: &str) -> Result<Self> {
+    pub fn default(host: &str, credentials: &AuthCredentials) -> Result<Self> {
         let chost = to_cstr(host);
 
+        let raw_creds = raw_credentials(credentials)?;
         unsafe {
             let mut ptr: *mut _ = std::mem::zeroed();
-            let ret = sys::kyclient_connect_config_default(chost.as_ptr(), &mut ptr);
+            let ret =
+                sys::kyclient_connect_config_default(chost.as_ptr(), raw_creds.as_ptr(), &mut ptr);
             if ret == 0 {
                 Ok(Self {
                     ptr,
@@ -767,17 +764,6 @@ impl ConnectConfig {
             } else {
                 Err(Error::Generic)
             }
-        }
-    }
-
-    pub fn set_credentials(&self, credentials: &AuthCredentials) -> Result<()> {
-        let credentials = credentials.as_raw();
-
-        let ret = unsafe { sys::kyclient_connect_config_set_credentials(self.ptr, credentials) };
-        if ret == 0 {
-            Ok(())
-        } else {
-            Err(Error::Generic)
         }
     }
 

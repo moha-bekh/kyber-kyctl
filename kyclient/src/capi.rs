@@ -52,12 +52,6 @@ pub struct kyclient_ConnectConfig {
     config: crate::ConnectConfig,
 }
 
-#[repr(C)]
-pub enum kyclient_AuthType {
-    Basic,
-    Jwt,
-}
-
 #[allow(non_camel_case_types)]
 pub struct kyclient_AuthCredentials {
     inner: crate::AuthCredentials,
@@ -284,30 +278,39 @@ pub unsafe extern "C" fn kyclient_windowshandle_from_hwnd(hwnd: u64) -> *mut kyc
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn kyclient_auth_credential_new(
-    type_: kyclient_AuthType,
-    credentials: *const c_char,
+pub unsafe extern "C" fn kyclient_auth_credentials_new_basic(
+    username: *const c_char,
 ) -> *mut kyclient_AuthCredentials {
-    let Ok(credentials) = CStr::from_ptr(credentials).to_str() else {
-        warn!("Fail to convert credentials");
+    let Ok(username) = CStr::from_ptr(username).to_str() else {
+        warn!("Fail to convert username");
         return ptr::null_mut();
     };
+    let username = username.to_owned();
 
-    let credentials = credentials.to_owned();
+    Box::into_raw(Box::new(kyclient_AuthCredentials {
+        inner: crate::AuthCredentials::Basic { username },
+    }))
+}
 
-    let credentials = match type_ {
-        kyclient_AuthType::Basic => crate::AuthCredentials::Basic {
-            username: credentials,
-        },
-        kyclient_AuthType::Jwt => crate::AuthCredentials::Jwt { token: credentials },
+#[no_mangle]
+pub unsafe extern "C" fn kyclient_auth_credentials_new_jwt(
+    token: *const c_char,
+) -> *mut kyclient_AuthCredentials {
+    let Ok(token) = CStr::from_ptr(token).to_str() else {
+        warn!("Fail to convert token");
+        return ptr::null_mut();
     };
+    let token = token.to_owned();
 
-    Box::into_raw(Box::new(kyclient_AuthCredentials { inner: credentials }))
+    Box::into_raw(Box::new(kyclient_AuthCredentials {
+        inner: crate::AuthCredentials::Jwt { token },
+    }))
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_connect_config_default(
     host: *const c_char,
+    credentials: ptr::NonNull<kyclient_AuthCredentials>,
     out_config: *mut *mut kyclient_ConnectConfig,
 ) -> c_int {
     let Ok(host) = CStr::from_ptr(host).to_str() else {
@@ -315,10 +318,12 @@ pub unsafe extern "C" fn kyclient_connect_config_default(
         return -1;
     };
 
+    let credentials = Box::from_raw(credentials.as_ptr());
+
     let config = crate::ConnectConfig {
         host: host.into(),
         port: crate::STREAMER_PORT,
-        credentials: crate::AuthCredentials::default(),
+        credentials: credentials.inner,
         tls_host: None,
         verify_mode: None,
         auto_reconnection: false,
