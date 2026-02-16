@@ -63,7 +63,7 @@ pub use event_manager::EventSink;
 use host_events::HostEventReceiver;
 pub use host_events::{StreamerPipelineEventType, StreamerPipelineStage, StreamerPipelineType};
 use http::HttpClient;
-pub use kyclient_common::metrics::Metric;
+pub use kyclient_common::{auth::AuthCredentials, metrics::Metric};
 pub(crate) use message_bus::{MessageReceiver, MessageSender};
 use metrics::{MetricsCollector, MetricsProducer};
 pub use platform::{ConnectConfig, VideoPlayerConfig};
@@ -102,27 +102,6 @@ trait BackendDriver: KySend {
     async fn input_service_disconnected(&mut self) -> Result<()>;
 
     async fn stop(&mut self) -> Result<()>;
-}
-
-#[derive(Clone, Debug)]
-pub enum AuthCredentials {
-    Basic { username: String },
-    Jwt { token: String },
-}
-
-impl Default for AuthCredentials {
-    fn default() -> Self {
-        let os = if cfg!(target_arch = "wasm32") {
-            "wasm32"
-        } else {
-            std::env::consts::OS
-        };
-
-        let version = env!("VERGEN_GIT_DESCRIBE");
-        let username = format!("kyclient-{os}-{version}");
-
-        Self::Basic { username }
-    }
 }
 
 /// Manages automatic reconnection behavior when connection is lost.

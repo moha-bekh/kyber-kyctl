@@ -27,7 +27,7 @@ use std::sync::atomic::{self, AtomicPtr};
 
 use log::{error, warn};
 
-pub use kyclient_common::metrics::Metric;
+pub use kyclient_common::{auth::AuthCredentials, metrics::Metric};
 
 /// TOFU (Trust-On-First-Use) prompt for certificate verification decisions.
 #[derive(Clone, Debug)]
