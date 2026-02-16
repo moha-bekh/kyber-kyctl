@@ -150,3 +150,119 @@ impl<'de> Deserialize<'de> for RFC7617String {
         deserializer.deserialize_str(RFC7617StringVisitor)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::{prelude::BASE64_STANDARD, Engine};
+
+    fn encode(s: &str) -> String {
+        BASE64_STANDARD.encode(s)
+    }
+
+    #[test]
+    fn valid_simple_credentials() {
+        let encoded = encode("user:pass");
+        let result = Basic::decode_credentials(&encoded);
+        assert!(result.is_ok());
+        let creds = result.unwrap();
+        assert_eq!(creds.username.0, "user");
+    }
+
+    #[test]
+    fn valid_unicode() {
+        let encoded = encode("用户:password");
+        let result = Basic::decode_credentials(&encoded);
+        assert!(result.is_ok());
+        let creds = result.unwrap();
+        assert_eq!(creds.username.0, "用户");
+
+        let encoded = encode("user:密码");
+        let result = Basic::decode_credentials(&encoded);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn valid_special_characters() {
+        let encoded = encode("user@example.com:p@$$w0rd!#%");
+        let result = Basic::decode_credentials(&encoded);
+        assert!(result.is_ok());
+        let creds = result.unwrap();
+        assert_eq!(creds.username.0, "user@example.com");
+
+        let encoded = encode("user name:pass word");
+        let result = Basic::decode_credentials(&encoded);
+        assert!(result.is_ok());
+        let creds = result.unwrap();
+        assert_eq!(creds.username.0, "user name");
+    }
+
+    #[test]
+    fn invalid_base64() {
+        let result = Basic::decode_credentials("not!valid@base64");
+        assert!(matches!(result, Err(Error::InvalidCredentialsFormat)));
+
+        // Invalid base64 padding
+        let result = Basic::decode_credentials("dXNlcjpwYXNz===");
+        assert!(matches!(result, Err(Error::InvalidCredentialsFormat)));
+    }
+
+    #[test]
+    fn invalid_utf8() {
+        let invalid_utf8 = BASE64_STANDARD.encode([0xFF, 0xFE, b':', b'p', b'a', b's', b's']);
+        let result = Basic::decode_credentials(&invalid_utf8);
+        assert!(matches!(result, Err(Error::InvalidCredentialsFormat)));
+    }
+
+    #[test]
+    fn empty_fields() {
+        let encoded = encode(":password");
+        let result = Basic::decode_credentials(&encoded);
+        assert!(matches!(result, Err(Error::InvalidCredentialsFormat)));
+
+        let encoded = encode("user:");
+        let result = Basic::decode_credentials(&encoded);
+        assert!(matches!(result, Err(Error::InvalidCredentialsFormat)));
+
+        let encoded = encode(":");
+        let result = Basic::decode_credentials(&encoded);
+        assert!(matches!(result, Err(Error::InvalidCredentialsFormat)));
+    }
+
+    #[test]
+    fn control_chars() {
+        let encoded = encode("user\x00name:password");
+        let result = Basic::decode_credentials(&encoded);
+        assert!(matches!(result, Err(Error::InvalidCredentialsFormat)));
+
+        let encoded = encode("user:pass\x1Fword");
+        let result = Basic::decode_credentials(&encoded);
+        assert!(matches!(result, Err(Error::InvalidCredentialsFormat)));
+
+        let encoded = encode("user\nname:password");
+        let result = Basic::decode_credentials(&encoded);
+        assert!(matches!(result, Err(Error::InvalidCredentialsFormat)));
+
+        let encoded = encode("user:pass\tword");
+        let result = Basic::decode_credentials(&encoded);
+        assert!(matches!(result, Err(Error::InvalidCredentialsFormat)));
+    }
+
+    #[test]
+    fn colon_handling() {
+        let encoded = encode("userpassword");
+        let result = Basic::decode_credentials(&encoded);
+        assert!(matches!(result, Err(Error::MissingField { field }) if field == "password"));
+
+        // RFC7617 specifies that subsequents colon should be treated as part of the password.
+        let encoded = encode("user:pass:word");
+        let result = Basic::decode_credentials(&encoded);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn empty_input() {
+        let result = Basic::decode_credentials("");
+        assert!(matches!(result, Err(Error::InvalidCredentialsFormat)));
+    }
+}
