@@ -26,22 +26,12 @@
 //!
 //! ## Supported Backends
 //!
-//! - **Basic Auth** (`auth-basic` feature, enabled by default): Passwordless authentication
-//!   for development. Accepts any username without validation. **Must be disabled in production.**
+//! - **Basic Auth** (`auth-basic` feature, enabled by default): For development. Credentials
+//!   transit as base64-encoded plain text and password strength depends entirely on user choices.
+//!   **Must be disabled in production.**
 //!
 //! - **JWT** (`auth-jwt` feature): JSON Web Token authentication supporting HS256 and RS256
 //!   algorithms with configurable keys and automatic expiration handling.
-//!
-//! ## Authentication Flow
-//!
-//! ```text
-//! Client → Authorization header → from_authorization_header()
-//!   → Extract (type, credentials)
-//!   → authenticate(type, credentials)
-//!   → Backend validation
-//!   → Session { username, expiration }
-//!   → Identity::login() creates cookie
-//! ```
 
 use std::sync::OnceLock;
 
@@ -110,8 +100,8 @@ pub struct Session {
 #[derive(Debug, serde::Deserialize, Default)]
 #[serde(default)]
 pub struct Config {
-    #[cfg(feature = "auth-jwt")]
-    basic: OptionalBackendConfig<()>,
+    #[cfg(feature = "auth-basic")]
+    basic: OptionalBackendConfig<basic::Config>,
     #[cfg(feature = "auth-jwt")]
     jwt: OptionalBackendConfig<jwt::Config>,
 }
@@ -174,7 +164,6 @@ pub enum Error {
     MissingField { field: String },
 
     /// Identified user is not allowed in
-    #[allow(dead_code)]
     #[error("User \"{identity}\" is not authorized")]
     NotAuthorized { identity: String },
 }

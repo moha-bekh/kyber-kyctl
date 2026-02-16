@@ -727,9 +727,12 @@ fn raw_credentials(
     credentials: &AuthCredentials,
 ) -> Result<NonNull<sys::kyclient_AuthCredentials>> {
     let credentials = match credentials {
-        AuthCredentials::Basic { username } => {
+        AuthCredentials::Basic { username, password } => {
             let username = to_cstr(username);
-            unsafe { sys::kyclient_auth_credentials_new_basic(username.as_ptr()) }
+            let password = to_cstr(password);
+            unsafe {
+                sys::kyclient_auth_credentials_new_basic(username.as_ptr(), password.as_ptr())
+            }
         }
         AuthCredentials::Jwt { token } => {
             let token = to_cstr(token);

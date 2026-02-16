@@ -20,7 +20,7 @@
 
 #[derive(Clone)]
 pub enum AuthCredentials {
-    Basic { username: String },
+    Basic { username: String, password: String },
     Jwt { token: String },
 }
 

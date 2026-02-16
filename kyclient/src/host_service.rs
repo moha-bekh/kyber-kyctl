@@ -76,7 +76,9 @@ pub(crate) async fn login(
     let request = client.post(url);
 
     let request = match credentials {
-        AuthCredentials::Basic { username } => request.basic_auth(username, Option::<String>::None),
+        AuthCredentials::Basic { username, password } => {
+            request.basic_auth(username, Some(password))
+        }
         AuthCredentials::Jwt { token } => request.bearer_auth(token),
     };
 

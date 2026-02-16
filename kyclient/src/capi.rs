@@ -280,6 +280,7 @@ pub unsafe extern "C" fn kyclient_windowshandle_from_hwnd(hwnd: u64) -> *mut kyc
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_auth_credentials_new_basic(
     username: *const c_char,
+    password: *const c_char,
 ) -> *mut kyclient_AuthCredentials {
     let Ok(username) = CStr::from_ptr(username).to_str() else {
         warn!("Fail to convert username");
@@ -287,8 +288,14 @@ pub unsafe extern "C" fn kyclient_auth_credentials_new_basic(
     };
     let username = username.to_owned();
 
+    let Ok(password) = CStr::from_ptr(password).to_str() else {
+        warn!("Fail to convert password");
+        return ptr::null_mut();
+    };
+    let password = password.to_owned();
+
     Box::into_raw(Box::new(kyclient_AuthCredentials {
-        inner: crate::AuthCredentials::Basic { username },
+        inner: crate::AuthCredentials::Basic { username, password },
     }))
 }
 

@@ -34,7 +34,10 @@ impl BackendRegistry {
     pub fn new(config: &Config) -> Self {
         Self {
             #[cfg(feature = "auth-basic")]
-            basic: config.basic.enabled.then_some(auth::basic::Basic {}),
+            basic: config
+                .basic
+                .enabled
+                .then_some(auth::basic::Basic::new(&config.basic.inner)),
             #[cfg(feature = "auth-jwt")]
             jwt: config
                 .jwt
