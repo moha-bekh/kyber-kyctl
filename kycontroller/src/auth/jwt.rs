@@ -43,7 +43,7 @@
 //! ### RS256 as a PEM file
 //!
 //! ```toml
-//! [controller.auth.jwt]
+//! [kycontroller.auth.jwt]
 //! algorithm = "RS256"
 //! key = { file = "/etc/kyber/jwt-public-key.pem" }
 //! ```
@@ -51,7 +51,7 @@
 //! ### HS256 as plain text
 //!
 //! ```toml
-//! [controller.auth.jwt]
+//! [kycontroller.auth.jwt]
 //! algorithm = "HS256"
 //! key = { plain = "your-secret-key-here" }
 //! ```
