@@ -243,6 +243,7 @@ pub unsafe extern "C" fn kyclient_set_android_logger() {
     );
 }
 
+/// Returns: (transfer full)
 #[cfg(target_os = "android")]
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_windowshandle_set_android_context(
@@ -257,6 +258,7 @@ pub unsafe extern "C" fn kyclient_windowshandle_set_android_context(
     }))
 }
 
+/// Returns: (transfer full)
 #[cfg(target_os = "linux")]
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_windowshandle_from_x11(
@@ -267,6 +269,7 @@ pub unsafe extern "C" fn kyclient_windowshandle_from_x11(
     }))
 }
 
+/// Returns: (transfer full)
 #[cfg(target_os = "macos")]
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_windowshandle_from_ns_view(
@@ -277,6 +280,7 @@ pub unsafe extern "C" fn kyclient_windowshandle_from_ns_view(
     }))
 }
 
+/// Returns: (transfer full)
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_windowshandle_from_ui_view(
@@ -287,6 +291,7 @@ pub unsafe extern "C" fn kyclient_windowshandle_from_ui_view(
     }))
 }
 
+/// Returns: (transfer full)
 #[cfg(target_os = "windows")]
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_windowshandle_from_hwnd(hwnd: u64) -> *mut kyclient_WindowHandle {
@@ -295,6 +300,7 @@ pub unsafe extern "C" fn kyclient_windowshandle_from_hwnd(hwnd: u64) -> *mut kyc
     }))
 }
 
+/// Returns: (transfer full)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_auth_credentials_new_basic(
     username: *const c_char,
@@ -349,6 +355,7 @@ pub unsafe extern "C" fn kyclient_auth_credentials_new_oidc(
     }))
 }
 
+/// @out_config: (out)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_connect_config_default(
     host: *const c_char,
@@ -375,6 +382,7 @@ pub unsafe extern "C" fn kyclient_connect_config_default(
     0
 }
 
+/// @credentials: (transfer full)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_connect_config_set_credentials(
     config: *mut kyclient_ConnectConfig,
@@ -464,6 +472,7 @@ pub unsafe extern "C" fn kyclient_connect_config_set_tls_root_cert_path(
 ///
 /// This C API is preserved for backward compatibility with Android and iOS clients.
 /// Internally converts to `VerifyMode::RootCert`.
+/// @bytes: (array length=len)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_connect_config_set_tls_root_cert_bytes(
     config: *mut kyclient_ConnectConfig,
@@ -506,6 +515,7 @@ pub unsafe extern "C" fn kyclient_connect_config_set_auto_reconnection(
     (*config).config.auto_reconnection = enabled;
 }
 
+/// @cfg: (transfer full)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_connect_config_unref(cfg: *mut kyclient_ConnectConfig) {
     if !cfg.is_null() {
@@ -707,6 +717,8 @@ pub struct kyclient_KnownHostEntry {
 
 /// List all hosts in known_hosts file
 /// Returns array of entries and count, caller must free with kyclient_known_hosts_list_free
+/// @out_entries: (out) (array length=out_count)
+/// @out_count: (out)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_known_hosts_list(
     out_entries: *mut *mut kyclient_KnownHostEntry,
@@ -746,6 +758,7 @@ pub unsafe extern "C" fn kyclient_known_hosts_list(
 }
 
 /// Free known hosts list returned by kyclient_known_hosts_list
+/// @entries: (transfer full) (array length=count)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_known_hosts_list_free(
     entries: *mut kyclient_KnownHostEntry,
@@ -768,6 +781,7 @@ pub unsafe extern "C" fn kyclient_known_hosts_list_free(
     libc::free(entries as *mut c_void);
 }
 
+/// Returns: (transfer full)
 #[cfg(feature = "rtp")]
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_streaming_protocol_rtp() -> *mut kyclient_StreamingProtocol {
@@ -776,6 +790,7 @@ pub unsafe extern "C" fn kyclient_streaming_protocol_rtp() -> *mut kyclient_Stre
     Box::into_raw(Box::new(kyclient_StreamingProtocol { protocol }))
 }
 
+/// Returns: (transfer full)
 #[cfg(feature = "kymux")]
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_streaming_protocol_kymux(
@@ -791,6 +806,7 @@ pub unsafe extern "C" fn kyclient_streaming_protocol_kymux(
     Box::into_raw(Box::new(kyclient_StreamingProtocol { protocol }))
 }
 
+/// @protocol: (transfer full)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_streaming_protocol_unref(
     protocol: *mut kyclient_StreamingProtocol,
@@ -800,6 +816,7 @@ pub unsafe extern "C" fn kyclient_streaming_protocol_unref(
     }
 }
 
+/// @cfg: (transfer full)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_video_player_config_unref(cfg: *mut kyclient_VideoPlayerConfig) {
     if !cfg.is_null() {
@@ -807,6 +824,8 @@ pub unsafe extern "C" fn kyclient_video_player_config_unref(cfg: *mut kyclient_V
     }
 }
 
+/// @window_handle: (transfer full)
+/// @out_config: (out)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_video_player_config_default(
     window_handle: *mut kyclient_WindowHandle,
@@ -828,6 +847,8 @@ pub unsafe extern "C" fn kyclient_video_player_config_default(
     0
 }
 
+/// @player: (transfer none)
+/// @out_config: (out)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_video_session_config_default(
     display_id: u32,
@@ -862,6 +883,7 @@ pub unsafe extern "C" fn kyclient_video_player_config_set_video_buffer(
     (*config).config.video_buffer = video_buffer;
 }
 
+/// @cfg: (transfer full)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_video_session_config_unref(
     cfg: *mut kyclient_VideoSessionConfig,
@@ -895,6 +917,7 @@ pub unsafe extern "C" fn kyclient_video_session_config_set_intra_refresh(
     (*config).config.intra_refresh = Some(intra_refresh);
 }
 
+/// @out_config: (out)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_audio_session_config_default(
     out_config: *mut *mut kyclient_AudioSessionConfig,
@@ -916,6 +939,7 @@ pub unsafe extern "C" fn kyclient_audio_session_config_set_audio_buffer(
     };
 }
 
+/// @out_config: (out)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_input_session_config_default(
     pipeline: *mut kynput_sys::kynput_Pipeline,
@@ -933,6 +957,7 @@ pub unsafe extern "C" fn kyclient_input_session_config_default(
     0
 }
 
+/// @cfg: (transfer full)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_input_session_config_unref(
     cfg: *mut kyclient_InputSessionConfig,
@@ -958,6 +983,7 @@ pub unsafe extern "C" fn kyclient_input_session_config_clipboard(
     (*cfg).config.clipboard = enable;
 }
 
+/// @out_config: (out)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_streaming_session_config_default(
     protocol: *const kyclient_StreamingProtocol,
@@ -975,6 +1001,7 @@ pub unsafe extern "C" fn kyclient_streaming_session_config_default(
     0
 }
 
+/// @cfg: (transfer full)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_streaming_session_config_unref(
     cfg: *mut kyclient_StreamingSessionConfig,
@@ -999,6 +1026,7 @@ pub unsafe extern "C" fn kyclient_streaming_session_config_get_bitrate(
     (*config).config.bitrate
 }
 
+/// @audio: (transfer full)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_streaming_session_config_set_audio(
     config: *mut kyclient_StreamingSessionConfig,
@@ -1009,6 +1037,7 @@ pub unsafe extern "C" fn kyclient_streaming_session_config_set_audio(
     (*config).config.audio = Some(audio.config);
 }
 
+/// @video: (transfer full)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_streaming_session_config_add_video(
     config: *mut kyclient_StreamingSessionConfig,
@@ -1019,6 +1048,7 @@ pub unsafe extern "C" fn kyclient_streaming_session_config_add_video(
     (*config).config.video.push(video.config);
 }
 
+/// @input: (transfer full)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_streaming_session_config_set_input(
     config: *mut kyclient_StreamingSessionConfig,
@@ -1034,6 +1064,7 @@ pub struct kyclient_Client {
     client: crate::Client,
 }
 
+/// Returns: (transfer full)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_client_new(
     connect_config: *mut kyclient_ConnectConfig,
@@ -1090,6 +1121,7 @@ pub unsafe extern "C" fn kyclient_client_disconnect(client: *mut kyclient_Client
     result_to_c_int(ret)
 }
 
+/// @session_config: (transfer none)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_client_start_streaming(
     client: *mut kyclient_Client,
@@ -1134,6 +1166,7 @@ pub unsafe extern "C" fn kyclient_client_set_bitrate(
     result_to_c_int(ret)
 }
 
+/// @client: (transfer full)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_client_unref(client: *mut kyclient_Client) {
     let _ = Box::from_raw(client);
@@ -1232,6 +1265,8 @@ pub unsafe extern "C" fn kyclient_event_get_type(event: *const Event) -> kyclien
     }
 }
 
+/// @out_displays: (out) (array length=out_len)
+/// @out_len: (out)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_event_unpack_control_plane_connected(
     event: *const Event,
@@ -1252,6 +1287,7 @@ pub unsafe extern "C" fn kyclient_event_unpack_control_plane_connected(
     }
 }
 
+/// @out_reason: (out)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_event_unpack_connect_failed(
     event: *const Event,
@@ -1342,6 +1378,8 @@ pub unsafe extern "C" fn kyclient_event_unpack_stopped(
     0
 }
 
+/// @out_attempt: (out)
+/// @out_max_attempts: (out)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_event_unpack_reconnecting(
     event: *const Event,
@@ -1362,6 +1400,7 @@ pub unsafe extern "C" fn kyclient_event_unpack_reconnecting(
     0
 }
 
+/// @out_should_restart_streaming: (out)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_event_unpack_reconnected(
     event: *const Event,
@@ -1379,6 +1418,8 @@ pub unsafe extern "C" fn kyclient_event_unpack_reconnected(
     0
 }
 
+/// @out_displays: (out) (array length=out_len)
+/// @out_len: (out)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_event_unpack_display_list_updated(
     event: *const Event,
@@ -1399,11 +1440,15 @@ pub unsafe extern "C" fn kyclient_event_unpack_display_list_updated(
     }
 }
 
+/// @displays: (transfer full)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_event_free_displays(displays: *mut Display) {
     let _ = Box::from_raw(displays);
 }
 
+/// @out_type: (out)
+/// @out_stage: (out)
+/// @out_event: (out)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_event_unpack_streamer_pipeline_event(
     event: *const Event,
@@ -1449,6 +1494,7 @@ pub unsafe extern "C" fn kyclient_event_unpack_streamer_pipeline_event(
     0
 }
 
+/// @out_volume: (out)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_event_unpack_audio_volume_changed(
     event: *const Event,
@@ -1463,6 +1509,7 @@ pub unsafe extern "C" fn kyclient_event_unpack_audio_volume_changed(
     0
 }
 
+/// @out_mute: (out)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_event_unpack_audio_mute_changed(
     event: *const Event,
@@ -1477,6 +1524,7 @@ pub unsafe extern "C" fn kyclient_event_unpack_audio_mute_changed(
     0
 }
 
+/// @out_bitrate: (out)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_event_unpack_bitrate_changed(
     event: *const Event,
@@ -1730,6 +1778,7 @@ pub struct kyclient_metrics_json {
     c_data: Vec<*const c_char>,
 }
 
+/// Returns: (transfer full)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_metrics_json_producer_new() -> *mut kyclient_metrics_json_producer
 {
@@ -1737,6 +1786,7 @@ pub unsafe extern "C" fn kyclient_metrics_json_producer_new() -> *mut kyclient_m
     Box::into_raw(Box::new(kyclient_metrics_json_producer { producer }))
 }
 
+/// @producer: (transfer full)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_metrics_json_producer_unref(
     producer: *mut kyclient_metrics_json_producer,
@@ -1744,6 +1794,8 @@ pub unsafe extern "C" fn kyclient_metrics_json_producer_unref(
     let _ = Box::from_raw(producer);
 }
 
+/// @metric: (transfer none)
+/// Returns: (transfer full)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_metrics_json_producer_push(
     producer: *mut kyclient_metrics_json_producer,
@@ -1816,6 +1868,8 @@ pub unsafe extern "C" fn kyclient_metrics_json_producer_push(
     }))
 }
 
+/// @out_values: (out) (array length=out_count)
+/// @out_count: (out)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_metrics_json_values(
     json: *mut kyclient_metrics_json,
@@ -1828,6 +1882,7 @@ pub unsafe extern "C" fn kyclient_metrics_json_values(
     *out_count = json.c_data.len();
 }
 
+/// @json: (transfer full)
 #[no_mangle]
 pub unsafe extern "C" fn kyclient_metrics_json_unref(json: *mut kyclient_metrics_json) {
     let _ = Box::from_raw(json);
