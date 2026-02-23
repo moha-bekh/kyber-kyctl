@@ -18,8 +18,21 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum AuthCredentials {
     Basic { username: String },
     Jwt { token: String },
+}
+
+impl std::fmt::Debug for AuthCredentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Basic { username, .. } => f
+                .debug_struct("Basic")
+                .field("username", username)
+                .field("password", &"[REDACTED]")
+                .finish(),
+            Self::Jwt { .. } => f.debug_struct("Jwt").field("token", &"[REDACTED]").finish(),
+        }
+    }
 }
