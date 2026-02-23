@@ -217,6 +217,15 @@ impl Controller {
         self.tray_handle = Some(handle);
     }
 
+    /// Signal the Windows service to stop.
+    ///
+    /// Delegates to the tray handle if available; no-op otherwise.
+    pub(crate) fn signal_service_stop(&self) {
+        if let Some(ref tray) = self.tray_handle {
+            tray.signal_service_stop();
+        }
+    }
+
     /// Update the system tray status.
     pub(crate) async fn update_tray_status(&self) {
         let Some(ref tray) = self.tray_handle else {

@@ -45,6 +45,11 @@ impl TrayHandle {
         // No-op
     }
 
+    /// Signal the Windows service to stop (no-op on unsupported platforms).
+    pub fn signal_service_stop(&self) {
+        // No-op
+    }
+
     /// Shutdown the tray (no-op on unsupported platforms).
     pub async fn shutdown(&mut self) {
         // No-op
@@ -64,9 +69,4 @@ pub fn spawn(_server_handle: ServerHandle) -> Result<(TrayHandle, mpsc::Receiver
         },
         shutdown_rx,
     ))
-}
-
-/// Signal the Windows service to stop (no-op on unsupported platforms).
-pub fn signal_service_stop() {
-    // No-op on non-Windows platforms
 }

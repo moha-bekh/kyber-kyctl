@@ -42,7 +42,6 @@ use log::{error, info, warn};
 use muda::{ContextMenu, Menu, MenuEvent, MenuId, MenuItem};
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
-use std::sync::OnceLock;
 use std::thread;
 use std::thread::JoinHandle;
 use tokio::sync::mpsc;
@@ -123,6 +122,8 @@ pub struct TrayHandle {
     wake_event: SendHandle,
     /// Join handle for the tray thread.
     thread_handle: Option<JoinHandle<()>>,
+    /// Handle to signal service.exe to stop (only set when running under service.exe).
+    service_stop_event: Option<isize>,
 }
 
 impl TrayHandle {
@@ -132,12 +133,14 @@ impl TrayHandle {
         shutdown_event: SendHandle,
         wake_event: SendHandle,
         thread_handle: JoinHandle<()>,
+        service_stop_event: Option<isize>,
     ) -> Self {
         Self {
             status_tx,
             shutdown_event,
             wake_event,
             thread_handle: Some(thread_handle),
+            service_stop_event,
         }
     }
 
@@ -153,6 +156,19 @@ impl TrayHandle {
         // Signal the wake event to notify the tray thread
         // Safety: wake_event is a valid handle created by CreateEventW
         unsafe { SetEvent(self.wake_event.as_raw()) };
+    }
+
+    /// Signal the Windows service to stop.
+    ///
+    /// This signals to service.exe that the controller wants to stop.
+    /// No-op if not running under service.exe.
+    pub fn signal_service_stop(&self) {
+        let Some(handle) = self.service_stop_event else {
+            return;
+        };
+        info!("Signaling stop event to service");
+        // Safety: handle value comes from trusted parent process (service.exe)
+        unsafe { SetEvent(handle as *mut std::ffi::c_void) };
     }
 
     /// Shutdown the tray thread and wait for it to finish.
@@ -791,9 +807,9 @@ fn run_tray_loop(
 pub fn spawn(server_handle: ServerHandle) -> Result<(TrayHandle, mpsc::Receiver<ShutdownSignal>)> {
     use windows_sys::Win32::System::Threading::CreateEventW;
 
-    // Obtain service event handles upfront to ensure proper setup
-    if let Some(handle) = get_service_event_handle("KYBER_STOP_SERVICE_EVENT") {
-        SERVICE_STOP_EVENT.set(handle).ok();
+    // Obtain service stop event handle upfront (only set when running under service.exe)
+    let service_stop_event = get_service_event_handle("KYBER_STOP_SERVICE_EVENT");
+    if service_stop_event.is_some() {
         info!("Service stop event handle obtained");
     }
 
@@ -847,6 +863,7 @@ pub fn spawn(server_handle: ServerHandle) -> Result<(TrayHandle, mpsc::Receiver<
         SendHandle(shutdown_raw),
         SendHandle(wake_raw),
         thread_handle,
+        service_stop_event,
     );
 
     // Listen for shutdown event from Windows service (if running under service.exe)
@@ -861,25 +878,6 @@ pub fn spawn(server_handle: ServerHandle) -> Result<(TrayHandle, mpsc::Receiver<
 /// Returns None if the env var is not set or cannot be parsed.
 fn get_service_event_handle(env_var: &str) -> Option<isize> {
     std::env::var(env_var).ok()?.parse().ok()
-}
-
-/// Handle to signal service.exe to stop (obtained during spawn).
-static SERVICE_STOP_EVENT: OnceLock<isize> = OnceLock::new();
-
-/// Signal the Windows service to stop.
-///
-/// This signals to service.exe that the controller wants to stop.
-/// Call this when stopping from the tray menu to ensure the service
-/// doesn't try to restart the controller.
-///
-/// The handle is obtained during `spawn()` to ensure proper setup validation.
-pub fn signal_service_stop() {
-    let Some(&handle) = SERVICE_STOP_EVENT.get() else {
-        return;
-    };
-    info!("Signaling stop event to service");
-    // Safety: handle value comes from trusted parent process (service.exe)
-    unsafe { SetEvent(handle as *mut std::ffi::c_void) };
 }
 
 /// Spawn a thread to listen for shutdown event from Windows service.

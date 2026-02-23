@@ -51,7 +51,7 @@
 //!     Some(signal) = shutdown_rx.recv() => {
 //!         match signal {
 //!             ShutdownSignal::Stop => {
-//!                 tray::signal_service_stop();
+//!                 tray_handle.signal_service_stop();
 //!                 server_handle.stop(true).await;
 //!             }
 //!             ShutdownSignal::Restart => {
@@ -67,7 +67,7 @@ mod status;
 
 // These are only used on Windows with win32-tray feature
 #[allow(unused_imports)]
-pub use platform::{signal_service_stop, spawn, TrayHandle};
+pub use platform::{spawn, TrayHandle};
 #[allow(unused_imports)]
 pub use status::{ShutdownSignal, TrayStatus};
 
@@ -117,7 +117,7 @@ pub async fn run_server(
             match signal {
                 ShutdownSignal::Stop => {
                     info!("Stop signal received");
-                    signal_service_stop();
+                    ctrl.lock().await.signal_service_stop();
                     server_handle.stop(true).await;
                 }
                 ShutdownSignal::Restart => {
