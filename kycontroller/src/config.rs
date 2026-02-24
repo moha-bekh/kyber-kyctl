@@ -26,7 +26,6 @@ use serde::Deserialize;
 use crate::{auth, session};
 
 use super::utils;
-use super::{Error, Result};
 
 const LISTENING_PORT: u16 = 8080;
 
@@ -73,7 +72,15 @@ impl Config {
     }
 }
 
-pub(crate) fn load() -> Result<Config> {
+#[derive(Debug, thiserror::Error)]
+pub enum ParseError {
+    #[error("text isn't valid UTF8")]
+    InvalidUTF8,
+    #[error(transparent)]
+    InvalidTOML(#[from] toml::de::Error),
+}
+
+pub(crate) fn load() -> Result<Config, ParseError> {
     let path = utils::get_resource_path("kyber_config.toml");
 
     let Ok(content) = fs::read(&path) else {
@@ -82,15 +89,10 @@ pub(crate) fn load() -> Result<Config> {
     };
 
     info!("Using configuration file {path:?}");
-    let content = String::from_utf8(content).map_err(|err| {
-        error!("Configuration file isn't a valid UTF8 file: {err:?}");
-        Error::ConfigParseFail
-    })?;
 
-    let content: toml::Table = content.parse().map_err(|err| {
-        error!("Configuration file parsing failed: {err:?}");
-        Error::ConfigParseFail
-    })?;
+    let content: toml::Table = str::from_utf8(&content)
+        .map_err(|_| ParseError::InvalidUTF8)?
+        .parse()?;
 
     let Some(controller_conf) = content.get("kycontroller") else {
         info!("No kycontroller section found. Use default configuration");
@@ -100,5 +102,5 @@ pub(crate) fn load() -> Result<Config> {
     controller_conf
         .clone()
         .try_into()
-        .map_err(|err| Error::ConfigLoadFail { reason: err })
+        .map_err(ParseError::InvalidTOML)
 }

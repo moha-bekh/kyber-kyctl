@@ -101,10 +101,11 @@ pub enum Error {
     WsInvalidAuthMessage,
     #[error("Authentication timed out")]
     WsAuthTimeout,
-    #[error("Config parse failed")]
-    ConfigParseFail,
-    #[error("Config load failed: {reason}")]
-    ConfigLoadFail { reason: toml::de::Error },
+    #[error("Config parse failed: {source}")]
+    ConfigParseFailed {
+        #[from]
+        source: crate::config::ParseError,
+    },
     #[error("No statemachine proxy")]
     NotStateMachineProxy,
 }
