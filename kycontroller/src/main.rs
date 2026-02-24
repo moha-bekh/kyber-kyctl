@@ -622,6 +622,7 @@ async fn real_main() -> Result<()> {
             .wrap(
                 SessionMiddleware::builder(CookieSessionStore::default(), cookie_key.clone())
                     .cookie_same_site(cookie_same_site)
+                    .cookie_name("__HOST-SESSION".to_owned())
                     .build(),
             )
             // Kymux
