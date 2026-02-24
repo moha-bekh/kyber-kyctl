@@ -614,6 +614,9 @@ async fn real_main() -> Result<()> {
                     .cookie_name("__HOST-SESSION".to_owned())
                     .build(),
             )
+            .wrap(security::cop::CrossOriginProtection::new(
+                trusted_origins.clone(),
+            ))
             .wrap(security::build_cors(&trusted_origins))
             .wrap(middleware::Logger::default())
             // Kymux

@@ -20,6 +20,8 @@
 
 use actix_web::cookie;
 
+pub mod cop;
+
 #[derive(Clone, Debug, serde::Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -54,6 +56,15 @@ impl Default for Config {
 pub enum TrustedOrigins {
     All,
     Some(Vec<String>),
+}
+
+impl TrustedOrigins {
+    fn contains(&self, origin: &str) -> bool {
+        match self {
+            TrustedOrigins::All => true,
+            TrustedOrigins::Some(origins) => origins.iter().any(|o| o == origin),
+        }
+    }
 }
 
 impl Default for TrustedOrigins {
