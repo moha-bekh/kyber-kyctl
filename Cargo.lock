@@ -2596,7 +2596,6 @@ dependencies = [
  "android_logger",
  "async-trait",
  "async-tungstenite",
- "base64 0.22.1",
  "bytes",
  "futures",
  "js-sys",

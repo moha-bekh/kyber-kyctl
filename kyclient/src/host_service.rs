@@ -20,9 +20,8 @@
 
 use std::time::Duration;
 
-use base64::Engine;
 use log::{error, warn};
-use reqwest::{self, header, StatusCode};
+use reqwest::{self, StatusCode};
 use serde::{Deserialize, Serialize};
 
 #[cfg(target_family = "wasm")]
@@ -74,19 +73,14 @@ pub(crate) async fn login(
     credentials: &AuthCredentials,
 ) -> Result<LoginResponse> {
     let url = format!("{base_url}/session/login", base_url = client.base_url());
-    let authorization = match credentials {
-        AuthCredentials::Basic { username } => {
-            let encoded = base64::prelude::BASE64_STANDARD.encode(format!("{username}:"));
-            format!("Basic {encoded}")
-        }
-        AuthCredentials::Jwt { token } => format!("Bearer {token}"),
+    let request = client.post(url);
+
+    let request = match credentials {
+        AuthCredentials::Basic { username } => request.basic_auth(username, Option::<String>::None),
+        AuthCredentials::Jwt { token } => request.bearer_auth(token),
     };
 
-    let response = client
-        .post(url)
-        .header(header::AUTHORIZATION, authorization)
-        .send()
-        .await?;
+    let response = request.send().await?;
     if response.status() != StatusCode::OK {
         error!("GET /session/login failed: {}", response.status());
         return Err(Error::HttpQueryFailed {
