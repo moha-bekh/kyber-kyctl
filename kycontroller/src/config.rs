@@ -23,7 +23,7 @@ use std::fs;
 use log::{error, info};
 use serde::Deserialize;
 
-use crate::{auth, session};
+use crate::auth;
 
 use super::utils;
 
@@ -39,7 +39,7 @@ pub(crate) struct Config {
     #[serde(default)]
     auth: auth::Config,
     #[serde(default)]
-    session: session::Config,
+    security: crate::security::Config,
 }
 
 impl Config {
@@ -59,8 +59,8 @@ impl Config {
         &self.auth
     }
 
-    pub(crate) fn session(&self) -> &session::Config {
-        &self.session
+    pub(crate) fn security(&self) -> &crate::security::Config {
+        &self.security
     }
 
     pub(crate) fn tls_cert(&self) -> Option<&str> {

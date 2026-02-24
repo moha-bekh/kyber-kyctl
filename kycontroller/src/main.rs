@@ -43,6 +43,7 @@ mod host_events;
 mod inputservice;
 mod kymux_controller;
 mod rtp;
+mod security;
 mod session;
 mod statemachine;
 mod tls;
@@ -548,14 +549,10 @@ async fn real_main() -> Result<()> {
     let tls_config = tls::load_config(tls_cert, tls_key)?;
     let server_config = build_serverconfig(&tls_config)?;
 
-    auth::init(config.auth());
+    let sec = config.security();
+    let cookie_same_site = sec.same_site();
 
-    let cookie_same_site = if config.session().disable_same_site_protection {
-        warn!("Session cookie 'SameSite' is set to 'none', this leaves Kyber vulnerable to CSRF attacks, check your configuration file!");
-        cookie::SameSite::None
-    } else {
-        cookie::SameSite::Strict
-    };
+    auth::init(config.auth());
 
     let process_factory = Arc::new(ProcessFactory::new(false));
 
@@ -608,14 +605,6 @@ async fn real_main() -> Result<()> {
             .app_data(ctrl.clone())
             .app_data(web::JsonConfig::default().limit(1024))
             .wrap(middleware::Logger::default())
-            .wrap(
-                actix_cors::Cors::default()
-                    .allowed_methods(vec!["GET", "POST"])
-                    .allow_any_origin()
-                    .supports_credentials()
-                    .allowed_header(actix_web::http::header::CONTENT_TYPE)
-                    .allowed_header(actix_web::http::header::AUTHORIZATION),
-            )
             // Custom middleware: wraps Session in IdentityInner, enforces expiration
             .wrap(session::identity::middleware::IdentityMiddleware {})
             // Decrypts session cookie, provides Session object to downstream middleware
@@ -625,6 +614,7 @@ async fn real_main() -> Result<()> {
                     .cookie_name("__HOST-SESSION".to_owned())
                     .build(),
             )
+            .wrap(security::build_cors())
             // Kymux
             .service(
                 web::scope("/kymux")

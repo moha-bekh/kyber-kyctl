@@ -59,12 +59,6 @@
 //!    - Handles WebSocket-only connections
 //!    - Without this, a WebSocket-only client could continue after JWT expiry
 //!
-//! # Configuration
-//!
-//! ```toml
-//! [controller.session]
-//! disable_same_site_protection = false  # Set true for cross-origin scenarios
-//! ```
 
 /// One-time authentication tokens generated per session.
 ///
@@ -90,17 +84,6 @@ impl ClientAuthTokens {
             websocket: rand::distr::Alphanumeric.sample_string(&mut rng, TOKEN_STRING_LEN),
         }
     }
-}
-
-/// Session module configuration.
-#[derive(Debug, serde::Deserialize, Default)]
-#[serde(default)]
-pub struct Config {
-    /// If true, sets SameSite cookie attribute to None instead of Strict.
-    ///
-    /// **Security Warning**: Disabling SameSite protection makes Kyber vulnerable
-    /// to CSRF attacks.
-    pub disable_same_site_protection: bool,
 }
 
 pub mod expiration;
