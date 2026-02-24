@@ -42,24 +42,17 @@
 //! # Usage
 //!
 //! ```ignore
-//! // In main.rs, spawn the tray and handle shutdown signals:
+//! // In main.rs:
 //! let server_handle = server.handle();
-//! let (tray_handle, mut shutdown_rx) = tray::spawn(server_handle.clone())?;
 //!
 //! tokio::select! {
-//!     _ = server => {}
-//!     Some(signal) = shutdown_rx.recv() => {
-//!         match signal {
-//!             ShutdownSignal::Stop => {
-//!                 tray_handle.signal_service_stop();
-//!                 server_handle.stop(true).await;
-//!             }
-//!             ShutdownSignal::Restart => {
-//!                 server_handle.stop(true).await;
-//!             }
-//!         }
+//!     result = server => {
+//!         if let Err(e) = result { warn!("Server error: {e}"); }
 //!     }
+//!     _ = tray::run(ctrl.clone(), server_handle.clone()) => {}
 //! }
+//!
+//! ctrl.lock().await.shutdown_tray().await;
 //! ```
 
 mod platform;
@@ -72,28 +65,21 @@ pub use platform::{spawn, TrayHandle};
 pub use status::{ShutdownSignal, TrayStatus};
 
 use crate::controller::Controller;
-use crate::error::Result;
 
-use actix_web::dev::Server;
+use actix_web::dev::ServerHandle;
 use log::{info, warn};
 use tokio::sync::Mutex;
 
-/// Run the HTTP server with optional tray support.
+/// Spawn the system tray and wait for a shutdown signal.
 ///
-/// This function handles:
-/// - Spawning the tray icon (if supported)
-/// - Processing tray commands (Stop/Restart)
-/// - Graceful server shutdown
-/// - Windows service event signaling
+/// Spawns the tray icon, sets initial status, stores the handle in the
+/// controller, then blocks until a shutdown signal is received from the
+/// tray menu or the Windows service.
 ///
-/// On platforms without tray support, this simply runs the server.
-pub async fn run_server(
-    server: Server,
-    ctrl: actix_web::web::Data<Mutex<Controller>>,
-) -> Result<()> {
-    let server_handle = server.handle();
-
-    let mut shutdown_rx = match spawn(server_handle.clone()) {
+/// On signal: calls `signal_service_stop()` (for Stop) and stops the server.
+/// If tray initialization fails, returns immediately.
+pub async fn run(ctrl: actix_web::web::Data<Mutex<Controller>>, server_handle: ServerHandle) {
+    let mut shutdown_rx = match spawn() {
         Ok((tray_handle, rx)) => {
             info!("System tray initialized");
             tray_handle.set_status(TrayStatus::idle()).await;
@@ -102,32 +88,23 @@ pub async fn run_server(
         }
         Err(e) => {
             warn!("Failed to initialize system tray: {e}");
-            let (_tx, rx) = tokio::sync::mpsc::channel(1);
-            rx
+            return;
         }
     };
 
-    tokio::select! {
-        result = server => {
-            if let Err(e) = result {
-                warn!("Server error: {e}");
-            }
+    let Some(signal) = shutdown_rx.recv().await else {
+        return;
+    };
+
+    match signal {
+        ShutdownSignal::Stop => {
+            info!("Stop signal received");
+            ctrl.lock().await.signal_service_stop();
+            server_handle.stop(false).await;
         }
-        Some(signal) = shutdown_rx.recv() => {
-            match signal {
-                ShutdownSignal::Stop => {
-                    info!("Stop signal received");
-                    ctrl.lock().await.signal_service_stop();
-                    server_handle.stop(true).await;
-                }
-                ShutdownSignal::Restart => {
-                    info!("Restart signal received");
-                    server_handle.stop(true).await;
-                }
-            }
+        ShutdownSignal::Restart => {
+            info!("Restart signal received");
+            server_handle.stop(false).await;
         }
     }
-
-    ctrl.lock().await.shutdown_tray().await;
-    Ok(())
 }

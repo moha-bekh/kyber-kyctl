@@ -680,8 +680,18 @@ async fn real_main() -> Result<()> {
         .bind_rustls_0_23(bind_addr, server_config)?
         .run();
 
-    // Run server with tray support (Windows) or directly (other platforms)
-    tray::run_server(server, ctrl_for_tray).await?;
+    let server_handle = server.handle();
+
+    tokio::select! {
+        result = server => {
+            if let Err(e) = result {
+                warn!("Server error: {e}");
+            }
+        }
+        _ = tray::run(ctrl_for_tray.clone(), server_handle.clone()) => {}
+    }
+
+    ctrl_for_tray.lock().await.shutdown_tray().await;
 
     session_exp_task.stop().await;
     watchdog.stop().await?;

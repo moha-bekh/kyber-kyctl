@@ -36,8 +36,6 @@
 use super::super::status::{ShutdownSignal, TrayStatus};
 use crate::error::{Error, Result};
 
-use actix_web::dev::ServerHandle;
-
 use log::{error, info, warn};
 use muda::{ContextMenu, Menu, MenuEvent, MenuId, MenuItem};
 use std::ffi::OsStr;
@@ -804,7 +802,7 @@ fn run_tray_loop(
 /// This function also spawns a listener for the Windows service shutdown event.
 /// When triggered, it sends `ShutdownSignal::Stop` to the returned channel
 /// and signals the tray to remove its icon before server shutdown.
-pub fn spawn(server_handle: ServerHandle) -> Result<(TrayHandle, mpsc::Receiver<ShutdownSignal>)> {
+pub fn spawn() -> Result<(TrayHandle, mpsc::Receiver<ShutdownSignal>)> {
     use windows_sys::Win32::System::Threading::CreateEventW;
 
     // Obtain service stop event handle upfront (only set when running under service.exe)
@@ -867,7 +865,7 @@ pub fn spawn(server_handle: ServerHandle) -> Result<(TrayHandle, mpsc::Receiver<
     );
 
     // Listen for shutdown event from Windows service (if running under service.exe)
-    spawn_service_shutdown_listener(server_handle, shutdown_signal_tx, shutdown_handle);
+    spawn_service_shutdown_listener(shutdown_signal_tx, shutdown_handle);
 
     Ok((tray_handle, shutdown_signal_rx))
 }
@@ -889,7 +887,6 @@ fn get_service_event_handle(env_var: &str) -> Option<isize> {
 /// This ensures the tray icon is removed even if the service force-kills us
 /// during server shutdown.
 fn spawn_service_shutdown_listener(
-    _server_handle: ServerHandle,
     shutdown_signal_tx: mpsc::Sender<ShutdownSignal>,
     tray_shutdown_event: RawHandle,
 ) {
