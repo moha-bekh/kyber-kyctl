@@ -552,6 +552,7 @@ async fn real_main() -> Result<()> {
     let sec = config.security();
     let trusted_origins = sec.trusted_origins().clone();
     let cookie_same_site = sec.same_site();
+    sec.warn_if_insecure();
 
     auth::init(config.auth());
 

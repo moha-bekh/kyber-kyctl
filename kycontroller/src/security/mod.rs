@@ -19,6 +19,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use actix_web::cookie;
+use log::warn;
 
 pub mod cop;
 
@@ -40,6 +41,21 @@ impl Config {
 
     pub fn trusted_origins(&self) -> &TrustedOrigins {
         &self.trusted_origins
+    }
+
+    pub fn warn_if_insecure(&self) {
+        match &self.trusted_origins {
+            TrustedOrigins::All => warn!(
+                "All cross-origin requests are accepted. \
+               This is fine for development but should not be used in production."
+            ),
+            TrustedOrigins::Some(origins) if origins.is_empty() && !self.same_site => warn!(
+                "SameSite=None cookie with no trusted origins configured. \
+               Cross-origin requests will be rejected. \
+               Add trusted_origins or set same_site = true in the config."
+            ),
+            _ => (),
+        }
     }
 }
 
