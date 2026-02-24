@@ -605,7 +605,6 @@ async fn real_main() -> Result<()> {
         let app = App::new()
             .app_data(ctrl.clone())
             .app_data(web::JsonConfig::default().limit(1024))
-            .wrap(middleware::Logger::default())
             // Custom middleware: wraps Session in IdentityInner, enforces expiration
             .wrap(session::identity::middleware::IdentityMiddleware {})
             // Decrypts session cookie, provides Session object to downstream middleware
@@ -616,6 +615,7 @@ async fn real_main() -> Result<()> {
                     .build(),
             )
             .wrap(security::build_cors(&trusted_origins))
+            .wrap(middleware::Logger::default())
             // Kymux
             .service(
                 web::scope("/kymux")
