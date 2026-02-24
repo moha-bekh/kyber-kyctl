@@ -25,22 +25,22 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("IO Error: {source:?}")]
+    #[error("IO Error: {source}")]
     IO {
         #[from]
         source: std::io::Error,
     },
-    #[error("kymux error: {source:?}")]
+    #[error("kymux error: {source}")]
     Kymux {
         #[from]
         source: kymux::Error,
     },
-    #[error("kyproto protocol error: {source:?}")]
+    #[error("kyproto protocol error: {source}")]
     KyProtoProtocol {
         #[from]
         source: kyproto::ProtocolError,
     },
-    #[error("libkypc error: {source:?}")]
+    #[error("libkypc error: {source}")]
     Libypc {
         #[from]
         source: libkypc::Error,
@@ -67,14 +67,14 @@ pub enum Error {
     FileNotFound { path: PathBuf },
     #[error("Invalid TLS file")]
     TlsInvalidFile,
-    #[error("rustls error: {source:?}")]
+    #[error("rustls error: {source}")]
     Rustls {
         #[from]
         source: rustls::Error,
     },
     #[error("rustls default provider failed to initialize")]
     RustlsDefaultProviderInit,
-    #[error("rcgen error: {source:?}")]
+    #[error("rcgen error: {source}")]
     RcGen {
         #[from]
         source: rcgen::Error,
@@ -103,7 +103,7 @@ pub enum Error {
     WsAuthTimeout,
     #[error("Config parse failed")]
     ConfigParseFail,
-    #[error("Config load failed: {reason:?}")]
+    #[error("Config load failed: {reason}")]
     ConfigLoadFail { reason: toml::de::Error },
     #[error("No statemachine proxy")]
     NotStateMachineProxy,

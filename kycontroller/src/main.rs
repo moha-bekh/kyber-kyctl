@@ -684,7 +684,7 @@ async fn main() -> Result<()> {
 
     let ret = real_main().await;
     if let Err(err) = &ret {
-        warn!("main() ended with error {err:?}");
+        warn!("main() ended with error {err}");
     }
 
     ret
