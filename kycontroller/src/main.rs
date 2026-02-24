@@ -550,6 +550,7 @@ async fn real_main() -> Result<()> {
     let server_config = build_serverconfig(&tls_config)?;
 
     let sec = config.security();
+    let trusted_origins = sec.trusted_origins().clone();
     let cookie_same_site = sec.same_site();
 
     auth::init(config.auth());
@@ -614,7 +615,7 @@ async fn real_main() -> Result<()> {
                     .cookie_name("__HOST-SESSION".to_owned())
                     .build(),
             )
-            .wrap(security::build_cors())
+            .wrap(security::build_cors(&trusted_origins))
             // Kymux
             .service(
                 web::scope("/kymux")

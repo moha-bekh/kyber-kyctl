@@ -23,6 +23,7 @@ use actix_web::cookie;
 #[derive(Clone, Debug, serde::Deserialize)]
 #[serde(default)]
 pub struct Config {
+    trusted_origins: TrustedOrigins,
     same_site: bool,
 }
 
@@ -34,19 +35,68 @@ impl Config {
             cookie::SameSite::None
         }
     }
+
+    pub fn trusted_origins(&self) -> &TrustedOrigins {
+        &self.trusted_origins
+    }
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Self { same_site: true }
+        Self {
+            trusted_origins: Default::default(),
+            same_site: true,
+        }
     }
 }
 
-pub fn build_cors() -> actix_cors::Cors {
-    actix_cors::Cors::default()
+#[derive(Clone, Debug)]
+pub enum TrustedOrigins {
+    All,
+    Some(Vec<String>),
+}
+
+impl Default for TrustedOrigins {
+    fn default() -> Self {
+        Self::Some(vec![])
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for TrustedOrigins {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(serde::Deserialize)]
+        #[serde(untagged)]
+        enum Raw {
+            String(String),
+            Array(Vec<String>),
+        }
+
+        match Raw::deserialize(deserializer)? {
+            Raw::String(ref s) => match s.trim() {
+                "*" => Ok(TrustedOrigins::All),
+                other => Err(serde::de::Error::custom(format!(
+                    "unknown value: {other}, expected \"*\" or an array"
+                ))),
+            },
+            Raw::Array(v) => Ok(TrustedOrigins::Some(v)),
+        }
+    }
+}
+
+pub fn build_cors(origins: &TrustedOrigins) -> actix_cors::Cors {
+    let cors = actix_cors::Cors::default()
         .allowed_methods(vec!["GET", "POST"])
         .supports_credentials()
         .allowed_header(actix_web::http::header::CONTENT_TYPE)
-        .allowed_header(actix_web::http::header::AUTHORIZATION)
-        .allow_any_origin()
+        .allowed_header(actix_web::http::header::AUTHORIZATION);
+
+    match origins {
+        TrustedOrigins::All => cors.allow_any_origin(),
+        TrustedOrigins::Some(origins) => origins
+            .iter()
+            .fold(cors, |cors, origin| cors.allowed_origin(origin)),
+    }
 }
