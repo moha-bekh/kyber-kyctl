@@ -35,11 +35,14 @@ use crate::{Error, Result};
 
 /// Get the known_hosts file path.
 /// - Linux: ~/.local/share/kyber/known_hosts
-/// - macOS: ~/Library/Application Support/kyber/known_hosts
+/// - macOS/iOS: ~/Library/Application Support/kyber/known_hosts
 /// - Windows: %LOCALAPPDATA%\kyber\known_hosts
-/// - Android/iOS: Uses KYBER_CACHEDIR environment variable
+/// - Android: Uses KYBER_CACHEDIR environment variable
+///
+/// On iOS, `HOME` is set to the app sandbox root by the OS.
+/// See: <https://developer.apple.com/library/archive/documentation/FileManagement/Conceptual/FileSystemProgrammingGuide/FileSystemOverview/FileSystemOverview.html>
 fn get_known_hosts_path() -> Result<PathBuf> {
-    #[cfg(any(target_os = "android", target_os = "ios"))]
+    #[cfg(target_os = "android")]
     {
         let cache_dir = std::env::var("KYBER_CACHEDIR").map_err(|_| {
             error!("KYBER_CACHEDIR not set");
@@ -59,7 +62,7 @@ fn get_known_hosts_path() -> Result<PathBuf> {
             .join("known_hosts"))
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     {
         let home = std::env::var("HOME").map_err(|_| {
             error!("HOME not set");
