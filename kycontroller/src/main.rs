@@ -21,6 +21,7 @@
 #![cfg_attr(feature = "win32-hide-console", windows_subsystem = "windows")]
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::process::ExitCode;
 use std::sync::Arc;
 
 use actix_session::storage::CookieSessionStore;
@@ -678,14 +679,15 @@ async fn real_main() -> Result<()> {
 }
 
 #[actix_web::main]
-async fn main() -> Result<()> {
+async fn main() -> ExitCode {
     let _log_handle = setup_logs("kycontroller", LevelFilter::Info);
     info!("Kyber controller. Revision {}", env!("VERGEN_GIT_DESCRIBE"));
 
-    let ret = real_main().await;
-    if let Err(err) = &ret {
-        warn!("main() ended with error {err}");
+    match real_main().await {
+        Err(e) => {
+            error!("Main process exited with error: {e}");
+            e.exit_code()
+        }
+        Ok(_) => ExitCode::SUCCESS,
     }
-
-    ret
 }

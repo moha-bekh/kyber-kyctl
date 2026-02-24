@@ -18,7 +18,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::path::PathBuf;
+use std::{path::PathBuf, process::ExitCode};
 
 use kymux::kyproto;
 use thiserror::Error;
@@ -108,6 +108,16 @@ pub enum Error {
     },
     #[error("No statemachine proxy")]
     NotStateMachineProxy,
+}
+
+impl Error {
+    pub const EXIT_CODE_INVALID_CONFIG: u8 = 0x42;
+    pub fn exit_code(&self) -> ExitCode {
+        match self {
+            Error::ConfigParseFailed { .. } => ExitCode::from(Self::EXIT_CODE_INVALID_CONFIG),
+            _ => ExitCode::FAILURE,
+        }
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
