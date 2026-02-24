@@ -69,3 +69,10 @@ pub fn spawn() -> Result<(TrayHandle, mpsc::Receiver<ShutdownSignal>)> {
         shutdown_rx,
     ))
 }
+
+/// Wait for a service shutdown signal (stub for unsupported platforms).
+///
+/// Returns a future that never resolves since service events are Windows-only.
+pub async fn wait_service_shutdown() {
+    std::future::pending::<()>().await;
+}

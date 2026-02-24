@@ -797,15 +797,10 @@ fn run_tray_loop(
 /// - Shutdown signal channel: Tray thread → main.rs (returned receiver)
 /// - Status channel: main.rs → tray thread (via TrayHandle)
 ///
-/// # Service Shutdown Integration
-///
-/// This function also spawns a listener for the Windows service shutdown event.
-/// When triggered, it sends `ShutdownSignal::Stop` to the returned channel
-/// and signals the tray to remove its icon before server shutdown.
 pub fn spawn() -> Result<(TrayHandle, mpsc::Receiver<ShutdownSignal>)> {
     use windows_sys::Win32::System::Threading::CreateEventW;
 
-    // Obtain service stop event handle upfront (only set when running under service.exe)
+    // Obtain service stop event (only set when running under service.exe)
     let service_stop_event = get_service_event_handle("KYBER_STOP_SERVICE_EVENT");
     if service_stop_event.is_some() {
         info!("Service stop event handle obtained");
@@ -864,9 +859,6 @@ pub fn spawn() -> Result<(TrayHandle, mpsc::Receiver<ShutdownSignal>)> {
         service_stop_event,
     );
 
-    // Listen for shutdown event from Windows service (if running under service.exe)
-    spawn_service_shutdown_listener(shutdown_signal_tx, shutdown_handle);
-
     Ok((tray_handle, shutdown_signal_rx))
 }
 
@@ -878,43 +870,33 @@ fn get_service_event_handle(env_var: &str) -> Option<isize> {
     std::env::var(env_var).ok()?.parse().ok()
 }
 
-/// Spawn a thread to listen for shutdown event from Windows service.
+/// Wait for a shutdown signal from the Windows service.
 ///
-/// When the service signals shutdown, we:
-/// 1. Signal tray shutdown FIRST (removes icon immediately)
-/// 2. Send `ShutdownSignal::Stop` through the channel (main.rs handles server stop)
+/// When running under service.exe, this waits for the `KYBER_SHUTDOWN_EVENT`
+/// to be signaled. When not running as a service, this future never resolves.
 ///
-/// This ensures the tray icon is removed even if the service force-kills us
-/// during server shutdown.
-fn spawn_service_shutdown_listener(
-    shutdown_signal_tx: mpsc::Sender<ShutdownSignal>,
-    tray_shutdown_event: RawHandle,
-) {
+/// The caller (main.rs) is responsible for cleaning up the tray icon and
+/// stopping the server after this returns.
+pub async fn wait_service_shutdown() {
     use windows_sys::Win32::Foundation::WAIT_OBJECT_0;
     use windows_sys::Win32::System::Threading::WaitForSingleObject;
 
     let Some(handle) = get_service_event_handle("KYBER_SHUTDOWN_EVENT") else {
+        std::future::pending::<()>().await;
         return;
     };
 
+    info!("Listening for shutdown event from service");
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
     std::thread::spawn(move || {
-        info!("Listening for shutdown event from service");
-        // Safety: handle value comes from trusted parent process
+        // Safety: handle value comes from trusted parent process (service.exe)
         let result = unsafe { WaitForSingleObject(handle as *mut std::ffi::c_void, u32::MAX) };
         if result == WAIT_OBJECT_0 {
-            info!("Shutdown event received from service, initiating graceful shutdown");
-
-            // Signal tray to shutdown FIRST - this removes the icon immediately
-            // before server shutdown which may take time
-            if !tray_shutdown_event.is_null() {
-                info!("Signaling tray shutdown");
-                unsafe { SetEvent(tray_shutdown_event.0) };
-                // Brief pause to let tray thread process the signal
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
-
-            // Send shutdown signal to main.rs (it owns server lifecycle)
-            let _ = shutdown_signal_tx.blocking_send(ShutdownSignal::Stop);
+            let _ = tx.send(());
         }
     });
+
+    let _ = rx.await;
+    info!("Shutdown event received from service");
 }

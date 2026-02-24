@@ -689,6 +689,12 @@ async fn real_main() -> Result<()> {
             }
         }
         _ = tray::run(ctrl_for_tray.clone(), server_handle.clone()) => {}
+        _ = tray::wait_service_shutdown() => {
+            info!("Service shutdown signal received");
+            ctrl_for_tray.lock().await.shutdown_tray().await;
+            server_handle.stop(false).await;
+        }
+
     }
 
     ctrl_for_tray.lock().await.shutdown_tray().await;
