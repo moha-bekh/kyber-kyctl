@@ -198,8 +198,8 @@ impl MetricsJSONProducer {
                     "log_type": "raw_metric",
                     "type": "network_remote",
                     "rtt_micros": network_stats.rtt_micros.map(|v| v as i64).unwrap_or(-1),
-                    "packets_lost": network_stats.rtt_micros.map(|v| v as i64).unwrap_or(-1),
-                    "dropped_packets": network_stats.rtt_micros.map(|v| v as i64).unwrap_or(-1),
+                    "packets_lost": network_stats.packets_lost.map(|v| v as i64).unwrap_or(-1),
+                    "dropped_packets": network_stats.dropped_packets.map(|v| v as i64).unwrap_or(-1),
                 });
                 let data = serde_json::to_vec(&json).expect("Malformed JSON");
                 lines.push(data);
