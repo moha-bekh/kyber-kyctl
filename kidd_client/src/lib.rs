@@ -35,7 +35,7 @@ mod platform {
     pub struct DeviceInterface;
 
     impl DeviceInterface {
-        pub fn plug_monitor(&self) -> Result<()> {
+        pub fn plug_monitor(&self, _: &[crate::modes::MonitorMode], _: u32) -> Result<()> {
             Err(Error::NotImplemented)
         }
     }
