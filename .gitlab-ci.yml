@@ -30,7 +30,7 @@ contrib-debian-trixie-x86_64:
   stage: contrib
   image: $DEBIAN_IMAGE
   tags:
-    - docker
+    - heavy
   only:
     - main
     - merge_requests
@@ -53,7 +53,7 @@ contrib-windows-x86_64:
   stage: contrib
   image: $WIN64_IMAGE
   tags:
-    - docker
+    - heavy
   only:
     - main
     - merge_requests
