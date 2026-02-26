@@ -118,7 +118,8 @@ pub fn build_cors(origins: &TrustedOrigins) -> actix_cors::Cors {
         .allowed_methods(vec!["GET", "POST"])
         .supports_credentials()
         .allowed_header(actix_web::http::header::CONTENT_TYPE)
-        .allowed_header(actix_web::http::header::AUTHORIZATION);
+        .allowed_header(actix_web::http::header::AUTHORIZATION)
+        .expose_headers(vec![actix_web::http::header::WWW_AUTHENTICATE]);
 
     match origins {
         TrustedOrigins::All => cors.allow_any_origin(),
