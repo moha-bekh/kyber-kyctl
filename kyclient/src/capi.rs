@@ -1056,6 +1056,20 @@ pub unsafe extern "C" fn kyclient_client_stop(client: *mut kyclient_Client) -> c
 }
 
 #[no_mangle]
+/// # Safety
+/// `client` must be a valid non-null pointer. `credentials` must be a pointer to a
+/// `kyclient_AuthCredentials` allocated by this library; ownership is transferred and
+/// the caller must not use it after this call.
+pub unsafe extern "C" fn kyclient_client_update_credentials(
+    client: *mut kyclient_Client,
+    credentials: ptr::NonNull<kyclient_AuthCredentials>,
+) -> c_int {
+    let credentials = Box::from_raw(credentials.as_ptr());
+    let ret = (*client).client.update_credentials(credentials.inner);
+    result_to_c_int(ret)
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn kyclient_client_disconnect_and_stop(
     client: *mut kyclient_Client,
     stop_session: bool,

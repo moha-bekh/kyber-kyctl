@@ -565,6 +565,8 @@ impl Handler {
                 match self.connect().await {
                     Ok(ConnectOutcome::Connected) => self.on_control_plane_reconnected().await,
                     Ok(ConnectOutcome::AuthenticationRequired { issuer, client_id }) => {
+                        self.reconnection_state.reconnecting = false;
+                        self.reconnection_state.current_attempt = 0;
                         self.event_manager
                             .send_event(Event::AuthenticationRequired { issuer, client_id });
                         Ok(())
@@ -777,6 +779,11 @@ impl Handler {
                 if let Err(err) = metrics.send(metric.clone()) {
                     warn!("Metric discarded: {err}");
                 }
+                Ok(())
+            }
+            Message::UpdateCredentials(credentials) => {
+                info!("Credentials updated");
+                self.conn_params.credentials = credentials.clone();
                 Ok(())
             }
         }
@@ -1092,6 +1099,12 @@ impl Client {
 
     pub fn connect(&self) -> Result<()> {
         self.msg_sender.send(Message::Connect)?;
+        Ok(())
+    }
+
+    pub fn update_credentials(&self, credentials: AuthCredentials) -> Result<()> {
+        self.msg_sender
+            .send(Message::UpdateCredentials(credentials))?;
         Ok(())
     }
 

@@ -20,6 +20,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use kyclient_common::auth::AuthCredentials;
+
 use crate::host_events;
 use crate::metrics::Metric;
 use crate::{
@@ -133,6 +135,8 @@ pub(crate) enum Message {
     },
 
     Metric(Metric),
+
+    UpdateCredentials(AuthCredentials),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

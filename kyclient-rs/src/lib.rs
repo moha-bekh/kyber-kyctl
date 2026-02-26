@@ -1074,6 +1074,16 @@ impl Client {
         }
     }
 
+    pub fn update_credentials(&self, credentials: &AuthCredentials) -> Result<()> {
+        let raw_creds = raw_credentials(credentials)?;
+        let ret = unsafe { sys::kyclient_client_update_credentials(self.ptr, raw_creds.as_ptr()) };
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err(Error::Generic)
+        }
+    }
+
     pub fn disconnect(&self) -> Result<()> {
         let ret = unsafe { sys::kyclient_client_disconnect(self.ptr) };
         if ret == 0 {
@@ -1170,6 +1180,9 @@ impl Drop for Client {
                 let _ = Box::from_raw(callback_ptr);
             }
         }
+
+        // Terminate the background thread. Safe to call even if already stopped.
+        let _ = self.stop();
     }
 }
 
