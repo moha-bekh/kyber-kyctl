@@ -21,7 +21,7 @@
 use std::cell::Cell;
 use std::ffi::{CStr, CString};
 use std::mem::{self, MaybeUninit};
-use std::os::raw::c_void;
+use std::os::raw::{c_char, c_void};
 use std::ptr::NonNull;
 use std::sync::atomic::{self, AtomicPtr};
 
@@ -227,6 +227,10 @@ pub enum Event {
     ControlPlaneConnectFailed {
         reason: ConnectFailedReason,
     },
+    AuthenticationRequired {
+        issuer: String,
+        client_id: String,
+    },
     DataPlaneConnectFailed,
     DataPlaneClosed,
     Reconnecting {
@@ -345,6 +349,34 @@ impl EventSinkData {
 
                 data.sink
                     .on_event(Event::ControlPlaneConnectFailed { reason });
+            }
+            sys::kyclient_EventType_KYCLIENT_EVENT_TYPE_AUTHENTICATION_REQUIRED => {
+                let mut c_issuer: *mut c_char = std::ptr::null_mut();
+                let mut c_client_id: *mut c_char = std::ptr::null_mut();
+
+                let ret = unsafe {
+                    sys::kyclient_event_unpack_authentication_required(
+                        event,
+                        &mut c_issuer,
+                        &mut c_client_id,
+                    )
+                };
+                if ret != 0 {
+                    warn!("Fail to unpack EventType::AuthenticationRequired");
+                    return;
+                }
+
+                let issuer = unsafe { CStr::from_ptr(c_issuer) }
+                    .to_string_lossy()
+                    .into_owned();
+                let client_id = unsafe { CStr::from_ptr(c_client_id) }
+                    .to_string_lossy()
+                    .into_owned();
+
+                data.sink
+                    .on_event(Event::AuthenticationRequired { issuer, client_id });
+
+                unsafe { sys::kyclient_event_free_authentication_required(c_issuer, c_client_id) };
             }
             sys::kyclient_EventType_KYCLIENT_EVENT_TYPE_DATA_PLANE_CONNECT_FAILED => {
                 data.sink.on_event(Event::DataPlaneConnectFailed);

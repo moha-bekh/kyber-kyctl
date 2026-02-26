@@ -1132,6 +1132,7 @@ pub type Event = super::Event;
 pub enum kyclient_EventType {
     ControlPlaneConnected,
     ControlPlaneConnectFailed,
+    AuthenticationRequired,
     DataPlaneConnectFailed,
     DataPlaneClosed,
     Reconnecting,
@@ -1197,6 +1198,7 @@ pub unsafe extern "C" fn kyclient_event_get_type(event: *const Event) -> kyclien
     match *event {
         Event::ControlPlaneConnected { .. } => kyclient_EventType::ControlPlaneConnected,
         Event::ControlPlaneConnectFailed { .. } => kyclient_EventType::ControlPlaneConnectFailed,
+        Event::AuthenticationRequired { .. } => kyclient_EventType::AuthenticationRequired,
         Event::DataPlaneConnectFailed => kyclient_EventType::DataPlaneConnectFailed,
         Event::DataPlaneClosed => kyclient_EventType::DataPlaneClosed,
         Event::Reconnecting { .. } => kyclient_EventType::Reconnecting,
@@ -1261,6 +1263,49 @@ pub unsafe extern "C" fn kyclient_event_unpack_connect_failed(
     };
 
     0
+}
+
+#[no_mangle]
+/// # Safety
+/// `event` must be a valid `ControlPlaneAuthenticationRequired` event. On success,
+/// `out_issuer` and `out_client_id` receive freshly-allocated C strings that the
+/// caller must free with `kyclient_event_free_authentication_required`.
+pub unsafe extern "C" fn kyclient_event_unpack_authentication_required(
+    event: *const Event,
+    out_issuer: *mut *mut c_char,
+    out_client_id: *mut *mut c_char,
+) -> c_int {
+    let Event::AuthenticationRequired { issuer, client_id } = &*event else {
+        return -1;
+    };
+
+    let Ok(c_issuer) = CString::new(issuer.clone()) else {
+        return -1;
+    };
+    let Ok(c_client_id) = CString::new(client_id.clone()) else {
+        return -1;
+    };
+
+    *out_issuer = c_issuer.into_raw();
+    *out_client_id = c_client_id.into_raw();
+
+    0
+}
+
+#[no_mangle]
+/// # Safety
+/// `issuer` and `client_id` must be pointers returned by
+/// `kyclient_event_unpack_authentication_required`, and must not be freed more than once.
+pub unsafe extern "C" fn kyclient_event_free_authentication_required(
+    issuer: *mut c_char,
+    client_id: *mut c_char,
+) {
+    if !issuer.is_null() {
+        let _ = CString::from_raw(issuer);
+    }
+    if !client_id.is_null() {
+        let _ = CString::from_raw(client_id);
+    }
 }
 
 #[no_mangle]

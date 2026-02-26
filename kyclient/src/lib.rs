@@ -174,6 +174,11 @@ impl ReconnectionState {
     }
 }
 
+enum ConnectOutcome {
+    Connected,
+    AuthenticationRequired { issuer: String, client_id: String },
+}
+
 struct Handler {
     conn_params: ConnectionParams,
     peer_info: Option<PeerInfo>,
@@ -183,6 +188,7 @@ struct Handler {
     metrics: Option<MetricsProducer>,
 
     host_events: Option<HostEventReceiver>,
+    capabilities: Option<Capabilities>,
 
     state: Arc<Mutex<State>>,
     displays: Vec<Display>,
@@ -214,6 +220,7 @@ impl Handler {
             message_sender,
             metrics,
             host_events: None,
+            capabilities: None,
             state,
             displays: vec![],
             reconnection_state: ReconnectionState::new(auto_reconnection),
@@ -221,7 +228,7 @@ impl Handler {
         })
     }
 
-    async fn connect(&mut self) -> Result<()> {
+    async fn connect(&mut self) -> Result<ConnectOutcome> {
         // Resolve the peer address from the HTTP response so we can later
         // connect QUIC to the same IP.  This matters because QUIC stack on
         // desktop does not implement Happy Eyeballs (RFC 8305) so we let
@@ -232,6 +239,7 @@ impl Handler {
         // performs its own Happy Eyeballs resolution internally.
         info!("Get Host capabilities");
         let (capabilities, _peer_addr) = host_service::capabilities(&self.http_client).await?;
+        self.capabilities = Some(capabilities);
 
         self.peer_info = Some(PeerInfo {
             // On desktop, peer address is required for QUIC and WebSocket connections.
@@ -241,22 +249,28 @@ impl Handler {
         });
 
         let response =
-            host_service::login(&self.http_client, &self.conn_params.credentials).await?;
-        info!("Logged in with uuid '{}\"", response.uid);
+            match host_service::login(&self.http_client, &self.conn_params.credentials).await? {
+                host_service::LoginResult::OidcRequired(challenge) => {
+                    return Ok(ConnectOutcome::AuthenticationRequired {
+                        issuer: challenge.issuer,
+                        client_id: challenge.client_id,
+                    });
+                }
+                host_service::LoginResult::Success(response) => response,
+            };
 
-        // Connect to websocket
+        info!("Logged in with uuid '{}'", response.uid);
+
         info!("Connect to Control Plane");
-        let websocket_token = response.websocket.clone();
-
+        let capabilities = self.capabilities.as_ref().ok_or(Error::InvalidState)?;
         let host_events = HostEventReceiver::new(
             &self.conn_params,
             self.peer_info()?,
             &capabilities.control_plane,
             self.message_sender.clone(),
-            &websocket_token,
+            &response.websocket,
         )
         .await?;
-
         self.host_events = Some(host_events);
 
         // Enumerate displays
@@ -264,7 +278,7 @@ impl Handler {
         self.displays = host_service::enumerate_displays(&self.http_client).await?;
         info!("Got displays: {:?}", self.displays);
 
-        Ok(())
+        Ok(ConnectOutcome::Connected)
     }
 
     async fn stop_hostevents(&mut self) -> Result<()> {
@@ -484,10 +498,18 @@ impl Handler {
                 // Set intent: control plane should be up
                 self.reconnection_state.control_should_be_up = true;
 
-                let event = match self.connect().await {
-                    Ok(()) => Event::ControlPlaneConnected {
-                        displays: self.displays.clone(),
-                    },
+                match self.connect().await {
+                    Ok(ConnectOutcome::Connected) => {
+                        self.event_manager.send_event(Event::ControlPlaneConnected {
+                            displays: self.displays.clone(),
+                        });
+                        Ok(())
+                    }
+                    Ok(ConnectOutcome::AuthenticationRequired { issuer, client_id }) => {
+                        self.event_manager
+                            .send_event(Event::AuthenticationRequired { issuer, client_id });
+                        Ok(())
+                    }
                     Err(err) => {
                         warn!("Failed to connect to ControlPlane: {err:?}");
 
@@ -507,13 +529,11 @@ impl Handler {
                             _ => ConnectFailedReason::NetworkError,
                         };
 
-                        Event::ControlPlaneConnectFailed { reason }
+                        self.event_manager
+                            .send_event(Event::ControlPlaneConnectFailed { reason });
+                        Ok(())
                     }
-                };
-
-                self.event_manager.send_event(event);
-
-                Ok(())
+                }
             }
             Message::Disconnect { stop_session } => {
                 info!("Disconnect requested by user");
@@ -543,7 +563,12 @@ impl Handler {
                 }
 
                 match self.connect().await {
-                    Ok(()) => self.on_control_plane_reconnected().await,
+                    Ok(ConnectOutcome::Connected) => self.on_control_plane_reconnected().await,
+                    Ok(ConnectOutcome::AuthenticationRequired { issuer, client_id }) => {
+                        self.event_manager
+                            .send_event(Event::AuthenticationRequired { issuer, client_id });
+                        Ok(())
+                    }
                     Err(err) => self.on_reconnection_failure(err).await,
                 }
             }

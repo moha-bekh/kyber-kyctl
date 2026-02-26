@@ -164,6 +164,10 @@ pub enum Event {
     ControlPlaneConnectFailed {
         reason: ConnectFailedReason,
     },
+    AuthenticationRequired {
+        issuer: String,
+        client_id: String,
+    },
     DataPlaneConnectFailed,
     DataPlaneClosed,
     Reconnecting {
