@@ -795,6 +795,10 @@ fn raw_credentials(
             let token = to_cstr(token);
             unsafe { sys::kyclient_auth_credentials_new_jwt(token.as_ptr()) }
         }
+        AuthCredentials::Oidc { token } => {
+            let token_cstr = to_cstr(token);
+            unsafe { sys::kyclient_auth_credentials_new_oidc(token_cstr.as_ptr()) }
+        }
     };
     NonNull::new(credentials).ok_or(Error::Generic)
 }

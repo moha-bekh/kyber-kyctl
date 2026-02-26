@@ -333,6 +333,23 @@ pub unsafe extern "C" fn kyclient_auth_credentials_new_jwt(
 }
 
 #[no_mangle]
+/// # Safety
+/// `token` must be a valid non-null null-terminated C string.
+pub unsafe extern "C" fn kyclient_auth_credentials_new_oidc(
+    token: *const c_char,
+) -> *mut kyclient_AuthCredentials {
+    let Ok(token) = CStr::from_ptr(token).to_str() else {
+        warn!("Failed to convert OIDC token");
+        return ptr::null_mut();
+    };
+    let token = token.to_owned();
+
+    Box::into_raw(Box::new(kyclient_AuthCredentials {
+        inner: crate::AuthCredentials::Oidc { token },
+    }))
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn kyclient_connect_config_default(
     host: *const c_char,
     credentials: ptr::NonNull<kyclient_AuthCredentials>,
