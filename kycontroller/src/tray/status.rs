@@ -47,21 +47,12 @@ impl TrayStatus {
     }
 }
 
-/// Commands that can be sent from the tray to the main application.
-#[derive(Debug, Clone)]
-pub enum TrayCommand {
-    /// Request to stop the controller gracefully.
-    Stop,
-    /// Request to restart the controller.
-    Restart,
-}
-
-/// Signal that triggers server shutdown.
+/// Commands sent from the tray (or service) to the main application.
 ///
 /// Sent through a channel from the tray module to main.rs.
-/// Main.rs owns the server lifecycle and handles shutdown based on these signals.
+/// Main.rs owns the server lifecycle and acts on these commands.
 #[derive(Debug, Clone)]
-pub enum ShutdownSignal {
+pub enum TrayCommand {
     /// Stop the controller (from tray menu or service shutdown).
     Stop,
     /// Restart the controller (from tray menu).

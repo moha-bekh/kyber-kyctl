@@ -28,7 +28,7 @@
 
 use crate::error::Result;
 
-use super::super::status::{ShutdownSignal, TrayStatus};
+use super::super::status::{TrayCommand, TrayStatus};
 
 use log::warn;
 use tokio::sync::mpsc;
@@ -58,7 +58,7 @@ impl TrayHandle {
 /// Spawn the system tray (stub for unsupported platforms).
 ///
 /// Returns a dummy handle and a channel that will never receive signals.
-pub fn spawn() -> Result<(TrayHandle, mpsc::Receiver<ShutdownSignal>)> {
+pub fn spawn() -> Result<(TrayHandle, mpsc::Receiver<TrayCommand>)> {
     warn!("System tray not supported on this platform");
     let (status_tx, _status_rx) = mpsc::channel(1);
     let (_shutdown_tx, shutdown_rx) = mpsc::channel(1);

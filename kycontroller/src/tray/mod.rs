@@ -32,7 +32,7 @@
 //!
 //! Communication with async code uses:
 //! - Platform-specific events for efficient shutdown signaling
-//! - tokio::sync::mpsc channels for status updates and shutdown signals
+//! - tokio::sync::mpsc channels for status updates and tray commands
 //!
 //! # Platform Support
 //!
@@ -62,7 +62,7 @@ mod status;
 #[allow(unused_imports)]
 pub use platform::{spawn, wait_service_shutdown, TrayHandle};
 #[allow(unused_imports)]
-pub use status::{ShutdownSignal, TrayStatus};
+pub use status::{TrayCommand, TrayStatus};
 
 use crate::controller::Controller;
 
@@ -70,11 +70,11 @@ use actix_web::dev::ServerHandle;
 use log::{info, warn};
 use tokio::sync::Mutex;
 
-/// Spawn the system tray and wait for a shutdown signal.
+/// Spawn the system tray and wait for a command.
 ///
 /// Spawns the tray icon, sets initial status, stores the handle in the
-/// controller, then blocks until a shutdown signal is received from the
-/// tray menu or the Windows service.
+/// controller, then blocks until a command is received from the tray
+/// menu or the Windows service.
 ///
 /// On signal: calls `signal_service_stop()` (for Stop) and stops the server.
 /// If tray initialization fails, returns immediately.
@@ -97,12 +97,12 @@ pub async fn run(ctrl: actix_web::web::Data<Mutex<Controller>>, server_handle: S
     };
 
     match signal {
-        ShutdownSignal::Stop => {
+        TrayCommand::Stop => {
             info!("Stop signal received");
             ctrl.lock().await.signal_service_stop();
             server_handle.stop(false).await;
         }
-        ShutdownSignal::Restart => {
+        TrayCommand::Restart => {
             info!("Restart signal received");
             server_handle.stop(false).await;
         }

@@ -33,7 +33,7 @@
 //! The tray-icon crate is NOT used for icon management because it creates icons
 //! without NIF_GUID, making orphan cleanup impossible.
 
-use super::super::status::{ShutdownSignal, TrayStatus};
+use super::super::status::{TrayCommand, TrayStatus};
 use crate::error::{Error, Result};
 
 use log::{error, info, warn};
@@ -110,14 +110,14 @@ impl Drop for SendHandle {
 /// Handle to control the system tray from async code.
 ///
 /// All methods are async-safe despite the tray running on a dedicated thread.
-/// Communication uses Windows events for shutdown and tokio channels for status.
+/// Communication uses Windows events for exit/wake and tokio channels for status.
 pub struct TrayHandle {
     /// Send status updates to the tray thread.
     status_tx: mpsc::Sender<TrayStatus>,
-    /// Windows event for shutdown signaling.
-    shutdown_event: SendHandle,
+    /// Windows event to signal the tray thread to exit.
+    tray_exit_event: SendHandle,
     /// Windows event for waking to check status updates.
-    wake_event: SendHandle,
+    tray_wake_event: SendHandle,
     /// Join handle for the tray thread.
     thread_handle: Option<JoinHandle<()>>,
     /// Handle to signal service.exe to stop (only set when running under service.exe).
@@ -128,15 +128,15 @@ impl TrayHandle {
     /// Create a new TrayHandle.
     fn new(
         status_tx: mpsc::Sender<TrayStatus>,
-        shutdown_event: SendHandle,
-        wake_event: SendHandle,
+        tray_exit_event: SendHandle,
+        tray_wake_event: SendHandle,
         thread_handle: JoinHandle<()>,
         service_stop_event: Option<isize>,
     ) -> Self {
         Self {
             status_tx,
-            shutdown_event,
-            wake_event,
+            tray_exit_event,
+            tray_wake_event,
             thread_handle: Some(thread_handle),
             service_stop_event,
         }
@@ -152,8 +152,8 @@ impl TrayHandle {
         }
 
         // Signal the wake event to notify the tray thread
-        // Safety: wake_event is a valid handle created by CreateEventW
-        unsafe { SetEvent(self.wake_event.as_raw()) };
+        // Safety: tray_wake_event is a valid handle created by CreateEventW
+        unsafe { SetEvent(self.tray_wake_event.as_raw()) };
     }
 
     /// Signal the Windows service to stop.
@@ -176,8 +176,8 @@ impl TrayHandle {
         info!("Shutting down tray...");
 
         // Signal the tray thread to exit
-        // Safety: shutdown_event is a valid handle created by CreateEventW
-        unsafe { SetEvent(self.shutdown_event.as_raw()) };
+        // Safety: tray_exit_event is a valid handle created by CreateEventW
+        unsafe { SetEvent(self.tray_exit_event.as_raw()) };
 
         // Wait for the thread to finish
         if let Some(handle) = self.thread_handle.take() {
@@ -192,9 +192,9 @@ impl TrayHandle {
 impl Drop for TrayHandle {
     fn drop(&mut self) {
         // Signal the tray thread to exit if not already done
-        if !self.shutdown_event.is_null() {
-            // Safety: shutdown_event is a valid handle created by CreateEventW
-            unsafe { SetEvent(self.shutdown_event.as_raw()) };
+        if !self.tray_exit_event.is_null() {
+            // Safety: tray_exit_event is a valid handle created by CreateEventW
+            unsafe { SetEvent(self.tray_exit_event.as_raw()) };
         }
 
         // Wait for the thread to finish (blocking, but Drop is synchronous)
@@ -232,8 +232,8 @@ const TRAY_ICON_GUID: windows_sys::core::GUID = windows_sys::core::GUID {
 
 /// Wait result from the tray event loop.
 enum WaitResult {
-    /// Shutdown event was signaled.
-    Shutdown,
+    /// Exit event was signaled.
+    Exit,
     /// Wake event was signaled (status update available).
     Wake,
     /// Windows messages are available.
@@ -596,28 +596,28 @@ fn build_menu() -> Result<Menu> {
 /// Wait for events using MsgWaitForMultipleObjectsEx.
 ///
 /// This is more efficient than polling because the thread sleeps until:
-/// - The shutdown event is signaled
-/// - The wake event is signaled (status update available)
+/// - The tray exit event is signaled
+/// - The tray wake event is signaled (status update available)
 /// - Windows messages arrive (for tray icon interactions)
 ///
 /// # Arguments
 ///
-/// * `shutdown_event` - Windows event handle for shutdown signaling
-/// * `wake_event` - Windows event handle for waking to check status updates
+/// * `tray_exit_event` - Windows event handle to signal tray thread exit
+/// * `tray_wake_event` - Windows event handle to wake tray thread for status updates
 ///
 /// # Safety
 ///
 /// This function uses unsafe Windows API calls. Safety is ensured by:
 /// - Both events are valid handles created by CreateEventW
 /// - All parameters to MsgWaitForMultipleObjectsEx are valid
-fn wait_for_events(shutdown_event: RawHandle, wake_event: RawHandle) -> WaitResult {
+fn wait_for_events(tray_exit_event: RawHandle, tray_wake_event: RawHandle) -> WaitResult {
     use windows_sys::Win32::Foundation::WAIT_OBJECT_0;
     use windows_sys::Win32::System::Threading::INFINITE;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         MsgWaitForMultipleObjectsEx, MWMO_INPUTAVAILABLE, QS_ALLINPUT,
     };
 
-    let handles = [shutdown_event.0, wake_event.0];
+    let handles = [tray_exit_event.0, tray_wake_event.0];
 
     // Safety: both handles are valid, other parameters are constants
     let result = unsafe {
@@ -631,10 +631,10 @@ fn wait_for_events(shutdown_event: RawHandle, wake_event: RawHandle) -> WaitResu
     };
 
     match result {
-        WAIT_OBJECT_0 => WaitResult::Shutdown,
+        WAIT_OBJECT_0 => WaitResult::Exit,
         x if x == WAIT_OBJECT_0 + 1 => WaitResult::Wake,
         x if x == WAIT_OBJECT_0 + 2 => WaitResult::WindowsMessage,
-        _ => WaitResult::Shutdown, // Error case - treat as shutdown
+        _ => WaitResult::Exit, // Error case - treat as shutdown
     }
 }
 
@@ -667,16 +667,16 @@ fn pump_windows_messages() {
 
 /// Handle a menu item click event.
 ///
-/// Sends a `ShutdownSignal` to main.rs for server lifecycle management.
-fn handle_menu_event(id: &MenuId, shutdown_signal_tx: &mpsc::Sender<ShutdownSignal>) {
+/// Sends a `TrayCommand` through the channel for main.rs to act on.
+fn handle_menu_event(id: &MenuId, tray_command_tx: &mpsc::Sender<TrayCommand>) {
     match id.as_ref() {
         MENU_STOP_ID => {
             info!("Tray: Stop requested");
-            let _ = shutdown_signal_tx.blocking_send(ShutdownSignal::Stop);
+            let _ = tray_command_tx.blocking_send(TrayCommand::Stop);
         }
         MENU_RESTART_ID => {
             info!("Tray: Restart requested");
-            let _ = shutdown_signal_tx.blocking_send(ShutdownSignal::Restart);
+            let _ = tray_command_tx.blocking_send(TrayCommand::Restart);
         }
         _ => {}
     }
@@ -697,14 +697,14 @@ fn update_tooltip(tray: &NativeTrayIcon, status: &TrayStatus) {
 /// 3. muda menu library requires same-thread access
 ///
 /// Communication with async code uses:
-/// - Windows event (`shutdown_event`) for shutdown signaling
-/// - Windows event (`wake_event`) for waking to check status updates
-/// - tokio::sync::mpsc channels for status updates and shutdown signals
+/// - Windows event (`tray_exit_event`) to signal tray thread exit
+/// - Windows event (`tray_wake_event`) to wake tray thread for status updates
+/// - tokio::sync::mpsc channels for status updates and tray commands
 fn run_tray_loop(
     mut status_rx: mpsc::Receiver<TrayStatus>,
-    shutdown_signal_tx: mpsc::Sender<ShutdownSignal>,
-    shutdown_event: RawHandle,
-    wake_event: RawHandle,
+    tray_command_tx: mpsc::Sender<TrayCommand>,
+    tray_exit_event: RawHandle,
+    tray_wake_event: RawHandle,
 ) -> Result<()> {
     info!("Tray thread started");
 
@@ -752,9 +752,9 @@ fn run_tray_loop(
 
     // Main event loop using MsgWaitForMultipleObjectsEx
     loop {
-        match wait_for_events(shutdown_event, wake_event) {
-            WaitResult::Shutdown => {
-                info!("Tray shutdown signal received");
+        match wait_for_events(tray_exit_event, tray_wake_event) {
+            WaitResult::Exit => {
+                info!("Tray exit signal received");
                 break;
             }
             WaitResult::Wake => {
@@ -769,7 +769,7 @@ fn run_tray_loop(
 
                 // Check for menu events after processing messages
                 if let Ok(event) = menu_event_rx.try_recv() {
-                    handle_menu_event(&event.id, &shutdown_signal_tx);
+                    handle_menu_event(&event.id, &tray_command_tx);
                 }
             }
         }
@@ -782,22 +782,17 @@ fn run_tray_loop(
 
 /// Spawn the system tray thread and service shutdown listener.
 ///
-/// Returns a handle to control the tray and a channel receiver for shutdown signals.
-/// The caller (main.rs) owns the server lifecycle and handles shutdown based on these signals.
-///
-/// # Arguments
-///
-/// * `server_handle` - Handle to the actix-web server for graceful shutdown.
+/// Returns a handle to control the tray and a channel receiver for tray commands.
+/// The caller (main.rs) owns the server lifecycle and acts on these commands.
 ///
 /// # Thread Architecture
 ///
 /// The tray runs on a dedicated OS thread with:
-/// - Windows event for shutdown signaling (waited via `MsgWaitForMultipleObjectsEx`)
-/// - Internal command channel: Tray menu → tray thread
-/// - Shutdown signal channel: Tray thread → main.rs (returned receiver)
+/// - Windows event for tray thread exit (waited via `MsgWaitForMultipleObjectsEx`)
+/// - Tray command channel: Tray thread → main.rs (returned receiver)
 /// - Status channel: main.rs → tray thread (via TrayHandle)
 ///
-pub fn spawn() -> Result<(TrayHandle, mpsc::Receiver<ShutdownSignal>)> {
+pub fn spawn() -> Result<(TrayHandle, mpsc::Receiver<TrayCommand>)> {
     use windows_sys::Win32::System::Threading::CreateEventW;
 
     // Obtain service stop event (only set when running under service.exe)
@@ -807,44 +802,40 @@ pub fn spawn() -> Result<(TrayHandle, mpsc::Receiver<ShutdownSignal>)> {
     }
 
     let (status_tx, status_rx) = mpsc::channel::<TrayStatus>(16);
-    let (shutdown_signal_tx, shutdown_signal_rx) = mpsc::channel::<ShutdownSignal>(1);
+    let (tray_command_tx, tray_command_rx) = mpsc::channel::<TrayCommand>(1);
 
     // Create Windows events for signaling
     // Safety: CreateEventW with null parameters creates events
-    // bManualReset=1 for shutdown (stays signaled), bManualReset=0 for wake (auto-reset)
-    let shutdown_raw = unsafe { CreateEventW(std::ptr::null(), 1, 0, std::ptr::null()) };
-    if shutdown_raw.is_null() {
+    // bManualReset=1 for exit (stays signaled), bManualReset=0 for wake (auto-reset)
+    let exit_raw = unsafe { CreateEventW(std::ptr::null(), 1, 0, std::ptr::null()) };
+    if exit_raw.is_null() {
         return Err(Error::TrayInit {
-            reason: "Failed to create shutdown event".to_string(),
+            reason: "Failed to create tray exit event".to_string(),
         });
     }
 
     let wake_raw = unsafe { CreateEventW(std::ptr::null(), 0, 0, std::ptr::null()) };
     if wake_raw.is_null() {
-        // Clean up the shutdown event before returning
-        unsafe { CloseHandle(shutdown_raw) };
+        // Clean up the exit event before returning
+        unsafe { CloseHandle(exit_raw) };
         return Err(Error::TrayInit {
-            reason: "Failed to create wake event".to_string(),
+            reason: "Failed to create tray wake event".to_string(),
         });
     }
 
     // Clone for the tray loop thread
-    let shutdown_signal_tx_tray = shutdown_signal_tx.clone();
+    let tray_command_tx_loop = tray_command_tx.clone();
 
     // Wrap in RawHandle (Copy + Send) for passing to threads
-    let shutdown_handle = RawHandle(shutdown_raw);
+    let exit_handle = RawHandle(exit_raw);
     let wake_handle = RawHandle(wake_raw);
 
     // Spawn the tray thread
     let thread_handle = thread::Builder::new()
         .name("tray-icon".to_string())
         .spawn(move || {
-            if let Err(e) = run_tray_loop(
-                status_rx,
-                shutdown_signal_tx_tray,
-                shutdown_handle,
-                wake_handle,
-            ) {
+            if let Err(e) = run_tray_loop(status_rx, tray_command_tx_loop, exit_handle, wake_handle)
+            {
                 error!("Tray thread error: {e}");
             }
         })
@@ -853,13 +844,13 @@ pub fn spawn() -> Result<(TrayHandle, mpsc::Receiver<ShutdownSignal>)> {
     // Wrap handles in SendHandle for TrayHandle ownership (handles Drop)
     let tray_handle = TrayHandle::new(
         status_tx,
-        SendHandle(shutdown_raw),
+        SendHandle(exit_raw),
         SendHandle(wake_raw),
         thread_handle,
         service_stop_event,
     );
 
-    Ok((tray_handle, shutdown_signal_rx))
+    Ok((tray_handle, tray_command_rx))
 }
 
 /// Get a Windows event handle from an environment variable.
