@@ -662,11 +662,12 @@ async fn real_main() -> Result<()> {
             .service(set_bitrate);
 
         if let Some(webclient_root) = &webclient_root {
-            app.service(
-                web::scope("/webclient")
-                    .wrap(webclient::WebClient)
-                    .service(actix_files::Files::new("", webclient_root).index_file("index.html")),
-            )
+            app.service(web::redirect("/webclient", "/webclient/"))
+                .service(
+                    web::scope("/webclient").wrap(webclient::WebClient).service(
+                        actix_files::Files::new("", webclient_root).index_file("index.html"),
+                    ),
+                )
         } else {
             app
         }
