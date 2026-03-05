@@ -61,7 +61,7 @@ impl WsClient {
 
         info!("Waiting for control plane authentication...");
         let token = format!("{{\"token\":\"{auth_token}\"}}");
-        let Ok(_) = stream.send(tungstenite_Message::Text(token)).await else {
+        let Ok(_) = stream.send(tungstenite_Message::Text(token.into())).await else {
             return Err(Error::ChannelSend);
         };
 
@@ -185,7 +185,7 @@ impl WsClient {
                                 ControlPlaneCloseReason::Closed {
                                     was_clean: true,
                                     code: Some(close.code.into()),
-                                    reason: Some(close.reason.into()),
+                                    reason: Some(close.reason.to_string()),
                                 }
                             } else {
                                 ControlPlaneCloseReason::Closed {
@@ -217,7 +217,7 @@ impl WsClient {
 
                             timer.as_mut().reset(tokio::time::Instant::now() + timer_duration);
 
-                            let ret = stream.send(tungstenite_Message::Text(pong)).await;
+                            let ret = stream.send(tungstenite_Message::Text(pong.into())).await;
                             if let Err(err) = ret {
                                 warn!("Failed to send Pong: {err:?}");
                             }

@@ -270,13 +270,13 @@ async fn connect_quinn(
     auth: &kyproto::ClientAuth,
     certificate_hash: Option<host_service::StartKymuxCertificateHash>,
 ) -> Result<kyproto::Connection> {
-    // Data plane uses certificate hash from server, not control plane TLS config
     let certificate_hash = certificate_hash.map(|h| h.hash);
 
     Ok(kymux::connect_with_auth(
         kymux::ClientConfig::Quic {
             addr: std::net::SocketAddr::new(conn_params.addr.ip(), port),
-            roots: None,
+            // None falls back to the platform verifier (OS trust store)
+            tls_config: None,
             server_name: conn_params.host.clone(),
             certificate_hash,
         },
