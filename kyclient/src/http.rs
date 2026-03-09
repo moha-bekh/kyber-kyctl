@@ -23,6 +23,16 @@ use reqwest::IntoUrl;
 use crate::platform::http as platform_http;
 use crate::{ConnectionParams, Result};
 
+/// Formats a host and port for use in URLs, wrapping IPv6 addresses in brackets.
+pub(crate) fn format_host_for_url(host: &str, port: u16) -> String {
+    use std::net::IpAddr;
+    if let Ok(IpAddr::V6(_)) = host.parse::<IpAddr>() {
+        format!("[{host}]:{port}")
+    } else {
+        format!("{host}:{port}")
+    }
+}
+
 pub(crate) struct HttpClient {
     base_url: String,
     client: reqwest::Client,

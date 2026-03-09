@@ -28,7 +28,7 @@ use crate::{ConnectionParams, Error, Result};
 
 pub(crate) fn create_host(conn_params: &ConnectionParams) -> String {
     let host = conn_params.tls_host.as_ref().unwrap_or(&conn_params.host);
-    format!("{host}:{port}", port = conn_params.port)
+    crate::http::format_host_for_url(host, conn_params.port)
 }
 
 pub(crate) fn create_reqwest(conn_params: ConnectionParams) -> Result<reqwest::Client> {

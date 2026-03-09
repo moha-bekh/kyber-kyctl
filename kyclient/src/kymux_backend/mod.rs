@@ -242,11 +242,11 @@ async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kyproto:
                 port = start_response.port
             );
 
-            let url = format!(
-                "https://{host}:{port}",
-                host = backend_config.conn_params.host,
-                port = start_response.port
+            let host_str = crate::http::format_host_for_url(
+                &backend_config.conn_params.host,
+                start_response.port,
             );
+            let url = format!("https://{host_str}");
 
             let auth = kymux::kyproto::ClientAuth::new(&start_response.token).map_err(|_| {
                 warn!("Got an invalid kymux token from controller");
