@@ -58,7 +58,8 @@ pub use crate::error::{Error, Result};
 use crate::util::*;
 use enums::Message;
 pub use enums::{
-    ControlPlaneCloseReason, DataPlaneCloseReason, Display, Event, StopReason, TlsRootCert,
+    ConnectFailedReason, ControlPlaneCloseReason, DataPlaneCloseReason, Display, Event, StopReason,
+    TlsRootCert,
 };
 use event_manager::EventManager;
 pub use event_manager::EventSink;
@@ -487,7 +488,23 @@ impl Handler {
                     Err(err) => {
                         warn!("Failed to connect to ControlPlane: {err:?}");
 
-                        Event::ControlPlaneConnectFailed
+                        let reason = match &err {
+                            Error::HttpClient(_) => ConnectFailedReason::NetworkError,
+                            Error::HttpQueryTimeout => ConnectFailedReason::Timeout,
+                            Error::HttpQueryFailed { status }
+                                if *status == 401 || *status == 403 =>
+                            {
+                                ConnectFailedReason::Unauthorized
+                            }
+                            Error::HttpQueryFailed { .. } => ConnectFailedReason::ServerError,
+                            Error::TlsVerificationFailed => ConnectFailedReason::TlsVerification,
+                            Error::TlsInvalidFile => ConnectFailedReason::TlsConfiguration,
+                            Error::WsConnectFailed => ConnectFailedReason::WebSocket,
+                            Error::DeserializationFailed => ConnectFailedReason::Protocol,
+                            _ => ConnectFailedReason::NetworkError,
+                        };
+
+                        Event::ControlPlaneConnectFailed { reason }
                     }
                 };
 

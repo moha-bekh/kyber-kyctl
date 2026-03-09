@@ -177,6 +177,18 @@ impl WindowHandle {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ConnectFailedReason {
+    NetworkError,
+    Timeout,
+    Unauthorized,
+    ServerError,
+    TlsVerification,
+    TlsConfiguration,
+    WebSocket,
+    Protocol,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum StopReason {
     Requested,
@@ -212,7 +224,9 @@ pub enum Event {
     ControlPlaneConnected {
         displays: Vec<Display>,
     },
-    ControlPlaneConnectFailed,
+    ControlPlaneConnectFailed {
+        reason: ConnectFailedReason,
+    },
     DataPlaneConnectFailed,
     DataPlaneClosed,
     Reconnecting {
@@ -287,7 +301,50 @@ impl EventSinkData {
                 unsafe { sys::kyclient_event_free_displays(cdisplays) };
             }
             sys::kyclient_EventType_KYCLIENT_EVENT_TYPE_CONTROL_PLANE_CONNECT_FAILED => {
-                data.sink.on_event(Event::ControlPlaneConnectFailed);
+                let mut c_reason = mem::MaybeUninit::uninit();
+
+                let ret = unsafe {
+                    sys::kyclient_event_unpack_connect_failed(event, c_reason.as_mut_ptr())
+                };
+                if ret != 0 {
+                    warn!("Fail to unpack EventType::ControlPlaneConnectFailed");
+                    return;
+                }
+
+                let c_reason = c_reason.assume_init();
+                let reason = match c_reason {
+                    sys::kyclient_ConnectFailedReason_KYCLIENT_CONNECT_FAILED_REASON_NETWORK_ERROR => {
+                        ConnectFailedReason::NetworkError
+                    }
+                    sys::kyclient_ConnectFailedReason_KYCLIENT_CONNECT_FAILED_REASON_TIMEOUT => {
+                        ConnectFailedReason::Timeout
+                    }
+                    sys::kyclient_ConnectFailedReason_KYCLIENT_CONNECT_FAILED_REASON_UNAUTHORIZED => {
+                        ConnectFailedReason::Unauthorized
+                    }
+                    sys::kyclient_ConnectFailedReason_KYCLIENT_CONNECT_FAILED_REASON_SERVER_ERROR => {
+                        ConnectFailedReason::ServerError
+                    }
+                    sys::kyclient_ConnectFailedReason_KYCLIENT_CONNECT_FAILED_REASON_TLS_VERIFICATION => {
+                        ConnectFailedReason::TlsVerification
+                    }
+                    sys::kyclient_ConnectFailedReason_KYCLIENT_CONNECT_FAILED_REASON_TLS_CONFIGURATION => {
+                        ConnectFailedReason::TlsConfiguration
+                    }
+                    sys::kyclient_ConnectFailedReason_KYCLIENT_CONNECT_FAILED_REASON_WEB_SOCKET => {
+                        ConnectFailedReason::WebSocket
+                    }
+                    sys::kyclient_ConnectFailedReason_KYCLIENT_CONNECT_FAILED_REASON_PROTOCOL => {
+                        ConnectFailedReason::Protocol
+                    }
+                    _ => {
+                        warn!("Fail to convert ConnectFailedReason {c_reason}");
+                        return;
+                    }
+                };
+
+                data.sink
+                    .on_event(Event::ControlPlaneConnectFailed { reason });
             }
             sys::kyclient_EventType_KYCLIENT_EVENT_TYPE_DATA_PLANE_CONNECT_FAILED => {
                 data.sink.on_event(Event::DataPlaneConnectFailed);

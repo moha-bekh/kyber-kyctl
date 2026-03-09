@@ -1134,6 +1134,18 @@ pub enum kyclient_EventType {
 }
 
 #[repr(C)]
+pub enum kyclient_ConnectFailedReason {
+    NetworkError,
+    Timeout,
+    Unauthorized,
+    ServerError,
+    TlsVerification,
+    TlsConfiguration,
+    WebSocket,
+    Protocol,
+}
+
+#[repr(C)]
 pub enum kyclient_StopReason {
     Requested,
     ControlPlaneClosed,
@@ -1167,7 +1179,7 @@ pub enum kyclient_StreamerPipelineEventType {
 pub unsafe extern "C" fn kyclient_event_get_type(event: *const Event) -> kyclient_EventType {
     match *event {
         Event::ControlPlaneConnected { .. } => kyclient_EventType::ControlPlaneConnected,
-        Event::ControlPlaneConnectFailed => kyclient_EventType::ControlPlaneConnectFailed,
+        Event::ControlPlaneConnectFailed { .. } => kyclient_EventType::ControlPlaneConnectFailed,
         Event::DataPlaneConnectFailed => kyclient_EventType::DataPlaneConnectFailed,
         Event::DataPlaneClosed => kyclient_EventType::DataPlaneClosed,
         Event::Reconnecting { .. } => kyclient_EventType::Reconnecting,
@@ -1205,6 +1217,33 @@ pub unsafe extern "C" fn kyclient_event_unpack_control_plane_connected(
     } else {
         -1
     }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn kyclient_event_unpack_connect_failed(
+    event: *const Event,
+    out_reason: *mut kyclient_ConnectFailedReason,
+) -> c_int {
+    let Event::ControlPlaneConnectFailed { reason } = &*event else {
+        return -1;
+    };
+
+    *out_reason = match reason {
+        crate::ConnectFailedReason::NetworkError => kyclient_ConnectFailedReason::NetworkError,
+        crate::ConnectFailedReason::Timeout => kyclient_ConnectFailedReason::Timeout,
+        crate::ConnectFailedReason::Unauthorized => kyclient_ConnectFailedReason::Unauthorized,
+        crate::ConnectFailedReason::ServerError => kyclient_ConnectFailedReason::ServerError,
+        crate::ConnectFailedReason::TlsVerification => {
+            kyclient_ConnectFailedReason::TlsVerification
+        }
+        crate::ConnectFailedReason::TlsConfiguration => {
+            kyclient_ConnectFailedReason::TlsConfiguration
+        }
+        crate::ConnectFailedReason::WebSocket => kyclient_ConnectFailedReason::WebSocket,
+        crate::ConnectFailedReason::Protocol => kyclient_ConnectFailedReason::Protocol,
+    };
+
+    0
 }
 
 #[no_mangle]

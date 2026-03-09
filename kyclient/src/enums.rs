@@ -144,12 +144,26 @@ pub enum StopReason {
     DecodeError,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ConnectFailedReason {
+    NetworkError,
+    Timeout,
+    Unauthorized,
+    ServerError,
+    TlsVerification,
+    TlsConfiguration,
+    WebSocket,
+    Protocol,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event {
     ControlPlaneConnected {
         displays: Vec<Display>,
     },
-    ControlPlaneConnectFailed,
+    ControlPlaneConnectFailed {
+        reason: ConnectFailedReason,
+    },
     DataPlaneConnectFailed,
     DataPlaneClosed,
     Reconnecting {
