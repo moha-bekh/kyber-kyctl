@@ -262,3 +262,23 @@ async fn start_inputs(
 
     Ok(res)
 }
+
+pub(super) enum ServiceType {
+    Video,
+    Audio,
+    Input,
+}
+
+pub(super) async fn start_websocket_handler(
+    ctrl: web::Data<Mutex<Controller>>,
+    session_id: uuid::Uuid,
+    request: HttpRequest,
+    stream: web::Payload,
+    service: ServiceType,
+) -> Result<HttpResponse> {
+    match service {
+        ServiceType::Video => start_video(ctrl, session_id, request, stream).await,
+        ServiceType::Audio => start_audio(ctrl, session_id, request, stream).await,
+        ServiceType::Input => start_inputs(ctrl, session_id, request, stream).await,
+    }
+}

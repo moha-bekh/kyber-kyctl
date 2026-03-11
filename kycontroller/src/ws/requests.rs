@@ -88,6 +88,31 @@ async fn start_handler(
     }
 }
 
+async fn ws_service_handler(
+    ctrl: web::Data<Mutex<Controller>>,
+    request: HttpRequest,
+    stream: web::Payload,
+    user: Identity,
+    service_type: super::ServiceType,
+    label: &str,
+) -> HttpResponse {
+    let session_id = match user.uid() {
+        Ok(uid) => uid,
+        Err(_) => return HttpResponse::Unauthorized().finish(),
+    };
+
+    match super::start_websocket_handler(ctrl, session_id, request, stream, service_type).await {
+        Ok(response) => {
+            info!("Websocket {label} started");
+            response
+        }
+        Err(err) => {
+            info!("Websocket {label} start rejected: {err}");
+            HttpResponse::Forbidden().finish()
+        }
+    }
+}
+
 #[get("/video")]
 async fn video(
     ctrl: web::Data<Mutex<Controller>>,
@@ -95,24 +120,15 @@ async fn video(
     stream: web::Payload,
     user: Identity,
 ) -> HttpResponse {
-    let session_id = match user.uid() {
-        Ok(uid) => uid,
-        Err(_) => {
-            return HttpResponse::Unauthorized().finish();
-        }
-    };
-
-    let ret = super::start_video(ctrl, session_id, request, stream).await;
-    match ret {
-        Ok(response) => {
-            info!("Websocket video started");
-            response
-        }
-        Err(err) => {
-            info!("Websocket video start rejected: {:?}", err);
-            HttpResponse::Forbidden().finish()
-        }
-    }
+    ws_service_handler(
+        ctrl,
+        request,
+        stream,
+        user,
+        super::ServiceType::Video,
+        "video",
+    )
+    .await
 }
 
 #[get("/audio")]
@@ -122,24 +138,15 @@ async fn audio(
     stream: web::Payload,
     user: Identity,
 ) -> HttpResponse {
-    let session_id = match user.uid() {
-        Ok(uid) => uid,
-        Err(_) => {
-            return HttpResponse::Unauthorized().finish();
-        }
-    };
-
-    let ret = super::start_audio(ctrl, session_id, request, stream).await;
-    match ret {
-        Ok(response) => {
-            info!("Websocket audio started");
-            response
-        }
-        Err(err) => {
-            info!("Websocket audio start rejected: {:?}", err);
-            HttpResponse::Forbidden().finish()
-        }
-    }
+    ws_service_handler(
+        ctrl,
+        request,
+        stream,
+        user,
+        super::ServiceType::Audio,
+        "audio",
+    )
+    .await
 }
 
 #[get("/inputs")]
@@ -149,22 +156,13 @@ async fn inputs(
     stream: web::Payload,
     user: Identity,
 ) -> HttpResponse {
-    let session_id = match user.uid() {
-        Ok(uid) => uid,
-        Err(_) => {
-            return HttpResponse::Unauthorized().finish();
-        }
-    };
-
-    let ret = super::start_inputs(ctrl, session_id, request, stream).await;
-    match ret {
-        Ok(response) => {
-            info!("Websocket inputs started");
-            response
-        }
-        Err(err) => {
-            info!("Websocket inputs start rejected: {:?}", err);
-            HttpResponse::Forbidden().finish()
-        }
-    }
+    ws_service_handler(
+        ctrl,
+        request,
+        stream,
+        user,
+        super::ServiceType::Input,
+        "inputs",
+    )
+    .await
 }
