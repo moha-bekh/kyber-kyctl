@@ -3016,6 +3016,7 @@ dependencies = [
  "actix-utils",
  "actix-web",
  "actix-ws",
+ "async-trait",
  "base64 0.22.1",
  "bytes",
  "clap",
