@@ -18,52 +18,251 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#[allow(dead_code)]
 mod av;
-#[allow(dead_code)]
 mod input;
 pub(crate) mod requests;
-pub(crate) mod router;
-
-use std::collections::HashSet;
-use std::sync::Arc;
 
 use actix_web::web;
-use tokio::sync::Mutex;
+use tokio::sync::{oneshot, Mutex};
 
 use crate::utils::TypeConvert;
 use crate::{avservice, inputservice};
 use crate::{Controller, DataPlaneBackend};
 use crate::{Error, Result};
 
-pub(crate) use router::WsRouter;
+use kymux::kycom::KyCom;
 
-const VIDEO_STREAM_IDX: u16 = 0;
-const AUDIO_STREAM_IDX: u16 = 1;
-const INPUT_STREAM_IDX: u16 = 2;
-const WS_LOCAL_CLIENTS_PORT: u16 = 9090;
+use av::AVConnection;
+use input::InputConnection;
+
+const VIDEO_ENDPOINT_ID: u16 = 0;
+const AUDIO_ENDPOINT_ID: u16 = 1;
+const INPUT_ENDPOINT_ID: u16 = 2;
+
+/// Lifecycle state of the input WebSocket endpoint.
+enum InputState {
+    /// Input was not requested for this session.
+    NotRequested,
+    /// Waiting for a WebSocket client to connect.
+    WaitingForConnection(oneshot::Sender<InputConnection>),
+    /// Client connected; forwarding task is running.
+    Connected(tokio::task::JoinHandle<()>),
+}
+
+/// Service handlers started alongside the WebSocket backend.
+///
+/// Returned from [`WebsocketBackend::start`] so `start_handler` can store
+/// them in the client session.
+pub(crate) struct StartedServices {
+    pub(crate) video: Vec<avservice::Handler>,
+    pub(crate) audio: Option<avservice::Handler>,
+    pub(crate) input: Option<inputservice::Handler>,
+}
 
 pub(crate) struct WebsocketBackend {
-    pub(crate) router: Arc<WsRouter>,
+    kycom: KyCom,
+    /// Oneshot to deliver [`AVConnection`] to the video endpoint when a client connects.
+    /// `None` if video was not requested or already connected.
+    video: Option<oneshot::Sender<AVConnection>>,
+    /// Oneshot to deliver [`AVConnection`] to the audio endpoint when a client connects.
+    /// `None` if audio was not requested or already connected.
+    audio: Option<oneshot::Sender<AVConnection>>,
+    input: InputState,
 }
 
 impl WebsocketBackend {
-    pub(crate) fn new(router: Arc<WsRouter>) -> Self {
-        Self { router }
+    /// Start kycom, register endpoints, and launch services
+    pub(crate) async fn start(
+        ctrl: &Controller,
+        session_id: uuid::Uuid,
+        request: &requests::StartRequest,
+    ) -> Result<(Self, StartedServices)> {
+        let mut kycom = KyCom::start_on_any_port(9090..9100).await?;
+
+        let (video_sender, video_handler) =
+            Self::start_video(&mut kycom, ctrl, session_id, request).await?;
+        let (audio_sender, audio_handler) =
+            Self::start_audio(&mut kycom, ctrl, session_id, request).await?;
+        let (input_sender, input_handler) = Self::start_input(&mut kycom, ctrl, request).await?;
+
+        let backend = Self {
+            kycom,
+            video: video_sender,
+            audio: audio_sender,
+            input: match input_sender {
+                Some(tx) => InputState::WaitingForConnection(tx),
+                None => InputState::NotRequested,
+            },
+        };
+
+        let services = StartedServices {
+            video: video_handler.into_iter().collect(),
+            audio: audio_handler,
+            input: input_handler,
+        };
+
+        Ok((backend, services))
+    }
+
+    async fn start_video(
+        kycom: &mut KyCom,
+        ctrl: &Controller,
+        session_id: uuid::Uuid,
+        request: &requests::StartRequest,
+    ) -> Result<(
+        Option<oneshot::Sender<AVConnection>>,
+        Option<avservice::Handler>,
+    )> {
+        let Some(video_request) = request.video.as_ref() else {
+            return Ok((None, None));
+        };
+
+        let (endpoint, connection_tx) =
+            av::AVWebSocketEndpoint::<kymux::types::VideoServerProtocol>::new(VIDEO_ENDPOINT_ID);
+        let addr = kycom.register_and_forward(endpoint.into())?;
+
+        let mut avservice_video = avservice::Handler::new(
+            avservice::HandlerType::Video,
+            Some(session_id),
+            ctrl.state_machine_proxy()?,
+        );
+        avservice_video
+            .kymux_start_video(
+                &ctrl.process_factory,
+                video_request.display_id,
+                addr.url(),
+                None,
+                request.bitrate,
+                video_request.codec.clone(),
+                video_request.yuv444,
+                video_request.intra_refresh,
+            )
+            .await?;
+
+        Ok((Some(connection_tx), Some(avservice_video)))
+    }
+
+    async fn start_audio(
+        kycom: &mut KyCom,
+        ctrl: &Controller,
+        session_id: uuid::Uuid,
+        request: &requests::StartRequest,
+    ) -> Result<(
+        Option<oneshot::Sender<AVConnection>>,
+        Option<avservice::Handler>,
+    )> {
+        if !request.audio {
+            return Ok((None, None));
+        }
+
+        let (endpoint, connection_tx) =
+            av::AVWebSocketEndpoint::<kymux::types::AudioServerProtocol>::new(AUDIO_ENDPOINT_ID);
+        let addr = kycom.register_and_forward(endpoint.into())?;
+
+        let mut avservice_audio = avservice::Handler::new(
+            avservice::HandlerType::Audio,
+            Some(session_id),
+            ctrl.state_machine_proxy()?,
+        );
+        avservice_audio
+            .kymux_start_audio(&ctrl.process_factory, addr.url())
+            .await?;
+
+        Ok((Some(connection_tx), Some(avservice_audio)))
+    }
+
+    async fn start_input(
+        kycom: &mut KyCom,
+        ctrl: &Controller,
+        request: &requests::StartRequest,
+    ) -> Result<(
+        Option<oneshot::Sender<InputConnection>>,
+        Option<inputservice::Handler>,
+    )> {
+        let Some(inputs_request) = &request.inputs else {
+            return Ok((None, None));
+        };
+
+        let (endpoint, connection_tx) = input::InputWebSocketEndpoint::new(INPUT_ENDPOINT_ID);
+        let addr = kycom.register_and_forward(endpoint.into())?;
+
+        let host_config = kynputservice_types::HostConfig {
+            display_list: ctrl.displays.convert(),
+        };
+
+        let service_config = kynputservice_types::ServiceConfig {
+            cursor_format: inputs_request.cursor_format.clone(),
+            gamepad_force_xbox360: inputs_request.gamepad_force_xbox360,
+            clipboard: inputs_request.clipboard,
+        };
+
+        let mut inputservice = inputservice::Handler::new();
+        inputservice
+            .start_kymux(
+                &ctrl.process_factory,
+                host_config,
+                service_config,
+                addr.url(),
+            )
+            .await?;
+
+        Ok((Some(connection_tx), Some(inputservice)))
     }
 
     pub(crate) async fn stop(self) -> Result<()> {
-        self.router.stop().await?;
-
+        self.kycom.stop();
+        if let InputState::Connected(handle) = self.input {
+            if let Err(err) = handle.await {
+                log::warn!("Input forward task panicked: {err}");
+            }
+        }
         Ok(())
     }
-}
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-enum Service {
-    Video,
-    Audio,
-    Input,
+    /// Connect service's WebSocket to a kycom endpoint
+    pub(crate) async fn connect_service(
+        &mut self,
+        service: &ServiceType,
+        ws_tx: actix_ws::Session,
+        ws_rx: actix_ws::MessageStream,
+    ) -> Result<()> {
+        const COMPONENT_VIDEO: &str = "video";
+        const COMPONENT_AUDIO: &str = "audio";
+        const COMPONENT_INPUT: &str = "input";
+
+        match service {
+            ServiceType::Video => {
+                let sender = self
+                    .video
+                    .take()
+                    .ok_or_else(|| Error::WsComponentNotReady {
+                        component: COMPONENT_VIDEO.into(),
+                    })?;
+                av::connect(COMPONENT_VIDEO, sender, ws_tx, ws_rx)
+            }
+            ServiceType::Audio => {
+                let sender = self
+                    .audio
+                    .take()
+                    .ok_or_else(|| Error::WsComponentNotReady {
+                        component: COMPONENT_AUDIO.into(),
+                    })?;
+                av::connect(COMPONENT_AUDIO, sender, ws_tx, ws_rx)
+            }
+            ServiceType::Input => {
+                let InputState::WaitingForConnection(sender) =
+                    std::mem::replace(&mut self.input, InputState::NotRequested)
+                else {
+                    return Err(Error::WsComponentNotReady {
+                        component: COMPONENT_INPUT.into(),
+                    });
+                };
+                let handle = input::connect(sender, ws_tx, ws_rx)?;
+                self.input = InputState::Connected(handle);
+                Ok(())
+            }
+        }
+    }
 }
 
 async fn start_handler(
@@ -78,90 +277,7 @@ async fn start_handler(
         return Err(Error::DataPlaneAlreadyOpened);
     }
 
-    // Start services
-    let mut pending_services = HashSet::new();
-
-    // Start WsRouter
-    let ws_router = WsRouter::new();
-    let service_listener = ws_router.listen_for_clients().await?;
-
-    // Start VideoServer
-    let avservice_video = if let Some(video_request) = request.video.as_ref() {
-        let uri = format!("kymux://127.0.0.1:{WS_LOCAL_CLIENTS_PORT}/{VIDEO_STREAM_IDX:X}");
-
-        let mut avservice_video = avservice::Handler::new(
-            avservice::HandlerType::Video,
-            Some(session_id),
-            ctrl.state_machine_proxy()?,
-        );
-        avservice_video
-            .kymux_start_video(
-                &ctrl.process_factory,
-                video_request.display_id,
-                uri,
-                None,
-                request.bitrate,
-                video_request.codec.clone(),
-                video_request.yuv444,
-                video_request.intra_refresh,
-            )
-            .await?;
-
-        pending_services.insert(Service::Video);
-
-        Some(avservice_video)
-    } else {
-        None
-    };
-
-    // Start AudioServer
-    let avservice_audio = if request.audio {
-        let uri = format!("kymux://127.0.0.1:{WS_LOCAL_CLIENTS_PORT}/{AUDIO_STREAM_IDX:X}");
-
-        let mut avservice_audio = avservice::Handler::new(
-            avservice::HandlerType::Audio,
-            Some(session_id),
-            ctrl.state_machine_proxy()?,
-        );
-        avservice_audio
-            .kymux_start_audio(&ctrl.process_factory, uri)
-            .await?;
-
-        pending_services.insert(Service::Audio);
-
-        Some(avservice_audio)
-    } else {
-        None
-    };
-
-    // Start InputServer
-    let inputservice = if let Some(inputs_request) = &request.inputs {
-        let host_config = kynputservice_types::HostConfig {
-            display_list: ctrl.displays.convert(),
-        };
-
-        let service_config = kynputservice_types::ServiceConfig {
-            cursor_format: inputs_request.cursor_format.clone(),
-            gamepad_force_xbox360: inputs_request.gamepad_force_xbox360,
-            clipboard: inputs_request.clipboard,
-        };
-
-        let uri = format!("kymux://127.0.0.1:{WS_LOCAL_CLIENTS_PORT}/{INPUT_STREAM_IDX:X}");
-
-        let mut inputservice = inputservice::Handler::new();
-        inputservice
-            .start_kymux(&ctrl.process_factory, host_config, service_config, uri)
-            .await?;
-
-        pending_services.insert(Service::Input);
-
-        Some(inputservice)
-    } else {
-        None
-    };
-
-    // Wait for all services to be ready
-    service_listener.wait_all(pending_services).await?;
+    let (backend, services) = WebsocketBackend::start(&ctrl, session_id, request).await?;
 
     // Store objects
     let client_session = ctrl.get_session(&session_id)?;
@@ -169,103 +285,26 @@ async fn start_handler(
         return Err(Error::ControlPlaneNotOpened);
     };
 
-    let backend = WebsocketBackend::new(ws_router);
     streaming_session.data_plane = Some(DataPlaneBackend::Websocket(backend));
-
-    let avservice_video = if let Some(avservice_video) = avservice_video {
-        vec![avservice_video]
-    } else {
-        vec![]
-    };
-
-    client_session.services.video = avservice_video;
-    client_session.services.audio = avservice_audio;
-    client_session.services.input = inputservice;
+    client_session.services.video = services.video;
+    client_session.services.audio = services.audio;
+    client_session.services.input = services.input;
 
     Ok(())
 }
 
-async fn start_video(
-    ctrl: web::Data<Mutex<Controller>>,
-    session_id: uuid::Uuid,
-    session: actix_ws::Session,
-    msg_stream: actix_ws::MessageStream,
-) -> Result<()> {
-    let mut ctrl = ctrl.lock().await;
-
-    let client_session = ctrl.get_session(&session_id)?;
-    let Some(streaming_session) = client_session.stream_session.as_mut() else {
-        return Err(Error::ControlPlaneNotOpened);
-    };
-
-    let Some(DataPlaneBackend::Websocket(backend)) = streaming_session.data_plane.as_mut() else {
-        return Err(Error::WsNoRouter);
-    };
-
-    backend
-        .router
-        .start_video_routing(session, msg_stream)
-        .await?;
-
-    Ok(())
-}
-
-async fn start_audio(
-    ctrl: web::Data<Mutex<Controller>>,
-    session_id: uuid::Uuid,
-    session: actix_ws::Session,
-    msg_stream: actix_ws::MessageStream,
-) -> Result<()> {
-    let mut ctrl = ctrl.lock().await;
-
-    let client_session = ctrl.get_session(&session_id)?;
-    let Some(streaming_session) = client_session.stream_session.as_mut() else {
-        return Err(Error::ControlPlaneNotOpened);
-    };
-
-    let Some(DataPlaneBackend::Websocket(backend)) = streaming_session.data_plane.as_mut() else {
-        return Err(Error::WsNoRouter);
-    };
-
-    backend
-        .router
-        .start_audio_routing(session, msg_stream)
-        .await?;
-
-    Ok(())
-}
-
-async fn start_inputs(
-    ctrl: web::Data<Mutex<Controller>>,
-    session_id: uuid::Uuid,
-    session: actix_ws::Session,
-    msg_stream: actix_ws::MessageStream,
-) -> Result<()> {
-    let mut ctrl = ctrl.lock().await;
-
-    let client_session = ctrl.get_session(&session_id)?;
-    let Some(streaming_session) = client_session.stream_session.as_mut() else {
-        return Err(Error::ControlPlaneNotOpened);
-    };
-
-    let Some(DataPlaneBackend::Websocket(backend)) = streaming_session.data_plane.as_mut() else {
-        return Err(Error::WsNoRouter);
-    };
-
-    backend
-        .router
-        .start_input_routing(session, msg_stream)
-        .await?;
-
-    Ok(())
-}
-
+#[derive(Debug)]
 pub(super) enum ServiceType {
     Video,
     Audio,
     Input,
 }
 
+/// Generic WebSocket handler for video, audio, and input services.
+///
+/// Handles the common WebSocket setup pattern:
+/// 1. Validate client/streaming/backend sessions exist
+/// 2. Call service-specific routing function
 pub(super) async fn start_websocket_handler(
     ctrl: web::Data<Mutex<Controller>>,
     session_id: uuid::Uuid,
@@ -273,9 +312,20 @@ pub(super) async fn start_websocket_handler(
     msg_stream: actix_ws::MessageStream,
     service: ServiceType,
 ) -> Result<()> {
-    match service {
-        ServiceType::Video => start_video(ctrl, session_id, session, msg_stream).await,
-        ServiceType::Audio => start_audio(ctrl, session_id, session, msg_stream).await,
-        ServiceType::Input => start_inputs(ctrl, session_id, session, msg_stream).await,
-    }
+    let mut ctrl = ctrl.lock().await;
+
+    let client_session = ctrl.get_session(&session_id)?;
+    let Some(streaming_session) = client_session.stream_session.as_mut() else {
+        return Err(Error::ControlPlaneNotOpened);
+    };
+
+    let Some(DataPlaneBackend::Websocket(backend)) = streaming_session.data_plane.as_mut() else {
+        return Err(Error::WsNoRouter);
+    };
+
+    backend
+        .connect_service(&service, session, msg_stream)
+        .await?;
+
+    Ok(())
 }

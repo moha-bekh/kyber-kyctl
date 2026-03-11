@@ -95,8 +95,6 @@ pub enum Error {
     WsNoRouter,
     #[error("Websocket component {component} not ready")]
     WsComponentNotReady { component: String },
-    #[error("Websocket got invalid endpoint {endpoint_id:X} from process")]
-    WsInvalidEndpoint { endpoint_id: u16 },
     #[error("Invalid authentication message")]
     WsInvalidAuthMessage,
     #[error("Authentication timed out")]
