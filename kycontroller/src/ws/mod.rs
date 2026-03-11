@@ -20,6 +20,8 @@
 
 #[allow(dead_code)]
 mod av;
+#[allow(dead_code)]
+mod input;
 pub(crate) mod requests;
 pub(crate) mod router;
 
