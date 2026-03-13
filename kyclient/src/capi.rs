@@ -217,6 +217,24 @@ pub unsafe extern "C" fn kyclient_set_log_cb(cb: LogCb, userdata: *mut c_void) {
 
 #[cfg(target_os = "android")]
 #[no_mangle]
+pub unsafe extern "C" fn kyclient_init_platform_verifier(
+    env: ptr::NonNull<c_void>,
+    context: ptr::NonNull<c_void>,
+) -> c_int {
+    let mut env =
+        jni::JNIEnv::from_raw(env.as_ptr() as *mut jni::sys::JNIEnv).expect("invalid JNIEnv");
+    let context = jni::objects::JObject::from_raw(context.as_ptr() as jni::sys::jobject);
+    match rustls_platform_verifier::android::init_with_env(&mut env, context) {
+        Ok(()) => 0,
+        Err(e) => {
+            error!("Failed to init platform verifier: {:?}", e);
+            -1
+        }
+    }
+}
+
+#[cfg(target_os = "android")]
+#[no_mangle]
 pub unsafe extern "C" fn kyclient_set_android_logger() {
     android_logger::init_once(
         android_logger::Config::default()

@@ -2593,6 +2593,7 @@ dependencies = [
  "async-tungstenite",
  "bytes",
  "futures",
+ "jni",
  "js-sys",
  "kyaudioreg",
  "kyclient-common",
