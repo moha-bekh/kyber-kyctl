@@ -71,7 +71,7 @@ async fn start_handler(
         }
     };
 
-    let ret = super::start_handler(ctrl, session_id, request).await;
+    let ret = super::start_handler(ctrl, session_id, &request).await;
     match ret {
         Ok(_) => {
             let numeric_session_id = generate_session_id();
@@ -101,10 +101,19 @@ async fn ws_service_handler(
         Err(_) => return HttpResponse::Unauthorized().finish(),
     };
 
-    match super::start_websocket_handler(ctrl, session_id, request, stream, service_type).await {
-        Ok(response) => {
+    let (res, session, msg_stream) = match actix_ws::handle(&request, stream) {
+        Ok(v) => v,
+        Err(err) => {
+            info!("Websocket {label} upgrade failed: {err}");
+            return HttpResponse::Forbidden().finish();
+        }
+    };
+
+    match super::start_websocket_handler(ctrl, session_id, session, msg_stream, service_type).await
+    {
+        Ok(()) => {
             info!("Websocket {label} started");
-            response
+            res
         }
         Err(err) => {
             info!("Websocket {label} start rejected: {err}");

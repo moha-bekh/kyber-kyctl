@@ -28,7 +28,7 @@ pub(crate) mod router;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use actix_web::{web, HttpRequest, HttpResponse};
+use actix_web::web;
 use tokio::sync::Mutex;
 
 use crate::utils::TypeConvert;
@@ -69,7 +69,7 @@ enum Service {
 async fn start_handler(
     ctrl: web::Data<Mutex<Controller>>,
     session_id: uuid::Uuid,
-    request: web::Json<requests::StartRequest>,
+    request: &requests::StartRequest,
 ) -> Result<()> {
     let mut ctrl = ctrl.lock().await;
 
@@ -188,10 +188,9 @@ async fn start_handler(
 async fn start_video(
     ctrl: web::Data<Mutex<Controller>>,
     session_id: uuid::Uuid,
-    request: HttpRequest,
-    stream: web::Payload,
-) -> Result<HttpResponse> {
-    let (res, session, msg_stream) = actix_ws::handle(&request, stream)?;
+    session: actix_ws::Session,
+    msg_stream: actix_ws::MessageStream,
+) -> Result<()> {
     let mut ctrl = ctrl.lock().await;
 
     let client_session = ctrl.get_session(&session_id)?;
@@ -208,16 +207,15 @@ async fn start_video(
         .start_video_routing(session, msg_stream)
         .await?;
 
-    Ok(res)
+    Ok(())
 }
 
 async fn start_audio(
     ctrl: web::Data<Mutex<Controller>>,
     session_id: uuid::Uuid,
-    request: HttpRequest,
-    stream: web::Payload,
-) -> Result<HttpResponse> {
-    let (res, session, msg_stream) = actix_ws::handle(&request, stream)?;
+    session: actix_ws::Session,
+    msg_stream: actix_ws::MessageStream,
+) -> Result<()> {
     let mut ctrl = ctrl.lock().await;
 
     let client_session = ctrl.get_session(&session_id)?;
@@ -234,16 +232,15 @@ async fn start_audio(
         .start_audio_routing(session, msg_stream)
         .await?;
 
-    Ok(res)
+    Ok(())
 }
 
 async fn start_inputs(
     ctrl: web::Data<Mutex<Controller>>,
     session_id: uuid::Uuid,
-    request: HttpRequest,
-    stream: web::Payload,
-) -> Result<HttpResponse> {
-    let (res, session, msg_stream) = actix_ws::handle(&request, stream)?;
+    session: actix_ws::Session,
+    msg_stream: actix_ws::MessageStream,
+) -> Result<()> {
     let mut ctrl = ctrl.lock().await;
 
     let client_session = ctrl.get_session(&session_id)?;
@@ -260,7 +257,7 @@ async fn start_inputs(
         .start_input_routing(session, msg_stream)
         .await?;
 
-    Ok(res)
+    Ok(())
 }
 
 pub(super) enum ServiceType {
@@ -272,13 +269,13 @@ pub(super) enum ServiceType {
 pub(super) async fn start_websocket_handler(
     ctrl: web::Data<Mutex<Controller>>,
     session_id: uuid::Uuid,
-    request: HttpRequest,
-    stream: web::Payload,
+    session: actix_ws::Session,
+    msg_stream: actix_ws::MessageStream,
     service: ServiceType,
-) -> Result<HttpResponse> {
+) -> Result<()> {
     match service {
-        ServiceType::Video => start_video(ctrl, session_id, request, stream).await,
-        ServiceType::Audio => start_audio(ctrl, session_id, request, stream).await,
-        ServiceType::Input => start_inputs(ctrl, session_id, request, stream).await,
+        ServiceType::Video => start_video(ctrl, session_id, session, msg_stream).await,
+        ServiceType::Audio => start_audio(ctrl, session_id, session, msg_stream).await,
+        ServiceType::Input => start_inputs(ctrl, session_id, session, msg_stream).await,
     }
 }
