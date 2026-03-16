@@ -681,6 +681,7 @@ async fn real_main() -> Result<()> {
         .run();
 
     let server_handle = server.handle();
+    let tray_enabled = tray::is_supported() && ctrl_for_tray.lock().await.config.tray_enabled();
 
     tokio::select! {
         result = server => {
@@ -688,13 +689,12 @@ async fn real_main() -> Result<()> {
                 warn!("Server error: {e}");
             }
         }
-        _ = tray::run(ctrl_for_tray.clone(), server_handle.clone()) => {}
+        _ = tray::run(ctrl_for_tray.clone(), server_handle.clone()), if tray_enabled => {}
         _ = tray::wait_service_shutdown() => {
             info!("Service shutdown signal received");
             ctrl_for_tray.lock().await.shutdown_tray().await;
             server_handle.stop(false).await;
         }
-
     }
 
     ctrl_for_tray.lock().await.shutdown_tray().await;

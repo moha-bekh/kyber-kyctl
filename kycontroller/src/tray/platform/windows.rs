@@ -823,14 +823,11 @@ pub fn spawn() -> Result<(TrayHandle, mpsc::Receiver<TrayCommand>)> {
         });
     }
 
-    // Clone for the tray loop thread
-    let tray_command_tx_loop = tray_command_tx.clone();
-
     // Wrap in RawHandle (Copy + Send) for passing to threads
     let exit_handle = RawHandle(exit_raw);
     let wake_handle = RawHandle(wake_raw);
 
-    // Spawn the tray thread
+    let tray_command_tx_loop = tray_command_tx.clone();
     let thread_handle = thread::Builder::new()
         .name("tray-icon".to_string())
         .spawn(move || {

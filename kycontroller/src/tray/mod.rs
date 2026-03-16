@@ -64,6 +64,11 @@ pub use platform::{spawn, wait_service_shutdown, TrayHandle};
 #[allow(unused_imports)]
 pub use status::{TrayCommand, TrayStatus};
 
+/// Whether the system tray is supported on this platform.
+pub fn is_supported() -> bool {
+    cfg!(all(windows, feature = "win32-tray"))
+}
+
 use crate::controller::Controller;
 
 use actix_web::dev::ServerHandle;

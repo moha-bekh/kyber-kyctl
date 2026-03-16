@@ -35,7 +35,7 @@ use tokio::sync::mpsc;
 
 /// Stub handle for unsupported platforms.
 pub struct TrayHandle {
-    _status_tx: mpsc::Sender<TrayStatus>,
+    _shutdown_tx: mpsc::Sender<TrayCommand>,
 }
 
 impl TrayHandle {
@@ -60,14 +60,8 @@ impl TrayHandle {
 /// Returns a dummy handle and a channel that will never receive signals.
 pub fn spawn() -> Result<(TrayHandle, mpsc::Receiver<TrayCommand>)> {
     warn!("System tray not supported on this platform");
-    let (status_tx, _status_rx) = mpsc::channel(1);
     let (_shutdown_tx, shutdown_rx) = mpsc::channel(1);
-    Ok((
-        TrayHandle {
-            _status_tx: status_tx,
-        },
-        shutdown_rx,
-    ))
+    Ok((TrayHandle { _shutdown_tx }, shutdown_rx))
 }
 
 /// Wait for a service shutdown signal (stub for unsupported platforms).

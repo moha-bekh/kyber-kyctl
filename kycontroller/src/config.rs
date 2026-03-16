@@ -36,6 +36,7 @@ pub(crate) struct Config {
     webtransport_gen_certificate: Option<bool>,
     tls_cert: Option<String>,
     tls_key: Option<String>,
+    tray: Option<bool>,
     #[serde(default)]
     auth: auth::Config,
     #[serde(default)]
@@ -53,6 +54,10 @@ impl Config {
 
     pub(crate) fn webtransport_gen_certificate(&self) -> bool {
         self.webtransport_gen_certificate.unwrap_or(true)
+    }
+
+    pub(crate) fn tray_enabled(&self) -> bool {
+        self.tray.unwrap_or(true)
     }
 
     pub(crate) fn auth(&self) -> &auth::Config {
