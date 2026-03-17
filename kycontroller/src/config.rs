@@ -29,9 +29,18 @@ use super::utils;
 
 const LISTENING_PORT: u16 = 8080;
 
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ListenMode {
+    Ipv4,
+    #[default]
+    DualStack,
+}
+
 #[derive(Debug, Default, Deserialize)]
 pub(crate) struct Config {
     port: Option<u16>,
+    listen_mode: Option<ListenMode>,
     dataplane_port: Option<u16>,
     webtransport_gen_certificate: Option<bool>,
     tls_cert: Option<String>,
@@ -46,6 +55,10 @@ pub(crate) struct Config {
 impl Config {
     pub(crate) fn port(&self) -> u16 {
         self.port.unwrap_or(LISTENING_PORT)
+    }
+
+    pub(crate) fn listen_mode(&self) -> ListenMode {
+        self.listen_mode.unwrap_or_default()
     }
 
     pub(crate) fn dataplane_port(&self) -> Option<u16> {
