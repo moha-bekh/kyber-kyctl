@@ -203,7 +203,13 @@ impl KymuxServer {
         info!("Waiting for Kymux connections");
 
         loop {
-            let unauth_connection = server.accept_with_auth().await?;
+            let unauth_connection = match server.accept_with_auth().await {
+                Ok(conn) => conn,
+                Err(err) => {
+                    warn!("Accept failed: {err}");
+                    continue;
+                }
+            };
             let token = unauth_connection.get_auth().token().to_string();
 
             // Check token before accepting
