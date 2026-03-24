@@ -23,7 +23,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use kymux::kyproto;
-use log::{info, warn};
+use log::{error, info, warn};
 use tokio::sync::{oneshot, Mutex};
 use tokio::task::{self, JoinHandle};
 use uuid::Uuid;
@@ -196,48 +196,76 @@ impl KymuxServer {
         Ok(())
     }
 
+    /// Number of concurrent accept tasks. If one is stuck on a misbehaving
+    /// client, the others keep serving new connections.
+    const ACCEPT_POOL_SIZE: usize = 4;
+
+    /// Accept loop using concurrent tasks so a single misbehaving client
+    /// cannot block the entire server from accepting new connections.
     async fn run_task(
         server: Arc<kymux::Server>,
         router: Arc<Mutex<IncomingConnectionRouter>>,
     ) -> Result<()> {
         info!("Waiting for Kymux connections");
 
+        let mut set = task::JoinSet::new();
+
         loop {
-            let unauth_connection = match server.accept_with_auth().await {
-                Ok(conn) => conn,
-                Err(err) => {
-                    warn!("Accept failed: {err}");
-                    continue;
-                }
-            };
-            let token = unauth_connection.get_auth().token().to_string();
-
-            // Check token before accepting
-            {
-                let router = router.lock().await;
-                if !router.pending_auth.contains_key(&token) {
-                    warn!("Rejecting connection with unknown token");
-                    unauth_connection.reject_authentication();
-                    continue;
-                }
+            while set.len() < Self::ACCEPT_POOL_SIZE {
+                let server = server.clone();
+                let router = router.clone();
+                set.spawn(Self::handle_connection(server, router));
             }
 
-            // Accept connection
-            let connection = match unauth_connection.accept_authentication().await {
-                Ok(conn) => Arc::new(conn),
-                Err(err) => {
-                    warn!("Accept authentication failed: {err:?}");
-                    continue;
-                }
-            };
-
-            info!("Kymux connection accepted");
-
-            // Route to session
-            let mut router = router.lock().await;
-            if !router.route_connection(connection, &token) {
-                warn!("Failed to route connection");
+            match set.join_next().await {
+                Some(Ok(())) => {}
+                Some(Err(err)) => error!("Connection handler panicked: {err}"),
+                None => break,
             }
+        }
+
+        Ok(())
+    }
+
+    async fn handle_connection(
+        server: Arc<kymux::Server>,
+        router: Arc<Mutex<IncomingConnectionRouter>>,
+    ) {
+        let unauth_connection = match server.accept_with_auth().await {
+            Ok(conn) => conn,
+            Err(err) => {
+                warn!("Accept failed: {err}");
+                return;
+            }
+        };
+
+        let token = unauth_connection.get_auth().token().to_string();
+
+        // Check token before accepting
+        {
+            let router = router.lock().await;
+            if !router.pending_auth.contains_key(&token) {
+                warn!("Rejecting connection with unknown token: {token}");
+                unauth_connection.reject_authentication();
+                return;
+            }
+        }
+
+        // Accept connection
+        let connection = match unauth_connection.accept_authentication().await {
+            Ok(conn) => Arc::new(conn),
+            Err(err) => {
+                warn!("Accept authentication failed: {err}");
+                return;
+            }
+        };
+
+        info!("Kymux connection accepted");
+
+        // Route to session
+        let mut router = router.lock().await;
+        if !router.route_connection(connection, &token) {
+            warn!("Failed to route connection");
         }
     }
 }
