@@ -19,16 +19,10 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::net::SocketAddr;
-use std::time::Duration;
 
 use log::{error, warn};
 use reqwest::{self, StatusCode};
 use serde::{Deserialize, Serialize};
-
-#[cfg(target_family = "wasm")]
-use kywasmtime::timeout;
-#[cfg(not(target_family = "wasm"))]
-use tokio::time::timeout;
 
 use crate::error::{Error, Result};
 use crate::http::HttpClient;
@@ -42,18 +36,9 @@ pub(crate) struct SetBitrateRequest {
 pub(crate) async fn capabilities(
     client: &HttpClient,
 ) -> Result<(Capabilities, Option<SocketAddr>)> {
-    const HTTP_TIMEOUT: Duration = Duration::from_secs(5);
-
     let url = format!("{base_url}/capabilities", base_url = client.base_url());
 
-    let ret = timeout(HTTP_TIMEOUT, client.get(&url).send()).await;
-    let response = match ret {
-        Err(_) => {
-            warn!("GET /capabilities has timed out");
-            return Err(Error::HttpQueryTimeout);
-        }
-        Ok(ret) => ret?,
-    };
+    let response = client.get(&url).send().await?;
 
     if response.status() != StatusCode::OK {
         warn!("GET /capabilities failed: {}", response.status());

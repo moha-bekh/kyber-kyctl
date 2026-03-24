@@ -19,11 +19,14 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::net::SocketAddr;
+use std::time::Duration;
 
 use reqwest::IntoUrl;
 
 use crate::platform::http as platform_http;
 use crate::{ConnectionParams, Result};
+
+const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Formats a host and port for use in URLs, wrapping IPv6 addresses in brackets.
 pub(crate) fn format_host_for_url(host: &str, port: u16) -> String {
@@ -55,12 +58,16 @@ impl HttpClient {
         })
     }
 
+    fn configure_request(builder: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        platform_http::configure_request(builder).timeout(HTTP_TIMEOUT)
+    }
+
     pub(crate) fn get<U: IntoUrl>(&self, url: U) -> reqwest::RequestBuilder {
-        platform_http::configure_request(self.client.get(url))
+        Self::configure_request(self.client.get(url))
     }
 
     pub(crate) fn post<U: IntoUrl>(&self, url: U) -> reqwest::RequestBuilder {
-        platform_http::configure_request(self.client.post(url))
+        Self::configure_request(self.client.post(url))
     }
 
     pub(crate) fn base_url(&self) -> &str {
