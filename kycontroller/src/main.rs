@@ -646,12 +646,18 @@ async fn real_main() -> Result<()> {
         let mut ctrl = ctrl.lock().await;
 
         // Configure watchdog
-        info!("Starting watchdog");
-        let (watchdog, displays) =
-            watchdog::Watchdog::new(&process_factory, statemachine.create_proxy()).await?;
+        let watchdog = if ctrl.config.watchdog() {
+            info!("Starting watchdog");
+            let (watchdog, displays) =
+                watchdog::Watchdog::new(&process_factory, statemachine.create_proxy()).await?;
 
-        info!("Got initial displays: {displays:?}");
-        ctrl.displays = displays;
+            info!("Got initial displays: {displays:?}");
+            ctrl.displays = displays;
+            Some(watchdog)
+        } else {
+            warn!("Watchdog disabled in config! Audio and video disabled.");
+            None
+        };
 
         // Configure StateMachine listener
         ctrl.state_machine_proxy = Some(statemachine.create_proxy());
@@ -764,7 +770,9 @@ async fn real_main() -> Result<()> {
     ctrl_for_tray.lock().await.shutdown_tray().await;
 
     session_exp_task.stop().await;
-    watchdog.stop().await?;
+    if let Some(watchdog) = watchdog {
+        watchdog.stop().await?;
+    }
     statemachine.stop().await?;
 
     Ok(())

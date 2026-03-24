@@ -50,6 +50,7 @@ pub(crate) struct Config {
     auth: auth::Config,
     #[serde(default)]
     security: crate::security::Config,
+    watchdog: Option<bool>,
 }
 
 impl Config {
@@ -79,6 +80,10 @@ impl Config {
 
     pub(crate) fn security(&self) -> &crate::security::Config {
         &self.security
+    }
+
+    pub(crate) fn watchdog(&self) -> bool {
+        self.watchdog.unwrap_or(true)
     }
 
     pub(crate) fn tls_cert(&self) -> Option<&str> {
