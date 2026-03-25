@@ -247,6 +247,13 @@ impl HostEventSender {
         }
     }
 
+    /// Non-blocking send. Use when holding a lock to avoid blocking other requests.
+    pub(crate) fn try_send(&self, event: HostEvent) {
+        if let Err(err) = self.events_tx.try_send(HostEventFrame::Event { event }) {
+            warn!("Failed to send event (non-blocking): {err:?}");
+        }
+    }
+
     async fn task_entry(
         session_id: uuid::Uuid,
         session: actix_ws::Session,

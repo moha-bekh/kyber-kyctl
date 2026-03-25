@@ -134,15 +134,15 @@ impl StateMachine {
                     );
                     let mut ctrl = ctrl.lock().await;
 
-                    // Broadcast display list to all sessions
+                    // Broadcast display list to all sessions (non-blocking to avoid
+                    // holding the lock while a slow client backs up the channel)
                     for session in ctrl.sessions.values() {
                         if let Some(streaming_session) = &session.stream_session {
                             streaming_session
                                 .host_event_sender
-                                .send(HostEvent::DisplayList {
+                                .try_send(HostEvent::DisplayList {
                                     displays: displays.convert(),
-                                })
-                                .await;
+                                });
                         }
                     }
 
@@ -196,8 +196,7 @@ impl StateMachine {
                         if let Some(streaming_session) = &session.stream_session {
                             streaming_session
                                 .host_event_sender
-                                .send(HostEvent::StreamerPipelineEvent(event.into()))
-                                .await;
+                                .try_send(HostEvent::StreamerPipelineEvent(event.into()));
                         }
                     }
                 }
@@ -235,8 +234,7 @@ impl StateMachine {
 
                             streaming_session
                                 .host_event_sender
-                                .send(HostEvent::StreamerPipelineEvent(event))
-                                .await;
+                                .try_send(HostEvent::StreamerPipelineEvent(event));
                         }
                     }
                 }
