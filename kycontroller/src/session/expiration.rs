@@ -109,28 +109,40 @@ impl ExpirationTask {
     /// 5. If expired: Call `Controller::stop()` to terminate that session's streaming services
     /// 6. Clean up any expired pending authentication tokens
     async fn check_expiration(ctrl: &web::Data<Mutex<Controller>>) {
-        let mut ctrl = ctrl.lock().await;
+        // Collect expired sessions and extract cleanup data under the lock
+        let (cleanups, infra) = {
+            let mut ctrl = ctrl.lock().await;
 
-        let now = OffsetDateTime::now_utc();
-        let expired_sessions: Vec<_> = ctrl
-            .sessions
-            .iter()
-            .filter_map(|(uid, session)| {
-                session
-                    .expiration
-                    .and_then(|exp| if now > exp { Some(*uid) } else { None })
-            })
-            .collect();
+            let now = OffsetDateTime::now_utc();
+            let expired_sessions: Vec<_> = ctrl
+                .sessions
+                .iter()
+                .filter_map(|(uid, session)| {
+                    session
+                        .expiration
+                        .and_then(|exp| if now > exp { Some(*uid) } else { None })
+                })
+                .collect();
 
-        for session_id in expired_sessions {
-            warn!("Killing expired session \"{}\"", session_id);
-            let ret = ctrl.stop(session_id).await;
-            if let Err(err) = ret {
-                error!("Fail to stop session: {err:?}");
+            let mut cleanups = Vec::new();
+            for session_id in expired_sessions {
+                warn!("Killing expired session \"{}\"", session_id);
+                match ctrl.take_session(session_id) {
+                    Ok(cleanup) => cleanups.push(cleanup),
+                    Err(err) => error!("Fail to stop session: {err:?}"),
+                }
             }
+
+            let infra = ctrl.shared_kymux_infra.clone();
+            (cleanups, infra)
+        };
+        // Lock dropped - run cleanup without blocking other requests
+
+        for cleanup in cleanups {
+            cleanup.run().await;
         }
 
         // Cleanup expired pending auth tokens in shared Kymux infrastructure
-        ctrl.shared_kymux_infra.lock().await.cleanup_expired().await;
+        infra.lock().await.cleanup_expired().await;
     }
 }

@@ -393,11 +393,14 @@ async fn stop_streaming(ctrl: web::Data<Mutex<Controller>>, user: Identity) -> H
         return HttpResponse::Unauthorized().finish();
     };
 
-    let mut ctrl = ctrl.lock().await;
+    let cleanup = {
+        let mut ctrl = ctrl.lock().await;
+        ctrl.take_streaming(uid)
+    };
 
-    let ret = ctrl.stop_streaming(uid).await;
-    match ret {
-        Ok(_) => {
+    match cleanup {
+        Ok(cleanup) => {
+            cleanup.run().await;
             info!("Stream stopped");
             HttpResponse::Ok().finish()
         }
@@ -416,12 +419,15 @@ async fn logout(ctrl: web::Data<Mutex<Controller>>, user: Identity) -> HttpRespo
 
     user.logout();
 
-    let mut ctrl = ctrl.lock().await;
+    let cleanup = {
+        let mut ctrl = ctrl.lock().await;
+        ctrl.take_session(uid)
+    };
 
-    let ret = ctrl.stop(uid).await;
-    ctrl.update_tray_status().await;
-    match ret {
-        Ok(_) => {
+    match cleanup {
+        Ok(cleanup) => {
+            cleanup.run().await;
+            ctrl.lock().await.update_tray_status().await;
             info!("Session stopped");
             HttpResponse::Ok().finish()
         }

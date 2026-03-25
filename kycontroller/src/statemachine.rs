@@ -247,11 +247,18 @@ impl StateMachine {
                     host_events::Notification::ConnectionLost => {
                         warn!("Control Websocket disconnected for session {}", session_id);
 
-                        let mut ctrl = ctrl.lock().await;
+                        // Take session under lock, then stop outside to avoid
+                        // blocking /login and other requests during teardown
+                        let cleanup = {
+                            let mut ctrl = ctrl.lock().await;
+                            ctrl.take_session(session_id)
+                        };
 
-                        let ret = ctrl.stop(session_id).await;
-                        if let Err(err) = ret {
-                            warn!("Fail to stop session {}: {err:?}", session_id);
+                        match cleanup {
+                            Ok(cleanup) => cleanup.run().await,
+                            Err(err) => {
+                                warn!("Fail to stop session {}: {err:?}", session_id)
+                            }
                         }
                     }
                 },

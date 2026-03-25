@@ -19,6 +19,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
+use std::mem;
 use std::sync::Arc;
 
 use kymux::kyproto;
@@ -91,6 +92,66 @@ impl StreamingSession {
         self.host_event_sender.stop().await?;
 
         Ok(())
+    }
+}
+
+/// Cleanup data for a fully removed session.
+///
+/// Holds all resources that need async teardown. Must be used OUTSIDE the
+/// Controller lock to avoid blocking concurrent requests.
+pub(crate) struct SessionCleanup {
+    session: ClientSession,
+    should_stop_infra: bool,
+    infra: Arc<tokio::sync::Mutex<SharedKymuxInfra>>,
+}
+
+impl SessionCleanup {
+    pub(crate) async fn run(mut self) {
+        info!("Stop session {}", self.session.uid);
+
+        if let Some(stream_session) = self.session.stream_session.take() {
+            if let Err(err) = stream_session.stop().await {
+                warn!("Failed to stop client session: {err:?}");
+            }
+        }
+
+        if let Err(err) = self.session.services.stop().await {
+            warn!("Failed to stop streaming services: {err:?}");
+        }
+
+        if self.should_stop_infra {
+            if let Err(err) = self.infra.lock().await.stop().await {
+                warn!("Failed to stop shared Kymux infrastructure: {err:?}");
+            }
+        }
+    }
+}
+
+/// Cleanup data for stopping streaming without removing the session.
+pub(crate) struct StreamingCleanup {
+    data_plane: Option<DataPlaneBackend>,
+    services: StreamingServices,
+}
+
+impl StreamingCleanup {
+    pub(crate) async fn run(mut self) {
+        match self.data_plane.take() {
+            Some(DataPlaneBackend::Kymux(backend)) => {
+                if let Err(err) = backend.stop().await {
+                    warn!("Failed to stop kymux backend: {err:?}");
+                }
+            }
+            Some(DataPlaneBackend::Websocket(backend)) => {
+                if let Err(err) = backend.stop().await {
+                    warn!("Failed to stop websocket backend: {err:?}");
+                }
+            }
+            _ => {}
+        }
+
+        if let Err(err) = self.services.stop().await {
+            warn!("Failed to stop streaming services: {err:?}");
+        }
     }
 }
 
@@ -250,7 +311,32 @@ impl Controller {
             .ok_or(Error::InvalidSession { uid: *uid })
     }
 
-    pub async fn stop_streaming(&mut self, session_id: Uuid) -> Result<()> {
+    /// Remove a session and prepare cleanup data.
+    ///
+    /// Returns a `SessionCleanup` that must be `.run().await`ed AFTER releasing
+    /// the Controller lock to avoid blocking concurrent requests like `/login`.
+    pub(crate) fn take_session(&mut self, session_id: Uuid) -> Result<SessionCleanup> {
+        info!("Preparing stop session {}", session_id);
+
+        let session = self
+            .sessions
+            .remove(&session_id)
+            .ok_or(Error::InvalidSession { uid: session_id })?;
+
+        let should_stop_infra = self.sessions.is_empty();
+        let infra = self.shared_kymux_infra.clone();
+
+        Ok(SessionCleanup {
+            session,
+            should_stop_infra,
+            infra,
+        })
+    }
+
+    /// Extract streaming resources for cleanup outside the lock.
+    ///
+    /// The session remains in the map but with empty services.
+    pub(crate) fn take_streaming(&mut self, session_id: Uuid) -> Result<StreamingCleanup> {
         info!("Stop streaming for session {}", session_id);
 
         let client_session = self
@@ -258,48 +344,16 @@ impl Controller {
             .get_mut(&session_id)
             .ok_or(Error::InvalidSession { uid: session_id })?;
 
-        if let Some(stream_session) = client_session.stream_session.as_mut() {
-            let ret = stream_session.stop_dataplane().await;
-            if let Err(err) = ret {
-                warn!("Failed to stop client session: {err:?}");
-            }
-        }
+        let data_plane = client_session
+            .stream_session
+            .as_mut()
+            .and_then(|s| s.data_plane.take());
+        let services = mem::take(&mut client_session.services);
 
-        let ret = client_session.services.stop().await;
-        if let Err(err) = ret {
-            warn!("Failed to stop streaming services: {err:?}");
-        }
-
-        Ok(())
-    }
-
-    pub async fn stop(&mut self, session_id: Uuid) -> Result<()> {
-        info!("Stop session {}", session_id);
-
-        let Some(mut client_session) = self.sessions.remove(&session_id) else {
-            return Err(Error::InvalidSession { uid: session_id });
-        };
-
-        if let Some(stream_session) = client_session.stream_session.take() {
-            let ret = stream_session.stop().await;
-            if let Err(err) = ret {
-                warn!("Failed to stop client session: {err:?}");
-            }
-        }
-
-        let ret = client_session.services.stop().await;
-        if let Err(err) = ret {
-            warn!("Failed to stop streaming services: {err:?}");
-        }
-
-        // Stop shared Kymux infrastructure when no more sessions
-        if self.sessions.is_empty() {
-            if let Err(err) = self.shared_kymux_infra.lock().await.stop().await {
-                warn!("Failed to stop shared Kymux infrastructure: {err:?}");
-            }
-        }
-
-        Ok(())
+        Ok(StreamingCleanup {
+            data_plane,
+            services,
+        })
     }
 
     pub(crate) fn has_data_plane(&self, session_id: &Uuid) -> Result<bool> {
