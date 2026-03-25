@@ -258,6 +258,31 @@ async fn capabilities() -> HttpResponse {
 
 /// GET /ws - WebSocket upgrade endpoint for control plane connection.
 ///
+/// Validate a WebSocket token under the Controller lock. Returns the session ID,
+/// statemachine proxy, and display list if valid. No `.await` while locked.
+async fn validate_websocket_token(
+    ctrl: &web::Data<Mutex<Controller>>,
+    token: &str,
+) -> Option<(uuid::Uuid, StateMachineProxy, Vec<host_events::Display>)> {
+    let mut ctrl = ctrl.lock().await;
+
+    let proxy = ctrl.state_machine_proxy.clone()?;
+    let displays = ctrl.displays.convert();
+
+    let (session_id, client_session) = ctrl.sessions.iter_mut().find(|(_, session)| {
+        !session.auth_tokens.websocket.is_empty() && session.auth_tokens.websocket == token
+    })?;
+
+    let session_id = *session_id;
+    client_session.auth_tokens.websocket.clear();
+    info!(
+        "Websocket token validated and consumed for session {}",
+        session_id
+    );
+
+    Some((session_id, proxy, displays))
+}
+
 /// This endpoint implements a two-phase WebSocket authentication flow that avoids
 /// exposing credentials in URLs (which would appear in server logs).
 ///
@@ -337,34 +362,14 @@ async fn websocket_service(
             }
         };
 
-        let mut ctrl = ctrl.lock().await;
-
-        let Some(state_machine_proxy) = ctrl.state_machine_proxy.clone() else {
-            warn!("StateMachineProxy not configured");
-            return;
-        };
-
-        let displays = ctrl.displays.convert();
-
-        // Find the session that matches this websocket token
-        let session_entry = ctrl.sessions.iter_mut().find(|(_, session)| {
-            !session.auth_tokens.websocket.is_empty() && session.auth_tokens.websocket == token
-        });
-
-        let Some((session_id, client_session)) = session_entry else {
-            error!("Client websocket token is invalid: \"{token}\"");
+        // Validate token under lock
+        let Some((session_id, state_machine_proxy, displays)) =
+            validate_websocket_token(&ctrl, &token).await
+        else {
+            error!("Websocket validation failed for token \"{token}\"");
             pending_sender.reject().await;
             return;
         };
-
-        let session_id = *session_id;
-
-        // Token is valid, consume it (one-time use)
-        client_session.auth_tokens.websocket.clear();
-        info!(
-            "Websocket token validated and consumed for session {}",
-            session_id
-        );
 
         let Ok(sender) = pending_sender.accept(session_id, state_machine_proxy).await else {
             error!("Could not accept websocket connection");
@@ -373,8 +378,11 @@ async fn websocket_service(
 
         sender.send(HostEvent::DisplayList { displays }).await;
 
-        client_session.stream_session = Some(StreamingSession::new(sender));
-        info!("Session \"{}\" controlplane connected", client_session.uid);
+        let mut ctrl = ctrl.lock().await;
+        if let Some(client_session) = ctrl.sessions.get_mut(&session_id) {
+            client_session.stream_session = Some(StreamingSession::new(sender));
+            info!("Session \"{}\" controlplane connected", client_session.uid);
+        }
     });
 
     http_response
