@@ -38,6 +38,7 @@ pub enum PlayerError {
 #[derive(Debug)]
 pub enum Error {
     IO(std::io::Error),
+    NoPeerAddress,
     InvalidAddress {
         addr: String,
     },

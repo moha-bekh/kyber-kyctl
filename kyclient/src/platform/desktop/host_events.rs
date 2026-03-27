@@ -18,6 +18,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -34,7 +35,8 @@ use crate::host_events::{self, HostEventFrame, HostEventSink};
 use crate::platform;
 use crate::platform::tls::{self, VerifyMode};
 use crate::{
-    ConnectionParams, ControlPlaneCapabilities, ControlPlaneCloseReason, Error, Message, Result,
+    ConnectionParams, ControlPlaneCapabilities, ControlPlaneCloseReason, Error, Message, PeerInfo,
+    Result,
 };
 
 pub(crate) struct WsClient {
@@ -45,6 +47,7 @@ pub(crate) struct WsClient {
 impl WsClient {
     async fn new(
         conn_params: &ConnectionParams,
+        peer_info: &PeerInfo,
         capabilities: &ControlPlaneCapabilities,
         event_sink: HostEventSink,
         auth_token: &str,
@@ -54,7 +57,7 @@ impl WsClient {
 
         // Connect with appropriate TLS verification
         let mut stream = if let Some(verify_mode) = &conn_params.verify_mode {
-            Self::connect_with_verify_mode(url, conn_params, verify_mode).await?
+            Self::connect_with_verify_mode(url, &peer_info.addr, verify_mode).await?
         } else {
             Self::connect_without_rootca(url).await?
         };
@@ -97,7 +100,7 @@ impl WsClient {
 
     async fn connect_with_verify_mode(
         url: String,
-        conn_params: &ConnectionParams,
+        remote_addr: &SocketAddr,
         verify_mode: &VerifyMode,
     ) -> Result<WebSocketStream<ClientStream<TcpStream>>> {
         let rustls_config = tls::build_client_config(verify_mode).map_err(|err| {
@@ -105,7 +108,7 @@ impl WsClient {
             Error::TlsVerificationFailed
         })?;
 
-        let stream = TcpStream::connect(conn_params.addr).await?;
+        let stream = TcpStream::connect(remote_addr).await?;
         let (stream, _) =
             client_async_tls_with_connector(url, stream, Some(Arc::new(rustls_config).into()))
                 .await
@@ -267,10 +270,11 @@ impl crate::host_events::WsClientBuilder for WsClientBuilder {
 
     async fn new(
         conn_params: &ConnectionParams,
+        peer_info: &PeerInfo,
         capabilities: &ControlPlaneCapabilities,
         event_sink: HostEventSink,
         auth_token: &str,
     ) -> Result<Self::Type> {
-        WsClient::new(conn_params, capabilities, event_sink, auth_token).await
+        WsClient::new(conn_params, peer_info, capabilities, event_sink, auth_token).await
     }
 }

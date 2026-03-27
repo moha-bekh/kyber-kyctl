@@ -37,7 +37,7 @@ use crate::metrics::MetricsProducer;
 use crate::runtime::{self, Duration};
 use crate::util::*;
 use crate::{
-    BackendDriver, ConnectionParams, DataPlaneCloseReason, Message, MessageSender,
+    BackendDriver, ConnectionParams, DataPlaneCloseReason, Message, MessageSender, PeerInfo,
     StreamingSessionConfig,
 };
 use host_service::StartSessionResponse;
@@ -62,6 +62,9 @@ pub struct KymuxConfig {
 
 pub(crate) struct KymuxBackendConfig<'a> {
     pub(crate) conn_params: &'a ConnectionParams,
+    /// Used by the QUIC (desktop) path in `connect_quinn()`.
+    #[allow(dead_code)]
+    pub(crate) peer_info: &'a PeerInfo,
     pub(crate) http_client: &'a HttpClient,
     pub(crate) streaming_config: StreamingSessionConfig,
     pub(crate) kymux_config: KymuxConfig,
@@ -228,7 +231,8 @@ async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kyproto:
             })?;
 
             connect_quinn(
-                backend_config.conn_params,
+                backend_config.peer_info,
+                &backend_config.conn_params.host,
                 start_response.port,
                 &auth,
                 start_response.certificate_hash,
@@ -265,7 +269,8 @@ async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kyproto:
 
 #[cfg(feature = "desktop")]
 async fn connect_quinn(
-    conn_params: &ConnectionParams,
+    peer_info: &PeerInfo,
+    server_name: &str,
     port: u16,
     auth: &kyproto::ClientAuth,
     certificate_hash: Option<host_service::StartKymuxCertificateHash>,
@@ -274,10 +279,10 @@ async fn connect_quinn(
 
     Ok(kymux::connect_with_auth(
         kymux::ClientConfig::Quic {
-            addr: std::net::SocketAddr::new(conn_params.addr.ip(), port),
+            addr: std::net::SocketAddr::new(peer_info.addr.ip(), port),
             // None falls back to the platform verifier (OS trust store)
             tls_config: None,
-            server_name: conn_params.host.clone(),
+            server_name: server_name.to_owned(),
             certificate_hash,
         },
         auth,

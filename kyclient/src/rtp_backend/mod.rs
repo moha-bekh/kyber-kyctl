@@ -30,9 +30,7 @@ use log::{debug, info};
 use crate::http::HttpClient;
 use crate::platform::player;
 use crate::platform::{InputClient, InputPipeline};
-use crate::{
-    BackendDriver, ConnectionParams, Error, MessageSender, Result, StreamingSessionConfig,
-};
+use crate::{BackendDriver, Error, MessageSender, PeerInfo, Result, StreamingSessionConfig};
 
 const RTP_VIDEO_PORT: u16 = 30000;
 
@@ -114,7 +112,7 @@ struct InputService {
 }
 
 pub(crate) struct RtpBackendConfig<'a> {
-    pub(crate) conn_params: &'a ConnectionParams,
+    pub(crate) peer_info: &'a PeerInfo,
     pub(crate) http_client: &'a HttpClient,
     pub(crate) streaming_config: StreamingSessionConfig,
     pub(crate) msg_sender: MessageSender,
@@ -249,7 +247,7 @@ impl RtpBackend {
             return Ok(None);
         };
 
-        let streamer_ip = backend_config.conn_params.addr.ip().to_string();
+        let streamer_ip = backend_config.peer_info.addr.ip().to_string();
 
         let create_stream_cb =
             |_target, msg_sink| kynput_rs::tcp::new_client(&streamer_ip, msg_sink);

@@ -133,7 +133,6 @@ pub struct AudioPlayerConfig {
 pub(crate) struct ConnectionParams {
     pub(crate) host: String,
     pub(crate) port: u16,
-    pub(crate) addr: std::net::SocketAddr,
     pub(crate) tls_host: Option<String>,
     pub(crate) verify_mode: Option<VerifyMode>,
     pub(crate) credentials: AuthCredentials,
@@ -141,32 +140,29 @@ pub(crate) struct ConnectionParams {
 
 impl ConnectionParams {
     pub(crate) fn new(connect_config: ConnectConfig) -> Result<Self> {
-        let addr = Self::resolve_streamer_host(&connect_config.host, connect_config.port)?;
-
         Ok(Self {
             host: connect_config.host,
             port: connect_config.port,
-            addr,
             tls_host: connect_config.tls_host.clone(),
             verify_mode: connect_config.verify_mode,
             credentials: connect_config.credentials,
         })
     }
+}
 
-    fn resolve_streamer_host(host: &str, port: u16) -> Result<SocketAddr> {
-        let str_addr = format!("{host}:{port}");
-        let mut addrs = str_addr.to_socket_addrs().map_err(|err| {
-            error!("Fail to resolve host {host}: {err:?}");
-            Error::FailToResolveAddress {
-                addr: str_addr.clone(),
-            }
-        })?;
+pub(crate) fn resolve_streamer_host(host: &str, port: u16) -> Result<SocketAddr> {
+    let str_addr = format!("{host}:{port}");
+    let mut addrs = str_addr.to_socket_addrs().map_err(|err| {
+        error!("Fail to resolve host {host}: {err:?}");
+        Error::FailToResolveAddress {
+            addr: str_addr.clone(),
+        }
+    })?;
 
-        let ipv4_addr = addrs.find(|addr| matches!(addr, SocketAddr::V4(_)));
+    let ipv4_addr = addrs.find(|addr| matches!(addr, SocketAddr::V4(_)));
 
-        ipv4_addr.ok_or_else(|| {
-            error!("Fail to find an IPv4 address for {host}");
-            Error::FailToResolveAddress { addr: str_addr }
-        })
-    }
+    ipv4_addr.ok_or_else(|| {
+        error!("Fail to find an IPv4 address for {host}");
+        Error::FailToResolveAddress { addr: str_addr }
+    })
 }

@@ -25,7 +25,9 @@ use log::warn;
 use serde::{Deserialize, Serialize};
 
 use crate::platform;
-use crate::{ConnectionParams, ControlPlaneCapabilities, Display, Message, MessageSender, Result};
+use crate::{
+    ConnectionParams, ControlPlaneCapabilities, Display, Message, MessageSender, PeerInfo, Result,
+};
 
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
 #[cfg_attr(not(target_family = "wasm"), async_trait)]
@@ -40,6 +42,7 @@ pub(crate) trait WsClientBuilder {
 
     async fn new(
         conn_params: &ConnectionParams,
+        peer_info: &PeerInfo,
         capabilities: &ControlPlaneCapabilities,
         event_sink: HostEventSink,
         auth_token: &str,
@@ -145,15 +148,21 @@ pub(crate) struct HostEventReceiver {
 impl HostEventReceiver {
     pub(crate) async fn new(
         conn_params: &ConnectionParams,
+        peer_info: &PeerInfo,
         capabilities: &ControlPlaneCapabilities,
         msg_sender: MessageSender,
         auth_token: &str,
     ) -> Result<Self> {
         let event_sink = HostEventSink::new(msg_sender);
 
-        let client =
-            platform::WsClientBuilder::new(conn_params, capabilities, event_sink, auth_token)
-                .await?;
+        let client = platform::WsClientBuilder::new(
+            conn_params,
+            peer_info,
+            capabilities,
+            event_sink,
+            auth_token,
+        )
+        .await?;
 
         Ok(Self { client })
     }

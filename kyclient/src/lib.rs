@@ -45,6 +45,8 @@ mod rtp_backend;
 #[cfg(feature = "websocket")]
 mod ws_backend;
 
+#[cfg(feature = "desktop")]
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -88,6 +90,14 @@ pub(crate) struct ControlPlaneCapabilities {
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct Capabilities {
     pub(crate) control_plane: ControlPlaneCapabilities,
+}
+
+/// Peer information resolved from the HTTP `/capabilities` response.
+pub(crate) struct PeerInfo {
+    /// Peer address resolved by the HTTP stack (Happy Eyeballs / RFC 8305).
+    /// Reused for QUIC so it gets the same IPv4/IPv6 choice.
+    #[cfg(feature = "desktop")]
+    pub(crate) addr: SocketAddr,
 }
 
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
@@ -160,6 +170,7 @@ impl ReconnectionState {
 
 struct Handler {
     conn_params: ConnectionParams,
+    peer_info: PeerInfo,
     http_client: HttpClient,
     event_manager: EventManager,
     message_sender: MessageSender,
@@ -187,10 +198,17 @@ impl Handler {
     ) -> Result<Self> {
         let auto_reconnection = connect_config.auto_reconnection;
         let conn_params = ConnectionParams::new(connect_config)?;
+
+        let peer_info = PeerInfo {
+            #[cfg(feature = "desktop")]
+            addr: platform::resolve_streamer_host(&conn_params.host, conn_params.port)?,
+        };
+
         let http_client = HttpClient::new(conn_params.clone())?;
 
         Ok(Self {
             conn_params,
+            peer_info,
             http_client,
             event_manager,
             message_sender,
@@ -217,6 +235,7 @@ impl Handler {
 
         let host_events = HostEventReceiver::new(
             &self.conn_params,
+            &self.peer_info,
             &capabilities.control_plane,
             self.message_sender.clone(),
             &websocket_token,
@@ -307,6 +326,7 @@ impl Handler {
             StreamingProtocol::Kymux(kymux_config) => {
                 let config = kymux_backend::KymuxBackendConfig {
                     conn_params: &self.conn_params,
+                    peer_info: &self.peer_info,
                     http_client: &self.http_client,
                     streaming_config,
                     kymux_config: kymux_config.clone(),
@@ -320,7 +340,7 @@ impl Handler {
             #[cfg(feature = "rtp")]
             StreamingProtocol::Rtp => {
                 let config = rtp_backend::RtpBackendConfig {
-                    conn_params: &self.conn_params,
+                    peer_info: &self.peer_info,
                     http_client: &self.http_client,
                     streaming_config,
                     msg_sender,

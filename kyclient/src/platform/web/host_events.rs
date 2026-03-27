@@ -32,7 +32,8 @@ use crate::host_events::{self, HostEventFrame, HostEventSink};
 use crate::platform;
 use crate::platform::{WebSocket, WebSocketHandler};
 use crate::{
-    ConnectionParams, ControlPlaneCapabilities, ControlPlaneCloseReason, Error, Message, Result,
+    ConnectionParams, ControlPlaneCapabilities, ControlPlaneCloseReason, Error, Message, PeerInfo,
+    Result,
 };
 
 use super::dom;
@@ -308,6 +309,7 @@ pub(crate) struct WsClient {
 impl WsClient {
     async fn new(
         conn_params: &ConnectionParams,
+        _peer_info: &PeerInfo,
         capabilities: &ControlPlaneCapabilities,
         event_sink: HostEventSink,
         auth_token: &str,
@@ -341,10 +343,11 @@ impl crate::host_events::WsClientBuilder for WsClientBuilder {
 
     async fn new(
         conn_params: &ConnectionParams,
+        peer_info: &PeerInfo,
         capabilities: &ControlPlaneCapabilities,
         event_sink: HostEventSink,
         auth_token: &str,
     ) -> Result<Self::Type> {
-        WsClient::new(conn_params, capabilities, event_sink, auth_token).await
+        WsClient::new(conn_params, peer_info, capabilities, event_sink, auth_token).await
     }
 }
