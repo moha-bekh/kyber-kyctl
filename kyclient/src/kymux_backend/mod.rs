@@ -25,7 +25,7 @@ mod desktop;
 mod web;
 
 use async_trait::async_trait;
-use kymux::{kyproto, types};
+use kymux::{kynet, kyproto, types};
 use log::{error, info, warn};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -44,6 +44,9 @@ use host_service::StartSessionResponse;
 
 pub(crate) mod host_service;
 pub(crate) mod metrics;
+
+#[allow(dead_code)]
+const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(5);
 
 #[derive(Clone, Copy, Debug, Serialize)]
 pub enum KymuxTransportBackend {
@@ -217,7 +220,12 @@ async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kyproto:
     .await?;
 
     // Start Kymux connection
-    let ret = match backend_config.kymux_config.backend {
+    let auth = kyproto::ClientAuth::new(&start_response.token).map_err(|_| {
+        warn!("Got an invalid kymux token from controller");
+        Error::KymuxInvalidToken
+    })?;
+
+    let kynet = match backend_config.kymux_config.backend {
         #[cfg(feature = "desktop")]
         KymuxTransportBackend::Quic => {
             info!(
@@ -225,16 +233,10 @@ async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kyproto:
                 port = start_response.port
             );
 
-            let auth = kymux::kyproto::ClientAuth::new(&start_response.token).map_err(|_| {
-                warn!("Got an invalid kymux token from controller");
-                Error::KymuxInvalidToken
-            })?;
-
             connect_quinn(
                 backend_config.peer_info,
                 &backend_config.conn_params.host,
                 start_response.port,
-                &auth,
                 start_response.certificate_hash,
             )
             .await
@@ -252,19 +254,22 @@ async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kyproto:
             );
             let url = format!("https://{host_str}");
 
-            let auth = kymux::kyproto::ClientAuth::new(&start_response.token).map_err(|_| {
-                warn!("Got an invalid kymux token from controller");
-                Error::KymuxInvalidToken
-            })?;
-
-            connect_webtransport(url, start_response.certificate_hash, &auth).await
+            connect_webtransport_js(&url, start_response.certificate_hash).await
         }
-    };
-
-    ret.map_err(|err| {
+    }
+    .map_err(|err| {
         warn!("Failed to connect to DataPlane: {err:?}");
         Error::DataPlaneConnectFailed
-    })
+    })?;
+
+    let kyproto = kyproto::Connection::connect_with_auth(kynet, &auth)
+        .await
+        .map_err(|err| {
+            warn!("Failed to connect KyProto: {err:?}");
+            Error::DataPlaneConnectFailed
+        })?;
+
+    Ok(kyproto)
 }
 
 #[cfg(feature = "desktop")]
@@ -272,43 +277,45 @@ async fn connect_quinn(
     peer_info: &PeerInfo,
     server_name: &str,
     port: u16,
-    auth: &kyproto::ClientAuth,
     certificate_hash: Option<host_service::StartKymuxCertificateHash>,
-) -> Result<kyproto::Connection> {
+) -> Result<kynet::Connection> {
     let certificate_hash = certificate_hash.map(|h| h.hash);
 
-    Ok(kymux::connect_with_auth(
-        kymux::ClientConfig::Quic {
-            addr: std::net::SocketAddr::new(peer_info.addr.ip(), port),
-            // None falls back to the platform verifier (OS trust store)
-            tls_config: None,
-            server_name: server_name.to_owned(),
-            certificate_hash,
-        },
-        auth,
-    )
-    .await?)
+    let options = kynet::quinn::QuinnClientOptions {
+        keep_alive_interval: Some(KEEP_ALIVE_INTERVAL),
+        certificate_hash,
+        ..Default::default()
+    };
+
+    let addr = std::net::SocketAddr::new(peer_info.addr.ip(), port);
+    let conn = kynet::Connection::quinn_connect(addr, server_name, None, &options).await?;
+    Ok(conn)
 }
 
 #[cfg(feature = "web")]
-async fn connect_webtransport(
-    url: String,
+async fn connect_webtransport_js(
+    url: &str,
     certificate_hash: Option<host_service::StartKymuxCertificateHash>,
-    auth: &kyproto::ClientAuth,
-) -> Result<kyproto::Connection> {
-    let certificate_hash = certificate_hash.map(|c| kymux::WebTransportCertificateHash {
-        hash_algorithm: c.algorithm,
-        hash: c.hash,
-    });
+) -> Result<kynet::Connection> {
+    use kynet::webtransport_js as js;
 
-    Ok(kymux::connect_with_auth(
-        kymux::ClientConfig::WebTransport {
-            url,
-            certificate_hash,
-        },
-        auth,
-    )
-    .await?)
+    let server_certificate_hashes = if let Some(c) = certificate_hash {
+        Some(vec![js::WebTransportJSHash::new_from_hex(
+            &c.algorithm,
+            &c.hash,
+        )?])
+    } else {
+        None
+    };
+
+    let options = js::WebTransportJSOptions {
+        congestion_control: js::WebTransportJSCongestionControl::LowLatency,
+        require_unreliable: true,
+        server_certificate_hashes,
+    };
+
+    let conn = kynet::Connection::webtransport_js_connect(url, &options).await?;
+    Ok(conn)
 }
 
 async fn start_metrics(

@@ -23,7 +23,7 @@ use std::path::PathBuf;
 use crate::platform;
 
 #[cfg(feature = "kymux")]
-use kymux::kyproto;
+use kymux::{kynet, kyproto};
 
 #[derive(Debug)]
 pub enum PlayerError {
@@ -56,7 +56,6 @@ pub enum Error {
     NoAudioPlayer,
     Input(platform::InputError),
     #[cfg(feature = "kymux")]
-    Kymux(kymux::Error),
     KymuxNotStarted,
     #[cfg(feature = "kymux")]
     KymuxReadyFailed {
@@ -68,6 +67,10 @@ pub enum Error {
     },
     #[cfg(feature = "kymux")]
     KymuxInvalidToken,
+    KynetConnectionError(kynet::ConnectionError),
+    #[cfg(feature = "kymux")]
+    DecodeHexError(kynet::DecodeHexError),
+    #[cfg(feature = "kymux")]
     #[cfg(feature = "kymux")]
     KyProtoProtocolError(kyproto::ProtocolError),
     #[cfg(feature = "desktop")]
@@ -145,9 +148,16 @@ impl From<platform::InputError> for Error {
 }
 
 #[cfg(feature = "kymux")]
-impl From<kymux::Error> for Error {
-    fn from(err: kymux::Error) -> Error {
-        Error::Kymux(err)
+impl From<kynet::ConnectionError> for Error {
+    fn from(err: kynet::ConnectionError) -> Error {
+        Error::KynetConnectionError(err)
+    }
+}
+
+#[cfg(feature = "kymux")]
+impl From<kynet::DecodeHexError> for Error {
+    fn from(err: kynet::DecodeHexError) -> Error {
+        Error::DecodeHexError(err)
     }
 }
 

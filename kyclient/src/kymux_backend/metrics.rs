@@ -86,10 +86,7 @@ async fn run_clock_sync(
 ) -> Result<()> {
     let mut interval = runtime::interval(interval);
     loop {
-        let result = protocol
-            .sync_average(3)
-            .await
-            .map_err(|err| Error::Kymux(kymux::Error::KyprotoProtocolError { source: err }))?;
+        let result = protocol.sync_average(3).await?;
         let metric = Metric::NetworkPing(NetworkPing {
             offset_micros: result.offset_micros(),
             delay_micros: result.delay_micros(),
@@ -125,12 +122,7 @@ async fn run_metrics_receiver(
     mut protocol: types::MetricsClientProtocol,
     metrics: MetricsProducer,
 ) -> Result<()> {
-    while let Some(packet) = protocol
-        .recv
-        .recv()
-        .await
-        .map_err(|err| Error::Kymux(err.into()))?
-    {
+    while let Some(packet) = protocol.recv.recv().await? {
         let network_stats =
             rmp_serde::from_slice(&packet.payload).map_err(|_| Error::DeserializationFailed)?;
         let metric = Metric::NetworkRemote(network_stats);
@@ -154,12 +146,7 @@ async fn run_remote_video_metrics_receiver(
     mut protocol: types::MetricsClientProtocol,
     metrics: MetricsProducer,
 ) -> Result<()> {
-    while let Some(packet) = protocol
-        .recv
-        .recv()
-        .await
-        .map_err(|err| Error::Kymux(err.into()))?
-    {
+    while let Some(packet) = protocol.recv.recv().await? {
         let m: Vec<RemoteVideoMetrics> = rmp_serde::from_slice(&packet.payload).unwrap();
         let m: HashMap<&str, i64> = m.iter().map(|m| (m.key.as_str(), m.value)).collect();
 
