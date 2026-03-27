@@ -111,7 +111,6 @@ impl ConnectionTask {
 pub(crate) struct KymuxInfraConfig {
     pub(crate) listen_mode: ListenMode,
     pub(crate) listening_port: u16,
-    pub(crate) public_port: u16,
     pub(crate) webtransport_gen_certificate: bool,
     pub(crate) cert_chain: Vec<rustls::pki_types::CertificateDer<'static>>,
     pub(crate) private_key: rustls::pki_types::PrivateKeyDer<'static>,
@@ -123,7 +122,6 @@ struct RunningInfra {
     kycom: kycom::KyCom,
     certificate_hash: Option<requests::StartKymuxCertificateHash>,
     router: Arc<Mutex<IncomingConnectionRouter>>,
-    public_port: u16,
 }
 
 /// Shared infrastructure for all Kymux sessions (common server supports both QUIC and WebTransport)
@@ -139,15 +137,15 @@ impl SharedKymuxInfra {
         Self { inner: None }
     }
 
-    /// Start the infrastructure if not already running. Returns (certificate_hash, public_port).
+    /// Start the infrastructure if not already running. Returns the certificate_hash.
     pub(crate) async fn start(
         &mut self,
         config: KymuxInfraConfig,
-    ) -> Result<(Option<StartKymuxCertificateHash>, u16)> {
+    ) -> Result<Option<StartKymuxCertificateHash>> {
         if let Some(ref inner) = self.inner {
             // Already running, return existing config
             info!("Reusing existing shared Kymux common infrastructure");
-            return Ok((inner.certificate_hash.clone(), inner.public_port));
+            return Ok(inner.certificate_hash.clone());
         }
 
         let ip_addr = match config.listen_mode {
@@ -201,10 +199,9 @@ impl SharedKymuxInfra {
             kycom,
             certificate_hash: certificate_hash.clone(),
             router,
-            public_port: config.public_port,
         });
 
-        Ok((certificate_hash, config.public_port))
+        Ok(certificate_hash)
     }
 
     /// Stop the infrastructure if running. No-op if already stopped.
@@ -310,14 +307,13 @@ async fn start_kymux(
     let infra_config = KymuxInfraConfig {
         listen_mode: ctrl.config.listen_mode(),
         listening_port,
-        public_port,
         webtransport_gen_certificate: ctrl.config.webtransport_gen_certificate(),
         cert_chain: ctrl.tls_config.cert_chain.clone(),
         private_key: ctrl.tls_config.private_key.clone_key(),
     };
 
     // Start infrastructure (no-op if already running)
-    let (certificate_hash, public_port) = ctrl
+    let certificate_hash = ctrl
         .shared_kymux_infra
         .lock()
         .await
