@@ -28,6 +28,8 @@ toml = "0.8.12"
 uuid = { version = "1.18.0", features = ["v4", "fast-rng", "serde"] }
 
 rcgen = "0.13.1"
+rand_core_06 = { package = "rand_core", version = "0.6", features = ["getrandom"], optional = true }
+rsa = { version = "0.9", features = ["pem"], optional = true }
 sha2 = "0.10.8"
 time = "0.3.34"
 
@@ -64,7 +66,7 @@ default = ["auth-basic"]
 win32-hide-console = []
 win32-tray = ["dep:muda", "dep:png"]
 
-cli = ["dep:clap", "dep:humantime"]
+cli = ["dep:clap", "dep:humantime", "dep:rsa", "dep:rand_core_06"]
 
 auth-basic = ["dep:base64"]
 auth-jwt = ["dep:jsonwebtoken"]

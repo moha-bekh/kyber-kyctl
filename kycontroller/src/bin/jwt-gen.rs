@@ -18,7 +18,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::{fs::File, io::Read, path::PathBuf};
+use std::{fs, io::Read, path::PathBuf};
 
 use clap::{Args, Parser, Subcommand};
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
@@ -37,6 +37,9 @@ struct Cli {
 enum Commands {
     /// Generate a JWT token.
     Token(TokenArgs),
+
+    /// Generate signing keys for JWT authentication.
+    Keys(KeysArgs),
 }
 
 #[derive(Args)]
@@ -85,6 +88,24 @@ struct TokenKey {
     key_path: Option<PathBuf>,
 }
 
+#[derive(Args)]
+struct KeysArgs {
+    /// Key algorithm to generate [possible values: HS256, RS256].
+    #[arg(long, default_value = "HS256")]
+    algorithm: Algorithm,
+
+    /// Output directory for key files (RS256 only).
+    ///
+    /// When provided, writes `jwt-private.pem` and `jwt-public.pem` to the directory.
+    /// When omitted, prints keys to stdout.
+    #[arg(long, value_name = "PATH")]
+    output_dir: Option<PathBuf>,
+
+    /// RSA key size in bits (RS256 only).
+    #[arg(long, default_value = "2048")]
+    bits: u32,
+}
+
 #[derive(Debug, Serialize)]
 struct Claims {
     aud: String,
@@ -113,7 +134,7 @@ fn generate_token(args: TokenArgs) {
         (Some(plain), None) => extract_encoding_key(args.algorithm, plain.as_bytes()),
         (None, Some(path)) => {
             let mut key = Vec::new();
-            let mut file = File::open(path).expect("Invalid key path");
+            let mut file = fs::File::open(path).expect("Invalid key path");
             file.read_to_end(&mut key)
                 .expect("Failed to read key content");
             extract_encoding_key(args.algorithm, &key)
@@ -126,10 +147,60 @@ fn generate_token(args: TokenArgs) {
     println!("{token}");
 }
 
+fn generate_keys(args: KeysArgs) {
+    match args.algorithm {
+        Algorithm::HS256 => generate_hs256_key(),
+        Algorithm::RS256 => generate_rs256_keys(args.output_dir, args.bits),
+        _ => panic!("Unsupported algorithm (supported: HS256, RS256)"),
+    }
+}
+
+fn generate_hs256_key() {
+    let key: [u8; 32] = rand::random();
+    println!("{}", hex::encode(key));
+}
+
+fn generate_rs256_keys(output_dir: Option<PathBuf>, bits: u32) {
+    use rsa::pkcs8::{EncodePrivateKey, EncodePublicKey, LineEnding};
+
+    let private_key = rsa::RsaPrivateKey::new(&mut rand_core_06::OsRng, bits as usize)
+        .expect("Failed to generate RSA key pair");
+
+    let private_pem = private_key
+        .to_pkcs8_pem(LineEnding::LF)
+        .expect("Failed to encode private key");
+    let public_pem = private_key
+        .to_public_key()
+        .to_public_key_pem(LineEnding::LF)
+        .expect("Failed to encode public key");
+
+    match output_dir {
+        Some(dir) => {
+            fs::create_dir_all(&dir).expect("Failed to create output directory");
+
+            let private_path = dir.join("jwt-private.pem");
+            let public_path = dir.join("jwt-public.pem");
+
+            fs::write(&private_path, private_pem.as_bytes()).expect("Failed to write private key");
+            fs::write(&public_path, public_pem.as_bytes()).expect("Failed to write public key");
+
+            eprintln!("Wrote private key: {}", private_path.display());
+            eprintln!("Wrote public key:  {}", public_path.display());
+        }
+        None => {
+            println!("# Private Key (use with jwt-gen token --key-path)");
+            print!("{}", &*private_pem);
+            println!("# Public Key (configure in kycontroller)");
+            print!("{public_pem}");
+        }
+    }
+}
+
 fn main() {
     let cli = Cli::parse();
 
     match cli.command {
         Commands::Token(args) => generate_token(args),
+        Commands::Keys(args) => generate_keys(args),
     }
 }
