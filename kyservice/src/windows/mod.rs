@@ -371,7 +371,11 @@ impl ServiceContext {
     }
 }
 
-fn notify_state(status_handle: &ServiceStatusHandle, current_state: ServiceState) -> Result<()> {
+fn notify_state(
+    status_handle: &ServiceStatusHandle,
+    current_state: ServiceState,
+    exit_code: ServiceExitCode,
+) -> Result<()> {
     let status = ServiceStatus {
         service_type: ServiceType::OWN_PROCESS,
         current_state,
@@ -380,7 +384,7 @@ fn notify_state(status_handle: &ServiceStatusHandle, current_state: ServiceState
             | ServiceControlAccept::POWER_EVENT
             | ServiceControlAccept::PRESHUTDOWN
             | ServiceControlAccept::SESSION_CHANGE,
-        exit_code: ServiceExitCode::Win32(0),
+        exit_code,
         checkpoint: 0,
         wait_hint: Duration::default(),
         process_id: None,
@@ -425,29 +429,48 @@ fn service_handler(_arguments: Vec<OsString>) -> Result<()> {
     let status_handle = service_control_handler::register(SERVICE_NAME, event_handler)?;
 
     // Notify that the service is running
-    notify_state(&status_handle, ServiceState::Running)?;
+    notify_state(
+        &status_handle,
+        ServiceState::Running,
+        ServiceExitCode::Win32(0),
+    )?;
     info!("Service started");
 
     // Run real main function
-    let mut ctx = ServiceContext::new(stop, sc_forwarder_rx)?;
-    let ret = ctx.run();
-    if ret.is_err() {
-        warn!("Service exited with error: '{:?}'", ret);
-    }
+    let service_error = match ServiceContext::new(stop, sc_forwarder_rx) {
+        Ok(mut ctx) => {
+            let ret = ctx.run();
+            if ret.is_err() {
+                warn!("Service exited with error: '{:?}'", ret);
+            }
 
-    // Stop any running ky.exe
-    if let Some(process) = ctx.process.take() {
-        info!("Service stop requested, kill kycontroller.exe");
-        let ret = process.kill();
-        if let Err(err) = ret {
-            warn!("Failed to kill kycontroller.exe: {err:?}");
+            // Stop any running ky.exe
+            if let Some(process) = ctx.process.take() {
+                info!("Service stop requested, kill kycontroller.exe");
+                let ret = process.kill();
+                if let Err(err) = ret {
+                    warn!("Failed to kill kycontroller.exe: {err:?}");
+                }
+
+                info!("kycontroller.exe killed");
+            }
+
+            false
         }
+        Err(err) => {
+            error!("Service initialization failed: {err:?}");
+            true
+        }
+    };
 
-        info!("kycontroller.exe killed");
-    }
+    let exit_code = if service_error {
+        ServiceExitCode::ServiceSpecific(1)
+    } else {
+        ServiceExitCode::Win32(0)
+    };
 
     info!("Service stopped");
-    notify_state(&status_handle, ServiceState::Stopped)?;
+    notify_state(&status_handle, ServiceState::Stopped, exit_code)?;
 
     Ok(())
 }
