@@ -231,6 +231,13 @@ impl ServiceContext {
         Ok(())
     }
 
+    /// Exit codes from kycontroller that indicate unrecoverable errors.
+    /// kyservice must not restart kycontroller when it exits with one of these.
+    /// When adding a new exit code in kycontroller::error::Error, add it here too.
+    const NO_RESTART_EXIT_CODES: &[u32] = &[
+        0x42, // EXIT_CODE_INVALID_CONFIG
+    ];
+
     fn handle_controller_stopped(&mut self) -> Result<()> {
         // On log out, all the process from the current session are
         // stopped. Because we attach kycontroller.exe to the current
@@ -239,7 +246,16 @@ impl ServiceContext {
         //
         // The current service isn't killed because it is attached to
         // the special Session 0.
-        info!("kycontroller.exe stopped");
+
+        let exit_code = self.process.as_ref().and_then(|p| p.exit_code().ok());
+        info!("kycontroller.exe stopped (exit code: {exit_code:?})");
+
+        if exit_code.is_some_and(|c| Self::NO_RESTART_EXIT_CODES.contains(&c)) {
+            error!("kycontroller.exe exited with unrecoverable error (code {exit_code:?}), will not restart");
+            self.process = None;
+            self.stop.store(true, Ordering::Relaxed);
+            return Ok(());
+        }
 
         if self.active_session_id.is_some() {
             self.restart_controller = true;

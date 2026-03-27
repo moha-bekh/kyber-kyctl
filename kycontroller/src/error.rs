@@ -122,7 +122,11 @@ pub enum Error {
 }
 
 impl Error {
+    // When adding a new exit code, also update NO_RESTART_EXIT_CODES
+    // in kyservice/src/windows/mod.rs. If the list grows, consider
+    // extracting a shared lib crate for these constants.
     pub const EXIT_CODE_INVALID_CONFIG: u8 = 0x42;
+
     pub fn exit_code(&self) -> ExitCode {
         match self {
             Error::ConfigParseFailed { .. } => ExitCode::from(Self::EXIT_CODE_INVALID_CONFIG),

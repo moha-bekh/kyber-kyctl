@@ -241,6 +241,13 @@ impl Process {
         self.handle.handle()
     }
 
+    pub fn exit_code(&self) -> Result<u32> {
+        let mut exit_code: u32 = 0;
+        let b = unsafe { GetExitCodeProcess(self.handle(), &mut exit_code) };
+        check_win32_error!(GetExitCodeProcess, b != 0)?;
+        Ok(exit_code)
+    }
+
     pub fn kill(mut self) -> Result<()> {
         self.kill_internal();
 
