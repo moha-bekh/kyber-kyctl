@@ -20,7 +20,7 @@
 
 use std::{fs::File, io::Read, path::PathBuf};
 
-use clap::{Args, Parser};
+use clap::{Args, Parser, Subcommand};
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use serde::Serialize;
 
@@ -29,6 +29,18 @@ const DEFAULT_DEV_KEY: &[u8] = b"kyber-authentication-development-key";
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Generate a JWT token.
+    Token(TokenArgs),
+}
+
+#[derive(Args)]
+struct TokenArgs {
     /// Standard audience claim (`aud`).
     ///
     /// In the scope of kyber this is used to identify the streaming session.
@@ -58,12 +70,12 @@ struct Cli {
 
     /// Plain encoding key.
     #[command(flatten)]
-    key: Key,
+    key: TokenKey,
 }
 
 #[derive(Args)]
 #[group(multiple = false)]
-struct Key {
+struct TokenKey {
     /// Specify the key as a raw string argument.
     #[arg(long, value_name = "RAW KEY")]
     key_plain: Option<String>,
@@ -81,7 +93,7 @@ struct Claims {
     sub: String,
 }
 
-fn extract_key(alg: Algorithm, key: &[u8]) -> EncodingKey {
+fn extract_encoding_key(alg: Algorithm, key: &[u8]) -> EncodingKey {
     match alg {
         Algorithm::HS256 => EncodingKey::from_secret(key),
         Algorithm::RS256 => EncodingKey::from_rsa_pem(key).unwrap(),
@@ -89,29 +101,35 @@ fn extract_key(alg: Algorithm, key: &[u8]) -> EncodingKey {
     }
 }
 
-fn main() {
-    let cli = Cli::parse();
-
-    let aud = cli.audience;
+fn generate_token(args: TokenArgs) {
+    let aud = args.audience;
     let iat = jsonwebtoken::get_current_timestamp();
-    let exp = iat + cli.expiration.as_secs();
-    let sub = cli.subject;
+    let exp = iat + args.expiration.as_secs();
+    let sub = args.subject;
     let claims = Claims { aud, iat, exp, sub };
 
-    let key = match (cli.key.key_plain, cli.key.key_path) {
-        (None, None) => extract_key(cli.algorithm, DEFAULT_DEV_KEY),
-        (Some(plain), None) => extract_key(cli.algorithm, plain.as_bytes()),
+    let key = match (args.key.key_plain, args.key.key_path) {
+        (None, None) => extract_encoding_key(args.algorithm, DEFAULT_DEV_KEY),
+        (Some(plain), None) => extract_encoding_key(args.algorithm, plain.as_bytes()),
         (None, Some(path)) => {
             let mut key = Vec::new();
             let mut file = File::open(path).expect("Invalid key path");
             file.read_to_end(&mut key)
                 .expect("Failed to read key content");
-            extract_key(cli.algorithm, &key)
+            extract_encoding_key(args.algorithm, &key)
         }
         _ => unreachable!(),
     };
 
-    let token = encode(&Header::new(cli.algorithm), &claims, &key).unwrap();
+    let token = encode(&Header::new(args.algorithm), &claims, &key).unwrap();
 
     println!("{token}");
+}
+
+fn main() {
+    let cli = Cli::parse();
+
+    match cli.command {
+        Commands::Token(args) => generate_token(args),
+    }
 }
