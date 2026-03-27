@@ -288,7 +288,7 @@ impl Controller {
     }
 
     /// Update the system tray status.
-    pub(crate) async fn update_tray_status(&self) {
+    pub(crate) async fn update_tray_status(&mut self) {
         let Some(ref tray) = self.tray_handle else {
             return;
         };

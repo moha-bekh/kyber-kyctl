@@ -140,6 +140,7 @@ impl ExpirationTask {
 
         for cleanup in cleanups {
             cleanup.run().await;
+            ctrl.lock().await.update_tray_status().await;
         }
 
         // Cleanup expired pending auth tokens in shared Kymux infrastructure

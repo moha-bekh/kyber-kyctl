@@ -253,7 +253,10 @@ impl StateMachine {
                         };
 
                         match cleanup {
-                            Ok(cleanup) => cleanup.run().await,
+                            Ok(cleanup) => {
+                                cleanup.run().await;
+                                ctrl.lock().await.update_tray_status().await;
+                            }
                             Err(err) => {
                                 warn!("Fail to stop session {}: {err:?}", session_id)
                             }
