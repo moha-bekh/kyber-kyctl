@@ -18,6 +18,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use std::net::SocketAddr;
 use std::time::Duration;
 
 use log::{error, warn};
@@ -38,7 +39,9 @@ pub(crate) struct SetBitrateRequest {
     pub(crate) bitrate: u32,
 }
 
-pub(crate) async fn capabilities(client: &HttpClient) -> Result<Capabilities> {
+pub(crate) async fn capabilities(
+    client: &HttpClient,
+) -> Result<(Capabilities, Option<SocketAddr>)> {
     const HTTP_TIMEOUT: Duration = Duration::from_secs(5);
 
     let url = format!("{base_url}/capabilities", base_url = client.base_url());
@@ -59,7 +62,9 @@ pub(crate) async fn capabilities(client: &HttpClient) -> Result<Capabilities> {
         });
     }
 
-    Ok(response.json::<_>().await?)
+    let peer_addr = client.peer_addr_from_response(&response);
+
+    Ok((response.json::<_>().await?, peer_addr))
 }
 
 #[derive(Deserialize)]

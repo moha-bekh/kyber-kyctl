@@ -18,6 +18,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use std::net::SocketAddr;
+
 use reqwest::IntoUrl;
 
 use crate::platform::http as platform_http;
@@ -63,6 +65,13 @@ impl HttpClient {
 
     pub(crate) fn base_url(&self) -> &str {
         &self.base_url
+    }
+
+    pub(crate) fn peer_addr_from_response(
+        &self,
+        response: &reqwest::Response,
+    ) -> Option<SocketAddr> {
+        platform_http::peer_addr_from_response(response)
     }
 
     #[allow(dead_code)]

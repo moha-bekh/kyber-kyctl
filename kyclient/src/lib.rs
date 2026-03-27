@@ -170,7 +170,7 @@ impl ReconnectionState {
 
 struct Handler {
     conn_params: ConnectionParams,
-    peer_info: PeerInfo,
+    peer_info: Option<PeerInfo>,
     http_client: HttpClient,
     event_manager: EventManager,
     message_sender: MessageSender,
@@ -198,17 +198,11 @@ impl Handler {
     ) -> Result<Self> {
         let auto_reconnection = connect_config.auto_reconnection;
         let conn_params = ConnectionParams::new(connect_config)?;
-
-        let peer_info = PeerInfo {
-            #[cfg(feature = "desktop")]
-            addr: platform::resolve_streamer_host(&conn_params.host, conn_params.port)?,
-        };
-
         let http_client = HttpClient::new(conn_params.clone())?;
 
         Ok(Self {
             conn_params,
-            peer_info,
+            peer_info: None,
             http_client,
             event_manager,
             message_sender,
@@ -222,8 +216,23 @@ impl Handler {
     }
 
     async fn connect(&mut self) -> Result<()> {
+        // Resolve the peer address from the HTTP response so we can later
+        // connect QUIC to the same IP.  This matters because QUIC stack on
+        // desktop does not implement Happy Eyeballs (RFC 8305) so we let
+        // the HTTP stack pick the right address (IPv4 vs IPv6) and reuse that
+        // choice for QUIC.
+        //
+        // On browsers this address is unavailable, but the WebTransport API
+        // performs its own Happy Eyeballs resolution internally.
         info!("Get Host capabilities");
-        let capabilities = host_service::capabilities(&self.http_client).await?;
+        let (capabilities, _peer_addr) = host_service::capabilities(&self.http_client).await?;
+
+        self.peer_info = Some(PeerInfo {
+            // On desktop, peer address is required for QUIC and WebSocket connections.
+            // Fail early if the HTTP stack didn't expose it.
+            #[cfg(feature = "desktop")]
+            addr: _peer_addr.ok_or(Error::NoPeerAddress)?,
+        });
 
         let response =
             host_service::login(&self.http_client, &self.conn_params.credentials).await?;
@@ -235,7 +244,7 @@ impl Handler {
 
         let host_events = HostEventReceiver::new(
             &self.conn_params,
-            &self.peer_info,
+            self.peer_info()?,
             &capabilities.control_plane,
             self.message_sender.clone(),
             &websocket_token,
@@ -300,6 +309,10 @@ impl Handler {
         Ok(())
     }
 
+    fn peer_info(&self) -> Result<&PeerInfo> {
+        self.peer_info.as_ref().ok_or(Error::NoPeerAddress)
+    }
+
     async fn start_streaming_session(
         &mut self,
         streaming_config: StreamingSessionConfig,
@@ -326,7 +339,7 @@ impl Handler {
             StreamingProtocol::Kymux(kymux_config) => {
                 let config = kymux_backend::KymuxBackendConfig {
                     conn_params: &self.conn_params,
-                    peer_info: &self.peer_info,
+                    peer_info: self.peer_info()?,
                     http_client: &self.http_client,
                     streaming_config,
                     kymux_config: kymux_config.clone(),
@@ -340,7 +353,7 @@ impl Handler {
             #[cfg(feature = "rtp")]
             StreamingProtocol::Rtp => {
                 let config = rtp_backend::RtpBackendConfig {
-                    peer_info: &self.peer_info,
+                    peer_info: self.peer_info()?,
                     http_client: &self.http_client,
                     streaming_config,
                     msg_sender,

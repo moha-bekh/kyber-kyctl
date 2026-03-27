@@ -18,6 +18,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use std::net::SocketAddr;
+
 use reqwest::RequestBuilder;
 
 use crate::{ConnectionParams, Result};
@@ -30,6 +32,11 @@ pub(crate) fn create_reqwest(_conn_params: ConnectionParams) -> Result<reqwest::
     let client = reqwest::ClientBuilder::new().build()?;
 
     Ok(client)
+}
+
+pub(crate) fn peer_addr_from_response(_response: &reqwest::Response) -> Option<SocketAddr> {
+    // Browsers API don't expose peer IP address
+    None
 }
 
 pub(crate) fn configure_request(builder: RequestBuilder) -> RequestBuilder {

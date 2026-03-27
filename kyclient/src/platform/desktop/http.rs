@@ -93,6 +93,10 @@ pub(crate) fn create_reqwest(conn_params: ConnectionParams) -> Result<reqwest::C
     Ok(client)
 }
 
+pub(crate) fn peer_addr_from_response(response: &reqwest::Response) -> Option<SocketAddr> {
+    response.remote_addr()
+}
+
 pub(crate) fn configure_request(builder: RequestBuilder) -> RequestBuilder {
     builder
 }

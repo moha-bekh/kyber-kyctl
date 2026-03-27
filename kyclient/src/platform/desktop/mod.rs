@@ -18,10 +18,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::Arc;
 
-use log::{error, info};
+use log::info;
 
 pub(crate) mod fingerprint;
 mod host_events;
@@ -148,21 +147,4 @@ impl ConnectionParams {
             credentials: connect_config.credentials,
         })
     }
-}
-
-pub(crate) fn resolve_streamer_host(host: &str, port: u16) -> Result<SocketAddr> {
-    let str_addr = format!("{host}:{port}");
-    let mut addrs = str_addr.to_socket_addrs().map_err(|err| {
-        error!("Fail to resolve host {host}: {err:?}");
-        Error::FailToResolveAddress {
-            addr: str_addr.clone(),
-        }
-    })?;
-
-    let ipv4_addr = addrs.find(|addr| matches!(addr, SocketAddr::V4(_)));
-
-    ipv4_addr.ok_or_else(|| {
-        error!("Fail to find an IPv4 address for {host}");
-        Error::FailToResolveAddress { addr: str_addr }
-    })
 }
