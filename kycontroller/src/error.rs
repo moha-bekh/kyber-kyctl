@@ -20,7 +20,7 @@
 
 use std::{path::PathBuf, process::ExitCode};
 
-use kymux::kyproto;
+use kymux::{kynet, kyproto};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -30,10 +30,10 @@ pub enum Error {
         #[from]
         source: std::io::Error,
     },
-    #[error("kymux error: {source}")]
-    Kymux {
+    #[error("kynet connection error: {source:?}")]
+    KynetConnection {
         #[from]
-        source: kymux::Error,
+        source: kynet::ConnectionError,
     },
     #[error("kyproto protocol error: {source}")]
     KyProtoProtocol {

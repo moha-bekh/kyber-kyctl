@@ -29,7 +29,7 @@ use std::time::Duration;
 
 use actix_web::web;
 use bytes::Bytes;
-use kymux::{kycom, kyproto, types};
+use kymux::{kycom, kynet, kyproto, types};
 use log::{info, warn};
 use tokio::sync::{oneshot, Mutex};
 use tokio::task::{self, JoinHandle};
@@ -47,6 +47,11 @@ use crate::{Controller, DataPlaneBackend, StateMachineEvent, StateMachineProxy};
 
 use metrics::NetworkStats;
 use requests::StartKymuxCertificateHash;
+
+const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(5);
+// Must be greater than KEEP_ALIVE_INTERVAL, otherwise healthy connections
+// get killed between pings.
+const MAX_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
 struct ConnectionTask {
     stop_tx: oneshot::Sender<()>,
@@ -177,12 +182,19 @@ impl SharedKymuxInfra {
             (config.cert_chain, config.private_key, None)
         };
 
-        let server_config = kymux::ServerConfig {
-            addr,
-            cert_chain,
-            private_key,
+        let options = kynet::common::CommonServerOptions {
+            keep_alive_interval: Some(KEEP_ALIVE_INTERVAL),
+            max_idle_timeout: Some(MAX_IDLE_TIMEOUT),
         };
-        let server = kymux::Server::new(server_config).await?;
+
+        let server = kynet::Connection::start_server_on_addr(
+            addr,
+            cert_chain.clone(),
+            private_key.clone_key(),
+            &options,
+        )?;
+
+        let server: Box<dyn kynet::Server> = Box::new(server);
 
         // Create the connection router
         let router = Arc::new(Mutex::new(IncomingConnectionRouter::new()));
@@ -737,10 +749,7 @@ async fn run_stats_poller(
     stats_provider: kyproto::KyProtoStatsProvider,
     interval: Duration,
 ) -> Result<()> {
-    let mut protocol = endpoint
-        .ready()
-        .await
-        .map_err(|err| Error::Kymux { source: err.into() })?;
+    let mut protocol = endpoint.ready().await?;
     let mut interval = tokio::time::interval(interval);
     loop {
         interval.tick().await;
@@ -755,10 +764,6 @@ async fn run_stats_poller(
         };
         let payload = Bytes::from(rmp_serde::to_vec(&network_stats).unwrap());
         let packet = types::MetricsPacket { payload };
-        protocol
-            .send
-            .send(packet)
-            .await
-            .map_err(|err| Error::Kymux { source: err.into() })?;
+        protocol.send.send(packet).await?;
     }
 }

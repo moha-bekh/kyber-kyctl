@@ -22,7 +22,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use kymux::kyproto;
+use kymux::{kynet, kyproto};
 use log::{error, info, warn};
 use tokio::sync::{oneshot, Mutex};
 use tokio::task::{self, JoinHandle};
@@ -147,18 +147,18 @@ struct KymuxServerTask {
 }
 
 pub(crate) struct KymuxServer {
-    server: Arc<kymux::Server>,
+    server: Arc<dyn kynet::Server>,
     task: Option<KymuxServerTask>,
 }
 
 impl KymuxServer {
     pub(crate) async fn new(
-        server: kymux::Server,
+        server: Box<dyn kynet::Server>,
         router: Arc<Mutex<IncomingConnectionRouter>>,
     ) -> Result<Self> {
         let (stop_tx, stop_rx) = oneshot::channel();
 
-        let server = Arc::new(server);
+        let server: Arc<dyn kynet::Server> = Arc::from(server);
         let server_task = server.clone();
 
         let join_handle = task::spawn(async move {
@@ -203,7 +203,7 @@ impl KymuxServer {
     /// Accept loop using concurrent tasks so a single misbehaving client
     /// cannot block the entire server from accepting new connections.
     async fn run_task(
-        server: Arc<kymux::Server>,
+        server: Arc<dyn kynet::Server>,
         router: Arc<Mutex<IncomingConnectionRouter>>,
     ) -> Result<()> {
         info!("Waiting for Kymux connections");
@@ -228,13 +228,20 @@ impl KymuxServer {
     }
 
     async fn handle_connection(
-        server: Arc<kymux::Server>,
+        server: Arc<dyn kynet::Server>,
         router: Arc<Mutex<IncomingConnectionRouter>>,
     ) {
-        let unauth_connection = match server.accept_with_auth().await {
-            Ok(conn) => conn,
+        let kynet = match server.accept().await {
+            Ok(kynet) => kynet,
             Err(err) => {
-                warn!("Accept failed: {err}");
+                warn!("Kynet accept failed: {err}");
+                return;
+            }
+        };
+        let unauth_connection = match kyproto::Connection::accept_with_auth(kynet).await {
+            Ok(unauth_connection) => unauth_connection,
+            Err(err) => {
+                warn!("Kyproto accept failed: {err}");
                 return;
             }
         };
