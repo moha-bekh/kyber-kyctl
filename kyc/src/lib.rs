@@ -31,3 +31,27 @@ mod error;
 pub mod jwt;
 
 pub use error::Error;
+
+/// Tokens returned by the OIDC flow.
+#[derive(Clone)]
+pub struct OidcTokens {
+    pub access_token: String,
+    pub id_token: Option<String>,
+    pub refresh_token: Option<String>,
+    /// Unix timestamp when the ID token expires (`None` if no id_token).
+    pub exp: Option<u64>,
+}
+
+impl std::fmt::Debug for OidcTokens {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OidcTokens")
+            .field("access_token", &"[REDACTED]")
+            .field("id_token", &self.id_token.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "refresh_token",
+                &self.refresh_token.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field("exp", &self.exp)
+            .finish()
+    }
+}
