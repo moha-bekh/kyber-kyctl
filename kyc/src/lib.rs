@@ -26,6 +26,7 @@
 //! can depend on this crate directly. AppAuth covers web and Android; kyc fills
 //! the same role for Rust native targets.
 
+pub mod browser;
 mod error;
 pub mod jwt;
 
