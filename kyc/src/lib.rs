@@ -27,5 +27,6 @@
 //! the same role for Rust native targets.
 
 mod error;
+pub mod jwt;
 
 pub use error::Error;
