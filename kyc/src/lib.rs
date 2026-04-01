@@ -21,10 +21,35 @@
 //! OIDC Authorization Code Flow with PKCE for native apps.
 //!
 //! Provides a two-step interactive PKCE flow, silent token refresh,
-//! cross-platform browser launch, and JWT helpers. Not specific to the desktop
-//! client: any native app in the kyber ecosystem that needs browser-based OIDC
-//! can depend on this crate directly. AppAuth covers web and Android; kyc fills
-//! the same role for Rust native targets.
+//! cross-platform browser launch, and JWT helpers. The desktop client is the
+//! first consumer; kycontroller will need it too to support OIDC login on the
+//! controller side. AppAuth covers web and Android; kyc fills the same role for
+//! Rust native targets.
+//!
+//! The library does **not** open a browser; the caller decides how and when
+//! to present the authorization URL.
+//!
+//! # Usage
+//!
+//! ```no_run
+//! # async fn example() -> Result<(), kyc::Error> {
+//! // 1. Start the flow: returns the auth URL and a pending flow handle
+//! let flow = kyc::PkceFlow::start("https://auth.example.com/realms/app", "my-client").await?;
+//!
+//! // 2. Open the URL however you want
+//! kyc::browser::open_url(flow.auth_url()).ok();
+//!
+//! // 3. Wait for the redirect callback and exchange code for tokens
+//! let tokens = flow.wait_for_tokens().await?;
+//! log::info!("Authenticated, token expires at {:?}", tokens.exp);
+//!
+//! // Silent refresh later
+//! if let Some(rt) = &tokens.refresh_token {
+//!     let new_tokens = kyc::refresh_token("https://auth.example.com/realms/app", "my-client", rt).await?;
+//! }
+//! # Ok(())
+//! # }
+//! ```
 
 pub mod browser;
 mod error;
@@ -56,4 +81,15 @@ impl std::fmt::Debug for OidcTokens {
             .field("exp", &self.exp)
             .finish()
     }
+}
+
+/// Silently refreshes OIDC tokens using a stored refresh token.
+///
+/// Convenience wrapper around [`pkce::refresh`].
+pub async fn refresh_token(
+    issuer: &str,
+    client_id: &str,
+    refresh_token: &str,
+) -> Result<OidcTokens, Error> {
+    pkce::refresh(issuer, client_id, refresh_token).await
 }
