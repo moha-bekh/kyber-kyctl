@@ -252,7 +252,7 @@ impl KymuxServer {
         {
             let router = router.lock().await;
             if !router.pending_auth.contains_key(&token) {
-                warn!("Rejecting connection with unknown token: {token}");
+                warn!("Rejecting connection with unknown token");
                 unauth_connection.reject_authentication();
                 return;
             }
