@@ -76,6 +76,11 @@ struct Capabilities {
     control_plane: ControlPlaneCapabilities,
 }
 
+#[derive(Debug, Deserialize)]
+struct LoginQuery {
+    auth: Option<String>,
+}
+
 /// POST /session/login - Authenticates a user and creates a new session.
 ///
 /// This is the main entry point for user authentication. It validates credentials,
@@ -84,8 +89,18 @@ struct Capabilities {
 /// ## Request
 ///
 /// Requires an `Authorization` header with credentials in one of the supported formats:
-/// - `Bearer <jwt>` - JWT authentication
+/// - `Bearer <access_token>` - JWT authentication (default)
+/// - `Bearer <access_token>` with `?auth=oidc` - OIDC authentication
 /// - `Basic <base64>` - Basic authentication (development only)
+///
+/// ## OIDC Discovery
+///
+/// When `?auth=oidc` is present but no `Authorization` header is sent, the server returns:
+/// ```text
+/// 401 Unauthorized
+/// WWW-Authenticate: Bearer realm="oidc", issuer="...", client_id="..."
+/// ```
+/// The client then performs the OIDC flow and retries with the obtained token.
 ///
 /// ## Response
 ///
@@ -127,21 +142,21 @@ async fn login(
             .headers()
             .contains_key(actix_web::http::header::AUTHORIZATION)
     {
-        return match auth::registry().oidc_backend() {
-            Some(oidc) => HttpResponse::Unauthorized()
-                .insert_header((
-                    actix_web::http::header::WWW_AUTHENTICATE,
-                    oidc.www_authenticate_value(),
-                ))
-                .finish(),
-            None => HttpResponse::Unauthorized().json("Disabled authentication scheme"),
+        let Some(oidc) = auth::registry().oidc_backend() else {
+            return HttpResponse::Unauthorized().json("Disabled authentication scheme");
         };
+        return HttpResponse::Unauthorized()
+            .insert_header((
+                actix_web::http::header::WWW_AUTHENTICATE,
+                oidc.www_authenticate_value(),
+            ))
+            .finish();
     }
 
     let Some(parser_hdr) = req
         .headers()
         .get(actix_web::http::header::AUTHORIZATION)
-        .and_then(|h| auth::AuthorizationHeader::from_header(h, None))
+        .and_then(|h| auth::AuthorizationHeader::from_header(h, auth_hint))
     else {
         return HttpResponse::BadRequest().json("Invalid authentication type");
     };
@@ -157,7 +172,7 @@ async fn login(
             return HttpResponse::ServiceUnavailable().finish();
         }
         Err(err) => {
-            error!("Authentication failed: {err}");
+            warn!("Authentication failed: {err}");
             return HttpResponse::Unauthorized().finish();
         }
     };
@@ -220,12 +235,14 @@ async fn login(
 async fn renew(
     ctrl: web::Data<Mutex<Controller>>,
     req: HttpRequest,
+    query: web::Query<LoginQuery>,
     user: Identity,
 ) -> HttpResponse {
+    let auth_hint = query.auth.as_deref();
     let Some(parser_hdr) = req
         .headers()
         .get(actix_web::http::header::AUTHORIZATION)
-        .and_then(|h| auth::AuthorizationHeader::from_header(h, None))
+        .and_then(|h| auth::AuthorizationHeader::from_header(h, auth_hint))
     else {
         return HttpResponse::BadRequest().json("Invalid authentication type");
     };
@@ -241,13 +258,13 @@ async fn renew(
             return HttpResponse::ServiceUnavailable().finish();
         }
         Err(err) => {
-            error!("Authentication failed: {err}");
+            warn!("Authentication failed: {err}");
             return HttpResponse::Unauthorized().finish();
         }
     };
 
     let Some(exp) = auth_session.expiration else {
-        error!("Missing expiration date");
+        warn!("Missing expiration date");
         return HttpResponse::Unauthorized().finish();
     };
 
@@ -264,7 +281,7 @@ async fn renew(
 
     // Prevent credential swapping: username must match existing session
     if session.username != auth_session.username {
-        error!("Credentials and renewed session mismatch");
+        warn!("Credentials and renewed session mismatch");
         return HttpResponse::Unauthorized().finish();
     }
 
@@ -398,7 +415,7 @@ async fn websocket_service(
         let Some((session_id, state_machine_proxy, displays)) =
             validate_websocket_token(&ctrl, &token).await
         else {
-            error!("Websocket validation failed for token \"{token}\"");
+            error!("Websocket validation failed: invalid or expired token");
             pending_sender.reject().await;
             return;
         };
@@ -659,7 +676,9 @@ async fn real_main() -> Result<()> {
     let cookie_same_site = sec.same_site();
     sec.warn_if_insecure();
 
-    auth::init(config.auth()).map_err(|reason| Error::InvalidConfig { reason })?;
+    auth::init(config.auth())
+        .await
+        .map_err(|reason| Error::InvalidConfig { reason })?;
 
     let process_factory = Arc::new(ProcessFactory::new(false));
 
