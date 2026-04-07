@@ -62,14 +62,25 @@ pub(crate) async fn login(
     client: &HttpClient,
     credentials: &AuthCredentials,
 ) -> Result<LoginResponse> {
-    let url = format!("{base_url}/session/login", base_url = client.base_url());
-    let request = client.post(url);
-
+    let base_url = client.base_url();
     let request = match credentials {
         AuthCredentials::Basic { username, password } => {
-            request.basic_auth(username, Some(password))
+            let url = format!("{base_url}/session/login");
+            client.post(&url).basic_auth(username, Some(password))
         }
-        AuthCredentials::Jwt { token } => request.bearer_auth(token),
+        AuthCredentials::Jwt { token } => {
+            let url = format!("{base_url}/session/login");
+            client.post(&url).bearer_auth(token)
+        }
+        AuthCredentials::Oidc { token } => {
+            let url = format!("{base_url}/session/login?auth=oidc");
+            let request = client.post(&url);
+            if token.is_empty() {
+                request
+            } else {
+                request.bearer_auth(token)
+            }
+        }
     };
 
     let response = request.send().await?;

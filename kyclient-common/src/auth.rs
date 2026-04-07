@@ -22,6 +22,7 @@
 pub enum AuthCredentials {
     Basic { username: String, password: String },
     Jwt { token: String },
+    Oidc { token: String },
 }
 
 impl std::fmt::Debug for AuthCredentials {
@@ -33,6 +34,10 @@ impl std::fmt::Debug for AuthCredentials {
                 .field("password", &"[REDACTED]")
                 .finish(),
             Self::Jwt { .. } => f.debug_struct("Jwt").field("token", &"[REDACTED]").finish(),
+            Self::Oidc { .. } => f
+                .debug_struct("Oidc")
+                .field("token", &"[REDACTED]")
+                .finish(),
         }
     }
 }
