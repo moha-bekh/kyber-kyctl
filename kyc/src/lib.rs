@@ -29,8 +29,10 @@
 pub mod browser;
 mod error;
 pub mod jwt;
+mod pkce;
 
 pub use error::Error;
+pub use pkce::PkceFlow;
 
 /// Tokens returned by the OIDC flow.
 #[derive(Clone)]
