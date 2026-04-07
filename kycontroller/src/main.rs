@@ -113,11 +113,35 @@ struct Capabilities {
 /// If an existing session is active, it's automatically terminated before creating
 /// the new session. This enforces a single-session-per-instance policy.
 #[post("/login")]
-async fn login(ctrl: web::Data<Mutex<Controller>>, req: HttpRequest) -> HttpResponse {
+async fn login(
+    ctrl: web::Data<Mutex<Controller>>,
+    req: HttpRequest,
+    query: web::Query<LoginQuery>,
+) -> HttpResponse {
+    let auth_hint = query.auth.as_deref();
+
+    // OIDC discovery: ?auth=oidc without Authorization header.
+    #[cfg(feature = "auth-oidc")]
+    if auth_hint == Some("oidc")
+        && !req
+            .headers()
+            .contains_key(actix_web::http::header::AUTHORIZATION)
+    {
+        return match auth::registry().oidc_backend() {
+            Some(oidc) => HttpResponse::Unauthorized()
+                .insert_header((
+                    actix_web::http::header::WWW_AUTHENTICATE,
+                    oidc.www_authenticate_value(),
+                ))
+                .finish(),
+            None => HttpResponse::Unauthorized().json("Disabled authentication scheme"),
+        };
+    }
+
     let Some(parser_hdr) = req
         .headers()
         .get(actix_web::http::header::AUTHORIZATION)
-        .and_then(auth::AuthorizationHeader::from_header)
+        .and_then(|h| auth::AuthorizationHeader::from_header(h, None))
     else {
         return HttpResponse::BadRequest().json("Invalid authentication type");
     };
@@ -128,6 +152,10 @@ async fn login(ctrl: web::Data<Mutex<Controller>>, req: HttpRequest) -> HttpResp
 
     let auth_session = match auth_backend.authenticate(parser_hdr.creds) {
         Ok(session) => session,
+        Err(err @ auth::Error::OidcUnavailable { .. }) => {
+            warn!("Authentication unavailable: {err}");
+            return HttpResponse::ServiceUnavailable().finish();
+        }
         Err(err) => {
             error!("Authentication failed: {err}");
             return HttpResponse::Unauthorized().finish();
@@ -197,7 +225,7 @@ async fn renew(
     let Some(parser_hdr) = req
         .headers()
         .get(actix_web::http::header::AUTHORIZATION)
-        .and_then(auth::AuthorizationHeader::from_header)
+        .and_then(|h| auth::AuthorizationHeader::from_header(h, None))
     else {
         return HttpResponse::BadRequest().json("Invalid authentication type");
     };
@@ -208,6 +236,10 @@ async fn renew(
 
     let auth_session = match auth_backend.authenticate(parser_hdr.creds) {
         Ok(session) => session,
+        Err(err @ auth::Error::OidcUnavailable { .. }) => {
+            warn!("Authentication unavailable: {err}");
+            return HttpResponse::ServiceUnavailable().finish();
+        }
         Err(err) => {
             error!("Authentication failed: {err}");
             return HttpResponse::Unauthorized().finish();
@@ -627,7 +659,7 @@ async fn real_main() -> Result<()> {
     let cookie_same_site = sec.same_site();
     sec.warn_if_insecure();
 
-    auth::init(config.auth());
+    auth::init(config.auth()).map_err(|reason| Error::InvalidConfig { reason })?;
 
     let process_factory = Arc::new(ProcessFactory::new(false));
 

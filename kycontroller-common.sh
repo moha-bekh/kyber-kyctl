@@ -26,14 +26,14 @@
 kycontroller_linux_do_build()
 {
     local out_dir=$1
-    cargo build -p kycontroller --features=auth-jwt,cli --release
+    cargo build -p kycontroller --features=auth-jwt,auth-oidc,cli --release
     cp target/release/kycontroller "$out_dir/bin"
     cp target/release/jwt-gen "$out_dir/bin"
 }
 
 kycontroller_linux_do_clippy()
 {
-    cargo clippy -p kycontroller --features=auth-jwt,cli -- -D warnings
+    cargo clippy -p kycontroller --features=auth-jwt,auth-oidc,cli -- -D warnings
 }
 
 kycontroller_linux_do_test()
@@ -51,7 +51,7 @@ kycontroller_macos_do_build()
     cargo build \
         -p kycontroller \
         --target "$cargo_target"  \
-        --features=auth-jwt,cli \
+        --features=auth-jwt,auth-oidc,cli \
         --release
 
     # Install
@@ -67,7 +67,7 @@ kycontroller_macos_do_clippy()
     cargo clippy \
         -p kycontroller \
         --target "$cargo_target" \
-        --features=auth-jwt,cli \
+        --features=auth-jwt,auth-oidc,cli \
         -- -D warnings
 }
 
@@ -86,7 +86,7 @@ kycontroller_win32_do_build()
     cargo build \
         -p kycontroller \
         --target x86_64-pc-windows-gnu \
-        --features=auth-jwt,cli \
+        --features=auth-jwt,auth-oidc,cli \
         --release \
         $hide_console_feature
 
@@ -109,7 +109,7 @@ kycontroller_win32_do_clippy()
     cargo clippy \
         -p kycontroller \
         --target x86_64-pc-windows-gnu \
-        --features=auth-jwt,cli \
+        --features=auth-jwt,auth-oidc,cli \
         -- -D warnings
 
     # Clippy for kyservice package

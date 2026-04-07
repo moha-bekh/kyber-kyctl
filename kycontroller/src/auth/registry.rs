@@ -28,11 +28,13 @@ pub struct BackendRegistry {
     basic: Option<auth::basic::Basic>,
     #[cfg(feature = "auth-jwt")]
     jwt: Option<auth::jwt::Jwt>,
+    #[cfg(feature = "auth-oidc")]
+    oidc: Option<auth::oidc::Oidc>,
 }
 
 impl BackendRegistry {
-    pub fn new(config: &Config) -> Self {
-        Self {
+    pub async fn new(config: &Config) -> Result<Self, String> {
+        Ok(Self {
             #[cfg(feature = "auth-basic")]
             basic: config
                 .basic
@@ -43,7 +45,19 @@ impl BackendRegistry {
                 .jwt
                 .enabled
                 .then_some(auth::jwt::Jwt::new(&config.jwt.inner)),
-        }
+            #[cfg(feature = "auth-oidc")]
+            oidc: {
+                let cfg = config
+                    .oidc
+                    .enabled
+                    .then_some(&config.oidc.inner)
+                    .filter(|c| !c.issuer.is_empty());
+                match cfg {
+                    Some(c) => Some(auth::oidc::Oidc::new(c).await?),
+                    None => None,
+                }
+            },
+        })
     }
 
     /// Returns the backend for the given method, or `None` if disabled.
@@ -53,6 +67,13 @@ impl BackendRegistry {
             auth::Method::Basic => self.basic.as_ref().map(|b| b as &dyn Backend),
             #[cfg(feature = "auth-jwt")]
             auth::Method::Jwt => self.jwt.as_ref().map(|b| b as &dyn Backend),
+            #[cfg(feature = "auth-oidc")]
+            auth::Method::Oidc => self.oidc.as_ref().map(|b| b as &dyn Backend),
         }
+    }
+
+    #[cfg(feature = "auth-oidc")]
+    pub fn oidc_backend(&self) -> Option<&auth::oidc::Oidc> {
+        self.oidc.as_ref()
     }
 }

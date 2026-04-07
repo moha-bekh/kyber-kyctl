@@ -32,6 +32,10 @@
 //!
 //! - **JWT** (`auth-jwt` feature): JSON Web Token authentication supporting HS256 and RS256
 //!   algorithms with configurable keys and automatic expiration handling.
+//!
+//! - **OIDC** (`auth-oidc` feature): OpenID Connect authentication with JWKS-based signature
+//!   verification. Provider metadata and the key set are fetched on each authentication
+//!   request, so key rotation is handled automatically.
 
 use std::sync::OnceLock;
 
@@ -41,17 +45,18 @@ use time::OffsetDateTime;
 use crate::auth::registry::BackendRegistry;
 
 /// Supported authentication methods.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Method {
     #[cfg(feature = "auth-basic")]
     Basic,
     #[cfg(feature = "auth-jwt")]
     Jwt,
+    #[cfg(feature = "auth-oidc")]
+    Oidc,
 }
 
 pub trait Backend {
     /// Validates credentials and returns a session on success.
-    // TODO(Tham): This will likely need an upgrade to `async` for OIDC support.
     fn authenticate(&self, credentials: &str) -> Result<Session, Error>;
 }
 
@@ -63,17 +68,33 @@ pub struct AuthorizationHeader<'hdr> {
 
 impl<'hdr> AuthorizationHeader<'hdr> {
     /// Extracts method and credentials from an `Authorization` header value.
-    pub fn from_header(header: &'hdr http::header::HeaderValue) -> Option<Self> {
+    ///
+    /// `auth_hint` disambiguates Bearer tokens: when set to `"oidc"`, a Bearer
+    /// token is routed to the OIDC backend instead of the JWT backend.
+    pub fn from_header(
+        header: &'hdr http::header::HeaderValue,
+        auth_hint: Option<&str>,
+    ) -> Option<Self> {
         let Ok(header) = header.to_str() else {
             return None;
         };
 
-        #[cfg(feature = "auth-jwt")]
         if let Some(creds) = header.strip_prefix("Bearer").map(str::trim) {
-            return Some(AuthorizationHeader {
-                kind: Method::Jwt,
-                creds,
-            });
+            let kind = match auth_hint {
+                #[cfg(feature = "auth-oidc")]
+                Some("oidc") => Method::Oidc,
+                _ => {
+                    #[cfg(feature = "auth-jwt")]
+                    {
+                        Method::Jwt
+                    }
+                    #[cfg(not(feature = "auth-jwt"))]
+                    {
+                        return None;
+                    }
+                }
+            };
+            return Some(AuthorizationHeader { kind, creds });
         }
 
         #[cfg(feature = "auth-basic")]
@@ -89,6 +110,7 @@ impl<'hdr> AuthorizationHeader<'hdr> {
 }
 
 /// Common Kyber authenticated session.
+#[derive(Debug)]
 pub struct Session {
     /// User identifier
     pub username: String,
@@ -104,6 +126,8 @@ pub struct Config {
     basic: OptionalBackendConfig<basic::Config>,
     #[cfg(feature = "auth-jwt")]
     jwt: OptionalBackendConfig<jwt::Config>,
+    #[cfg(feature = "auth-oidc")]
+    oidc: OptionalBackendConfig<oidc::Config>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -126,13 +150,14 @@ impl<T: Default> Default for OptionalBackendConfig<T> {
 /// Initializes all enabled authentication backends.
 ///
 /// This must be called once at application startup, before any authentication
-/// requests are processed. Each backend performs one-time initialization such as
-/// loading cryptographic keys.
-pub fn init(config: &Config) {
+/// requests are processed.
+pub async fn init(config: &Config) -> Result<(), String> {
+    let registry = BackendRegistry::new(config).await?;
     BACKEND_REGISTRY
-        .set(BackendRegistry::new(config))
+        .set(registry)
         .or(Err(()))
         .expect("Cannot call init() twice");
+    Ok(())
 }
 
 /// Returns the initialized backend registry.
@@ -166,6 +191,10 @@ pub enum Error {
     /// Identified user is not allowed in
     #[error("User \"{identity}\" is not authorized")]
     NotAuthorized { identity: String },
+
+    /// OIDC provider is temporarily unreachable
+    #[error("OIDC provider unavailable: {reason}")]
+    OidcUnavailable { reason: String },
 }
 
 mod registry;
@@ -176,3 +205,6 @@ mod jwt;
 
 #[cfg(feature = "auth-basic")]
 mod basic;
+
+#[cfg(feature = "auth-oidc")]
+pub(crate) mod oidc;

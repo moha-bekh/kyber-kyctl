@@ -104,6 +104,8 @@ pub enum Error {
         #[from]
         source: crate::config::ParseError,
     },
+    #[error("Invalid configuration: {reason}")]
+    InvalidConfig { reason: String },
     #[error("No statemachine proxy")]
     NotStateMachineProxy,
     // Tray errors are only used on Windows with win32-tray feature
@@ -129,7 +131,9 @@ impl Error {
 
     pub fn exit_code(&self) -> ExitCode {
         match self {
-            Error::ConfigParseFailed { .. } => ExitCode::from(Self::EXIT_CODE_INVALID_CONFIG),
+            Error::ConfigParseFailed { .. } | Error::InvalidConfig { .. } => {
+                ExitCode::from(Self::EXIT_CODE_INVALID_CONFIG)
+            }
             _ => ExitCode::FAILURE,
         }
     }
