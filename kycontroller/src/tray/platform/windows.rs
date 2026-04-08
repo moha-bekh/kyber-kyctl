@@ -43,7 +43,7 @@ use std::os::windows::ffi::OsStrExt;
 use std::thread;
 use std::thread::JoinHandle;
 use tokio::sync::mpsc;
-use windows_sys::Win32::Foundation::{CloseHandle, HWND, LPARAM, LRESULT, WPARAM};
+use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, HWND, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
     CreateBitmap, CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, BITMAPINFO,
     BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
@@ -54,10 +54,10 @@ use windows_sys::Win32::UI::Shell::{
     NOTIFYICONDATAW,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    CreateIconIndirect, CreateWindowExW, DefWindowProcW, DestroyIcon, DestroyWindow,
-    GetWindowLongPtrW, RegisterClassW, SetForegroundWindow, SetWindowLongPtrW, CREATESTRUCTW,
-    CW_USEDEFAULT, GWLP_USERDATA, HICON, ICONINFO, WM_LBUTTONUP, WM_NCCREATE, WM_RBUTTONUP,
-    WNDCLASSW, WS_OVERLAPPEDWINDOW,
+    ChangeWindowMessageFilterEx, CreateIconIndirect, CreateWindowExW, DefWindowProcW, DestroyIcon,
+    DestroyWindow, GetWindowLongPtrW, RegisterClassW, RegisterWindowMessageW, SetForegroundWindow,
+    SetWindowLongPtrW, CREATESTRUCTW, CW_USEDEFAULT, GWLP_USERDATA, HICON, ICONINFO, MSGFLT_ALLOW,
+    WM_LBUTTONUP, WM_NCCREATE, WM_RBUTTONUP, WNDCLASSW, WS_OVERLAPPEDWINDOW,
 };
 
 /// Copyable wrapper for Windows HANDLE that implements Send + Sync.
@@ -244,14 +244,20 @@ enum WaitResult {
 // Native Tray Icon Implementation using Shell_NotifyIconW with NIF_GUID
 // ============================================================================
 
-/// Context for the tray window procedure to access the menu.
+/// Context for the tray window procedure to access the menu and signal events.
 struct TrayContext {
     menu: Menu,
+    /// Message ID for TaskbarCreated (from RegisterWindowMessageW).
+    taskbar_created_msg: u32,
+    /// Set by the window proc when TaskbarCreated is received.
+    /// The main loop checks and clears this flag.
+    taskbar_created: std::sync::atomic::AtomicBool,
 }
 
 /// Window procedure for the hidden tray window.
 ///
 /// Handles WM_TRAYICON messages to show the context menu using muda's show_context_menu_for_hwnd.
+/// Handles TaskbarCreated to signal the main loop to re-create the tray icon.
 /// Context is stored in window user data via WM_NCCREATE/GetWindowLongPtrW pattern.
 unsafe extern "system" fn tray_window_proc(
     hwnd: HWND,
@@ -273,6 +279,14 @@ unsafe extern "system" fn tray_window_proc(
     }
     let ctx = &*(userdata as *const TrayContext);
 
+    // TaskbarCreated is delivered via SendMessage(HWND_BROADCAST, ...) directly
+    // to the window proc, not through the message queue.
+    if ctx.taskbar_created_msg != 0 && msg == ctx.taskbar_created_msg {
+        ctx.taskbar_created
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        return 0;
+    }
+
     if msg == WM_TRAYICON {
         let event = (lparam & 0xFFFF) as u32;
         if event == WM_RBUTTONUP || event == WM_LBUTTONUP {
@@ -287,27 +301,26 @@ unsafe extern "system" fn tray_window_proc(
     DefWindowProcW(hwnd, msg, wparam, lparam)
 }
 
-/// Native tray icon using Shell_NotifyIconW with NIF_GUID.
+/// Native tray window and icon using Shell_NotifyIconW with NIF_GUID.
 ///
-/// This implementation creates icons with a fixed GUID, allowing:
-/// - Cleanup of orphan icons from previous crashed instances
-/// - Reliable icon identification across process restarts
+/// The hidden window is always created (needed to receive broadcast messages
+/// like TaskbarCreated). The tray icon may or may not be active — use
+/// `add_icon()` to show it. The icon is removed on drop.
 struct NativeTrayIcon {
     hwnd: HWND,
     hicon: HICON,
+    icon_visible: bool,
 }
 
 impl NativeTrayIcon {
-    /// Create a new native tray icon.
+    /// Create the hidden window and icon resources.
     ///
     /// The `ctx` pointer is stored in the window's user data for the window procedure.
-    /// The caller must ensure `ctx` remains valid for the lifetime of the tray icon.
+    /// The caller must ensure `ctx` remains valid for the lifetime of this struct.
     ///
-    /// This also attempts to remove any orphan icon with the same GUID first.
-    fn new(icon_data: &[u8], tooltip: &str, ctx: *const TrayContext) -> Result<Self> {
-        // First, try to remove any orphan icon with our GUID
-        remove_orphan_icon();
-
+    /// The hidden window is always created so it can receive TaskbarCreated
+    /// broadcasts. Call `add_icon()` separately to show the tray icon.
+    fn new(icon_data: &[u8], ctx: *const TrayContext, taskbar_created_msg: u32) -> Result<Self> {
         // Register window class (ignore error if already registered)
         let class_name = to_wide_string(TRAY_WINDOW_CLASS);
         let wc = WNDCLASSW {
@@ -324,7 +337,7 @@ impl NativeTrayIcon {
         };
         unsafe { RegisterClassW(&wc) };
 
-        // Create hidden window for receiving messages.
+        // Create hidden window for receiving messages and broadcasts.
         // Pass context pointer via lpParam for WM_NCCREATE to store in user data.
         let hwnd = unsafe {
             CreateWindowExW(
@@ -348,29 +361,56 @@ impl NativeTrayIcon {
             });
         }
 
-        // Create HICON from PNG data
-        let hicon = create_hicon_from_png(icon_data)?;
+        // Allow TaskbarCreated through UIPI. When running under service.exe,
+        // the process may be at a different integrity level than Explorer,
+        // so the broadcast would be filtered without this.
+        if taskbar_created_msg != 0 {
+            let ok = unsafe {
+                ChangeWindowMessageFilterEx(
+                    hwnd,
+                    taskbar_created_msg,
+                    MSGFLT_ALLOW,
+                    std::ptr::null_mut(),
+                )
+            };
+            if ok == 0 {
+                let err = unsafe { GetLastError() };
+                warn!("ChangeWindowMessageFilterEx failed (error {err}); TaskbarCreated recovery may not work");
+            }
+        }
 
-        // Create the tray icon
-        let mut nid = create_notify_icon_data(hwnd, hicon, tooltip);
+        let hicon = match create_hicon_from_png(icon_data) {
+            Ok(h) => h,
+            Err(e) => {
+                unsafe { DestroyWindow(hwnd) };
+                return Err(e);
+            }
+        };
+
+        Ok(Self {
+            hwnd,
+            hicon,
+            icon_visible: false,
+        })
+    }
+
+    /// Add the tray icon to the system tray. Returns true on success.
+    fn add_icon(&mut self, tooltip: &str) -> bool {
+        remove_orphan_icon();
+
+        let mut nid = create_notify_icon_data(self.hwnd, self.hicon, tooltip);
         nid.uFlags = NIF_ICON | NIF_TIP | NIF_MESSAGE | NIF_GUID;
 
         let result = unsafe { Shell_NotifyIconW(NIM_ADD, &nid) };
-        if result == 0 {
-            unsafe {
-                DestroyIcon(hicon);
-                DestroyWindow(hwnd);
-            }
-            return Err(Error::TrayInit {
-                reason: "Shell_NotifyIconW(NIM_ADD) failed".to_string(),
-            });
-        }
-
-        Ok(Self { hwnd, hicon })
+        self.icon_visible = result != 0;
+        self.icon_visible
     }
 
-    /// Update the tooltip text.
+    /// Update the tooltip text (no-op if icon is not visible).
     fn set_tooltip(&self, tooltip: &str) {
+        if !self.icon_visible {
+            return;
+        }
         let mut nid = create_notify_icon_data(self.hwnd, self.hicon, tooltip);
         nid.uFlags = NIF_TIP | NIF_GUID;
 
@@ -380,12 +420,13 @@ impl NativeTrayIcon {
 
 impl Drop for NativeTrayIcon {
     fn drop(&mut self) {
-        // Remove the tray icon using GUID
-        let mut nid: NOTIFYICONDATAW = unsafe { std::mem::zeroed() };
-        nid.cbSize = std::mem::size_of::<NOTIFYICONDATAW>() as u32;
-        nid.uFlags = NIF_GUID;
-        nid.guidItem = TRAY_ICON_GUID;
-        unsafe { Shell_NotifyIconW(NIM_DELETE, &nid) };
+        if self.icon_visible {
+            let mut nid: NOTIFYICONDATAW = unsafe { std::mem::zeroed() };
+            nid.cbSize = std::mem::size_of::<NOTIFYICONDATAW>() as u32;
+            nid.uFlags = NIF_GUID;
+            nid.guidItem = TRAY_ICON_GUID;
+            unsafe { Shell_NotifyIconW(NIM_DELETE, &nid) };
+        }
 
         if !self.hicon.is_null() {
             unsafe { DestroyIcon(self.hicon) };
@@ -639,13 +680,6 @@ fn wait_for_events(tray_exit_event: RawHandle, tray_wake_event: RawHandle) -> Wa
 }
 
 /// Process all pending Windows messages.
-///
-/// # Safety
-///
-/// This function uses unsafe Windows API calls. Safety is ensured by:
-/// - Proper initialization of MSG struct with zeroed memory
-/// - Valid pointer passed to PeekMessageW
-/// - Standard Windows message dispatch pattern (TranslateMessage + DispatchMessageW)
 fn pump_windows_messages() {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         DispatchMessageW, PeekMessageW, TranslateMessage, MSG, PM_REMOVE,
@@ -684,6 +718,9 @@ fn handle_menu_event(id: &MenuId, tray_command_tx: &mpsc::Sender<TrayCommand>) {
 
 /// Update the tray icon tooltip based on status.
 fn update_tooltip(tray: &NativeTrayIcon, status: &TrayStatus) {
+    if !tray.icon_visible {
+        return;
+    }
     let tooltip = status.tooltip();
     info!("Tray status: {tooltip}");
     tray.set_tooltip(&tooltip);
@@ -708,6 +745,15 @@ fn run_tray_loop(
 ) -> Result<()> {
     info!("Tray thread started");
 
+    // Register for TaskbarCreated message - Explorer broadcasts this when it
+    // (re)starts, e.g. after screen unlock or explorer.exe crash recovery.
+    let taskbar_created_msg =
+        unsafe { RegisterWindowMessageW(to_wide_string("TaskbarCreated").as_ptr()) };
+    if taskbar_created_msg == 0 {
+        let err = unsafe { GetLastError() };
+        warn!("RegisterWindowMessageW(TaskbarCreated) failed (error {err}); tray will not recover after Explorer restarts");
+    }
+
     // Build the context menu first (needed before creating the tray icon)
     let menu = match build_menu() {
         Ok(m) => m,
@@ -718,36 +764,26 @@ fn run_tray_loop(
     };
 
     // Create context for the window procedure (stored in window user data)
-    let tray_ctx = TrayContext { menu };
-
-    // Retry creating tray icon - at boot time the desktop may not be ready yet.
-    // When running as a service, controller starts before user login, so we need
-    // to wait for explorer.exe to start (can take several minutes).
-    const MAX_RETRIES: u32 = 150; // 5 minutes total (150 x 2s)
-    const RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(2);
-
-    let mut retry_count = 0u32;
-    let tray_icon = loop {
-        match NativeTrayIcon::new(ICON_BYTES, "Kyber - Starting...", &tray_ctx) {
-            Ok(tray) => break tray,
-            Err(e) => {
-                retry_count += 1;
-                if retry_count > MAX_RETRIES {
-                    return Err(Error::TrayInit {
-                        reason: format!("Failed after {} retries: {e}", MAX_RETRIES),
-                    });
-                }
-                warn!(
-                    "Tray icon creation failed (attempt {}/{}): {e}. Retrying in {:?}...",
-                    retry_count, MAX_RETRIES, RETRY_DELAY
-                );
-                thread::sleep(RETRY_DELAY);
-            }
-        }
+    let tray_ctx = TrayContext {
+        menu,
+        taskbar_created_msg,
+        taskbar_created: std::sync::atomic::AtomicBool::new(false),
     };
 
-    info!("System tray icon created (using NIF_GUID for orphan cleanup)");
+    // Create the hidden window and icon resources. The window must always exist
+    // to receive TaskbarCreated broadcasts from Explorer.
+    let mut tray = NativeTrayIcon::new(ICON_BYTES, &tray_ctx, taskbar_created_msg)?;
 
+    // Try adding the icon to the system tray. If it fails (e.g. no desktop yet
+    // at boot, screen locked), continue without it. TaskbarCreated will trigger
+    // re-creation when Explorer becomes available.
+    if tray.add_icon("Kyber - Starting...") {
+        info!("System tray icon created");
+    } else {
+        warn!("Tray icon creation failed. Will retry when Explorer starts.");
+    }
+
+    let mut last_status: Option<TrayStatus> = None;
     let menu_event_rx = MenuEvent::receiver();
 
     // Main event loop using MsgWaitForMultipleObjectsEx
@@ -760,12 +796,29 @@ fn run_tray_loop(
             WaitResult::Wake => {
                 // Wake event signaled - check for status updates
                 while let Ok(status) = status_rx.try_recv() {
-                    update_tooltip(&tray_icon, &status);
+                    update_tooltip(&tray, &status);
+                    last_status = Some(status);
                 }
             }
             WaitResult::WindowsMessage => {
-                // Process all pending Windows messages
+                // Process all pending Windows messages. TaskbarCreated is
+                // delivered via SendMessage directly to the window proc,
+                // which sets the flag on TrayContext.
                 pump_windows_messages();
+
+                if tray_ctx
+                    .taskbar_created
+                    .swap(false, std::sync::atomic::Ordering::Relaxed)
+                {
+                    info!("TaskbarCreated received, re-creating tray icon");
+                    if tray.add_icon("Kyber - Starting...") {
+                        if let Some(ref status) = last_status {
+                            update_tooltip(&tray, status);
+                        }
+                    } else {
+                        warn!("Tray icon re-creation failed");
+                    }
+                }
 
                 // Check for menu events after processing messages
                 if let Ok(event) = menu_event_rx.try_recv() {
@@ -776,7 +829,7 @@ fn run_tray_loop(
     }
 
     info!("Removing tray icon");
-    // tray_icon is dropped here, which calls Shell_NotifyIconW(NIM_DELETE) with NIF_GUID
+    // tray is dropped here, which calls Shell_NotifyIconW(NIM_DELETE) with NIF_GUID
     Ok(())
 }
 
