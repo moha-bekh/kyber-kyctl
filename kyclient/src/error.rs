@@ -67,10 +67,10 @@ pub enum Error {
     },
     #[cfg(feature = "kymux")]
     KymuxInvalidToken,
+    #[cfg(feature = "kymux")]
     KynetConnectionError(kynet::ConnectionError),
     #[cfg(feature = "kymux")]
     DecodeHexError(kynet::DecodeHexError),
-    #[cfg(feature = "kymux")]
     #[cfg(feature = "kymux")]
     KyProtoProtocolError(kyproto::ProtocolError),
     #[cfg(feature = "desktop")]
