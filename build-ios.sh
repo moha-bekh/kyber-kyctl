@@ -105,7 +105,7 @@ libkypc = { path = "./kyutil/libkypc" }
 kynput = { path = "./kynput/kynput" }
 kynput-rs = { path = "./kynput/kynput-rs" }
 kynput-sys = { path = "./kynput/kynput-rs/kynput-sys" }
-vlc-rs = { path = "./kymedia/external/vlc-rs" }
+vlc-rs = { path = "./kymedia/subprojects/vlc-rs" }
 EOF
 
     cd "$KYCTL_DIR"
