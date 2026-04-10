@@ -239,7 +239,7 @@ ACTION="build"
 TARGET="ios"
 OUT_DIR=""
 
-while getopts "hkft:o:" OPTION
+while getopts "hkfst:o:" OPTION
 do
     case $OPTION in
         h)
@@ -251,6 +251,9 @@ do
             ;;
         f)
             FORCE=true
+            ;;
+        s)
+            BUILD_DEPS=false
             ;;
         t)
             TARGET=$OPTARG
