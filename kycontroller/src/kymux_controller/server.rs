@@ -19,13 +19,12 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use kymux::{kynet, kyproto};
 use log::{error, info, warn};
-use tokio::sync::{oneshot, Mutex};
-use tokio::task;
+use tokio::{sync::oneshot, task};
 use uuid::Uuid;
 
 use crate::error::Result;
@@ -225,7 +224,7 @@ impl KymuxServer {
 
         // Check token before accepting
         {
-            let router = router.lock().await;
+            let router = router.lock().unwrap();
             if !router.pending_auth.contains_key(&token) {
                 warn!("Rejecting connection with unknown token");
                 unauth_connection.reject_authentication();
@@ -245,7 +244,7 @@ impl KymuxServer {
         info!("Kymux connection accepted");
 
         // Route to session
-        let mut router = router.lock().await;
+        let mut router = router.lock().unwrap();
         if !router.route_connection(connection, &token) {
             warn!("Failed to route connection");
         }

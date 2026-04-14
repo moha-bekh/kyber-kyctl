@@ -78,7 +78,7 @@ pub(crate) struct KymuxInfraConfig {
 struct RunningInfra {
     server: KymuxServer,
     certificate_hash: Option<requests::StartKymuxCertificateHash>,
-    router: Arc<Mutex<IncomingConnectionRouter>>,
+    router: Arc<std::sync::Mutex<IncomingConnectionRouter>>,
 }
 
 /// Shared infrastructure for all Kymux sessions (common server supports both QUIC and WebTransport)
@@ -151,7 +151,7 @@ impl SharedKymuxInfra {
         let server: Box<dyn kynet::Server> = Box::new(server);
 
         // Create the connection router
-        let router = Arc::new(Mutex::new(IncomingConnectionRouter::new()));
+        let router = Arc::new(std::sync::Mutex::new(IncomingConnectionRouter::new()));
 
         // Create the server with the router
         let kymux_server = KymuxServer::new(server, router.clone()).await?;
@@ -180,7 +180,7 @@ impl SharedKymuxInfra {
     }
 
     /// Get reference to router. Returns error if not running.
-    pub(crate) fn router(&self) -> Result<&Arc<Mutex<IncomingConnectionRouter>>> {
+    pub(crate) fn router(&self) -> Result<&Arc<std::sync::Mutex<IncomingConnectionRouter>>> {
         self.inner
             .as_ref()
             .map(|i| &i.router)
@@ -190,7 +190,7 @@ impl SharedKymuxInfra {
     /// Cleanup expired tokens in the router. No-op if not running.
     pub(crate) async fn cleanup_expired(&self) {
         if let Some(ref inner) = self.inner {
-            inner.router.lock().await.cleanup_expired();
+            inner.router.lock().unwrap().cleanup_expired();
         }
     }
 }
@@ -257,7 +257,7 @@ async fn start_kymux(
         .await
         .router()?
         .lock()
-        .await
+        .unwrap()
         .register_session(token.clone(), session_id);
 
     let client_session = ctrl.get_session(&session_id)?;
