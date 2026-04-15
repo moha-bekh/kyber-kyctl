@@ -209,55 +209,33 @@ pub(crate) struct StreamingServices {
 }
 
 impl StreamingServices {
-    async fn stop_avservice(handler: Option<avservice::Handler>) -> Result<()> {
-        let Some(mut handler) = handler else {
-            return Ok(());
-        };
-
-        if !handler.is_running() {
-            return Ok(());
-        }
-
-        info!("Stop running {:?} AVServer", handler.type_());
-        handler.stop().await?;
-
-        Ok(())
-    }
-
-    async fn stop_input(handler: Option<inputservice::Handler>) -> Result<()> {
-        let Some(mut handler) = handler else {
-            return Ok(());
-        };
-
-        if !handler.is_running() {
-            return Ok(());
-        }
-
-        info!("Stop running InputServer");
-        handler.stop().await?;
-
-        Ok(())
-    }
-
-    async fn stop(&mut self) -> Result<()> {
+    async fn stop(self) -> Result<()> {
         // OutputHandle::drop aborts the task automatically. Kymux/WS avservices
         // are stopped by the AV reaper after the subscriptions held here
         // drop; see AVServicesManager. RTP avservices (in `video`/`audio`) are
         // per-session and stopped synchronously below.
-        self.output_handles.clear();
+        drop(self.output_handles);
 
-        for service in self.video.drain(0..) {
-            Self::stop_avservice(Some(service)).await?;
+        for service in self.video {
+            info!("Stop running video AVServer");
+            service.stop().await?;
         }
 
-        Self::stop_avservice(self.audio.take()).await?;
-        Self::stop_input(self.input.take()).await?;
+        if let Some(audio) = self.audio {
+            info!("Stop running audio AVServer");
+            audio.stop().await?;
+        }
 
-        if let Some(clock_sync) = self.clock_sync.take() {
+        if let Some(input) = self.input {
+            info!("Stop running InputServer");
+            input.stop().await?;
+        }
+
+        if let Some(clock_sync) = self.clock_sync {
             clock_sync.stop().await;
         }
 
-        if let Some(metrics) = self.metrics.take() {
+        if let Some(metrics) = self.metrics {
             metrics.stop().await;
         }
 

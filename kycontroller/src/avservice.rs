@@ -18,21 +18,17 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
 use log::{debug, info, warn};
-use tokio::{
-    sync::{mpsc, oneshot},
-    task, time,
-};
 
 use kyavservice_types::{Command, Display, Event, VideoCodec};
 use libkypc::{
     process::{Process, ProcessFactory},
     CommandSender, Commander, EventReceiver,
 };
+use tokio::sync::{mpsc, oneshot};
 
 use crate::avservices_manager::StreamId;
 use crate::utils;
@@ -55,121 +51,35 @@ const CMD_ACK_TIMEOUT: Duration = Duration::from_secs(5);
 /// the AV reaper is never frozen.
 const STOP_TIMEOUT: Duration = Duration::from_secs(15);
 
-struct ReceiverTask {
+async fn receiver_task(
     type_: HandlerType,
-    handle: task::JoinHandle<()>,
-    stop_tx: oneshot::Sender<()>,
-}
-
-impl ReceiverTask {
-    fn new(
-        type_: HandlerType,
-        session_id: Option<uuid::Uuid>,
-        stream_id: Option<StreamId>,
-        receiver: EventReceiver<Event>,
-        statemachine_proxy: StateMachineProxy,
-    ) -> Self {
-        let (stop_tx, stop_rx) = oneshot::channel();
-
-        let handle = task::spawn(Self::task_entry(
-            type_,
-            session_id,
-            stream_id,
-            receiver,
-            statemachine_proxy,
-            stop_rx,
-        ));
-
-        Self {
-            type_,
-            handle,
-            stop_tx,
-        }
-    }
-
-    async fn stop(self) -> Result<()> {
-        let ret = self.stop_tx.send(());
-        if ret.is_err() {
-            warn!("{:?} receiver task stop send request failed", self.type_);
-        }
-
-        self.handle.await.map_err(|err| {
-            warn!("{:?} receiver task panicked: {err:?}", self.type_);
-            Error::ThreadPanicked
-        })?;
-
-        Ok(())
-    }
-
-    async fn task_entry(
-        type_: HandlerType,
-        session_id: Option<uuid::Uuid>,
-        stream_id: Option<StreamId>,
-        receiver: EventReceiver<kyavservice_types::Event>,
-        statemachine_proxy: StateMachineProxy,
-        stop_rx: oneshot::Receiver<()>,
-    ) {
-        tokio::select! {
-            _ = stop_rx => {
-            }
-            _ = Self::process_receiver(type_, session_id, stream_id, receiver, statemachine_proxy) => {}
-        }
-    }
-
-    async fn process_receiver(
-        type_: HandlerType,
-        session_id: Option<uuid::Uuid>,
-        stream_id: Option<StreamId>,
-        mut receiver: EventReceiver<kyavservice_types::Event>,
-        statemachine_proxy: StateMachineProxy,
-    ) {
-        while let Ok(event) = receiver.recv().await {
-            statemachine_proxy
-                .send(StateMachineEvent::AvService {
-                    session_id,
-                    stream_id: stream_id.clone(),
-                    event,
-                })
-                .await;
-        }
-
+    session_id: Option<uuid::Uuid>,
+    // Routing identity of the stream this handler drives. `Some` for the
+    // shared/exclusive video & audio streams owned by the AVServicesManager;
+    // `None` for the legacy per-session RTP handlers (routed by `session_id`)
+    // and the global enumerate/SDP handlers. Forwarded with each event so the
+    // StateMachine delivers it to exactly that stream's subscribers.
+    stream_id: Option<StreamId>,
+    mut receiver: EventReceiver<kyavservice_types::Event>,
+    statemachine_proxy: StateMachineProxy,
+) {
+    while let Ok(event) = receiver.recv().await {
         statemachine_proxy
-            .send(StateMachineEvent::AvServiceStopped {
+            .send(StateMachineEvent::AvService {
                 session_id,
-                stream_id,
-                type_,
+                stream_id: stream_id.clone(),
+                event,
             })
             .await;
     }
-}
 
-struct Inner {
-    child: Process,
-    commander: Commander<Command, Event>,
-    sender: CommandSender<Command, Event>,
-    receiver: Option<EventReceiver<Event>>,
-    receiver_task: Option<ReceiverTask>,
-}
-
-impl Inner {
-    fn start_receiver_task(
-        &mut self,
-        type_: HandlerType,
-        session_id: Option<uuid::Uuid>,
-        stream_id: Option<StreamId>,
-        statemachine_proxy: StateMachineProxy,
-    ) -> Result<()> {
-        let receiver = self.receiver.take().ok_or(Error::AvServerNoReceiver)?;
-        self.receiver_task = Some(ReceiverTask::new(
-            type_,
+    statemachine_proxy
+        .send(StateMachineEvent::AvServiceStopped {
             session_id,
             stream_id,
-            receiver,
-            statemachine_proxy,
-        ));
-
-        Ok(())
-    }
+            type_,
+        })
+        .await;
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -182,92 +92,79 @@ pub(crate) enum HandlerType {
 
 pub(crate) struct Handler {
     type_: HandlerType,
-    session_id: Option<uuid::Uuid>,
-    /// Routing identity of the stream this handler drives. `Some` for the
-    /// shared/exclusive video & audio streams owned by the AVServicesManager;
-    /// `None` for the legacy per-session RTP handlers (routed by `session_id`)
-    /// and the global enumerate/SDP handlers. Forwarded with each event so the
-    /// StateMachine delivers it to exactly that stream's subscribers.
-    stream_id: Option<StreamId>,
-    avserver_path: PathBuf,
-    statemachine_proxy: StateMachineProxy,
-    inner: Option<Inner>,
+
+    child: Process,
+    commander: Commander<Command, Event>,
+    sender: CommandSender<Command, Event>,
+    receiver_task: Option<utils::Task>,
 }
 
 impl Handler {
-    pub(crate) fn new(
+    async fn spawn_process(
         type_: HandlerType,
-        session_id: Option<uuid::Uuid>,
-        stream_id: Option<StreamId>,
-        statemachine_proxy: StateMachineProxy,
-    ) -> Self {
-        Self {
-            type_,
-            session_id,
-            stream_id,
-            avserver_path: utils::get_executable_path("kyavserver"),
-            inner: None,
-            statemachine_proxy,
-        }
-    }
+        process_factory: &Arc<ProcessFactory>,
+    ) -> Result<(Self, EventReceiver<Event>)> {
+        debug!("Run AvServer {type_:?}");
 
-    pub(crate) fn is_running(&self) -> bool {
-        self.inner.is_some()
-    }
-
-    pub(crate) fn type_(&self) -> HandlerType {
-        self.type_
-    }
-
-    async fn spawn_process(&self, process_factory: &Arc<ProcessFactory>) -> Result<Inner> {
-        debug!("Run AvServer {type_:?}", type_ = self.type_);
-
-        let (child, mut commander): (_, Commander<Command, Event>) =
-            process_factory.spawn(&self.avserver_path, None).await?;
+        let (child, mut commander): (_, Commander<Command, Event>) = process_factory
+            .spawn(utils::get_executable_path("kyavserver"), None)
+            .await?;
         let (sender, receiver) = commander.get_sender_receiver()?;
 
-        Ok(Inner {
+        let this = Self {
+            type_,
             child,
             commander,
             sender,
-            receiver: Some(receiver),
             receiver_task: None,
-        })
+        };
+
+        Ok((this, receiver))
+    }
+
+    fn start_receiver_task(
+        &mut self,
+        session_id: Option<uuid::Uuid>,
+        stream_id: Option<StreamId>,
+        statemachine_proxy: StateMachineProxy,
+        receiver: EventReceiver<Event>,
+    ) {
+        self.receiver_task = Some(utils::Task::spawn(receiver_task(
+            self.type_,
+            session_id,
+            stream_id,
+            receiver,
+            statemachine_proxy,
+        )));
     }
 
     pub(crate) async fn enumerate_displays(
-        &mut self,
         process_factory: &Arc<ProcessFactory>,
-    ) -> Result<Vec<Display>> {
-        let mut inner = self.spawn_process(process_factory).await?;
-        let ret = inner.sender.send(Command::EnumerateDisplays).await?;
+        statemachine_proxy: StateMachineProxy,
+    ) -> Result<(Self, Vec<Display>)> {
+        let (mut this, receiver) =
+            Self::spawn_process(HandlerType::EnumerateDisplays, process_factory).await?;
+        let ret = this.sender.send(Command::EnumerateDisplays).await?;
 
         let Some(Event::DisplayList { displays }) = ret else {
             return Err(Error::DisplayListEmpty);
         };
 
-        inner.start_receiver_task(
-            self.type_,
-            self.session_id,
-            self.stream_id.clone(),
-            self.statemachine_proxy.clone(),
-        )?;
-        self.inner = Some(inner);
+        this.start_receiver_task(None, None, statemachine_proxy.clone(), receiver);
 
-        Ok(displays)
+        Ok((this, displays))
     }
 
     pub(crate) async fn rtp_generate_video_sdp(
-        &self,
         process_factory: &Arc<ProcessFactory>,
         display_id: u32,
         yuv444: bool,
         intra_refresh: Option<bool>,
     ) -> Result<String> {
         // Generate SDP
-        let mut inner = self.spawn_process(process_factory).await?;
+        let (mut this, _) = Self::spawn_process(HandlerType::VideoSdp, process_factory).await?;
 
-        let evt = inner
+        let evt = this
             .sender
             .send(Command::RtpGenerateVideoSdp {
                 display_id,
@@ -277,7 +174,7 @@ impl Handler {
             .await?;
 
         // Stop avserver
-        Self::stop_inner(self.type_, inner).await?;
+        this.stop_inner().await?;
 
         // Unpack results
         let Some(Event::RtpSdpGenerated { sdp }) = evt else {
@@ -289,17 +186,22 @@ impl Handler {
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn rtp_start_video(
-        &mut self,
+        session_id: uuid::Uuid,
         process_factory: &Arc<ProcessFactory>,
+        statemachine_proxy: StateMachineProxy,
         display_id: u32,
         ip: String,
         port: u16,
         bitrate: u32,
         yuv444: bool,
         intra_refresh: Option<bool>,
-    ) -> Result<()> {
-        self.start_inner(
+    ) -> Result<Self> {
+        Self::start_inner(
             process_factory,
+            statemachine_proxy,
+            Some(session_id),
+            None,
+            HandlerType::Video,
             Command::RtpStartVideo {
                 display_id,
                 ip,
@@ -309,27 +211,32 @@ impl Handler {
                 intra_refresh,
             },
         )
-        .await?;
-
-        Ok(())
+        .await
     }
 
     pub(crate) async fn rtp_start_audio(
-        &mut self,
+        session_id: uuid::Uuid,
         process_factory: &Arc<ProcessFactory>,
+        statemachine_proxy: StateMachineProxy,
         ip: String,
         port: u16,
-    ) -> Result<()> {
-        self.start_inner(process_factory, Command::RtpStartAudio { ip, port })
-            .await?;
-
-        Ok(())
+    ) -> Result<Self> {
+        Self::start_inner(
+            process_factory,
+            statemachine_proxy,
+            Some(session_id),
+            None,
+            HandlerType::Audio,
+            Command::RtpStartAudio { ip, port },
+        )
+        .await
     }
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn kymux_start_video(
-        &mut self,
+        stream_id: StreamId,
         process_factory: &Arc<ProcessFactory>,
+        statemachine_proxy: StateMachineProxy,
         display_id: u32,
         uri: String,
         metrics_uri: Option<String>,
@@ -337,9 +244,13 @@ impl Handler {
         codec: VideoCodec,
         yuv444: bool,
         intra_refresh: Option<bool>,
-    ) -> Result<()> {
-        self.start_inner(
+    ) -> Result<Self> {
+        Self::start_inner(
             process_factory,
+            statemachine_proxy,
+            None,
+            Some(stream_id),
+            HandlerType::Video,
             Command::KymuxStartVideo {
                 display_id,
                 uri,
@@ -350,39 +261,40 @@ impl Handler {
                 intra_refresh,
             },
         )
-        .await?;
-
-        Ok(())
+        .await
     }
 
     pub(crate) async fn kymux_start_audio(
-        &mut self,
+        stream_id: StreamId,
         process_factory: &Arc<ProcessFactory>,
+        statemachine_proxy: StateMachineProxy,
         uri: String,
-    ) -> Result<()> {
-        self.start_inner(process_factory, Command::KymuxStartAudio { uri })
-            .await?;
-
-        Ok(())
+    ) -> Result<Self> {
+        Self::start_inner(
+            process_factory,
+            statemachine_proxy,
+            None,
+            Some(stream_id),
+            HandlerType::Audio,
+            Command::KymuxStartAudio { uri },
+        )
+        .await
     }
 
     async fn start_inner(
-        &mut self,
         process_factory: &Arc<ProcessFactory>,
+        statemachine_proxy: StateMachineProxy,
+        session_id: Option<uuid::Uuid>,
+        stream_id: Option<StreamId>,
+        type_: HandlerType,
         start_cmd: Command,
-    ) -> Result<()> {
-        let mut inner = self.spawn_process(process_factory).await?;
-        inner.sender.send(start_cmd).await?;
+    ) -> Result<Self> {
+        let (mut this, receiver) = Self::spawn_process(type_, process_factory).await?;
+        this.sender.send(start_cmd).await?;
 
-        inner.start_receiver_task(
-            self.type_,
-            self.session_id,
-            self.stream_id.clone(),
-            self.statemachine_proxy.clone(),
-        )?;
-        self.inner = Some(inner);
+        this.start_receiver_task(session_id, stream_id, statemachine_proxy, receiver);
 
-        Ok(())
+        Ok(this)
     }
 
     /// Send a stop request to an AvServer
@@ -397,26 +309,21 @@ impl Handler {
     ///
     /// Both Stop request and Process join have a timeout to make sure
     /// we aren't stuck forever. If one of them timeout, kill the process.
-    async fn stop_inner(type_: HandlerType, mut inner: Inner) -> Result<()> {
-        if let Some(receiver_task) = inner.receiver_task.take() {
-            let _ = receiver_task.stop().await;
-        }
+    async fn stop_inner(mut self) -> Result<()> {
+        self.receiver_task = None;
 
         // A command send failure or a process that doesn't stop lead to a process kill
-        inner.child.kill().await?;
+        self.child.kill().await?;
 
-        inner.commander.stop().await?;
-        debug!("Commander {type_:?} stopped");
+        self.commander.stop().await?;
+        debug!("Commander {:?} stopped", self.type_);
 
         Ok(())
     }
 
     pub(crate) async fn video_force_idr(&mut self) -> Result<()> {
         debug!("Requesting IDR frame");
-        self.inner
-            .as_mut()
-            .ok_or(Error::StreamerStopped)?
-            .sender
+        self.sender
             .send_with_timeout(Command::VideoForceIdr, CMD_ACK_TIMEOUT)
             .await?;
 
@@ -424,24 +331,17 @@ impl Handler {
     }
 
     pub(crate) async fn video_set_bitrate(&mut self, bitrate: i32) -> Result<()> {
-        self.inner
-            .as_mut()
-            .ok_or(Error::StreamerStopped)?
-            .sender
-            .send_with_timeout(Command::VideoSetBitrate { bitrate }, CMD_ACK_TIMEOUT)
+        self.sender
+            .send(Command::VideoSetBitrate { bitrate })
             .await?;
 
         Ok(())
     }
 
-    pub(crate) async fn stop(&mut self) -> Result<()> {
-        let Some(inner) = self.inner.take() else {
-            return Err(Error::StreamerStopped);
-        };
-
-        Self::stop_inner(self.type_, inner).await?;
-
-        info!("AvServer {type_:?} exited", type_ = self.type_);
+    pub(crate) async fn stop(self) -> Result<()> {
+        let type_ = self.type_;
+        self.stop_inner().await?;
+        info!("AvServer {type_:?} exited");
 
         Ok(())
     }
@@ -471,15 +371,15 @@ enum SharedCmd {
 pub(crate) struct SharedHandler {
     type_: HandlerType,
     cmd_tx: mpsc::UnboundedSender<SharedCmd>,
-    actor_join: Option<task::JoinHandle<()>>,
+    actor_join: Option<utils::Task>,
 }
 
 impl SharedHandler {
     /// Consume a started [`Handler`] and spawn its actor task.
     pub(crate) fn spawn(handler: Handler) -> Self {
-        let type_ = handler.type_();
+        let type_ = handler.type_;
         let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
-        let actor_join = task::spawn(Self::actor_loop(handler, cmd_rx));
+        let actor_join = utils::Task::spawn(Self::actor_loop(handler, cmd_rx));
         Self {
             type_,
             cmd_tx,
@@ -521,23 +421,15 @@ impl SharedHandler {
         // `Drop`/`kill_on_drop`, so on that path the orphan is left for the OS
         // to reap once its stuck syscall returns / on host exit. That is the
         // strictly better outcome than freezing every later teardown.
-        match time::timeout(STOP_TIMEOUT, rx).await {
-            Ok(Ok(res)) => {
-                // Acked; the actor returns immediately after, so this is instant.
-                let _ = join.await;
-                res
-            }
-            Ok(Err(_)) => {
-                // Actor dropped the ack without sending (panicked); reap it.
-                let _ = join.await;
-                Err(Error::StreamerStopped)
-            }
+        match tokio::time::timeout(STOP_TIMEOUT, rx).await {
+            Ok(Ok(res)) => res,
+            Ok(Err(_)) => Err(Error::StreamerStopped),
             Err(_) => {
                 warn!(
                     "AvServer {type_:?} stop timed out after {STOP_TIMEOUT:?}; aborting actor",
                     type_ = self.type_(),
                 );
-                join.abort();
+                drop(join);
                 Err(Error::AvServerStopTimeout)
             }
         }
@@ -575,11 +467,7 @@ impl SharedHandler {
             // Stop wins: skip the queued control commands and tear down now, so
             // the child is force-killed promptly even behind a large backlog.
             if let Some(ack) = stop_ack {
-                let res = if handler.is_running() {
-                    handler.stop().await
-                } else {
-                    Ok(())
-                };
+                let res = handler.stop().await;
                 let _ = ack.send(res);
                 return;
             }
@@ -596,10 +484,8 @@ impl SharedHandler {
             }
         }
         // Channel closed without an explicit Stop (every sender dropped).
-        if handler.is_running() {
-            if let Err(e) = handler.stop().await {
-                warn!("Implicit avservice stop failed: {e:?}");
-            }
+        if let Err(e) = handler.stop().await {
+            warn!("Implicit avservice stop failed: {e:?}");
         }
     }
 }

@@ -619,13 +619,13 @@ async fn start_input(
         clipboard: inputs_request.clipboard,
     };
 
-    let mut inputservice = inputservice::Handler::new();
-    let (clipboard,) = match inputservice
-        .start_kymux(process_factory, host_config, service_config, uri)
-        .await?
-    {
-        Some(kynputservice_types::Event::Connected { clipboard }) => (clipboard,),
-        _ => (false,),
+    let (inputservice, event) =
+        inputservice::Handler::start_kymux(process_factory, host_config, service_config, uri)
+            .await?;
+
+    let clipboard = match event {
+        Some(kynputservice_types::Event::Connected { clipboard }) => clipboard,
+        _ => false,
     };
 
     Ok(Some(StartSessionInputResponse {

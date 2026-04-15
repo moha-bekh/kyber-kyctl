@@ -35,19 +35,13 @@ impl Watchdog {
         statemachine_proxy: StateMachineProxy,
     ) -> Result<(Self, Vec<kyavservice_types::Display>)> {
         // Watchdog is global, not tied to any user session
-        let mut avservice = avservice::Handler::new(
-            avservice::HandlerType::EnumerateDisplays,
-            None,
-            None,
-            statemachine_proxy.clone(),
-        );
-
-        let displays = avservice.enumerate_displays(process_factory).await?;
+        let (avservice, displays) =
+            avservice::Handler::enumerate_displays(process_factory, statemachine_proxy).await?;
 
         Ok((Self { avservice }, displays))
     }
 
-    pub(crate) async fn stop(mut self) -> Result<()> {
+    pub(crate) async fn stop(self) -> Result<()> {
         self.avservice.stop().await?;
 
         Ok(())

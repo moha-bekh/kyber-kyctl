@@ -109,11 +109,8 @@ async fn generate_sdp(
     request: web::Json<GenerateSdpRequest>,
     user: Identity,
 ) -> HttpResponse {
-    let session_id = match user.uid() {
-        Ok(uid) => uid,
-        Err(_) => {
-            return HttpResponse::Unauthorized().finish();
-        }
+    if user.uid().is_err() {
+        return HttpResponse::Unauthorized().finish();
     };
 
     let mut ctrl = ctrl.lock().await;
@@ -129,7 +126,7 @@ async fn generate_sdp(
         return HttpResponse::Forbidden().finish();
     }
 
-    let ret = super::generate_video_sdp(&mut ctrl, session_id, request.into_inner()).await;
+    let ret = super::generate_video_sdp(&mut ctrl, request.into_inner()).await;
     match ret {
         Ok(params) => {
             info!("SDP generated: {}", params);

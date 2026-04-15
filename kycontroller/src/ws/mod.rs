@@ -387,10 +387,13 @@ async fn start_handler(
             .register_and_forward(endpoint.into())
             .map_err(|e| Error::IO { source: e })?;
 
-        let mut inputservice = inputservice::Handler::new();
-        inputservice
-            .start_kymux(&process_factory, host_config, service_config, addr.url())
-            .await?;
+        let (inputservice, _) = inputservice::Handler::start_kymux(
+            &process_factory,
+            host_config,
+            service_config,
+            addr.url(),
+        )
+        .await?;
 
         (Some(connection_tx), Some(inputservice))
     } else {

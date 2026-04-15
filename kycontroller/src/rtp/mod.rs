@@ -31,26 +31,15 @@ use crate::{avservice, inputservice, Controller, DataPlaneBackend};
 
 pub async fn generate_video_sdp(
     ctrl: &mut Controller,
-    session_id: uuid::Uuid,
     request: requests::GenerateSdpRequest,
 ) -> Result<String> {
-    let state_machine_proxy = ctrl.state_machine_proxy()?;
-
-    let avservice = avservice::Handler::new(
-        avservice::HandlerType::VideoSdp,
-        Some(session_id),
-        // RTP is routed per-session via `session_id`; no stream_id.
-        None,
-        state_machine_proxy,
-    );
-    avservice
-        .rtp_generate_video_sdp(
-            &ctrl.process_factory,
-            request.display_id,
-            request.yuv444,
-            request.intra_refresh,
-        )
-        .await
+    avservice::Handler::rtp_generate_video_sdp(
+        &ctrl.process_factory,
+        request.display_id,
+        request.yuv444,
+        request.intra_refresh,
+    )
+    .await
 }
 
 pub async fn start(
@@ -59,7 +48,6 @@ pub async fn start(
     request: requests::StartRequest,
 ) -> Result<()> {
     let state_machine_proxy = ctrl.state_machine_proxy()?;
-    let process_factory = ctrl.process_factory.clone();
     let displays = ctrl.displays.convert();
 
     // Start services first (before accessing session)
@@ -74,47 +62,36 @@ pub async fn start(
             request.ip, video_request.port
         );
 
-        let mut avservice = avservice::Handler::new(
-            avservice::HandlerType::Video,
-            Some(session_id),
-            // RTP is routed per-session via `session_id`; no stream_id.
-            None,
+        let avservice = avservice::Handler::rtp_start_video(
+            session_id,
+            &ctrl.process_factory,
             state_machine_proxy.clone(),
-        );
-        avservice
-            .rtp_start_video(
-                &process_factory,
-                video_request.display_id,
-                request.ip.clone(),
-                video_request.port,
-                request.bitrate,
-                video_request.yuv444,
-                video_request.intra_refresh,
-            )
-            .await?;
-
+            video_request.display_id,
+            request.ip.clone(),
+            video_request.port,
+            request.bitrate,
+            video_request.yuv444,
+            video_request.intra_refresh,
+        )
+        .await?;
         avservice_video = Some(avservice);
     }
 
     if let Some(config) = request.audio {
         info!("Start audio. ip: {} - port: {}", request.ip, config.port);
 
-        let mut avservice = avservice::Handler::new(
-            avservice::HandlerType::Audio,
-            Some(session_id),
-            None,
-            state_machine_proxy.clone(),
-        );
-        avservice
-            .rtp_start_audio(&process_factory, request.ip, config.port)
-            .await?;
-
+        let avservice = avservice::Handler::rtp_start_audio(
+            session_id,
+            &ctrl.process_factory,
+            state_machine_proxy,
+            request.ip,
+            config.port,
+        )
+        .await?;
         avservice_audio = Some(avservice);
     }
 
     if let Some(inputs_request) = request.inputs {
-        let mut inputservice = inputservice::Handler::new();
-
         let host_config = kynputservice_types::HostConfig {
             display_list: displays,
         };
@@ -125,9 +102,9 @@ pub async fn start(
             clipboard: inputs_request.clipboard,
         };
 
-        inputservice
-            .start_tcp(&process_factory, host_config, service_config)
-            .await?;
+        let (inputservice, _) =
+            inputservice::Handler::start_tcp(&ctrl.process_factory, host_config, service_config)
+                .await?;
 
         inputservice_handler = Some(inputservice);
     } else {

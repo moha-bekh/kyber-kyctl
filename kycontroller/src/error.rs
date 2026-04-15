@@ -45,8 +45,6 @@ pub enum Error {
         #[from]
         source: libkypc::Error,
     },
-    #[error("Streamer already started")]
-    StreamerStarted,
     #[error("Streamer already stopped")]
     StreamerStopped,
     #[error("Control plane not opened")]
@@ -61,8 +59,6 @@ pub enum Error {
     KymuxNotListening,
     #[error("Got an unexpected response from AvServer")]
     AvServerUnexpectedResponse,
-    #[error("Couldn't get a receiver from AvServer")]
-    AvServerNoReceiver,
     #[error("AvServer stop timed out")]
     AvServerStopTimeout,
     #[error("Couldn't open file {path}")]

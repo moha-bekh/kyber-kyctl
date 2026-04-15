@@ -724,30 +724,28 @@ impl AVServicesManager {
         // `Shared` that's the multi-client fan-out; for `Exclusive` only the
         // owning session subscribes — and two streams on the same display no
         // longer cross-talk.
-        let mut avservice = avservice::Handler::new(
-            avservice::HandlerType::Video,
-            None,
-            Some(StreamId::Video(key.clone())),
+        let res = avservice::Handler::kymux_start_video(
+            StreamId::Video(key.clone()),
+            process_factory,
             statemachine_proxy,
-        );
-        if let Err(e) = avservice
-            .kymux_start_video(
-                process_factory,
-                display_id,
-                kycom_uri,
-                metrics_uri,
-                config.bitrate / config.video_stream_count,
-                config.codec.clone(),
-                config.yuv444,
-                config.intra_refresh,
-            )
-            .await
-        {
-            if let Some(m) = metrics.as_ref() {
-                m.forwarder_task.abort();
+            display_id,
+            kycom_uri,
+            metrics_uri,
+            config.bitrate / config.video_stream_count,
+            config.codec.clone(),
+            config.yuv444,
+            config.intra_refresh,
+        )
+        .await;
+        let avservice = match res {
+            Ok(av) => av,
+            Err(e) => {
+                if let Some(m) = metrics.as_ref() {
+                    m.forwarder_task.abort();
+                }
+                return Err(e);
             }
-            return Err(e);
-        }
+        };
 
         let dup_for_return = dup.clone();
         self.video_streams.insert(
@@ -803,15 +801,13 @@ impl AVServicesManager {
         // session_id: None; routed by `stream_id` (the AudioStreamKey). Shared
         // fans out to every audio subscriber; Exclusive reaches only the owning
         // session instead of every audio subscriber as display-less routing did.
-        let mut avservice = avservice::Handler::new(
-            avservice::HandlerType::Audio,
-            None,
-            Some(StreamId::Audio(key.clone())),
+        let avservice = avservice::Handler::kymux_start_audio(
+            StreamId::Audio(key.clone()),
+            process_factory,
             statemachine_proxy,
-        );
-        avservice
-            .kymux_start_audio(process_factory, kycom_uri)
-            .await?;
+            kycom_uri,
+        )
+        .await?;
 
         let dup_for_return = dup.clone();
         self.audio_streams.insert(
