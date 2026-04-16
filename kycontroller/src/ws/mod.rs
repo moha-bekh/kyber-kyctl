@@ -190,7 +190,6 @@ async fn setup_video(
     request: &requests::StartRequest,
     video_request: &requests::StartRequestVideo,
     process_factory: &Arc<libkypc::process::ProcessFactory>,
-    statemachine_proxy: crate::StateMachineProxy,
     mode: SessionMode,
 ) -> Result<VideoSetup> {
     let config = crate::avservices_manager::VideoStreamConfig {
@@ -214,7 +213,7 @@ async fn setup_video(
                     config,
                     false,
                     process_factory,
-                    statemachine_proxy,
+                    ctrl.state_machine_proxy.clone(),
                 )
                 .await?;
             let dup = acq.dup.expect("Shared topology guarantees Some(dup)");
@@ -246,7 +245,7 @@ async fn setup_video(
                     config,
                     false,
                     process_factory,
-                    statemachine_proxy,
+                    ctrl.state_machine_proxy.clone(),
                 )
                 .await?;
             debug_assert!(acq.dup.is_none());
@@ -264,9 +263,10 @@ async fn setup_audio(
     ctrl: &mut Controller,
     session_id: uuid::Uuid,
     process_factory: &Arc<libkypc::process::ProcessFactory>,
-    statemachine_proxy: crate::StateMachineProxy,
     mode: SessionMode,
 ) -> Result<AudioSetup> {
+    let statemachine_proxy = ctrl.state_machine_proxy.clone();
+
     match mode {
         SessionMode::Multi => {
             let kycom = ctrl.kycom.as_mut().expect("ensure_kycom guarantees Some");
@@ -324,7 +324,6 @@ async fn start_handler(
 
     // Extract values before borrows
     let process_factory = ctrl.process_factory.clone();
-    let statemachine_proxy = ctrl.state_machine_proxy()?;
     let mode = ctrl.config.session_mode();
 
     let video_setup = if let Some(video_request) = request.video.as_ref() {
@@ -335,7 +334,6 @@ async fn start_handler(
                 request,
                 video_request,
                 &process_factory,
-                statemachine_proxy.clone(),
                 mode,
             )
             .await?,
@@ -345,16 +343,7 @@ async fn start_handler(
     };
 
     let audio_setup = if request.audio {
-        Some(
-            setup_audio(
-                &mut ctrl,
-                session_id,
-                &process_factory,
-                statemachine_proxy.clone(),
-                mode,
-            )
-            .await?,
-        )
+        Some(setup_audio(&mut ctrl, session_id, &process_factory, mode).await?)
     } else {
         None
     };

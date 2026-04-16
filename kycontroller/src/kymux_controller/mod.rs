@@ -289,7 +289,7 @@ async fn start_video(
     connection: &kyproto::Connection,
     process_factory: &Arc<ProcessFactory>,
     session_id: uuid::Uuid,
-    statemachine_proxy: StateMachineProxy,
+    statemachine_proxy: &StateMachineProxy,
     av_services_manager: &mut crate::avservices_manager::AVServicesManager,
     mode: SessionMode,
 ) -> Result<Option<Vec<StartSessionVideoResponse>>> {
@@ -627,8 +627,6 @@ async fn start_session(
     session_id: uuid::Uuid,
     request: requests::StartRequest,
 ) -> Result<StartSessionResponse> {
-    let state_machine_proxy = ctrl.state_machine_proxy()?;
-
     // Extract data from Controller before session access
     let process_factory = ctrl.process_factory.clone();
     let displays = ctrl.displays.convert();
@@ -681,7 +679,7 @@ async fn start_session(
         &connection,
         &process_factory,
         session_id,
-        state_machine_proxy.clone(),
+        &ctrl.state_machine_proxy,
         av_services_manager,
         mode,
     )
@@ -693,7 +691,7 @@ async fn start_session(
         &connection,
         &process_factory,
         session_id,
-        state_machine_proxy.clone(),
+        ctrl.state_machine_proxy.clone(),
         av_services_manager,
         mode,
     )
@@ -744,13 +742,13 @@ async fn start_session(
 
     // Create KymuxBackend now that connection is established
     {
+        let proxy = ctrl.state_machine_proxy.clone();
         let client_session = ctrl.get_session(&session_id)?;
         let Some(streaming_session) = client_session.stream_session.as_mut() else {
             return Err(Error::ControlPlaneNotOpened);
         };
 
-        let _connection_task =
-            run_connection_task(connection.clone(), state_machine_proxy, session_id);
+        let _connection_task = run_connection_task(connection.clone(), proxy, session_id);
         let backend = KymuxBackend { _connection_task };
         streaming_session.data_plane = Some(DataPlaneBackend::Kymux(backend));
     }

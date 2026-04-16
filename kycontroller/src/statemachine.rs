@@ -26,7 +26,7 @@ use uuid::Uuid;
 use crate::avservices_manager::StreamId;
 use crate::utils::{Task, TypeConvert};
 use crate::{avservice, host_events};
-use crate::{Controller, HostEvent, Result};
+use crate::{Controller, HostEvent};
 
 /// Route a stream event (PipelineEvent or Stopped) emitted by an
 /// AVServicesManager handler to exactly the sessions subscribed to that
@@ -94,6 +94,10 @@ pub(crate) struct StateMachineProxy {
 }
 
 impl StateMachineProxy {
+    pub fn new(events_tx: mpsc::Sender<StateMachineEvent>) -> Self {
+        Self { events_tx }
+    }
+
     pub(crate) async fn send(&self, msg: StateMachineEvent) {
         let ret = self.events_tx.send(msg).await;
         if let Err(err) = ret {
@@ -102,26 +106,16 @@ impl StateMachineProxy {
     }
 }
 
-pub(crate) struct StateMachine {
-    events_tx: mpsc::Sender<StateMachineEvent>,
-    _task: Task,
+pub(crate) fn run(
+    ctrl: web::Data<Mutex<Controller>>,
+    events_rx: mpsc::Receiver<StateMachineEvent>,
+) -> Task {
+    Task::spawn(StateMachine::process_events(ctrl, events_rx))
 }
 
+// Dummy impl block to avoid a huge diff and annoying conflicts
+struct StateMachine;
 impl StateMachine {
-    pub(crate) fn new(ctrl: web::Data<Mutex<Controller>>) -> Result<Self> {
-        let (events_tx, events_rx) = mpsc::channel(32);
-
-        let _task = Task::spawn(Self::process_events(ctrl, events_rx));
-
-        Ok(Self { events_tx, _task })
-    }
-
-    pub(crate) fn create_proxy(&self) -> StateMachineProxy {
-        StateMachineProxy {
-            events_tx: self.events_tx.clone(),
-        }
-    }
-
     #[allow(clippy::single_match)]
     async fn process_events(
         ctrl: web::Data<Mutex<Controller>>,

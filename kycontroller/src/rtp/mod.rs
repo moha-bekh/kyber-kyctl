@@ -47,7 +47,6 @@ pub async fn start(
     session_id: uuid::Uuid,
     request: requests::StartRequest,
 ) -> Result<()> {
-    let state_machine_proxy = ctrl.state_machine_proxy()?;
     let displays = ctrl.displays.convert();
 
     // Start services first (before accessing session)
@@ -65,7 +64,7 @@ pub async fn start(
         let avservice = avservice::Handler::rtp_start_video(
             session_id,
             &ctrl.process_factory,
-            state_machine_proxy.clone(),
+            ctrl.state_machine_proxy.clone(),
             video_request.display_id,
             request.ip.clone(),
             video_request.port,
@@ -83,7 +82,7 @@ pub async fn start(
         let avservice = avservice::Handler::rtp_start_audio(
             session_id,
             &ctrl.process_factory,
-            state_machine_proxy,
+            ctrl.state_machine_proxy.clone(),
             request.ip,
             config.port,
         )

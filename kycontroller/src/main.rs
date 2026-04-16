@@ -63,7 +63,7 @@ use libkypc::process::ProcessFactory;
 use controller::{ClientSession, Controller, DataPlaneBackend, StreamingSession};
 use error::{Error, Result};
 use host_events::{HostEvent, HostEventSender};
-use statemachine::{StateMachine, StateMachineEvent, StateMachineProxy};
+use statemachine::{StateMachineEvent, StateMachineProxy};
 use utils::TypeConvert;
 
 const WEBCLIENT_ROOT: &str = "webclient";
@@ -322,7 +322,7 @@ async fn validate_websocket_token(
 ) -> Option<(uuid::Uuid, StateMachineProxy, Vec<host_events::Display>)> {
     let mut ctrl = ctrl.lock().await;
 
-    let proxy = ctrl.state_machine_proxy.clone()?;
+    let proxy = ctrl.state_machine_proxy.clone();
     let displays = ctrl.displays.convert();
 
     let (session_id, client_session) = ctrl.sessions.iter_mut().find(|(_, session)| {
@@ -737,13 +737,7 @@ async fn real_main(cli: cli::Cli) -> Result<()> {
     let listener = create_listening_socket(&config)?;
     let webclient_override = config.webclient().map(PathBuf::from);
 
-    let ctrl = web::Data::new(Mutex::new(Controller::new(
-        process_factory.clone(),
-        config,
-        tls_config,
-    )));
-
-    let statemachine = StateMachine::new(ctrl.clone())?;
+    let (ctrl, _state_machine) = Controller::new(process_factory.clone(), config, tls_config);
 
     // Spawn the AVServicesManager background tasks (IDR dispatcher, AV reaper).
     // Must run before any session opens. The returned handle carries the
@@ -760,7 +754,7 @@ async fn real_main(cli: cli::Cli) -> Result<()> {
         let watchdog = if ctrl.config.watchdog() {
             info!("Starting watchdog");
             let (watchdog, displays) =
-                watchdog::Watchdog::new(&process_factory, statemachine.create_proxy()).await?;
+                watchdog::Watchdog::new(&process_factory, ctrl.state_machine_proxy.clone()).await?;
 
             info!("Got initial displays: {displays:?}");
             ctrl.displays = displays;
@@ -769,9 +763,6 @@ async fn real_main(cli: cli::Cli) -> Result<()> {
             warn!("Watchdog disabled in config! Audio and video disabled.");
             None
         };
-
-        // Configure StateMachine listener
-        ctrl.state_machine_proxy = Some(statemachine.create_proxy());
 
         watchdog
     };

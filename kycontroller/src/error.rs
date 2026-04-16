@@ -100,8 +100,6 @@ pub enum Error {
     },
     #[error("Invalid configuration: {reason}")]
     InvalidConfig { reason: String },
-    #[error("No statemachine proxy")]
-    NotStateMachineProxy,
     // Tray errors are only used on Windows with win32-tray feature
     #[allow(dead_code)]
     #[error("Tray not supported on this platform")]

@@ -22,6 +22,7 @@ use std::collections::HashMap;
 use std::mem;
 use std::sync::Arc;
 
+use actix_web::web;
 use kymux::kyproto;
 use log::{info, warn};
 use time::OffsetDateTime;
@@ -39,11 +40,11 @@ use crate::error::{Error, Result};
 use crate::inputservice;
 use crate::kymux_controller::{KymuxBackend, SharedKymuxInfra};
 use crate::session::ClientAuthTokens;
+use crate::statemachine::{self, StateMachineProxy};
 use crate::tls;
 use crate::utils::Task;
 use crate::ws::WebsocketBackend;
 use crate::HostEventSender;
-use crate::StateMachineProxy;
 
 use crate::tray::{TrayHandle, TrayStatus};
 
@@ -216,7 +217,7 @@ pub struct Controller {
 
     pub(crate) sessions: HashMap<Uuid, ClientSession>,
 
-    pub(crate) state_machine_proxy: Option<StateMachineProxy>,
+    pub(crate) state_machine_proxy: StateMachineProxy,
 
     // Shared Kymux infrastructure (unified server supporting both QUIC and WebTransport on same port)
     // Always exists but can be in stopped or running state internally
@@ -237,20 +238,24 @@ impl Controller {
         process_factory: Arc<ProcessFactory>,
         config: config::Config,
         tls_config: tls::Config,
-    ) -> Self {
-        Self {
+    ) -> (web::Data<tokio::sync::Mutex<Self>>, Task) {
+        let (events_tx, events_rx) = tokio::sync::mpsc::channel(32);
+
+        let this = web::Data::new(tokio::sync::Mutex::new(Self {
             process_factory,
             displays: vec![],
             config,
             tls_config,
             sessions: HashMap::new(),
-            state_machine_proxy: None,
+            state_machine_proxy: StateMachineProxy::new(events_tx),
             shared_kymux_infra: Arc::new(tokio::sync::Mutex::new(SharedKymuxInfra::new())),
             tray_handle: None,
             kycom: None,
             next_ws_endpoint_id: 0x8000,
             av_services_manager: Default::default(),
-        }
+        }));
+        let state_machine = statemachine::run(this.clone(), events_rx);
+        (this, state_machine)
     }
 
     /// Set the tray handle for status updates.
@@ -414,11 +419,5 @@ impl Controller {
 
     pub(crate) fn display_known(&self, display_id: u32) -> bool {
         self.displays.iter().any(|d| d.id == display_id)
-    }
-
-    pub(crate) fn state_machine_proxy(&self) -> Result<StateMachineProxy> {
-        self.state_machine_proxy
-            .clone()
-            .ok_or(Error::NotStateMachineProxy)
     }
 }
