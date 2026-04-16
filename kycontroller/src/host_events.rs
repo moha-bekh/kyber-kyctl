@@ -34,7 +34,7 @@ pub(crate) const KEEPCNT: u64 = 3;
 struct PingTask {
     session_id: uuid::Uuid,
     ping_rx: mpsc::Receiver<u64>,
-    events_tx: mpsc::Sender<HostEventFrame>,
+    events_tx: mpsc::UnboundedSender<HostEventFrame>,
     statemachine_proxy: StateMachineProxy,
 }
 
@@ -68,7 +68,7 @@ impl PingTask {
                     } else {
                         let msg = HostEventFrame::Ping { id };
 
-                        let ret = self.events_tx.send(msg).await;
+                        let ret = self.events_tx.send(msg);
                         if let Err(err) = ret {
                             warn!("Failed to Ping({id}): {err:?}");
                             break;
@@ -184,7 +184,7 @@ enum HostEventFrame {
 }
 
 pub(crate) struct HostEventSender {
-    events_tx: mpsc::Sender<HostEventFrame>,
+    events_tx: mpsc::UnboundedSender<HostEventFrame>,
     _task: Task,
 }
 
@@ -195,7 +195,7 @@ impl HostEventSender {
         msg_stream: actix_ws::MessageStream,
         statemachine_proxy: StateMachineProxy,
     ) -> Self {
-        let (events_tx, events_rx) = mpsc::channel(32);
+        let (events_tx, events_rx) = mpsc::unbounded_channel();
 
         let _task = Task::spawn_local(Self::task_entry(
             session_id,
@@ -209,17 +209,9 @@ impl HostEventSender {
         Self { events_tx, _task }
     }
 
-    pub(crate) async fn send(&self, event: HostEvent) {
-        let ret = self.events_tx.send(HostEventFrame::Event { event }).await;
-        if let Err(err) = ret {
+    pub(crate) fn send(&self, event: HostEvent) {
+        if let Err(err) = self.events_tx.send(HostEventFrame::Event { event }) {
             warn!("Failed to send event {err:?}");
-        }
-    }
-
-    /// Non-blocking send. Use when holding a lock to avoid blocking other requests.
-    pub(crate) fn try_send(&self, event: HostEvent) {
-        if let Err(err) = self.events_tx.try_send(HostEventFrame::Event { event }) {
-            warn!("Failed to send event (non-blocking): {err:?}");
         }
     }
 
@@ -227,8 +219,8 @@ impl HostEventSender {
         session_id: uuid::Uuid,
         session: actix_ws::Session,
         msg_stream: actix_ws::MessageStream,
-        events_tx: mpsc::Sender<HostEventFrame>,
-        events_rx: mpsc::Receiver<HostEventFrame>,
+        events_tx: mpsc::UnboundedSender<HostEventFrame>,
+        events_rx: mpsc::UnboundedReceiver<HostEventFrame>,
         statemachine_proxy: StateMachineProxy,
     ) {
         let (ping_task_tx, ping_task_rx) = mpsc::channel(32);
@@ -301,7 +293,7 @@ impl HostEventSender {
     async fn process_tx_events(
         session_id: uuid::Uuid,
         mut session: actix_ws::Session,
-        mut events_rx: mpsc::Receiver<HostEventFrame>,
+        mut events_rx: mpsc::UnboundedReceiver<HostEventFrame>,
         statemachine_proxy: StateMachineProxy,
     ) {
         while let Some(msg) = events_rx.recv().await {

@@ -432,7 +432,7 @@ async fn websocket_service(
             return;
         };
 
-        sender.send(HostEvent::DisplayList { displays }).await;
+        sender.send(HostEvent::DisplayList { displays });
 
         let mut ctrl = ctrl.lock().await;
         if let Some(client_session) = ctrl.sessions.get_mut(&session_id) {
@@ -587,8 +587,7 @@ pub(crate) async fn set_bitrate(
             .host_event_sender
             .send(HostEvent::BitrateChanged {
                 bitrate: request.bitrate,
-            })
-            .await;
+            });
     }
 
     HttpResponse::Ok().finish()

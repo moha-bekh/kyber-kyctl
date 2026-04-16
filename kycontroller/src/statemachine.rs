@@ -53,7 +53,7 @@ fn route_to_subscribers(ctrl: &Controller, stream_id: &StreamId, event: &HostEve
                 .is_some_and(|sub| sub.key() == key),
         };
         if matches {
-            streaming_session.host_event_sender.try_send(event.clone());
+            streaming_session.host_event_sender.send(event.clone());
         }
     }
 }
@@ -140,7 +140,7 @@ impl StateMachine {
                         if let Some(streaming_session) = &session.stream_session {
                             streaming_session
                                 .host_event_sender
-                                .try_send(HostEvent::DisplayList {
+                                .send(HostEvent::DisplayList {
                                     displays: displays.convert(),
                                 });
                         }
@@ -201,7 +201,7 @@ impl StateMachine {
                     let host_event = HostEvent::StreamerPipelineEvent(event.into());
                     if let Some(session) = ctrl.sessions.get(&sid) {
                         if let Some(streaming_session) = &session.stream_session {
-                            streaming_session.host_event_sender.try_send(host_event);
+                            streaming_session.host_event_sender.send(host_event);
                         }
                     }
                 }
@@ -240,7 +240,7 @@ impl StateMachine {
                         (None, Some(sid)) => {
                             if let Some(session) = ctrl.sessions.get(&sid) {
                                 if let Some(streaming_session) = &session.stream_session {
-                                    streaming_session.host_event_sender.try_send(event);
+                                    streaming_session.host_event_sender.send(event);
                                 }
                             }
                         }
@@ -249,7 +249,7 @@ impl StateMachine {
                         (None, None) => {
                             for session in ctrl.sessions.values() {
                                 if let Some(streaming_session) = &session.stream_session {
-                                    streaming_session.host_event_sender.try_send(event.clone());
+                                    streaming_session.host_event_sender.send(event.clone());
                                 }
                             }
                         }
