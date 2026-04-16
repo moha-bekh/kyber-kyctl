@@ -93,5 +93,7 @@ async fn check_expiration(ctrl: &web::Data<Controller>) {
     .await;
 
     // Cleanup expired pending auth tokens in shared Kymux infrastructure
-    ctrl.shared_kymux_infra.lock().await.cleanup_expired().await;
+    if let Some(kymux) = &*ctrl.shared_kymux_infra.lock().await {
+        kymux.cleanup_expired();
+    }
 }

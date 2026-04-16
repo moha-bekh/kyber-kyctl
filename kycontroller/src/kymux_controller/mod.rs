@@ -73,39 +73,18 @@ pub(crate) struct KymuxInfraConfig {
     pub(crate) private_key: rustls::pki_types::PrivateKeyDer<'static>,
 }
 
-/// Running state of the Kymux infrastructure
-struct RunningInfra {
+/// Shared infrastructure for all Kymux sessions (common server supports both QUIC and WebTransport)
+///
+/// This object holds the server, kycom, and router.
+pub(crate) struct SharedKymuxInfra {
     server: KymuxServer,
     certificate_hash: Option<requests::StartKymuxCertificateHash>,
     router: Arc<std::sync::Mutex<IncomingConnectionRouter>>,
 }
 
-/// Shared infrastructure for all Kymux sessions (common server supports both QUIC and WebTransport)
-///
-/// This object is always alive but can be in a "stopped" or "running" state internally.
-/// When stopped, it's an empty shell. When running, it holds the server and router.
-/// kycom lives on the Controller (not here) since it's shared across all data-plane
-/// backends (Kymux, WS, RTP), not only Kymux sessions.
-pub(crate) struct SharedKymuxInfra {
-    inner: Option<RunningInfra>,
-}
-
 impl SharedKymuxInfra {
-    pub(crate) fn new() -> Self {
-        Self { inner: None }
-    }
-
-    /// Start the infrastructure if not already running. Returns the certificate_hash.
-    pub(crate) async fn start(
-        &mut self,
-        config: KymuxInfraConfig,
-    ) -> Result<Option<StartKymuxCertificateHash>> {
-        if let Some(ref inner) = self.inner {
-            // Already running, return existing config
-            info!("Reusing existing shared Kymux common infrastructure");
-            return Ok(inner.certificate_hash.clone());
-        }
-
+    /// Start the infrastructure.
+    pub(crate) async fn start(config: KymuxInfraConfig) -> Result<Self> {
         let ip_addr = match config.listen_mode {
             ListenMode::Ipv4 => IpAddr::V4(Ipv4Addr::UNSPECIFIED),
             // Enable dual-stack: accept both IPv4 and IPv6 on this socket.
@@ -153,44 +132,28 @@ impl SharedKymuxInfra {
         let router = Arc::new(std::sync::Mutex::new(IncomingConnectionRouter::new()));
 
         // Create the server with the router
-        let kymux_server = KymuxServer::new(server, router.clone()).await?;
+        let server = KymuxServer::new(server, router.clone()).await;
 
-        self.inner = Some(RunningInfra {
-            server: kymux_server,
+        Ok(Self {
+            server,
             certificate_hash: certificate_hash.clone(),
             router,
-        });
-
-        Ok(certificate_hash)
+        })
     }
 
     /// Stop the infrastructure if running. No-op if already stopped.
-    pub(crate) async fn stop(&mut self) -> Result<()> {
-        let Some(inner) = self.inner.take() else {
-            return Ok(());
-        };
-
+    pub(crate) async fn stop(self) -> Result<()> {
         info!("Stopping shared Kymux infrastructure");
 
         info!("Stopping Kymux server");
-        inner.server.stop().await?;
+        self.server.stop().await?;
 
         Ok(())
     }
 
-    /// Get reference to router. Returns error if not running.
-    pub(crate) fn router(&self) -> Result<&Arc<std::sync::Mutex<IncomingConnectionRouter>>> {
-        self.inner
-            .as_ref()
-            .map(|i| &i.router)
-            .ok_or(Error::KymuxNotListening)
-    }
-
     /// Cleanup expired tokens in the router. No-op if not running.
-    pub(crate) async fn cleanup_expired(&self) {
-        if let Some(ref inner) = self.inner {
-            inner.router.lock().unwrap().cleanup_expired();
-        }
+    pub(crate) fn cleanup_expired(&self) {
+        self.router.lock().unwrap().cleanup_expired();
     }
 }
 
@@ -239,23 +202,23 @@ async fn start_kymux(
         private_key: ctrl.tls_config.private_key.clone_key(),
     };
 
-    // Start infrastructure (no-op if already running)
-    let certificate_hash = ctrl
-        .shared_kymux_infra
-        .lock()
-        .await
-        .start(infra_config)
-        .await?;
+    let mut shared_kymux_infra = ctrl.shared_kymux_infra.lock().await;
+
+    // Start infrastructure if not running
+    let kymux = match &mut *shared_kymux_infra {
+        Some(kymux) => kymux,
+        kymux @ None => kymux.insert(SharedKymuxInfra::start(infra_config).await?),
+    };
 
     // Register session: creates pending_auth + oneshot channel
-    let connection_rx = ctrl
-        .shared_kymux_infra
-        .lock()
-        .await
-        .router()?
+    let connection_rx = kymux
+        .router
         .lock()
         .unwrap()
         .register_session(token.clone(), session_id);
+
+    let certificate_hash = kymux.certificate_hash.clone();
+    drop(shared_kymux_infra);
 
     let mut session = ctrl.get_session(&session_id).await?;
     let Some(stream_session) = &mut session.stream_session else {

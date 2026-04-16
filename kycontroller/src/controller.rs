@@ -184,9 +184,9 @@ pub struct Controller {
 
     pub(crate) state_machine_proxy: StateMachineProxy,
 
-    // Shared Kymux infrastructure (unified server supporting both QUIC and WebTransport on same port)
-    // Always exists but can be in stopped or running state internally
-    pub(crate) shared_kymux_infra: Arc<AsyncMutex<SharedKymuxInfra>>,
+    /// Shared Kymux infrastructure (unified server supporting both QUIC and WebTransport on same port)
+    /// `None` if not running
+    pub(crate) shared_kymux_infra: AsyncMutex<Option<SharedKymuxInfra>>,
     tray_handle: Mutex<Option<TrayHandle>>,
 
     // Shared kycom instance for all backends (IPC bridge to avserver/inputserver processes)
@@ -214,7 +214,7 @@ impl Controller {
             tls_config,
             sessions: AsyncMutex::new(HashMap::new()),
             state_machine_proxy: StateMachineProxy::new(events_tx),
-            shared_kymux_infra: Arc::new(tokio::sync::Mutex::new(SharedKymuxInfra::new())),
+            shared_kymux_infra: Default::default(),
             tray_handle: Mutex::new(None),
             kycom: Default::default(),
             next_ws_endpoint_id: atomic::AtomicU16::new(0x8000),
@@ -308,8 +308,10 @@ impl Controller {
 
     async fn cleanup_removed_session(&self, no_sessions: bool) {
         if no_sessions {
-            if let Err(err) = self.shared_kymux_infra.lock().await.stop().await {
-                warn!("Failed to stop shared Kymux infrastructure: {err:?}");
+            if let Some(infra) = self.shared_kymux_infra.lock().await.take() {
+                if let Err(err) = infra.stop().await {
+                    warn!("Failed to stop shared Kymux infrastructure: {err:?}");
+                }
             }
 
             let no_streams = {

@@ -150,7 +150,7 @@ impl KymuxServer {
     pub(crate) async fn new(
         server: Box<dyn kynet::Server>,
         router: Arc<Mutex<IncomingConnectionRouter>>,
-    ) -> Result<Self> {
+    ) -> Self {
         let server: Arc<dyn kynet::Server> = Arc::from(server);
         let server_task = server.clone();
 
@@ -160,7 +160,7 @@ impl KymuxServer {
             }
         });
 
-        Ok(Self { server, _task })
+        Self { server, _task }
     }
 
     pub(crate) async fn stop(self) -> Result<()> {
