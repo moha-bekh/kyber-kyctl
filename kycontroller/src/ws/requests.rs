@@ -21,7 +21,6 @@
 use actix_web::{get, post, web, HttpRequest, HttpResponse};
 use log::info;
 use serde::{Deserialize, Serialize};
-use tokio::sync::Mutex;
 
 use kyavservice_types::VideoCodec;
 use kynputservice_types::CursorFormat;
@@ -60,7 +59,7 @@ pub struct StartResponse {
 
 #[post("/start")]
 async fn start_handler(
-    ctrl: web::Data<Mutex<Controller>>,
+    ctrl: web::Data<Controller>,
     request: web::Json<StartRequest>,
     user: Identity,
 ) -> HttpResponse {
@@ -89,7 +88,7 @@ async fn start_handler(
 }
 
 async fn ws_service_handler(
-    ctrl: web::Data<Mutex<Controller>>,
+    ctrl: web::Data<Controller>,
     request: HttpRequest,
     stream: web::Payload,
     user: Identity,
@@ -124,7 +123,7 @@ async fn ws_service_handler(
 
 #[get("/video")]
 async fn video(
-    ctrl: web::Data<Mutex<Controller>>,
+    ctrl: web::Data<Controller>,
     request: HttpRequest,
     stream: web::Payload,
     user: Identity,
@@ -142,7 +141,7 @@ async fn video(
 
 #[get("/audio")]
 async fn audio(
-    ctrl: web::Data<Mutex<Controller>>,
+    ctrl: web::Data<Controller>,
     request: HttpRequest,
     stream: web::Payload,
     user: Identity,
@@ -160,7 +159,7 @@ async fn audio(
 
 #[get("/inputs")]
 async fn inputs(
-    ctrl: web::Data<Mutex<Controller>>,
+    ctrl: web::Data<Controller>,
     request: HttpRequest,
     stream: web::Payload,
     user: Identity,

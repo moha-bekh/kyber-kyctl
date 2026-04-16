@@ -73,7 +73,6 @@ use crate::controller::Controller;
 
 use actix_web::dev::ServerHandle;
 use log::{error, info};
-use tokio::sync::Mutex;
 
 /// Spawn the system tray and wait for a command.
 ///
@@ -85,12 +84,12 @@ use tokio::sync::Mutex;
 /// Tray initialization failure is non-fatal — the controller continues
 /// without a tray icon. The tray will re-create itself when Explorer
 /// broadcasts the TaskbarCreated message (e.g. after screen unlock).
-pub async fn run(ctrl: actix_web::web::Data<Mutex<Controller>>, server_handle: ServerHandle) {
+pub async fn run(ctrl: actix_web::web::Data<Controller>, server_handle: ServerHandle) {
     let mut shutdown_rx = match spawn() {
         Ok((tray_handle, rx)) => {
             info!("System tray initialized");
             tray_handle.set_status(TrayStatus::idle());
-            ctrl.lock().await.set_tray_handle(tray_handle);
+            ctrl.set_tray_handle(tray_handle);
             rx
         }
         Err(e) => {
@@ -107,7 +106,7 @@ pub async fn run(ctrl: actix_web::web::Data<Mutex<Controller>>, server_handle: S
     match signal {
         TrayCommand::Stop => {
             info!("Stop signal received");
-            ctrl.lock().await.signal_service_stop();
+            ctrl.signal_service_stop();
             server_handle.stop(false).await;
         }
         TrayCommand::Restart => {

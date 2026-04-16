@@ -30,7 +30,7 @@ use crate::utils::TypeConvert;
 use crate::{avservice, inputservice, Controller, DataPlaneBackend};
 
 pub async fn generate_video_sdp(
-    ctrl: &mut Controller,
+    ctrl: &Controller,
     request: requests::GenerateSdpRequest,
 ) -> Result<String> {
     avservice::Handler::rtp_generate_video_sdp(
@@ -43,11 +43,11 @@ pub async fn generate_video_sdp(
 }
 
 pub async fn start(
-    ctrl: &mut Controller,
+    ctrl: &Controller,
     session_id: uuid::Uuid,
     request: requests::StartRequest,
 ) -> Result<()> {
-    let displays = ctrl.displays.convert();
+    let displays = ctrl.displays.lock().unwrap().convert();
 
     // Start services first (before accessing session)
     let mut avservice_video = None;
@@ -111,15 +111,14 @@ pub async fn start(
     }
 
     // Single session access to store all services
-    let client_session = ctrl.get_session(&session_id)?;
-
+    let mut client_session = ctrl.get_session(&session_id).await?;
     if let Some(avservice) = avservice_video {
         client_session.services.video = vec![avservice];
     }
     client_session.services.audio = avservice_audio;
     client_session.services.input = inputservice_handler;
 
-    let Some(streaming_session) = client_session.stream_session.as_mut() else {
+    let Some(streaming_session) = &mut client_session.stream_session else {
         return Err(Error::ControlPlaneNotOpened);
     };
 

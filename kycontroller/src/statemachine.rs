@@ -20,7 +20,7 @@
 
 use actix_web::web;
 use log::{info, warn};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::avservices_manager::StreamId;
@@ -35,8 +35,8 @@ use crate::{Controller, HostEvent};
 /// Several streams may target the same display (mono multi-session, or an
 /// exclusive stream alongside a shared one); matching by stream identity
 /// rather than by display keeps each session's events isolated.
-fn route_to_subscribers(ctrl: &Controller, stream_id: &StreamId, event: &HostEvent) {
-    for session in ctrl.sessions.values() {
+async fn route_to_subscribers(ctrl: &Controller, stream_id: &StreamId, event: &HostEvent) {
+    for session in ctrl.sessions.lock().await.values() {
         let Some(streaming_session) = &session.stream_session else {
             continue;
         };
@@ -107,7 +107,7 @@ impl StateMachineProxy {
 }
 
 pub(crate) fn run(
-    ctrl: web::Data<Mutex<Controller>>,
+    ctrl: web::Data<Controller>,
     events_rx: mpsc::Receiver<StateMachineEvent>,
 ) -> Task {
     Task::spawn(StateMachine::process_events(ctrl, events_rx))
@@ -118,7 +118,7 @@ struct StateMachine;
 impl StateMachine {
     #[allow(clippy::single_match)]
     async fn process_events(
-        ctrl: web::Data<Mutex<Controller>>,
+        ctrl: web::Data<Controller>,
         mut events_rx: mpsc::Receiver<StateMachineEvent>,
     ) {
         while let Some(evt) = events_rx.recv().await {
@@ -132,11 +132,10 @@ impl StateMachine {
                         "Got display update (session: {:?}): {displays:?}",
                         session_id
                     );
-                    let mut ctrl = ctrl.lock().await;
 
                     // Broadcast display list to all sessions (non-blocking to avoid
                     // holding the lock while a slow client backs up the channel)
-                    for session in ctrl.sessions.values() {
+                    for session in ctrl.sessions.lock().await.values() {
                         if let Some(streaming_session) = &session.stream_session {
                             streaming_session
                                 .host_event_sender
@@ -154,7 +153,7 @@ impl StateMachine {
                     match session_id {
                         // Global event (e.g., from watchdog): update all inputservices
                         None => {
-                            for session in ctrl.sessions.values_mut() {
+                            for session in ctrl.sessions.lock().await.values_mut() {
                                 if let Some(inputservice) = session.services.input.as_mut() {
                                     if let Err(err) =
                                         inputservice.update_host_config(host_config.clone()).await
@@ -166,7 +165,7 @@ impl StateMachine {
                         }
                         // Session-specific event: update only that session's inputservice
                         Some(sid) => {
-                            if let Some(session) = ctrl.sessions.get_mut(&sid) {
+                            if let Ok(mut session) = ctrl.get_session(&sid).await {
                                 if let Some(inputservice) = session.services.input.as_mut() {
                                     if let Err(err) =
                                         inputservice.update_host_config(host_config).await
@@ -178,7 +177,7 @@ impl StateMachine {
                         }
                     }
 
-                    ctrl.displays = displays;
+                    *ctrl.displays.lock().unwrap() = displays;
                 }
                 // AVServicesManager stream (shared or exclusive): route to
                 // every session subscribed to this exact stream.
@@ -187,9 +186,8 @@ impl StateMachine {
                     event: kyavservice_types::Event::PipelineEvent(event),
                     ..
                 } => {
-                    let ctrl = ctrl.lock().await;
                     let host_event = HostEvent::StreamerPipelineEvent(event.into());
-                    route_to_subscribers(&ctrl, &stream_id, &host_event);
+                    route_to_subscribers(&ctrl, &stream_id, &host_event).await;
                 }
                 // Legacy per-session avservice (RTP): send to that session only.
                 StateMachineEvent::AvService {
@@ -197,9 +195,8 @@ impl StateMachine {
                     stream_id: None,
                     event: kyavservice_types::Event::PipelineEvent(event),
                 } => {
-                    let ctrl = ctrl.lock().await;
                     let host_event = HostEvent::StreamerPipelineEvent(event.into());
-                    if let Some(session) = ctrl.sessions.get(&sid) {
+                    if let Ok(session) = ctrl.get_session(&sid).await {
                         if let Some(streaming_session) = &session.stream_session {
                             streaming_session.host_event_sender.send(host_event);
                         }
@@ -228,17 +225,15 @@ impl StateMachine {
                             event: host_events::StreamerPipelineEventType::Stopped,
                         });
 
-                    let ctrl = ctrl.lock().await;
-
                     match (stream_id, session_id) {
                         // AVServicesManager stream (shared or exclusive): reach
                         // the sessions subscribed to this exact stream.
                         (Some(stream_id), _) => {
-                            route_to_subscribers(&ctrl, &stream_id, &event);
+                            route_to_subscribers(&ctrl, &stream_id, &event).await;
                         }
                         // Legacy per-session (RTP): notify that session only.
                         (None, Some(sid)) => {
-                            if let Some(session) = ctrl.sessions.get(&sid) {
+                            if let Ok(session) = ctrl.get_session(&sid).await {
                                 if let Some(streaming_session) = &session.stream_session {
                                     streaming_session.host_event_sender.send(event);
                                 }
@@ -247,7 +242,7 @@ impl StateMachine {
                         // Global handler (e.g. watchdog display enumeration):
                         // broadcast to every session.
                         (None, None) => {
-                            for session in ctrl.sessions.values() {
+                            for session in ctrl.sessions.lock().await.values() {
                                 if let Some(streaming_session) = &session.stream_session {
                                     streaming_session.host_event_sender.send(event.clone());
                                 }
@@ -262,21 +257,8 @@ impl StateMachine {
                     host_events::Notification::ConnectionLost => {
                         warn!("Control Websocket disconnected for session {}", session_id);
 
-                        // Take session under lock, then stop outside to avoid
-                        // blocking /login and other requests during teardown
-                        let cleanup = {
-                            let mut ctrl = ctrl.lock().await;
-                            ctrl.take_session(session_id)
-                        };
-
-                        match cleanup {
-                            Ok(cleanup) => {
-                                cleanup.run().await;
-                                ctrl.lock().await.update_tray_status().await;
-                            }
-                            Err(err) => {
-                                warn!("Fail to stop session {}: {err:?}", session_id)
-                            }
+                        if let Err(err) = ctrl.remove_session(session_id).await {
+                            warn!("Fail to stop session {session_id}: {err:?}")
                         }
                     }
                 },

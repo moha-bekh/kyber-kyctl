@@ -20,13 +20,14 @@
 
 use std::collections::HashMap;
 use std::mem;
-use std::sync::Arc;
+use std::ops::DerefMut;
+use std::sync::{atomic, Arc, Mutex};
 
 use actix_web::web;
 use kymux::kyproto;
 use log::{info, warn};
 use time::OffsetDateTime;
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, Mutex as AsyncMutex};
 use uuid::Uuid;
 
 use kyavservice_types::Display;
@@ -72,50 +73,6 @@ impl StreamingSession {
             pending_kymux_rx: None,
         }
     }
-
-    pub(crate) fn stop_dataplane(&mut self) {
-        self.data_plane = None;
-    }
-
-    pub(crate) fn stop(mut self) {
-        info!("Stop dataplane");
-        self.stop_dataplane();
-    }
-}
-
-/// Cleanup data for a fully removed session.
-///
-/// Holds all resources that need async teardown. Must be used OUTSIDE the
-/// Controller lock to avoid blocking concurrent requests.
-pub(crate) struct SessionCleanup {
-    session: ClientSession,
-    should_stop_infra: bool,
-    infra: Arc<tokio::sync::Mutex<SharedKymuxInfra>>,
-    /// Idle kycom taken under the lock; stopped here so its TCP listener
-    /// teardown doesn't block other endpoints on the Controller mutex.
-    kycom_to_stop: Option<kymux::kycom::KyCom>,
-}
-
-impl SessionCleanup {
-    pub(crate) async fn run(mut self) {
-        info!("Stop session {}", self.session.uid);
-
-        if let Some(stream_session) = self.session.stream_session.take() {
-            stream_session.stop();
-        }
-
-        if let Err(err) = self.session.services.stop().await {
-            warn!("Failed to stop streaming services: {err:?}");
-        }
-
-        drop(self.kycom_to_stop);
-
-        if self.should_stop_infra {
-            if let Err(err) = self.infra.lock().await.stop().await {
-                warn!("Failed to stop shared Kymux infrastructure: {err:?}");
-            }
-        }
-    }
 }
 
 /// Cleanup data for stopping streaming without removing the session.
@@ -152,6 +109,14 @@ impl ClientSession {
             auth_tokens: ClientAuthTokens::generate(),
             stream_session: None,
             services: Default::default(),
+        }
+    }
+
+    async fn stop(self) {
+        info!("Stop session {}", self.uid);
+
+        if let Err(err) = self.services.stop().await {
+            warn!("Failed to stop streaming services: {err:?}");
         }
     }
 }
@@ -210,27 +175,28 @@ impl StreamingServices {
 pub struct Controller {
     pub(crate) process_factory: Arc<ProcessFactory>,
 
-    pub(crate) displays: Vec<Display>,
+    pub(crate) displays: Mutex<Vec<Display>>,
 
     pub(crate) config: config::Config,
     pub(crate) tls_config: tls::Config,
 
-    pub(crate) sessions: HashMap<Uuid, ClientSession>,
+    pub(crate) sessions: AsyncMutex<HashMap<Uuid, ClientSession>>,
 
     pub(crate) state_machine_proxy: StateMachineProxy,
 
     // Shared Kymux infrastructure (unified server supporting both QUIC and WebTransport on same port)
     // Always exists but can be in stopped or running state internally
-    pub(crate) shared_kymux_infra: Arc<tokio::sync::Mutex<SharedKymuxInfra>>,
-    pub(crate) tray_handle: Option<TrayHandle>,
+    pub(crate) shared_kymux_infra: Arc<AsyncMutex<SharedKymuxInfra>>,
+    tray_handle: Mutex<Option<TrayHandle>>,
 
     // Shared kycom instance for all backends (IPC bridge to avserver/inputserver processes)
-    pub(crate) kycom: Option<kymux::kycom::KyCom>,
+    pub(crate) kycom: AsyncMutex<Option<kymux::kycom::KyCom>>,
     /// Counter for allocating kycom endpoint IDs (WS backend; Kymux uses kyproto's allocator)
-    pub(crate) next_ws_endpoint_id: u16,
+    pub(crate) next_ws_endpoint_id: atomic::AtomicU16,
 
     // Shared AV services: avservers and duplicators shared across clients
-    pub(crate) av_services_manager: AVServicesManager,
+    /// Must always be taken after `kycom`.
+    pub(crate) av_services_manager: AsyncMutex<AVServicesManager>,
 }
 
 impl Controller {
@@ -238,73 +204,69 @@ impl Controller {
         process_factory: Arc<ProcessFactory>,
         config: config::Config,
         tls_config: tls::Config,
-    ) -> (web::Data<tokio::sync::Mutex<Self>>, Task) {
+    ) -> (web::Data<Self>, Task) {
         let (events_tx, events_rx) = tokio::sync::mpsc::channel(32);
 
-        let this = web::Data::new(tokio::sync::Mutex::new(Self {
+        let this = web::Data::new(Self {
             process_factory,
-            displays: vec![],
+            displays: Mutex::new(vec![]),
             config,
             tls_config,
-            sessions: HashMap::new(),
+            sessions: AsyncMutex::new(HashMap::new()),
             state_machine_proxy: StateMachineProxy::new(events_tx),
             shared_kymux_infra: Arc::new(tokio::sync::Mutex::new(SharedKymuxInfra::new())),
-            tray_handle: None,
-            kycom: None,
-            next_ws_endpoint_id: 0x8000,
+            tray_handle: Mutex::new(None),
+            kycom: Default::default(),
+            next_ws_endpoint_id: atomic::AtomicU16::new(0x8000),
             av_services_manager: Default::default(),
-        }));
+        });
         let state_machine = statemachine::run(this.clone(), events_rx);
         (this, state_machine)
     }
 
     /// Set the tray handle for status updates.
-    pub(crate) fn set_tray_handle(&mut self, handle: TrayHandle) {
-        self.tray_handle = Some(handle);
+    pub(crate) fn set_tray_handle(&self, handle: TrayHandle) {
+        *self.tray_handle.lock().unwrap() = Some(handle);
     }
 
     /// Signal the Windows service to stop.
     ///
     /// Delegates to the tray handle if available; no-op otherwise.
     pub(crate) fn signal_service_stop(&self) {
-        if let Some(ref tray) = self.tray_handle {
+        if let Some(tray) = &*self.tray_handle.lock().unwrap() {
             tray.signal_service_stop();
         }
     }
 
     /// Update the system tray status.
-    pub(crate) async fn update_tray_status(&mut self) {
-        let Some(ref tray) = self.tray_handle else {
-            return;
-        };
+    pub(crate) async fn update_tray_status(&self) {
+        let clients = self
+            .sessions
+            .lock()
+            .await
+            .values()
+            .map(|s| s.username.clone())
+            .collect();
 
-        let clients = self.sessions.values().map(|s| s.username.clone()).collect();
-        tray.set_status(TrayStatus { clients });
+        if let Some(tray) = &mut *self.tray_handle.lock().unwrap() {
+            tray.set_status(TrayStatus { clients });
+        };
     }
 
     /// Shutdown the system tray (removes the icon from taskbar).
-    pub(crate) fn shutdown_tray(&mut self) {
-        if let Some(mut tray) = self.tray_handle.take() {
+    pub(crate) fn shutdown_tray(&self) {
+        if let Some(mut tray) = self.tray_handle.lock().unwrap().take() {
             tray.shutdown();
         }
     }
 
     /// Ports for the shared kycom instance.
-    const KYCOM_PORTS: std::ops::Range<u16> = 9091..9110;
-
-    /// Start the shared kycom if not already running.
-    pub(crate) async fn ensure_kycom(&mut self) -> Result<()> {
-        if self.kycom.is_none() {
-            self.kycom = Some(kymux::kycom::KyCom::start_on_any_port(Self::KYCOM_PORTS).await?);
-        }
-        Ok(())
-    }
+    pub(crate) const KYCOM_PORTS: std::ops::Range<u16> = 9091..9110;
 
     /// Allocate a kycom endpoint ID for WS backend channels.
-    pub(crate) fn alloc_ws_endpoint_id(&mut self) -> u16 {
-        let id = self.next_ws_endpoint_id;
-        self.next_ws_endpoint_id = self.next_ws_endpoint_id.wrapping_add(1);
-        id
+    pub(crate) fn alloc_ws_endpoint_id(&self) -> u16 {
+        self.next_ws_endpoint_id
+            .fetch_add(1, atomic::Ordering::Relaxed)
     }
 
     /// Take ownership of the shared kycom iff no sessions and no AV streams
@@ -318,69 +280,90 @@ impl Controller {
     ///   * `take_session`, for the path where the session never had (or
     ///     already lost) its subscriptions, so the reaper wouldn't otherwise
     ///     be woken to clean up kycom.
-    pub(crate) fn try_take_idle_kycom(&mut self) -> Option<kymux::kycom::KyCom> {
-        if self.sessions.is_empty()
-            && self.av_services_manager.video_streams.is_empty()
-            && self.av_services_manager.audio_streams.is_empty()
-        {
-            self.kycom.take()
+    pub(crate) async fn try_take_idle_kycom(&self) -> Option<kymux::kycom::KyCom> {
+        let no_session = self.sessions.lock().await.is_empty();
+        let no_streams = {
+            let av_services_manager = self.av_services_manager.lock().await;
+            av_services_manager.video_streams.is_empty()
+                && av_services_manager.audio_streams.is_empty()
+        };
+        if no_session && no_streams {
+            self.kycom.lock().await.take()
         } else {
             None
         }
     }
 
-    pub fn get_session<'a>(&'a mut self, uid: &uuid::Uuid) -> Result<&'a mut ClientSession> {
-        self.sessions
-            .get_mut(uid)
-            .ok_or(Error::InvalidSession { uid: *uid })
+    pub async fn get_session(
+        &self,
+        uid: &uuid::Uuid,
+    ) -> Result<impl DerefMut<Target = ClientSession> + '_> {
+        tokio::sync::MutexGuard::try_map(self.sessions.lock().await, |s| s.get_mut(uid))
+            .map_err(|_| Error::InvalidSession { uid: *uid })
     }
 
-    /// Remove a session and prepare cleanup data.
-    ///
-    /// Returns a `SessionCleanup` that must be `.run().await`ed AFTER releasing
-    /// the Controller lock to avoid blocking concurrent requests like `/login`.
-    pub(crate) fn take_session(&mut self, session_id: Uuid) -> Result<SessionCleanup> {
-        info!("Preparing stop session {}", session_id);
+    pub(crate) async fn insert_session(&self, session: ClientSession) {
+        self.sessions.lock().await.insert(session.uid, session);
+    }
 
-        let session = self
-            .sessions
+    async fn cleanup_removed_session(&self, no_sessions: bool) {
+        if no_sessions {
+            if let Err(err) = self.shared_kymux_infra.lock().await.stop().await {
+                warn!("Failed to stop shared Kymux infrastructure: {err:?}");
+            }
+
+            let no_streams = {
+                let av_services_manager = self.av_services_manager.lock().await;
+                av_services_manager.video_streams.is_empty()
+                    && av_services_manager.audio_streams.is_empty()
+            };
+            if no_streams {
+                *self.kycom.lock().await = None;
+            }
+        }
+
+        self.update_tray_status().await;
+    }
+
+    /// Remove a session.
+    pub(crate) async fn remove_session(&self, session_id: Uuid) -> Result<()> {
+        let mut sessions = self.sessions.lock().await;
+
+        let session = sessions
             .remove(&session_id)
             .ok_or(Error::InvalidSession { uid: session_id })?;
+        session.stop().await;
 
-        // Subscriptions on session.services.video_subscriptions /
-        // audio_subscription will drop when SessionCleanup.run() drops the
-        // ClientSession outside the lock, signalling the reaper to decrement
-        // the shared AV client_counts asynchronously. The reaper stops each
-        // shared avservice once its client_count hits 0; no need to stop
-        // them synchronously here (which would block the Controller lock).
-        //
-        // kycom teardown is deferred to the reaper too, so the avservers
-        // receive their libkypc Stop before their IPC TCP sockets disappear.
-        // We only stop kycom here in the corner case where the session had
-        // no subscriptions left to drop (e.g. it logged out after explicitly
-        // stopping streaming); without that, no reaper message would fire
-        // and kycom would leak until the next start_session.
-        let should_stop_infra = self.sessions.is_empty();
-        let kycom_to_stop = self.try_take_idle_kycom();
+        let no_sessions = sessions.is_empty();
+        drop(sessions);
 
-        let infra = self.shared_kymux_infra.clone();
+        self.cleanup_removed_session(no_sessions).await;
 
-        Ok(SessionCleanup {
-            session,
-            should_stop_infra,
-            infra,
-            kycom_to_stop,
-        })
+        Ok(())
+    }
+
+    /// Remove multiple sessions.
+    pub(crate) async fn remove_sessions_if(&self, mut f: impl FnMut(&ClientSession) -> bool) {
+        let mut sessions = self.sessions.lock().await;
+
+        for (_, session) in sessions.extract_if(|_, session| f(session)) {
+            session.stop().await;
+        }
+
+        let no_sessions = sessions.is_empty();
+        drop(sessions);
+
+        self.cleanup_removed_session(no_sessions).await;
     }
 
     /// Extract streaming resources for cleanup outside the lock.
     ///
     /// The session remains in the map but with empty services.
-    pub(crate) fn take_streaming(&mut self, session_id: Uuid) -> Result<StreamingCleanup> {
+    pub(crate) async fn take_streaming(&self, session_id: Uuid) -> Result<StreamingCleanup> {
         info!("Stop streaming for session {}", session_id);
 
-        let client_session = self
-            .sessions
+        let mut sessions = self.sessions.lock().await;
+        let client_session = sessions
             .get_mut(&session_id)
             .ok_or(Error::InvalidSession { uid: session_id })?;
 
@@ -400,9 +383,9 @@ impl Controller {
         })
     }
 
-    pub(crate) fn has_data_plane(&self, session_id: &Uuid) -> Result<bool> {
-        let client_session = self
-            .sessions
+    pub(crate) async fn has_data_plane(&self, session_id: &Uuid) -> Result<bool> {
+        let sessions = self.sessions.lock().await;
+        let client_session = sessions
             .get(session_id)
             .ok_or(Error::InvalidSession { uid: *session_id })?;
 
@@ -417,6 +400,10 @@ impl Controller {
     }
 
     pub(crate) fn display_known(&self, display_id: u32) -> bool {
-        self.displays.iter().any(|d| d.id == display_id)
+        self.displays
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|d| d.id == display_id)
     }
 }

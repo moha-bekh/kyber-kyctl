@@ -25,7 +25,8 @@ pub(crate) mod requests;
 use std::sync::Arc;
 
 use actix_web::web;
-use tokio::sync::{oneshot, Mutex};
+use kymux::kycom::KyCom;
+use tokio::sync::oneshot;
 
 use crate::config::SessionMode;
 use crate::inputservice;
@@ -185,7 +186,8 @@ struct AudioSetup {
 /// (avservice already plumbed straight into an `AVWebSocketEndpoint` that
 /// stalls until `/websocket/video` arrives).
 async fn setup_video(
-    ctrl: &mut Controller,
+    ctrl: &Controller,
+    kycom: &mut KyCom,
     session_id: uuid::Uuid,
     request: &requests::StartRequest,
     video_request: &requests::StartRequestVideo,
@@ -201,12 +203,12 @@ async fn setup_video(
     };
     let display_id = video_request.display_id;
 
+    let mut av_services_manager = ctrl.av_services_manager.lock().await;
+
     match mode {
         SessionMode::Multi => {
-            let kycom = ctrl.kycom.as_mut().expect("ensure_kycom guarantees Some");
             let topology = crate::avservices_manager::VideoTopology::Shared { display_id };
-            let acq = ctrl
-                .av_services_manager
+            let acq = av_services_manager
                 .acquire_video(
                     kycom,
                     topology,
@@ -225,7 +227,6 @@ async fn setup_video(
         }
         SessionMode::Mono => {
             let video_eid = ctrl.alloc_ws_endpoint_id();
-            let kycom = ctrl.kycom.as_mut().expect("ensure_kycom guarantees Some");
             let (endpoint, connection_tx) =
                 av::AVWebSocketEndpoint::<kymux::types::VideoServerProtocol>::new(video_eid);
             let kycom_uri = kycom
@@ -237,8 +238,7 @@ async fn setup_video(
                 display_id,
                 kycom_uri,
             };
-            let acq = ctrl
-                .av_services_manager
+            let acq = av_services_manager
                 .acquire_video(
                     kycom,
                     topology,
@@ -260,19 +260,20 @@ async fn setup_video(
 
 /// Audio counterpart of [`setup_video`].
 async fn setup_audio(
-    ctrl: &mut Controller,
+    ctrl: &Controller,
+    kycom: &mut KyCom,
     session_id: uuid::Uuid,
     process_factory: &Arc<libkypc::process::ProcessFactory>,
     mode: SessionMode,
 ) -> Result<AudioSetup> {
     let statemachine_proxy = ctrl.state_machine_proxy.clone();
 
+    let mut av_services_manager = ctrl.av_services_manager.lock().await;
+
     match mode {
         SessionMode::Multi => {
-            let kycom = ctrl.kycom.as_mut().expect("ensure_kycom guarantees Some");
             let topology = crate::avservices_manager::AudioTopology::Shared;
-            let acq = ctrl
-                .av_services_manager
+            let acq = av_services_manager
                 .acquire_audio(kycom, topology, process_factory, statemachine_proxy)
                 .await?;
             let dup = acq.dup.expect("Shared topology guarantees Some(dup)");
@@ -283,7 +284,6 @@ async fn setup_audio(
         }
         SessionMode::Mono => {
             let audio_eid = ctrl.alloc_ws_endpoint_id();
-            let kycom = ctrl.kycom.as_mut().expect("ensure_kycom guarantees Some");
             let (endpoint, connection_tx) =
                 av::AVWebSocketEndpoint::<kymux::types::AudioServerProtocol>::new(audio_eid);
             let kycom_uri = kycom
@@ -294,8 +294,7 @@ async fn setup_audio(
                 session_id,
                 kycom_uri,
             };
-            let acq = ctrl
-                .av_services_manager
+            let acq = av_services_manager
                 .acquire_audio(kycom, topology, process_factory, statemachine_proxy)
                 .await?;
             debug_assert!(acq.dup.is_none());
@@ -308,19 +307,21 @@ async fn setup_audio(
 }
 
 async fn start_handler(
-    ctrl: web::Data<Mutex<Controller>>,
+    ctrl: web::Data<Controller>,
     session_id: uuid::Uuid,
     request: &requests::StartRequest,
 ) -> Result<()> {
-    let mut ctrl = ctrl.lock().await;
-
     // Check if data plane is already opened for this session
-    if ctrl.has_data_plane(&session_id)? {
+    if ctrl.has_data_plane(&session_id).await? {
         return Err(Error::DataPlaneAlreadyOpened);
     }
 
     // Ensure shared kycom is running
-    ctrl.ensure_kycom().await?;
+    let mut kycom = ctrl.kycom.lock().await;
+    let kycom = match &mut *kycom {
+        Some(kycom) => kycom,
+        None => kycom.insert(KyCom::start_on_any_port(Controller::KYCOM_PORTS).await?),
+    };
 
     // Extract values before borrows
     let process_factory = ctrl.process_factory.clone();
@@ -329,7 +330,8 @@ async fn start_handler(
     let video_setup = if let Some(video_request) = request.video.as_ref() {
         Some(
             setup_video(
-                &mut ctrl,
+                &ctrl,
+                kycom,
                 session_id,
                 request,
                 video_request,
@@ -343,7 +345,7 @@ async fn start_handler(
     };
 
     let audio_setup = if request.audio {
-        Some(setup_audio(&mut ctrl, session_id, &process_factory, mode).await?)
+        Some(setup_audio(&ctrl, kycom, session_id, &process_factory, mode).await?)
     } else {
         None
     };
@@ -353,7 +355,7 @@ async fn start_handler(
         let input_eid = ctrl.alloc_ws_endpoint_id();
 
         let host_config = kynputservice_types::HostConfig {
-            display_list: ctrl.displays.convert(),
+            display_list: ctrl.displays.lock().unwrap().convert(),
         };
         let service_config = kynputservice_types::ServiceConfig {
             cursor_format: inputs_request.cursor_format.clone(),
@@ -361,7 +363,6 @@ async fn start_handler(
             clipboard: inputs_request.clipboard,
         };
 
-        let kycom = ctrl.kycom.as_mut().expect("ensure_kycom guarantees Some");
         let (endpoint, connection_tx) = input::InputWebSocketEndpoint::new(input_eid);
         let addr = kycom
             .register_and_forward(endpoint.into())
@@ -393,7 +394,7 @@ async fn start_handler(
         None => (None, None),
     };
 
-    let client_session = ctrl.get_session(&session_id)?;
+    let mut client_session = ctrl.get_session(&session_id).await?;
     let Some(streaming_session) = client_session.stream_session.as_mut() else {
         return Err(Error::ControlPlaneNotOpened);
     };
@@ -434,19 +435,17 @@ pub(super) enum ServiceType {
 /// 1. Validate client/streaming/backend sessions exist
 /// 2. Call service-specific routing function
 pub(super) async fn start_websocket_handler(
-    ctrl: web::Data<Mutex<Controller>>,
+    ctrl: web::Data<Controller>,
     session_id: uuid::Uuid,
     session: actix_ws::Session,
     msg_stream: actix_ws::MessageStream,
     service: ServiceType,
 ) -> Result<()> {
-    let mut ctrl = ctrl.lock().await;
-
     // Phase 1: under the per-session mutable borrow, run connect_service
     // and capture (if Video) the stream key so we can request a fresh IDR
     // afterwards on `av_services_manager`.
     let idr_key = {
-        let client_session = ctrl.get_session(&session_id)?;
+        let mut client_session = ctrl.get_session(&session_id).await?;
         let (handle_opt, idr_key) = {
             let streaming_session = client_session
                 .stream_session
@@ -479,7 +478,7 @@ pub(super) async fn start_websocket_handler(
     // post-subscribe hook, since it subscribes lazily; see
     // `kymux_controller::start_video`.)
     if let Some(key) = idr_key {
-        ctrl.av_services_manager.request_idr(key);
+        ctrl.av_services_manager.lock().await.request_idr(key);
     }
 
     Ok(())

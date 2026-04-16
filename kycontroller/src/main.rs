@@ -34,7 +34,6 @@ use clap::Parser;
 use log::{error, info, warn, LevelFilter};
 use serde::{Deserialize, Serialize};
 use session::identity::Identity;
-use tokio::sync::Mutex;
 
 mod auth;
 mod avservice;
@@ -135,7 +134,7 @@ struct LoginQuery {
 /// with `409 Conflict` until the existing session logs out.
 #[post("/login")]
 async fn login(
-    ctrl: web::Data<Mutex<Controller>>,
+    ctrl: web::Data<Controller>,
     req: HttpRequest,
     query: web::Query<LoginQuery>,
 ) -> HttpResponse {
@@ -183,9 +182,9 @@ async fn login(
         }
     };
 
-    let mut ctrl = ctrl.lock().await;
-
-    if ctrl.config.session_mode() == config::SessionMode::Mono && !ctrl.sessions.is_empty() {
+    if ctrl.config.session_mode() == config::SessionMode::Mono
+        && !ctrl.sessions.lock().await.is_empty()
+    {
         warn!(
             "Refusing login for \"{}\": mono-client mode and a session is already active",
             auth_session.username
@@ -201,7 +200,7 @@ async fn login(
         "websocket": client_session.auth_tokens.websocket,
     });
 
-    ctrl.sessions.insert(uuid, client_session);
+    ctrl.insert_session(client_session).await;
     ctrl.update_tray_status().await;
 
     HttpResponse::Ok().json(body)
@@ -240,7 +239,7 @@ async fn login(
 /// - `401 Unauthorized`: Authentication failed or validation check failed
 #[post("/renew")]
 async fn renew(
-    ctrl: web::Data<Mutex<Controller>>,
+    ctrl: web::Data<Controller>,
     req: HttpRequest,
     query: web::Query<LoginQuery>,
     user: Identity,
@@ -279,8 +278,7 @@ async fn renew(
         return HttpResponse::Unauthorized().finish();
     };
 
-    let mut ctrl = ctrl.lock().await;
-    let Ok(session) = ctrl.get_session(&uid) else {
+    let Ok(mut session) = ctrl.get_session(&uid).await else {
         warn!("Session destroyed during renewal");
         user.logout();
         return HttpResponse::Unauthorized().finish();
@@ -317,15 +315,14 @@ async fn capabilities() -> HttpResponse {
 /// Validate a WebSocket token under the Controller lock. Returns the session ID,
 /// statemachine proxy, and display list if valid. No `.await` while locked.
 async fn validate_websocket_token(
-    ctrl: &web::Data<Mutex<Controller>>,
+    ctrl: &web::Data<Controller>,
     token: &str,
 ) -> Option<(uuid::Uuid, StateMachineProxy, Vec<host_events::Display>)> {
-    let mut ctrl = ctrl.lock().await;
-
     let proxy = ctrl.state_machine_proxy.clone();
-    let displays = ctrl.displays.convert();
+    let displays = ctrl.displays.lock().unwrap().convert();
 
-    let (session_id, client_session) = ctrl.sessions.iter_mut().find(|(_, session)| {
+    let mut sessions = ctrl.sessions.lock().await;
+    let (session_id, client_session) = sessions.iter_mut().find(|(_, session)| {
         !session.auth_tokens.websocket.is_empty() && session.auth_tokens.websocket == token
     })?;
 
@@ -395,7 +392,7 @@ async fn validate_websocket_token(
 /// 5. **Accept/Reject**: Either promote to `HostEventSender` or close connection
 #[get("/ws")]
 async fn websocket_service(
-    ctrl: web::Data<Mutex<Controller>>,
+    ctrl: web::Data<Controller>,
     req: HttpRequest,
     stream: web::Payload,
 ) -> HttpResponse {
@@ -434,8 +431,7 @@ async fn websocket_service(
 
         sender.send(HostEvent::DisplayList { displays });
 
-        let mut ctrl = ctrl.lock().await;
-        if let Some(client_session) = ctrl.sessions.get_mut(&session_id) {
+        if let Ok(mut client_session) = ctrl.get_session(&session_id).await {
             client_session.stream_session = Some(StreamingSession::new(sender));
             info!("Session \"{}\" controlplane connected", client_session.uid);
         }
@@ -445,22 +441,17 @@ async fn websocket_service(
 }
 
 #[get("/enumerate_displays")]
-async fn enumerate_displays(ctrl: web::Data<Mutex<Controller>>) -> HttpResponse {
-    let ctrl = ctrl.lock().await;
-
-    HttpResponse::Ok().json(ctrl.displays.clone())
+async fn enumerate_displays(ctrl: web::Data<Controller>) -> HttpResponse {
+    HttpResponse::Ok().json(ctrl.displays.lock().unwrap().clone())
 }
 
 #[post("/stop_streaming")]
-async fn stop_streaming(ctrl: web::Data<Mutex<Controller>>, user: Identity) -> HttpResponse {
+async fn stop_streaming(ctrl: web::Data<Controller>, user: Identity) -> HttpResponse {
     let Ok(uid) = user.uid() else {
         return HttpResponse::Unauthorized().finish();
     };
 
-    let cleanup = {
-        let mut ctrl = ctrl.lock().await;
-        ctrl.take_streaming(uid)
-    };
+    let cleanup = ctrl.take_streaming(uid).await;
 
     match cleanup {
         Ok(cleanup) => {
@@ -476,22 +467,15 @@ async fn stop_streaming(ctrl: web::Data<Mutex<Controller>>, user: Identity) -> H
 }
 
 #[post("/logout")]
-async fn logout(ctrl: web::Data<Mutex<Controller>>, user: Identity) -> HttpResponse {
+async fn logout(ctrl: web::Data<Controller>, user: Identity) -> HttpResponse {
     let Ok(uid) = user.uid() else {
         return HttpResponse::Unauthorized().finish();
     };
 
     user.logout();
 
-    let cleanup = {
-        let mut ctrl = ctrl.lock().await;
-        ctrl.take_session(uid)
-    };
-
-    match cleanup {
-        Ok(cleanup) => {
-            cleanup.run().await;
-            ctrl.lock().await.update_tray_status().await;
+    match ctrl.remove_session(uid).await {
+        Ok(()) => {
             info!("Session stopped");
             HttpResponse::Ok().finish()
         }
@@ -510,7 +494,7 @@ pub(crate) struct SetBitrate {
 
 #[post("/set_bitrate")]
 pub(crate) async fn set_bitrate(
-    ctrl: web::Data<Mutex<Controller>>,
+    ctrl: web::Data<Controller>,
     request: web::Json<SetBitrate>,
     user: Identity,
 ) -> HttpResponse {
@@ -525,14 +509,7 @@ pub(crate) async fn set_bitrate(
         return HttpResponse::Unauthorized().finish();
     };
 
-    let mut ctrl = ctrl.lock().await;
-
-    // Disjoint borrows for session and av_services_manager
-    let ctrl_inner: &mut Controller = &mut ctrl;
-    let sessions = &mut ctrl_inner.sessions;
-    let av_services_manager = &mut ctrl_inner.av_services_manager;
-
-    let Some(session) = sessions.get_mut(&uid) else {
+    let Ok(mut session) = ctrl.get_session(&uid).await else {
         warn!("Session not found");
         return HttpResponse::Forbidden().finish();
     };
@@ -563,6 +540,7 @@ pub(crate) async fn set_bitrate(
                     key
                 );
             }
+            let av_services_manager = ctrl.av_services_manager.lock().await;
             let Some(stream) = av_services_manager.video_streams.get(key) else {
                 continue;
             };
@@ -745,9 +723,8 @@ async fn real_main(cli: cli::Cli) -> Result<()> {
     let av_tasks_handle;
     let watchdog = {
         let weak = Arc::downgrade(&ctrl.clone().into_inner());
-        let mut ctrl = ctrl.lock().await;
 
-        av_tasks_handle = ctrl.av_services_manager.init(weak);
+        av_tasks_handle = ctrl.av_services_manager.lock().await.init(weak);
 
         // Configure watchdog
         let watchdog = if ctrl.config.watchdog() {
@@ -756,7 +733,7 @@ async fn real_main(cli: cli::Cli) -> Result<()> {
                 watchdog::Watchdog::new(&process_factory, ctrl.state_machine_proxy.clone()).await?;
 
             info!("Got initial displays: {displays:?}");
-            ctrl.displays = displays;
+            *ctrl.displays.lock().unwrap() = displays;
             Some(watchdog)
         } else {
             warn!("Watchdog disabled in config! Audio and video disabled.");
@@ -852,7 +829,7 @@ async fn real_main(cli: cli::Cli) -> Result<()> {
         .run();
 
     let server_handle = server.handle();
-    let tray_enabled = tray::is_supported() && ctrl_for_tray.lock().await.config.tray_enabled();
+    let tray_enabled = tray::is_supported() && ctrl_for_tray.config.tray_enabled();
 
     tokio::select! {
         result = server => {
@@ -863,12 +840,12 @@ async fn real_main(cli: cli::Cli) -> Result<()> {
         _ = tray::run(ctrl_for_tray.clone(), server_handle.clone()), if tray_enabled => {}
         _ = tray::wait_service_shutdown() => {
             info!("Service shutdown signal received");
-            ctrl_for_tray.lock().await.shutdown_tray();
+            ctrl_for_tray.shutdown_tray();
             server_handle.stop(false).await;
         }
     }
 
-    ctrl_for_tray.lock().await.shutdown_tray();
+    ctrl_for_tray.shutdown_tray();
 
     if let Some(watchdog) = watchdog {
         watchdog.stop().await?;

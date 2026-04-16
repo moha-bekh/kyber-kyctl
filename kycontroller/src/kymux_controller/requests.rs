@@ -22,7 +22,6 @@ use actix_web::{post, web, HttpResponse};
 use kymux::kyproto;
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
-use tokio::sync::Mutex;
 
 use kyavservice_types::VideoCodec;
 use kynputservice_types::CursorFormat;
@@ -51,7 +50,7 @@ pub(crate) struct StartKymuxResponse {
 #[post("/start_mux")]
 pub(crate) async fn start_mux(
     user: Identity,
-    ctrl: web::Data<Mutex<Controller>>,
+    ctrl: web::Data<Controller>,
     data: web::Json<StartKymux>,
 ) -> HttpResponse {
     let session_id = match user.uid() {
@@ -150,7 +149,7 @@ pub(crate) struct StartSessionResponse {
 #[post("/start_session")]
 pub(crate) async fn start_session(
     user: Identity,
-    ctrl: web::Data<Mutex<Controller>>,
+    ctrl: web::Data<Controller>,
     request: web::Json<StartRequest>,
 ) -> HttpResponse {
     let session_id = match user.uid() {
@@ -160,8 +159,6 @@ pub(crate) async fn start_session(
             return HttpResponse::Unauthorized().finish();
         }
     };
-
-    let mut ctrl = ctrl.lock().await;
 
     // Check request validity
     if let Some(video_request) = request.video.as_ref() {
@@ -174,13 +171,13 @@ pub(crate) async fn start_session(
     }
 
     // Start session
-    let ret = super::start_session(&mut ctrl, session_id, request.into_inner()).await;
+    let ret = super::start_session(&ctrl, session_id, request.into_inner()).await;
     match ret {
         Ok(response) => {
             let numeric_session_id = generate_session_id();
             info!("Session started. SessionId: {numeric_session_id}");
 
-            let Ok(client_session) = ctrl.get_session(&session_id) else {
+            let Ok(mut client_session) = ctrl.get_session(&session_id).await else {
                 error!(
                     "Session {} disappeared after successful start_session",
                     session_id

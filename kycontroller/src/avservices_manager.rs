@@ -447,10 +447,7 @@ impl AVServicesManager {
     ///
     /// Subsequent calls return a handle whose cancel signal is unused.
     #[must_use = "drop the handle (or call stop) to cancel the spawned tasks"]
-    pub(crate) fn init(
-        &mut self,
-        weak: std::sync::Weak<tokio::sync::Mutex<Controller>>,
-    ) -> AvServicesTasksHandle {
+    pub(crate) fn init(&mut self, weak: std::sync::Weak<Controller>) -> AvServicesTasksHandle {
         let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
         self.spawn_idr_dispatcher(weak.clone(), cancel_rx.clone());
         self.spawn_reaper(weak, cancel_rx);
@@ -459,7 +456,7 @@ impl AVServicesManager {
 
     fn spawn_idr_dispatcher(
         &mut self,
-        weak: std::sync::Weak<tokio::sync::Mutex<Controller>>,
+        weak: std::sync::Weak<Controller>,
         mut cancel_rx: tokio::sync::watch::Receiver<bool>,
     ) {
         let Some(mut idr_rx) = self.idr_rx.take() else {
@@ -482,7 +479,7 @@ impl AVServicesManager {
                 while let Ok(k) = idr_rx.try_recv() {
                     pending.insert(k);
                 }
-                let Some(strong) = weak.upgrade() else {
+                let Some(ctrl) = weak.upgrade() else {
                     break;
                 };
                 // Each SharedHandler exposes a sync mpsc send for IDR, so
@@ -493,9 +490,9 @@ impl AVServicesManager {
                 // Requests carry the exact `VideoStreamKey`, so a direct map
                 // lookup forces an IDR on precisely the targeted stream —
                 // never on the other streams that happen to share its display.
-                let ctrl = strong.lock().await;
+                let av_services_manager = ctrl.av_services_manager.lock().await;
                 for key in pending {
-                    if let Some(stream) = ctrl.av_services_manager.video_streams.get(&key) {
+                    if let Some(stream) = av_services_manager.video_streams.get(&key) {
                         if let Err(e) = stream.avservice.video_force_idr() {
                             warn!("Force IDR failed for {key:?}: {e}");
                         }
@@ -507,7 +504,7 @@ impl AVServicesManager {
 
     fn spawn_reaper(
         &mut self,
-        weak: std::sync::Weak<tokio::sync::Mutex<Controller>>,
+        weak: std::sync::Weak<Controller>,
         mut cancel_rx: tokio::sync::watch::Receiver<bool>,
     ) {
         let Some(mut rx) = self.reaper_rx.take() else {
@@ -530,7 +527,7 @@ impl AVServicesManager {
                     batch.push(msg);
                 }
 
-                let Some(strong) = weak.upgrade() else {
+                let Some(ctrl) = weak.upgrade() else {
                     break;
                 };
                 // Extract the streams whose last subscriber just left, then
@@ -539,17 +536,15 @@ impl AVServicesManager {
                 // timeout-guarded) and would otherwise stall every HTTP
                 // endpoint waiting on the Controller lock.
                 let cleanup = {
-                    let mut ctrl = strong.lock().await;
                     let mut cleanup = AVCleanup::default();
+                    let mut av_services_manager = ctrl.av_services_manager.lock().await;
                     for msg in batch {
                         match msg {
                             AvReaperMsg::VideoDropped(key) => {
-                                cleanup
-                                    .push_video(ctrl.av_services_manager.take_video_if_last(&key));
+                                cleanup.push_video(av_services_manager.take_video_if_last(&key));
                             }
                             AvReaperMsg::AudioDropped(key) => {
-                                cleanup
-                                    .push_audio(ctrl.av_services_manager.take_audio_if_last(&key));
+                                cleanup.push_audio(av_services_manager.take_audio_if_last(&key));
                             }
                         }
                     }
@@ -573,10 +568,7 @@ impl AVServicesManager {
                 // it is safe to tear down the shared kycom; closing its IPC
                 // TCP sockets before the avservers received their Stop would
                 // have produced spurious broken-pipe errors on the host.
-                let kycom_to_stop = {
-                    let mut ctrl = strong.lock().await;
-                    ctrl.try_take_idle_kycom()
-                };
+                let kycom_to_stop = ctrl.try_take_idle_kycom().await;
                 if kycom_to_stop.is_some() {
                     info!("Last AV stream torn down, stopping shared kycom");
                 }

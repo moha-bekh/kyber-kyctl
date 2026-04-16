@@ -35,7 +35,6 @@ use log::{info, warn};
 use libkypc::process::ProcessFactory;
 
 pub(crate) use server::{IncomingConnectionRouter, KymuxServer};
-use tokio::sync::Mutex;
 
 use crate::config::{ListenMode, SessionMode};
 use crate::error::{Error, Result};
@@ -205,7 +204,7 @@ pub(crate) struct KymuxBackend {
 }
 
 async fn start_kymux(
-    ctrl: web::Data<Mutex<Controller>>,
+    ctrl: web::Data<Controller>,
     session_id: uuid::Uuid,
     public_port: u16,
 ) -> Result<requests::StartKymuxResponse> {
@@ -218,10 +217,8 @@ async fn start_kymux(
         rand::distr::Alphanumeric.sample_string(&mut rng, TOKEN_STRING_LEN)
     };
 
-    let mut ctrl = ctrl.lock().await;
-
     // Check if data plane or pending connection already exists for this session
-    if ctrl.has_data_plane(&session_id)? {
+    if ctrl.has_data_plane(&session_id).await? {
         return Err(Error::DataPlaneAlreadyOpened);
     }
 
@@ -260,9 +257,8 @@ async fn start_kymux(
         .unwrap()
         .register_session(token.clone(), session_id);
 
-    let client_session = ctrl.get_session(&session_id)?;
-
-    let Some(stream_session) = client_session.stream_session.as_mut() else {
+    let mut session = ctrl.get_session(&session_id).await?;
+    let Some(stream_session) = &mut session.stream_session else {
         return Err(Error::ControlPlaneNotOpened);
     };
 
@@ -623,25 +619,24 @@ fn run_metrics_task(
 }
 
 async fn start_session(
-    ctrl: &mut Controller,
+    ctrl: &Controller,
     session_id: uuid::Uuid,
     request: requests::StartRequest,
 ) -> Result<StartSessionResponse> {
     // Extract data from Controller before session access
     let process_factory = ctrl.process_factory.clone();
-    let displays = ctrl.displays.convert();
+    let displays = ctrl.displays.lock().unwrap().convert();
 
     // Get the pending connection receiver (was created in start_mux)
-    let connection_rx = {
-        let client_session = ctrl.get_session(&session_id)?;
-        let Some(streaming_session) = client_session.stream_session.as_mut() else {
-            return Err(Error::ControlPlaneNotOpened);
-        };
-        streaming_session
-            .pending_kymux_rx
-            .take()
-            .ok_or(Error::KymuxNotListening)?
+    let mut client_session = ctrl.get_session(&session_id).await?;
+    let Some(streaming_session) = &mut client_session.stream_session else {
+        return Err(Error::ControlPlaneNotOpened);
     };
+    let connection_rx = streaming_session
+        .pending_kymux_rx
+        .take()
+        .ok_or(Error::KymuxNotListening)?;
+    drop(client_session);
 
     // Wait for the connection (server sends it when client connects with valid token)
     let connection = match tokio::time::timeout(Duration::from_millis(500), connection_rx).await {
@@ -662,16 +657,18 @@ async fn start_session(
     info!("Connection received for session {}", session_id);
 
     // Start services (using shared kycom and av_services_manager from Controller)
-    ctrl.ensure_kycom().await?;
+
+    let mut kycom = ctrl.kycom.lock().await;
+    let kycom = match &mut *kycom {
+        Some(kycom) => kycom,
+        None => {
+            kycom.insert(kymux::kycom::KyCom::start_on_any_port(Controller::KYCOM_PORTS).await?)
+        }
+    };
 
     let mode = ctrl.config.session_mode();
 
-    // Disjoint borrows: access kycom and av_services_manager independently. kycom is
-    // `&mut` everywhere; kydup's upstream endpoints are plugged via
-    // `kycom.register_and_forward(...)`, same as the per-client video / audio
-    // endpoints in mono mode.
-    let kycom = ctrl.kycom.as_mut().expect("ensure_kycom guarantees Some");
-    let av_services_manager = &mut ctrl.av_services_manager;
+    let av_services_manager = &mut ctrl.av_services_manager.lock().await;
 
     let video = start_video(
         &request,
@@ -741,17 +738,15 @@ async fn start_session(
     };
 
     // Create KymuxBackend now that connection is established
-    {
-        let proxy = ctrl.state_machine_proxy.clone();
-        let client_session = ctrl.get_session(&session_id)?;
-        let Some(streaming_session) = client_session.stream_session.as_mut() else {
-            return Err(Error::ControlPlaneNotOpened);
-        };
+    let proxy = ctrl.state_machine_proxy.clone();
+    let mut client_session = ctrl.get_session(&session_id).await?;
+    let Some(streaming_session) = &mut client_session.stream_session else {
+        return Err(Error::ControlPlaneNotOpened);
+    };
 
-        let _connection_task = run_connection_task(connection.clone(), proxy, session_id);
-        let backend = KymuxBackend { _connection_task };
-        streaming_session.data_plane = Some(DataPlaneBackend::Kymux(backend));
-    }
+    let _connection_task = run_connection_task(connection.clone(), proxy, session_id);
+    let backend = KymuxBackend { _connection_task };
+    streaming_session.data_plane = Some(DataPlaneBackend::Kymux(backend));
 
     Ok(StartSessionResponse {
         video,

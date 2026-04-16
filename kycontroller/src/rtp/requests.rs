@@ -23,7 +23,6 @@ use std::net::IpAddr;
 use actix_web::{get, post, web, HttpRequest, HttpResponse};
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
-use tokio::sync::Mutex;
 
 use kynputservice_types::CursorFormat;
 
@@ -105,15 +104,13 @@ async fn hello(req: HttpRequest, _user: Identity) -> HttpResponse {
 
 #[post("/generate_sdp")]
 async fn generate_sdp(
-    ctrl: web::Data<Mutex<Controller>>,
+    ctrl: web::Data<Controller>,
     request: web::Json<GenerateSdpRequest>,
     user: Identity,
 ) -> HttpResponse {
     if user.uid().is_err() {
         return HttpResponse::Unauthorized().finish();
     };
-
-    let mut ctrl = ctrl.lock().await;
 
     if ctrl.config.session_mode() == crate::config::SessionMode::Multi {
         warn!("RTP backend is disabled in multi-client mode");
@@ -126,7 +123,7 @@ async fn generate_sdp(
         return HttpResponse::Forbidden().finish();
     }
 
-    let ret = super::generate_video_sdp(&mut ctrl, request.into_inner()).await;
+    let ret = super::generate_video_sdp(&ctrl, request.into_inner()).await;
     match ret {
         Ok(params) => {
             info!("SDP generated: {}", params);
@@ -142,7 +139,7 @@ async fn generate_sdp(
 
 #[post("/start")]
 async fn start(
-    ctrl: web::Data<Mutex<Controller>>,
+    ctrl: web::Data<Controller>,
     request: web::Json<StartRequest>,
     user: Identity,
 ) -> HttpResponse {
@@ -152,8 +149,6 @@ async fn start(
             return HttpResponse::Unauthorized().finish();
         }
     };
-
-    let mut ctrl = ctrl.lock().await;
 
     if ctrl.config.session_mode() == crate::config::SessionMode::Multi {
         warn!("RTP backend is disabled in multi-client mode");
@@ -168,7 +163,7 @@ async fn start(
         }
     }
 
-    let ret = super::start(&mut ctrl, session_id, request.into_inner()).await;
+    let ret = super::start(&ctrl, session_id, request.into_inner()).await;
     match ret {
         Ok(_) => {
             let numeric_session_id = generate_session_id();
