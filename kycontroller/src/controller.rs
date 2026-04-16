@@ -278,15 +278,14 @@ impl Controller {
             return;
         };
 
-        let clients: Vec<String> = self.sessions.values().map(|s| s.username.clone()).collect();
-
-        tray.set_status(TrayStatus { clients }).await;
+        let clients = self.sessions.values().map(|s| s.username.clone()).collect();
+        tray.set_status(TrayStatus { clients });
     }
 
     /// Shutdown the system tray (removes the icon from taskbar).
-    pub(crate) async fn shutdown_tray(&mut self) {
+    pub(crate) fn shutdown_tray(&mut self) {
         if let Some(mut tray) = self.tray_handle.take() {
-            tray.shutdown().await;
+            tray.shutdown();
         }
     }
 

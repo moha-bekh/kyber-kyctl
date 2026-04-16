@@ -863,12 +863,12 @@ async fn real_main(cli: cli::Cli) -> Result<()> {
         _ = tray::run(ctrl_for_tray.clone(), server_handle.clone()), if tray_enabled => {}
         _ = tray::wait_service_shutdown() => {
             info!("Service shutdown signal received");
-            ctrl_for_tray.lock().await.shutdown_tray().await;
+            ctrl_for_tray.lock().await.shutdown_tray();
             server_handle.stop(false).await;
         }
     }
 
-    ctrl_for_tray.lock().await.shutdown_tray().await;
+    ctrl_for_tray.lock().await.shutdown_tray();
 
     if let Some(watchdog) = watchdog {
         watchdog.stop().await?;

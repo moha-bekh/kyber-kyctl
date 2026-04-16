@@ -39,7 +39,7 @@ use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use std::thread;
 use std::thread::JoinHandle;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, HWND, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
     CreateBitmap, CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, BITMAPINFO,
@@ -68,12 +68,6 @@ struct RawHandle(windows_sys::Win32::Foundation::HANDLE);
 // safe to use across threads.
 unsafe impl Send for RawHandle {}
 unsafe impl Sync for RawHandle {}
-
-impl RawHandle {
-    fn is_null(&self) -> bool {
-        self.0.is_null()
-    }
-}
 
 /// Owning wrapper for Windows HANDLE that auto-closes on drop.
 ///
@@ -110,7 +104,7 @@ impl Drop for SendHandle {
 /// Communication uses Windows events for exit/wake and tokio channels for status.
 pub struct TrayHandle {
     /// Send status updates to the tray thread.
-    status_tx: mpsc::Sender<TrayStatus>,
+    status_tx: watch::Sender<TrayStatus>,
     /// Windows event to signal the tray thread to exit.
     tray_exit_event: SendHandle,
     /// Windows event for waking to check status updates.
@@ -124,7 +118,7 @@ pub struct TrayHandle {
 impl TrayHandle {
     /// Create a new TrayHandle.
     fn new(
-        status_tx: mpsc::Sender<TrayStatus>,
+        status_tx: watch::Sender<TrayStatus>,
         tray_exit_event: SendHandle,
         tray_wake_event: SendHandle,
         thread_handle: JoinHandle<()>,
@@ -142,8 +136,8 @@ impl TrayHandle {
     /// Update the tray icon status (tooltip and potentially icon).
     ///
     /// This is async and will not block the caller.
-    pub async fn set_status(&self, status: TrayStatus) {
-        if let Err(e) = self.status_tx.send(status).await {
+    pub fn set_status(&self, status: TrayStatus) {
+        if let Err(e) = self.status_tx.send(status) {
             warn!("Failed to send status to tray: {e}");
             return;
         }
@@ -169,7 +163,7 @@ impl TrayHandle {
     /// Shutdown the tray thread and wait for it to finish.
     ///
     /// This ensures the tray icon is properly removed before process exit.
-    pub async fn shutdown(&mut self) {
+    pub fn shutdown(&mut self) {
         info!("Shutting down tray...");
 
         // Signal the tray thread to exit
@@ -710,7 +704,7 @@ fn update_tooltip(tray: &NativeTrayIcon, status: &TrayStatus) {
 /// - Windows event (`tray_wake_event`) to wake tray thread for status updates
 /// - tokio::sync::mpsc channels for status updates and tray commands
 fn run_tray_loop(
-    mut status_rx: mpsc::Receiver<TrayStatus>,
+    mut status_rx: watch::Receiver<TrayStatus>,
     tray_command_tx: mpsc::Sender<TrayCommand>,
     tray_exit_event: RawHandle,
     tray_wake_event: RawHandle,
@@ -755,7 +749,6 @@ fn run_tray_loop(
         warn!("Tray icon creation failed. Will retry when Explorer starts.");
     }
 
-    let mut last_status: Option<TrayStatus> = None;
     let menu_event_rx = MenuEvent::receiver();
 
     // Main event loop using MsgWaitForMultipleObjectsEx
@@ -767,10 +760,8 @@ fn run_tray_loop(
             }
             WaitResult::Wake => {
                 // Wake event signaled - check for status updates
-                while let Ok(status) = status_rx.try_recv() {
-                    update_tooltip(&tray, &status);
-                    last_status = Some(status);
-                }
+                let status = status_rx.borrow_and_update();
+                update_tooltip(&tray, &status);
             }
             WaitResult::WindowsMessage => {
                 // Process all pending Windows messages. TaskbarCreated is
@@ -784,9 +775,8 @@ fn run_tray_loop(
                 {
                     info!("TaskbarCreated received, re-creating tray icon");
                     if tray.add_icon("Kyber - Starting...") {
-                        if let Some(ref status) = last_status {
-                            update_tooltip(&tray, status);
-                        }
+                        let status = status_rx.borrow_and_update();
+                        update_tooltip(&tray, &status);
                     } else {
                         warn!("Tray icon re-creation failed");
                     }
@@ -826,7 +816,7 @@ pub fn spawn() -> Result<(TrayHandle, mpsc::Receiver<TrayCommand>)> {
         info!("Service stop event handle obtained");
     }
 
-    let (status_tx, status_rx) = mpsc::channel::<TrayStatus>(16);
+    let (status_tx, status_rx) = watch::channel(TrayStatus::idle());
     let (tray_command_tx, tray_command_rx) = mpsc::channel::<TrayCommand>(1);
 
     // Create Windows events for signaling

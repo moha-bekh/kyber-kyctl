@@ -89,7 +89,7 @@ pub async fn run(ctrl: actix_web::web::Data<Mutex<Controller>>, server_handle: S
     let mut shutdown_rx = match spawn() {
         Ok((tray_handle, rx)) => {
             info!("System tray initialized");
-            tray_handle.set_status(TrayStatus::idle()).await;
+            tray_handle.set_status(TrayStatus::idle());
             ctrl.lock().await.set_tray_handle(tray_handle);
             rx
         }

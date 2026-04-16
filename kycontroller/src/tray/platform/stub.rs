@@ -40,7 +40,7 @@ pub struct TrayHandle {
 
 impl TrayHandle {
     /// Update the tray icon status (no-op on unsupported platforms).
-    pub async fn set_status(&self, _status: TrayStatus) {
+    pub fn set_status(&self, _status: TrayStatus) {
         // No-op
     }
 
@@ -50,7 +50,7 @@ impl TrayHandle {
     }
 
     /// Shutdown the tray (no-op on unsupported platforms).
-    pub async fn shutdown(&mut self) {
+    pub fn shutdown(&mut self) {
         // No-op
     }
 }
