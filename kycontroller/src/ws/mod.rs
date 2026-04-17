@@ -394,8 +394,11 @@ async fn start_handler(
         None => (None, None),
     };
 
-    let mut client_session = ctrl.get_session(&session_id).await?;
-    let Some(streaming_session) = client_session.stream_session.as_mut() else {
+    // Store objects
+    let stream = ctrl.get_stream_session(&session_id)?;
+    let mut stream = stream.lock().await;
+
+    let Some(streaming_session) = stream.session.as_mut() else {
         return Err(Error::ControlPlaneNotOpened);
     };
 
@@ -408,15 +411,12 @@ async fn start_handler(
     };
     streaming_session.data_plane = Some(DataPlaneBackend::Websocket(backend));
 
-    client_session.services.input = inputservice;
+    stream.services.input = inputservice;
     if let Some(subscription) = video_subscription {
-        client_session
-            .services
-            .video_subscriptions
-            .push(subscription);
+        stream.services.video_subscriptions.push(subscription);
     }
     if let Some(subscription) = audio_subscription {
-        client_session.services.audio_subscription = Some(subscription);
+        stream.services.audio_subscription = Some(subscription);
     }
 
     Ok(())
@@ -445,12 +445,13 @@ pub(super) async fn start_websocket_handler(
     // and capture (if Video) the stream key so we can request a fresh IDR
     // afterwards on `av_services_manager`.
     let idr_key = {
-        let mut client_session = ctrl.get_session(&session_id).await?;
+        let stream_session = ctrl.get_stream_session(&session_id)?;
+        let mut stream_session = stream_session.lock().await;
+
         let (handle_opt, idr_key) = {
-            let streaming_session = client_session
-                .stream_session
-                .as_mut()
-                .ok_or(Error::ControlPlaneNotOpened)?;
+            let Some(streaming_session) = &mut stream_session.session else {
+                return Err(Error::ControlPlaneNotOpened);
+            };
             let backend = match &mut streaming_session.data_plane {
                 Some(DataPlaneBackend::Websocket(b)) => b,
                 _ => return Err(Error::WsNoRouter),
@@ -464,7 +465,7 @@ pub(super) async fn start_websocket_handler(
             (handle, idr_key)
         };
         if let Some(handle) = handle_opt {
-            client_session.services.output_handles.push(handle);
+            stream_session.services.output_handles.push(handle);
         }
         idr_key
     };

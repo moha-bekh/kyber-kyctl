@@ -36,8 +36,9 @@ use crate::{Controller, HostEvent};
 /// exclusive stream alongside a shared one); matching by stream identity
 /// rather than by display keeps each session's events isolated.
 async fn route_to_subscribers(ctrl: &Controller, stream_id: &StreamId, event: &HostEvent) {
-    for session in ctrl.sessions.lock().await.values() {
-        let Some(streaming_session) = &session.stream_session else {
+    for session in ctrl.get_all_stream_sessions() {
+        let session = session.lock().await;
+        let Some(streaming_session) = &session.session else {
             continue;
         };
         let matches = match stream_id {
@@ -135,8 +136,8 @@ impl StateMachine {
 
                     // Broadcast display list to all sessions (non-blocking to avoid
                     // holding the lock while a slow client backs up the channel)
-                    for session in ctrl.sessions.lock().await.values() {
-                        if let Some(streaming_session) = &session.stream_session {
+                    for stream in ctrl.get_all_stream_sessions() {
+                        if let Some(streaming_session) = &stream.lock().await.session {
                             streaming_session
                                 .host_event_sender
                                 .send(HostEvent::DisplayList {
@@ -153,8 +154,9 @@ impl StateMachine {
                     match session_id {
                         // Global event (e.g., from watchdog): update all inputservices
                         None => {
-                            for session in ctrl.sessions.lock().await.values_mut() {
-                                if let Some(inputservice) = session.services.input.as_mut() {
+                            for stream in ctrl.get_all_stream_sessions() {
+                                if let Some(inputservice) = &mut stream.lock().await.services.input
+                                {
                                     if let Err(err) =
                                         inputservice.update_host_config(host_config.clone()).await
                                     {
@@ -165,8 +167,10 @@ impl StateMachine {
                         }
                         // Session-specific event: update only that session's inputservice
                         Some(sid) => {
-                            if let Ok(mut session) = ctrl.get_session(&sid).await {
-                                if let Some(inputservice) = session.services.input.as_mut() {
+                            if let Ok(stream) = ctrl.get_stream_session(&sid) {
+                                if let Some(inputservice) =
+                                    stream.lock().await.services.input.as_mut()
+                                {
                                     if let Err(err) =
                                         inputservice.update_host_config(host_config).await
                                     {
@@ -196,8 +200,8 @@ impl StateMachine {
                     event: kyavservice_types::Event::PipelineEvent(event),
                 } => {
                     let host_event = HostEvent::StreamerPipelineEvent(event.into());
-                    if let Ok(session) = ctrl.get_session(&sid).await {
-                        if let Some(streaming_session) = &session.stream_session {
+                    if let Ok(session) = ctrl.get_stream_session(&sid) {
+                        if let Some(streaming_session) = &session.lock().await.session {
                             streaming_session.host_event_sender.send(host_event);
                         }
                     }
@@ -233,8 +237,8 @@ impl StateMachine {
                         }
                         // Legacy per-session (RTP): notify that session only.
                         (None, Some(sid)) => {
-                            if let Ok(session) = ctrl.get_session(&sid).await {
-                                if let Some(streaming_session) = &session.stream_session {
+                            if let Ok(session) = ctrl.get_stream_session(&sid) {
+                                if let Some(streaming_session) = &session.lock().await.session {
                                     streaming_session.host_event_sender.send(event);
                                 }
                             }
@@ -242,8 +246,8 @@ impl StateMachine {
                         // Global handler (e.g. watchdog display enumeration):
                         // broadcast to every session.
                         (None, None) => {
-                            for session in ctrl.sessions.lock().await.values() {
-                                if let Some(streaming_session) = &session.stream_session {
+                            for session in ctrl.get_all_stream_sessions() {
+                                if let Some(streaming_session) = &session.lock().await.session {
                                     streaming_session.host_event_sender.send(event.clone());
                                 }
                             }

@@ -111,14 +111,16 @@ pub async fn start(
     }
 
     // Single session access to store all services
-    let mut client_session = ctrl.get_session(&session_id).await?;
-    if let Some(avservice) = avservice_video {
-        client_session.services.video = vec![avservice];
-    }
-    client_session.services.audio = avservice_audio;
-    client_session.services.input = inputservice_handler;
+    let stream = ctrl.get_stream_session(&session_id)?;
+    let mut stream = stream.lock().await;
 
-    let Some(streaming_session) = &mut client_session.stream_session else {
+    if let Some(avservice) = avservice_video {
+        stream.services.video = vec![avservice];
+    }
+    stream.services.audio = avservice_audio;
+    stream.services.input = inputservice_handler;
+
+    let Some(streaming_session) = &mut stream.session else {
         return Err(Error::ControlPlaneNotOpened);
     };
 

@@ -20,7 +20,6 @@
 
 use std::collections::HashMap;
 use std::mem;
-use std::ops::DerefMut;
 use std::sync::{atomic, Arc, Mutex};
 
 use actix_web::web;
@@ -75,29 +74,21 @@ impl StreamingSession {
     }
 }
 
-/// Cleanup data for stopping streaming without removing the session.
-pub(crate) struct StreamingCleanup {
-    data_plane: Option<DataPlaneBackend>,
-    services: StreamingServices,
-}
-
-impl StreamingCleanup {
-    pub(crate) async fn run(mut self) {
-        self.data_plane = None;
-
-        if let Err(err) = self.services.stop().await {
-            warn!("Failed to stop streaming services: {err:?}");
-        }
-    }
-}
-
 pub(crate) struct ClientSession {
     pub(crate) uid: Uuid,
     pub(crate) username: String,
     pub(crate) expiration: Option<OffsetDateTime>,
     pub(crate) auth_tokens: ClientAuthTokens,
-    pub(crate) stream_session: Option<StreamingSession>,
-    pub(crate) services: StreamingServices,
+
+    // These resources are asynchronous, so they have their own async mutex.
+    // The `Arc` enables doing this outside the parent mutex.
+    pub(crate) stream: Arc<AsyncMutex<Stream>>,
+}
+
+#[derive(Default)]
+pub(crate) struct Stream {
+    pub session: Option<StreamingSession>,
+    pub services: StreamingServices,
 }
 
 impl ClientSession {
@@ -107,15 +98,16 @@ impl ClientSession {
             username: session.username,
             expiration: session.expiration,
             auth_tokens: ClientAuthTokens::generate(),
-            stream_session: None,
-            services: Default::default(),
+            stream: Default::default(),
         }
     }
 
     async fn stop(self) {
         info!("Stop session {}", self.uid);
 
-        if let Err(err) = self.services.stop().await {
+        let stream = mem::take(&mut *self.stream.lock().await);
+
+        if let Err(err) = stream.services.stop().await {
             warn!("Failed to stop streaming services: {err:?}");
         }
     }
@@ -180,7 +172,7 @@ pub struct Controller {
     pub(crate) config: config::Config,
     pub(crate) tls_config: tls::Config,
 
-    pub(crate) sessions: AsyncMutex<HashMap<Uuid, ClientSession>>,
+    pub(crate) sessions: Mutex<HashMap<Uuid, ClientSession>>,
 
     pub(crate) state_machine_proxy: StateMachineProxy,
 
@@ -212,7 +204,7 @@ impl Controller {
             displays: Mutex::new(vec![]),
             config,
             tls_config,
-            sessions: AsyncMutex::new(HashMap::new()),
+            sessions: Mutex::new(HashMap::new()),
             state_machine_proxy: StateMachineProxy::new(events_tx),
             shared_kymux_infra: Default::default(),
             tray_handle: Mutex::new(None),
@@ -239,11 +231,11 @@ impl Controller {
     }
 
     /// Update the system tray status.
-    pub(crate) async fn update_tray_status(&self) {
+    pub fn update_tray_status(&self) {
         let clients = self
             .sessions
             .lock()
-            .await
+            .unwrap()
             .values()
             .map(|s| s.username.clone())
             .collect();
@@ -254,7 +246,7 @@ impl Controller {
     }
 
     /// Shutdown the system tray (removes the icon from taskbar).
-    pub(crate) fn shutdown_tray(&self) {
+    pub fn shutdown_tray(&self) {
         if let Some(mut tray) = self.tray_handle.lock().unwrap().take() {
             tray.shutdown();
         }
@@ -281,7 +273,7 @@ impl Controller {
     ///     already lost) its subscriptions, so the reaper wouldn't otherwise
     ///     be woken to clean up kycom.
     pub(crate) async fn try_take_idle_kycom(&self) -> Option<kymux::kycom::KyCom> {
-        let no_session = self.sessions.lock().await.is_empty();
+        let no_session = self.sessions.lock().unwrap().is_empty();
         let no_streams = {
             let av_services_manager = self.av_services_manager.lock().await;
             av_services_manager.video_streams.is_empty()
@@ -294,16 +286,25 @@ impl Controller {
         }
     }
 
-    pub async fn get_session(
-        &self,
-        uid: &uuid::Uuid,
-    ) -> Result<impl DerefMut<Target = ClientSession> + '_> {
-        tokio::sync::MutexGuard::try_map(self.sessions.lock().await, |s| s.get_mut(uid))
-            .map_err(|_| Error::InvalidSession { uid: *uid })
+    pub fn get_stream_session(&self, uid: &uuid::Uuid) -> Result<Arc<AsyncMutex<Stream>>> {
+        let sessions = self.sessions.lock().unwrap();
+        let client_session = sessions
+            .get(uid)
+            .ok_or(Error::InvalidSession { uid: *uid })?;
+        Ok(client_session.stream.clone())
     }
 
-    pub(crate) async fn insert_session(&self, session: ClientSession) {
-        self.sessions.lock().await.insert(session.uid, session);
+    pub fn get_all_stream_sessions(&self) -> Vec<Arc<AsyncMutex<Stream>>> {
+        self.sessions
+            .lock()
+            .unwrap()
+            .values()
+            .map(|s| s.stream.clone())
+            .collect()
+    }
+
+    pub fn insert_session(&self, session: ClientSession) {
+        self.sessions.lock().unwrap().insert(session.uid, session);
     }
 
     async fn cleanup_removed_session(&self, no_sessions: bool) {
@@ -324,20 +325,24 @@ impl Controller {
             }
         }
 
-        self.update_tray_status().await;
+        self.update_tray_status();
     }
 
     /// Remove a session.
     pub(crate) async fn remove_session(&self, session_id: Uuid) -> Result<()> {
-        let mut sessions = self.sessions.lock().await;
+        let session;
+        let no_sessions;
 
-        let session = sessions
-            .remove(&session_id)
-            .ok_or(Error::InvalidSession { uid: session_id })?;
+        {
+            let mut sessions = self.sessions.lock().unwrap();
+
+            session = sessions
+                .remove(&session_id)
+                .ok_or(Error::InvalidSession { uid: session_id })?;
+            no_sessions = sessions.is_empty();
+        }
+
         session.stop().await;
-
-        let no_sessions = sessions.is_empty();
-        drop(sessions);
 
         self.cleanup_removed_session(no_sessions).await;
 
@@ -346,14 +351,22 @@ impl Controller {
 
     /// Remove multiple sessions.
     pub(crate) async fn remove_sessions_if(&self, mut f: impl FnMut(&ClientSession) -> bool) {
-        let mut sessions = self.sessions.lock().await;
+        let removed: Vec<_>;
+        let no_sessions;
 
-        for (_, session) in sessions.extract_if(|_, session| f(session)) {
-            session.stop().await;
+        {
+            let mut sessions = self.sessions.lock().unwrap();
+
+            removed = sessions
+                .extract_if(|_, session| f(session))
+                .map(|(_, s)| s)
+                .collect();
+            no_sessions = sessions.is_empty();
         }
 
-        let no_sessions = sessions.is_empty();
-        drop(sessions);
+        for session in removed {
+            session.stop().await;
+        }
 
         self.cleanup_removed_session(no_sessions).await;
     }
@@ -361,37 +374,27 @@ impl Controller {
     /// Extract streaming resources for cleanup outside the lock.
     ///
     /// The session remains in the map but with empty services.
-    pub(crate) async fn take_streaming(&self, session_id: Uuid) -> Result<StreamingCleanup> {
+    pub(crate) async fn remove_streaming(&self, session_id: &Uuid) -> Result<()> {
         info!("Stop streaming for session {}", session_id);
 
-        let mut sessions = self.sessions.lock().await;
-        let client_session = sessions
-            .get_mut(&session_id)
-            .ok_or(Error::InvalidSession { uid: session_id })?;
+        let stream = self.get_stream_session(session_id)?;
+        let mut stream = stream.lock().await;
 
-        let data_plane = client_session
-            .stream_session
-            .as_mut()
-            .and_then(|s| s.data_plane.take());
+        if let Some(session) = &mut stream.session {
+            session.data_plane = None;
+        }
+        if let Err(err) = mem::take(&mut stream.services).stop().await {
+            warn!("Failed to stop streaming services: {err:?}");
+        }
 
-        // mem::take moves the subscriptions out with the rest of the services.
-        // They drop (and signal the reaper) when StreamingCleanup.run() drops
-        // the services outside the Controller lock.
-        let services = mem::take(&mut client_session.services);
-
-        Ok(StreamingCleanup {
-            data_plane,
-            services,
-        })
+        Ok(())
     }
 
     pub(crate) async fn has_data_plane(&self, session_id: &Uuid) -> Result<bool> {
-        let sessions = self.sessions.lock().await;
-        let client_session = sessions
-            .get(session_id)
-            .ok_or(Error::InvalidSession { uid: *session_id })?;
+        let stream = self.get_stream_session(session_id)?;
+        let stream = stream.lock().await;
 
-        let Some(stream_session) = client_session.stream_session.as_ref() else {
+        let Some(stream_session) = stream.session.as_ref() else {
             return Err(Error::ControlPlaneNotOpened);
         };
 

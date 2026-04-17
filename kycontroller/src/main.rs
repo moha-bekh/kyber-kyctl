@@ -183,7 +183,7 @@ async fn login(
     };
 
     if ctrl.config.session_mode() == config::SessionMode::Mono
-        && !ctrl.sessions.lock().await.is_empty()
+        && !ctrl.sessions.lock().unwrap().is_empty()
     {
         warn!(
             "Refusing login for \"{}\": mono-client mode and a session is already active",
@@ -200,8 +200,8 @@ async fn login(
         "websocket": client_session.auth_tokens.websocket,
     });
 
-    ctrl.insert_session(client_session).await;
-    ctrl.update_tray_status().await;
+    ctrl.insert_session(client_session);
+    ctrl.update_tray_status();
 
     HttpResponse::Ok().json(body)
 }
@@ -278,7 +278,8 @@ async fn renew(
         return HttpResponse::Unauthorized().finish();
     };
 
-    let Ok(mut session) = ctrl.get_session(&uid).await else {
+    let mut sessions = ctrl.sessions.lock().unwrap();
+    let Some(session) = sessions.get_mut(&uid) else {
         warn!("Session destroyed during renewal");
         user.logout();
         return HttpResponse::Unauthorized().finish();
@@ -314,14 +315,13 @@ async fn capabilities() -> HttpResponse {
 ///
 /// Validate a WebSocket token under the Controller lock. Returns the session ID,
 /// statemachine proxy, and display list if valid. No `.await` while locked.
-async fn validate_websocket_token(
+fn validate_websocket_token(
     ctrl: &web::Data<Controller>,
     token: &str,
-) -> Option<(uuid::Uuid, StateMachineProxy, Vec<host_events::Display>)> {
-    let proxy = ctrl.state_machine_proxy.clone();
+) -> Option<(uuid::Uuid, Vec<host_events::Display>)> {
     let displays = ctrl.displays.lock().unwrap().convert();
 
-    let mut sessions = ctrl.sessions.lock().await;
+    let mut sessions = ctrl.sessions.lock().unwrap();
     let (session_id, client_session) = sessions.iter_mut().find(|(_, session)| {
         !session.auth_tokens.websocket.is_empty() && session.auth_tokens.websocket == token
     })?;
@@ -333,7 +333,7 @@ async fn validate_websocket_token(
         session_id
     );
 
-    Some((session_id, proxy, displays))
+    Some((session_id, displays))
 }
 
 /// This endpoint implements a two-phase WebSocket authentication flow that avoids
@@ -416,24 +416,26 @@ async fn websocket_service(
         };
 
         // Validate token under lock
-        let Some((session_id, state_machine_proxy, displays)) =
-            validate_websocket_token(&ctrl, &token).await
-        else {
+        let Some((session_id, displays)) = validate_websocket_token(&ctrl, &token) else {
             error!("Websocket validation failed: invalid or expired token");
             pending_sender.reject().await;
             return;
         };
 
-        let Ok(sender) = pending_sender.accept(session_id, state_machine_proxy).await else {
+        let Ok(sender) = pending_sender
+            .accept(session_id, ctrl.state_machine_proxy.clone())
+            .await
+        else {
             error!("Could not accept websocket connection");
             return;
         };
 
         sender.send(HostEvent::DisplayList { displays });
 
-        if let Ok(mut client_session) = ctrl.get_session(&session_id).await {
-            client_session.stream_session = Some(StreamingSession::new(sender));
-            info!("Session \"{}\" controlplane connected", client_session.uid);
+        if let Ok(stream) = ctrl.get_stream_session(&session_id) {
+            let mut stream = stream.lock().await;
+            stream.session = Some(StreamingSession::new(sender));
+            info!("Session \"{session_id}\" controlplane connected");
         }
     });
 
@@ -451,11 +453,10 @@ async fn stop_streaming(ctrl: web::Data<Controller>, user: Identity) -> HttpResp
         return HttpResponse::Unauthorized().finish();
     };
 
-    let cleanup = ctrl.take_streaming(uid).await;
+    let cleanup = ctrl.remove_streaming(&uid).await;
 
     match cleanup {
-        Ok(cleanup) => {
-            cleanup.run().await;
+        Ok(()) => {
             info!("Stream stopped");
             HttpResponse::Ok().finish()
         }
@@ -509,10 +510,11 @@ pub(crate) async fn set_bitrate(
         return HttpResponse::Unauthorized().finish();
     };
 
-    let Ok(mut session) = ctrl.get_session(&uid).await else {
+    let Ok(stream) = ctrl.get_stream_session(&uid) else {
         warn!("Session not found");
         return HttpResponse::Forbidden().finish();
     };
+    let mut stream = stream.lock().await;
 
     // Set bitrate: av_services_manager first (Kymux/WS), fallback to per-session (RTP legacy).
     // The two paths stay separate because SharedHandler::video_set_bitrate is sync
@@ -522,8 +524,8 @@ pub(crate) async fn set_bitrate(
     // client B's avservice. For Shared entries the underlying avservice is still
     // global; log a warning since the change will affect every other client
     // on the same display (last-writer-wins, temporary).
-    if !session.services.video_subscriptions.is_empty() {
-        let keys: Vec<_> = session
+    if !stream.services.video_subscriptions.is_empty() {
+        let keys: Vec<_> = stream
             .services
             .video_subscriptions
             .iter()
@@ -548,9 +550,9 @@ pub(crate) async fn set_bitrate(
                 warn!("Failed to set bitrate: {err:?}");
             }
         }
-    } else if !session.services.video.is_empty() {
-        let per_stream = split_bitrate(session.services.video.len());
-        for avserver in &mut session.services.video {
+    } else if !stream.services.video.is_empty() {
+        let per_stream = split_bitrate(stream.services.video.len());
+        for avserver in &mut stream.services.video {
             if let Err(err) = avserver.video_set_bitrate(per_stream).await {
                 warn!("Failed to set bitrate: {err:?}");
             }
@@ -560,7 +562,7 @@ pub(crate) async fn set_bitrate(
         return HttpResponse::Forbidden().finish();
     }
 
-    if let Some(stream_session) = session.stream_session.as_ref() {
+    if let Some(stream_session) = &stream.session {
         stream_session
             .host_event_sender
             .send(HostEvent::BitrateChanged {

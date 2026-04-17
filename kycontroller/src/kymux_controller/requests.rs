@@ -177,28 +177,26 @@ pub(crate) async fn start_session(
             let numeric_session_id = generate_session_id();
             info!("Session started. SessionId: {numeric_session_id}");
 
-            let Ok(mut client_session) = ctrl.get_session(&session_id).await else {
+            let Ok(stream) = ctrl.get_stream_session(&session_id) else {
                 error!(
                     "Session {} disappeared after successful start_session",
                     session_id
                 );
                 return HttpResponse::InternalServerError().finish();
             };
+            let mut stream = stream.lock().await;
 
             let video = response.video.map(|video| {
                 video
                     .into_iter()
                     .map(|v| {
                         if let Some(output) = v.output {
-                            client_session.services.output_handles.push(output);
+                            stream.services.output_handles.push(output);
                         }
                         if let Some(m) = v.metrics_output {
-                            client_session.services.output_handles.push(m);
+                            stream.services.output_handles.push(m);
                         }
-                        client_session
-                            .services
-                            .video_subscriptions
-                            .push(v.subscription);
+                        stream.services.video_subscriptions.push(v.subscription);
 
                         StartSessionVideoResponse {
                             display_id: v.display_id,
@@ -211,9 +209,9 @@ pub(crate) async fn start_session(
 
             let audio = if let Some(audio) = response.audio {
                 if let Some(output) = audio.output {
-                    client_session.services.output_handles.push(output);
+                    stream.services.output_handles.push(output);
                 }
-                client_session.services.audio_subscription = Some(audio.subscription);
+                stream.services.audio_subscription = Some(audio.subscription);
 
                 Some(StartSessionAudioResponse {
                     endpoint: audio.endpoint,
@@ -223,7 +221,7 @@ pub(crate) async fn start_session(
             };
 
             let input = if let Some(input) = response.input {
-                client_session.services.input = Some(input.inputservice);
+                stream.services.input = Some(input.inputservice);
 
                 Some(StartSessionInputResponse {
                     endpoint: input.endpoint,
@@ -234,7 +232,7 @@ pub(crate) async fn start_session(
             };
 
             let clock_sync = if let Some(clock_sync) = response.clock_sync {
-                client_session.services.clock_sync = Some(clock_sync.task);
+                stream.services.clock_sync = Some(clock_sync.task);
 
                 Some(StartSessionClockSyncResponse {
                     endpoint: clock_sync.endpoint,
@@ -244,7 +242,7 @@ pub(crate) async fn start_session(
             };
 
             let metrics = if let Some(metrics) = response.metrics {
-                client_session.services.metrics = Some(metrics.task);
+                stream.services.metrics = Some(metrics.task);
 
                 Some(StartSessionMetricsResponse {
                     endpoint: metrics.endpoint,

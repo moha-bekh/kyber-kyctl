@@ -220,8 +220,8 @@ async fn start_kymux(
     let certificate_hash = kymux.certificate_hash.clone();
     drop(shared_kymux_infra);
 
-    let mut session = ctrl.get_session(&session_id).await?;
-    let Some(stream_session) = &mut session.stream_session else {
+    let stream = ctrl.get_stream_session(&session_id)?;
+    let Some(stream_session) = &mut stream.lock().await.session else {
         return Err(Error::ControlPlaneNotOpened);
     };
 
@@ -591,15 +591,16 @@ async fn start_session(
     let displays = ctrl.displays.lock().unwrap().convert();
 
     // Get the pending connection receiver (was created in start_mux)
-    let mut client_session = ctrl.get_session(&session_id).await?;
-    let Some(streaming_session) = &mut client_session.stream_session else {
+    let stream = ctrl.get_stream_session(&session_id)?;
+    let mut stream = stream.lock().await;
+    let Some(streaming_session) = &mut stream.session else {
         return Err(Error::ControlPlaneNotOpened);
     };
     let connection_rx = streaming_session
         .pending_kymux_rx
         .take()
         .ok_or(Error::KymuxNotListening)?;
-    drop(client_session);
+    drop(stream);
 
     // Wait for the connection (server sends it when client connects with valid token)
     let connection = match tokio::time::timeout(Duration::from_millis(500), connection_rx).await {
@@ -702,8 +703,8 @@ async fn start_session(
 
     // Create KymuxBackend now that connection is established
     let proxy = ctrl.state_machine_proxy.clone();
-    let mut client_session = ctrl.get_session(&session_id).await?;
-    let Some(streaming_session) = &mut client_session.stream_session else {
+    let stream = ctrl.get_stream_session(&session_id)?;
+    let Some(streaming_session) = &mut stream.lock().await.session else {
         return Err(Error::ControlPlaneNotOpened);
     };
 
