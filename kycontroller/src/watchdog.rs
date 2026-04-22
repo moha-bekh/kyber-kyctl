@@ -26,7 +26,7 @@ use crate::avservice;
 use crate::{Result, StateMachineProxy};
 
 pub(crate) struct Watchdog {
-    avservice: avservice::Handler,
+    _avservice: avservice::Handler,
 }
 
 impl Watchdog {
@@ -35,15 +35,9 @@ impl Watchdog {
         statemachine_proxy: StateMachineProxy,
     ) -> Result<(Self, Vec<kyavservice_types::Display>)> {
         // Watchdog is global, not tied to any user session
-        let (avservice, displays) =
+        let (_avservice, displays) =
             avservice::Handler::enumerate_displays(process_factory, statemachine_proxy).await?;
 
-        Ok((Self { avservice }, displays))
-    }
-
-    pub(crate) async fn stop(self) -> Result<()> {
-        self.avservice.stop().await?;
-
-        Ok(())
+        Ok((Self { _avservice }, displays))
     }
 }

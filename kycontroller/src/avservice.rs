@@ -21,12 +21,12 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use log::{debug, info, warn};
+use log::{debug, warn};
 
-use kyavservice_types::{Command, Display, Event, VideoCodec};
+use kyavservice_types::{Command, Display, IpcApi, Response, VideoCodec};
 use libkypc::{
     process::{Process, ProcessFactory},
-    CommandSender, Commander, EventReceiver,
+    CommandSender, EventReceiver,
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -60,7 +60,7 @@ async fn receiver_task(
     // and the global enumerate/SDP handlers. Forwarded with each event so the
     // StateMachine delivers it to exactly that stream's subscribers.
     stream_id: Option<StreamId>,
-    mut receiver: EventReceiver<kyavservice_types::Event>,
+    mut receiver: EventReceiver<IpcApi>,
     statemachine_proxy: StateMachineProxy,
 ) {
     while let Ok(event) = receiver.recv().await {
@@ -93,33 +93,31 @@ pub(crate) enum HandlerType {
 pub(crate) struct Handler {
     type_: HandlerType,
 
-    child: Process,
-    commander: Commander<Command, Event>,
-    sender: CommandSender<Command, Event>,
+    _child: Process,
+    commands: CommandSender<IpcApi>,
     receiver_task: Option<utils::Task>,
 }
+
+static AVSERVER_PATH: std::sync::LazyLock<std::path::PathBuf> =
+    std::sync::LazyLock::new(|| utils::get_executable_path("kyavserver"));
 
 impl Handler {
     async fn spawn_process(
         type_: HandlerType,
         process_factory: &Arc<ProcessFactory>,
-    ) -> Result<(Self, EventReceiver<Event>)> {
+    ) -> Result<(Self, EventReceiver<IpcApi>)> {
         debug!("Run AvServer {type_:?}");
 
-        let (child, mut commander): (_, Commander<Command, Event>) = process_factory
-            .spawn(utils::get_executable_path("kyavserver"), None)
-            .await?;
-        let (sender, receiver) = commander.get_sender_receiver()?;
+        let (_child, commander) = process_factory.spawn(&*AVSERVER_PATH, &[]).await?;
 
         let this = Self {
             type_,
-            child,
-            commander,
-            sender,
+            _child,
+            commands: commander.commands,
             receiver_task: None,
         };
 
-        Ok((this, receiver))
+        Ok((this, commander.events))
     }
 
     fn start_receiver_task(
@@ -127,7 +125,7 @@ impl Handler {
         session_id: Option<uuid::Uuid>,
         stream_id: Option<StreamId>,
         statemachine_proxy: StateMachineProxy,
-        receiver: EventReceiver<Event>,
+        receiver: EventReceiver<IpcApi>,
     ) {
         self.receiver_task = Some(utils::Task::spawn(receiver_task(
             self.type_,
@@ -144,9 +142,9 @@ impl Handler {
     ) -> Result<(Self, Vec<Display>)> {
         let (mut this, receiver) =
             Self::spawn_process(HandlerType::EnumerateDisplays, process_factory).await?;
-        let ret = this.sender.send(Command::EnumerateDisplays).await?;
+        let ret = this.commands.send(Command::EnumerateDisplays).await?;
 
-        let Some(Event::DisplayList { displays }) = ret else {
+        let Ok(Response::DisplayList { displays }) = ret else {
             return Err(Error::DisplayListEmpty);
         };
 
@@ -164,8 +162,8 @@ impl Handler {
         // Generate SDP
         let (mut this, _) = Self::spawn_process(HandlerType::VideoSdp, process_factory).await?;
 
-        let evt = this
-            .sender
+        let res = this
+            .commands
             .send(Command::RtpGenerateVideoSdp {
                 display_id,
                 yuv444,
@@ -173,11 +171,8 @@ impl Handler {
             })
             .await?;
 
-        // Stop avserver
-        this.stop_inner().await?;
-
         // Unpack results
-        let Some(Event::RtpSdpGenerated { sdp }) = evt else {
+        let Ok(Response::RtpSdpGenerated { sdp }) = res else {
             return Err(Error::AvServerUnexpectedResponse);
         };
 
@@ -290,58 +285,26 @@ impl Handler {
         start_cmd: Command,
     ) -> Result<Self> {
         let (mut this, receiver) = Self::spawn_process(type_, process_factory).await?;
-        this.sender.send(start_cmd).await?;
+        this.commands.send(start_cmd).await??;
 
         this.start_receiver_task(session_id, stream_id, statemachine_proxy, receiver);
 
         Ok(this)
     }
 
-    /// Send a stop request to an AvServer
-    ///
-    /// A basic stop sequence is
-    /// 1. Send a stop request
-    /// 2. Wait for the process to exit
-    ///
-    /// However, a stuck AvServer can cause issues at two points
-    /// 1. The Stop request can never be answered
-    /// 2. The process can never stop correctly
-    ///
-    /// Both Stop request and Process join have a timeout to make sure
-    /// we aren't stuck forever. If one of them timeout, kill the process.
-    async fn stop_inner(mut self) -> Result<()> {
-        self.receiver_task = None;
-
-        // A command send failure or a process that doesn't stop lead to a process kill
-        self.child.kill().await?;
-
-        self.commander.stop().await?;
-        debug!("Commander {:?} stopped", self.type_);
-
-        Ok(())
-    }
-
     pub(crate) async fn video_force_idr(&mut self) -> Result<()> {
         debug!("Requesting IDR frame");
-        self.sender
-            .send_with_timeout(Command::VideoForceIdr, CMD_ACK_TIMEOUT)
-            .await?;
+        tokio::time::timeout(CMD_ACK_TIMEOUT, self.commands.send(Command::VideoForceIdr))
+            .await
+            .map_err(|_| Error::Timeout)???;
 
         Ok(())
     }
 
     pub(crate) async fn video_set_bitrate(&mut self, bitrate: i32) -> Result<()> {
-        self.sender
+        self.commands
             .send(Command::VideoSetBitrate { bitrate })
-            .await?;
-
-        Ok(())
-    }
-
-    pub(crate) async fn stop(self) -> Result<()> {
-        let type_ = self.type_;
-        self.stop_inner().await?;
-        info!("AvServer {type_:?} exited");
+            .await??;
 
         Ok(())
     }
@@ -462,9 +425,6 @@ impl SharedHandler {
             // Stop wins: skip the queued control commands and tear down now, so
             // the child is force-killed promptly even behind a large backlog.
             if let Some(ack) = stop_ack {
-                if let Err(err) = handler.stop().await {
-                    warn!("Failed to stop avservice handler: {err}");
-                }
                 let _ = ack.send(());
                 return;
             }
@@ -479,10 +439,6 @@ impl SharedHandler {
                     warn!("Force IDR failed: {e:?}");
                 }
             }
-        }
-        // Channel closed without an explicit Stop (every sender dropped).
-        if let Err(e) = handler.stop().await {
-            warn!("Implicit avservice stop failed: {e:?}");
         }
     }
 }

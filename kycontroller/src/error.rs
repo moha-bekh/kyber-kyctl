@@ -45,6 +45,12 @@ pub enum Error {
         #[from]
         source: libkypc::Error,
     },
+    #[error("kyavservice error: {0}")]
+    AvService(#[from] kyavservice_types::Error),
+    #[error("kynputservice error: {0}")]
+    InputService(#[from] kynputservice_types::Error),
+    #[error("timeout")]
+    Timeout,
     #[error("Streamer already stopped")]
     StreamerStopped,
     #[error("Control plane not opened")]

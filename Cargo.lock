@@ -3277,6 +3277,7 @@ dependencies = [
 name = "kyavservice-types"
 version = "0.1.0"
 dependencies = [
+ "libkypc",
  "serde",
 ]
 
@@ -3535,6 +3536,7 @@ dependencies = [
 name = "kynputservice-types"
 version = "0.1.0"
 dependencies = [
+ "libkypc",
  "serde",
 ]
 

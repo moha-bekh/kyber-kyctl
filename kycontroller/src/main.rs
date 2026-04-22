@@ -724,7 +724,7 @@ async fn real_main(cli: cli::Cli) -> Result<()> {
     // cancel signal, dropped at the end of `real_main`, which signals both
     // tasks to exit.
     let av_tasks_handle;
-    let watchdog = {
+    let _watchdog = {
         let weak = Arc::downgrade(&ctrl.clone().into_inner());
 
         av_tasks_handle = ctrl.av_services_manager.lock().await.init(weak);
@@ -850,9 +850,6 @@ async fn real_main(cli: cli::Cli) -> Result<()> {
 
     ctrl_for_tray.shutdown_tray();
 
-    if let Some(watchdog) = watchdog {
-        watchdog.stop().await?;
-    }
     av_tasks_handle.stop();
 
     Ok(())

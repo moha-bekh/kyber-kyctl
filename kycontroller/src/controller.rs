@@ -105,6 +105,7 @@ pub(crate) struct StreamingServices {
     /// handled via [`Self::video_subscriptions`].
     pub(crate) video: Vec<avservice::Handler>,
     /// Per-session audio avserver, RTP only, same rationale as `video`.
+    #[expect(unused)]
     pub(crate) audio: Option<avservice::Handler>,
     pub(crate) input: Option<inputservice::Handler>,
     pub(crate) clock_sync: Option<Task>,
@@ -128,16 +129,6 @@ impl StreamingServices {
         // drop; see AVServicesManager. RTP avservices (in `video`/`audio`) are
         // per-session and stopped synchronously below.
         drop(self.tasks);
-
-        for service in self.video {
-            info!("Stop running video AVServer");
-            service.stop().await?;
-        }
-
-        if let Some(audio) = self.audio {
-            info!("Stop running audio AVServer");
-            audio.stop().await?;
-        }
 
         if let Some(input) = self.input {
             info!("Stop running InputServer");

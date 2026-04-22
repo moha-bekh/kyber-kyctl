@@ -20,22 +20,20 @@
 
 use std::sync::Arc;
 
-use log::{debug, info, warn};
+use log::{debug, warn};
 
-use kynputservice_types::{Command, Event, HostConfig, ServiceConfig};
+use kynputservice_types::{Command, HostConfig, IpcApi, Response, ServiceConfig};
 use libkypc::{
     process::{Process, ProcessFactory},
-    CommandSender, Commander, EventReceiver,
+    Commander,
 };
 
 use crate::error::Result;
 use crate::utils;
 
 pub(crate) struct Handler {
-    child: Process,
-    commander: Commander<Command, Event>,
-    sender: CommandSender<Command, Event>,
-    _receiver: EventReceiver<Event>,
+    _child: Process,
+    commander: Commander<IpcApi>,
 }
 
 impl Handler {
@@ -44,33 +42,28 @@ impl Handler {
 
         let exe_path = utils::get_executable_path("kynputserver");
 
-        let (child, mut commander): (_, Commander<Command, Event>) =
-            process_factory.spawn(exe_path, None).await?;
-        let (sender, receiver) = commander.get_sender_receiver()?;
+        let (_child, commander) = process_factory.spawn(exe_path, &[]).await?;
 
-        Ok(Self {
-            child,
-            commander,
-            sender,
-            _receiver: receiver,
-        })
+        Ok(Self { _child, commander })
     }
 
     pub(crate) async fn start_tcp(
         process_factory: &Arc<ProcessFactory>,
         host_config: HostConfig,
         service_config: ServiceConfig,
-    ) -> Result<(Self, Option<Event>)> {
+    ) -> Result<(Self, Response)> {
         let mut this = Self::spawn_process(process_factory).await?;
-        let evt = this
-            .sender
+        let res = this
+            .commander
+            .commands
             .send(Command::StartTcp {
                 host_config,
                 service_config,
             })
-            .await?;
+            .await?
+            .unwrap();
 
-        Ok((this, evt))
+        Ok((this, res))
     }
 
     pub(crate) async fn start_kymux(
@@ -78,43 +71,36 @@ impl Handler {
         host_config: HostConfig,
         service_config: ServiceConfig,
         uri: String,
-    ) -> Result<(Self, Option<Event>)> {
+    ) -> Result<(Self, Response)> {
         let mut this = Self::spawn_process(process_factory).await?;
-        let evt = this
-            .sender
+        let res = this
+            .commander
+            .commands
             .send(Command::StartKymux {
                 host_config,
                 service_config,
                 uri,
             })
-            .await?;
+            .await?
+            .unwrap();
 
-        Ok((this, evt))
+        Ok((this, res))
     }
 
     pub(crate) async fn update_host_config(&mut self, host_config: HostConfig) -> Result<()> {
-        self.sender
+        self.commander
+            .commands
             .send(Command::UpdateHostConfig { host_config })
-            .await?;
+            .await??;
 
         Ok(())
     }
 
     pub(crate) async fn stop(mut self) -> Result<()> {
-        let ret = self.sender.send(Command::Stop(0)).await;
+        let ret = self.commander.commands.send(Command::Stop(0)).await;
         if let Err(err) = ret {
             warn!("Stop request send failed: {err:?}");
         }
-
-        debug!("Stop child");
-        self.child.stop().await?;
-        debug!("Stop child: Done");
-
-        debug!("Stop commander");
-        self.commander.stop().await?;
-        debug!("Stop commander: Done");
-
-        info!("Input server exited");
 
         Ok(())
     }
