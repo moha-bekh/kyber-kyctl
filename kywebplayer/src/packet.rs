@@ -18,6 +18,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+pub const CODEC_H264: u32 = 0x68323634;
+pub const CODEC_H265: u32 = 0x68323635;
+#[allow(unused)]
+pub const CODEC_AV1: u32 = 0x00617631;
+#[allow(unused)]
+pub const CODEC_OPUS: u32 = 0x6F707573;
+
 #[derive(Debug)]
 pub enum Packet {
     Codec(CodecPacket),

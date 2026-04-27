@@ -24,7 +24,8 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 
 use super::player::{VideoPlayerEvent, VideoPlayerListener, VideoPlayerMetric};
-use crate::packet::MediaPacket;
+use super::{VideoCodec, VideoDecoderConfig};
+use crate::packet::{self, MediaPacket};
 use kywasmtime::Instant;
 
 pub struct VideoDecoder {
@@ -33,9 +34,11 @@ pub struct VideoDecoder {
     _error_closure: Closure<dyn FnMut(js_sys::Error) -> Result<(), JsValue>>,
     video_decoder: web_sys::VideoDecoder,
     pending_config: Option<Vec<u8>>,
-    codec: String,
-    hardware_acceleration: bool,
+    kymux_codec: u32,
+    force_software_decoding: bool,
+    yuv444: bool,
     metrics: bool,
+    supported_video_codecs: Vec<VideoDecoderConfig>,
 }
 
 pub struct VideoDecoderCallbacks {
@@ -47,9 +50,11 @@ impl VideoDecoder {
     pub fn new(
         listener: Rc<dyn VideoPlayerListener>,
         cbs: VideoDecoderCallbacks,
-        codec: String,
-        hardware_acceleration: bool,
+        kymux_codec: u32,
+        force_software_decoding: bool,
+        yuv444: bool,
         metrics: bool,
+        supported_video_codecs: Vec<VideoDecoderConfig>,
     ) -> Result<Self, JsValue> {
         let output_closure = Closure::wrap(cbs.output);
         let error_closure = Closure::wrap(cbs.error);
@@ -64,39 +69,57 @@ impl VideoDecoder {
             _error_closure: error_closure,
             video_decoder,
             pending_config: None,
-            codec,
-            hardware_acceleration,
+            kymux_codec,
+            force_software_decoding,
+            yuv444,
             metrics,
+            supported_video_codecs,
         })
+    }
+
+    fn get_video_codec(kymux_codec: u32) -> Option<VideoCodec> {
+        match kymux_codec {
+            packet::CODEC_H264 => Some(VideoCodec::H264),
+            packet::CODEC_H265 => Some(VideoCodec::HEVC),
+            packet::CODEC_AV1 => Some(VideoCodec::AV1),
+            _ => None,
+        }
+    }
+
+    fn create_video_decoder_config(&self) -> Option<web_sys::VideoDecoderConfig> {
+        let video_codec = Self::get_video_codec(self.kymux_codec)?;
+
+        info!("Create VideoDecoder for codec {video_codec:?}");
+        let desc = super::get_video_decoder_config(
+            &self.supported_video_codecs,
+            video_codec,
+            self.yuv444,
+            self.force_software_decoding,
+        )?;
+
+        info!(
+            "Video decoder configure. Codec: {}, HardwareAcceleration: {:?}",
+            &desc.webcodec, desc.hardware_acceleration,
+        );
+
+        // About the codec string format:
+        // <https://developer.mozilla.org/en-US/docs/Web/Media/Formats/codecs_parameter#basic_syntax>
+        // Do not set description so that the format is AnnexB:
+        // <https://www.w3.org/TR/webcodecs-avc-codec-registration/#videodecoderconfig-description>
+        let decoder_config = web_sys::VideoDecoderConfig::new(&desc.webcodec);
+        decoder_config.set_hardware_acceleration(desc.hardware_acceleration);
+        decoder_config.set_optimize_for_latency(true);
+        Some(decoder_config)
     }
 
     pub fn send_packet(&mut self, packet: MediaPacket) -> Result<(), JsValue> {
         if packet.header.is_config {
-            // Do not set description so that the format is AnnexB:
-            // <https://www.w3.org/TR/webcodecs-avc-codec-registration/#videodecoderconfig-description>
-            // About the codec string format:
-            // <https://developer.mozilla.org/en-US/docs/Web/Media/Formats/codecs_parameter#basic_syntax>
-            info!("Create VideoDecoder for codec {}", self.codec);
-
-            let hardware_acceleration = if self.hardware_acceleration {
-                info!("Using hardware decoding");
-                web_sys::HardwareAcceleration::PreferHardware
-            } else {
-                info!("Using software decoding");
-                web_sys::HardwareAcceleration::PreferSoftware
+            let Some(decoder_config) = self.create_video_decoder_config() else {
+                return Err(JsError::new("No decoder found").into());
             };
-
-            let decoder_config = web_sys::VideoDecoderConfig::new(&self.codec);
-            decoder_config.set_optimize_for_latency(true);
-            decoder_config.set_hardware_acceleration(hardware_acceleration);
 
             self.video_decoder.configure(&decoder_config)?;
             self.pending_config = Some(packet.data.to_vec());
-
-            info!(
-                "Video decoder configure. Codec: {}, HardwareAcceleration: {hardware_acceleration:?}",
-                self.codec
-            );
         } else {
             let header = &packet.header;
             let type_ = if header.is_key {

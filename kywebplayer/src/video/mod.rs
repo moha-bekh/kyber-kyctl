@@ -106,22 +106,30 @@ pub async fn supported_video_codecs(force_software: bool) -> Vec<VideoDecoderCon
     configs
 }
 
-pub async fn get_video_decoder_config(
+pub(crate) fn get_video_decoder_config(
+    supported_video_codecs: &[VideoDecoderConfig],
     codec: VideoCodec,
     yuv444: bool,
-    software_decode: bool,
-) -> Option<VideoDecoderConfig> {
-    let supported_video_codecs = supported_video_codecs(software_decode).await;
-
+    force_software_decode: bool,
+) -> Option<&VideoDecoderConfig> {
     let supported_video_codecs: Vec<_> = supported_video_codecs
         .into_iter()
-        .filter(|config| config.codec == codec && config.yuv444 == yuv444)
+        .filter(|config| {
+            config.codec == codec
+                && config.yuv444 == yuv444
+                && (!force_software_decode
+                    || config.hardware_acceleration
+                        == web_sys::HardwareAcceleration::PreferSoftware)
+        })
         .collect();
 
     if supported_video_codecs.len() > 1 {
-        let video_decoder_config = supported_video_codecs.into_iter().find(|config| {
-            config.hardware_acceleration == web_sys::HardwareAcceleration::PreferHardware
-        });
+        let video_decoder_config = supported_video_codecs
+            .iter()
+            .find(|config| {
+                config.hardware_acceleration == web_sys::HardwareAcceleration::PreferHardware
+            })
+            .copied();
 
         if video_decoder_config.is_none() {
             error!("Expected to find a configuration with hardware configuration, but got none");
@@ -129,6 +137,6 @@ pub async fn get_video_decoder_config(
 
         video_decoder_config
     } else {
-        Some(supported_video_codecs[0].clone())
+        Some(supported_video_codecs[0])
     }
 }

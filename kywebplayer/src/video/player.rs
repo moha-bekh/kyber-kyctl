@@ -40,11 +40,12 @@ pub struct VideoPlayer {
     listener: Rc<dyn VideoPlayerListener>,
     cbs: Option<VideoDecoderCallbacks>,
     video_decoder: Option<VideoDecoder>,
-    codec: String,
-    hardware_acceleration: bool,
+    force_software_decoding: bool,
+    yuv444: bool,
     video_rotation: Rc<AtomicU8>,
     recv_dates: Rc<RefCell<VecDeque<i64>>>,
     metrics: bool,
+    supported_video_codecs: Vec<VideoDecoderConfig>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -89,12 +90,14 @@ where
 }
 
 impl VideoPlayer {
-    pub fn create(
+    pub async fn create(
         listener: Box<dyn VideoPlayerListener>,
         player_config: &VideoPlayerConfig,
-        decoder_config: VideoDecoderConfig,
         metrics: bool,
     ) -> Result<(Self, VideoPlayerHandle), JsValue> {
+        let supported_video_codecs =
+            super::supported_video_codecs(player_config.force_software_decoding).await;
+
         let listener = Rc::<dyn VideoPlayerListener>::from(listener);
 
         let document = web_sys::window()
@@ -113,19 +116,6 @@ impl VideoPlayer {
 
         let video_rotation = Rc::new(AtomicU8::new(0));
         let video_rotation_ref = video_rotation.clone();
-
-        let codec = decoder_config.webcodec;
-        let hardware_acceleration = match decoder_config.hardware_acceleration {
-            web_sys::HardwareAcceleration::PreferHardware => true,
-            web_sys::HardwareAcceleration::PreferSoftware => false,
-            _ => {
-                error!(
-                    "Unexpected hardware acceleration {:?}",
-                    decoder_config.hardware_acceleration
-                );
-                return Err(JsValue::from("Invalid hardware acceleration setting").into());
-            }
-        };
 
         let recv_dates = Rc::new(RefCell::new(VecDeque::new()));
         let recv_dates2 = recv_dates.clone();
@@ -172,11 +162,12 @@ impl VideoPlayer {
             listener,
             cbs: Some(cbs),
             video_decoder: None,
-            codec,
-            hardware_acceleration,
+            force_software_decoding: player_config.force_software_decoding,
+            yuv444: player_config.yuv444,
             video_rotation,
             recv_dates,
             metrics,
+            supported_video_codecs,
         };
         let handle = VideoPlayerHandle {
             renderer_worker_handle,
@@ -209,7 +200,7 @@ impl VideoPlayer {
                     return Err(JsValue::from("Video decoder not set").into());
                 }
             }
-            Packet::Codec(CodecPacket { rotation, .. }) => {
+            Packet::Codec(CodecPacket { codec, rotation }) => {
                 self.video_rotation.store(rotation, Ordering::Relaxed);
 
                 if self.video_decoder.is_none() {
@@ -223,9 +214,11 @@ impl VideoPlayer {
                     self.video_decoder = Some(VideoDecoder::new(
                         self.listener.clone(),
                         cbs,
-                        self.codec.clone(),
-                        self.hardware_acceleration,
+                        codec,
+                        self.force_software_decoding,
+                        self.yuv444,
                         self.metrics,
+                        self.supported_video_codecs.clone(),
                     )?);
                 }
             }

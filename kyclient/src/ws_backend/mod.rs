@@ -39,8 +39,7 @@ use video::VideoWsSocketHandler;
 
 use crate::platform::message::{AudioMessageForwarder, VideoMessageForwarder};
 use crate::platform::player::{
-    self, get_video_decoder_config, AudioPlayer, AudioPlayerCreationError, AudioPlayerHandle,
-    VideoPlayer, VideoPlayerHandle,
+    self, AudioPlayer, AudioPlayerCreationError, AudioPlayerHandle, VideoPlayer, VideoPlayerHandle,
 };
 use crate::platform::InputMsgSink;
 
@@ -147,14 +146,6 @@ impl WsBackend {
 
         let video_config = &video_config[0];
 
-        let video_decoder_config = get_video_decoder_config(
-            video_config.codec.into(),
-            video_config.yuv444,
-            video_config.player.software_decode,
-        )
-        .await
-        .ok_or_else(|| Error::NoValidVideoDecoderConfig)?;
-
         let listener = Box::new(VideoMessageForwarder {
             message_sender: backend_config.msg_sender.clone(),
             source_id: video_config.display_id,
@@ -162,15 +153,13 @@ impl WsBackend {
         let player_config = player::VideoPlayerConfig {
             canvas: video_config.player.canvas.clone(),
             app_crate_name: "kyclient-wasm".to_string(),
+            force_software_decoding: video_config.player.software_decode,
             notify_decoded: video_config.player.notify_decoded,
             video_buffer: video_config.player.video_buffer,
+            yuv444: video_config.yuv444,
         };
-        let (player, player_handle) = VideoPlayer::create(
-            listener,
-            &player_config,
-            video_decoder_config,
-            metrics,
-        )?;
+        let (player, player_handle) =
+            VideoPlayer::create(listener, &player_config, metrics).await?;
 
         let url = format!(
             "wss://{host}/websocket/video",

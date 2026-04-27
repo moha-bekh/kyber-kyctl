@@ -33,11 +33,11 @@ use super::{KymuxBackendConfig, PlatformEndpoints};
 use crate::platform::message::{AudioMessageForwarder, VideoMessageForwarder};
 use crate::platform::player::packet::*;
 use crate::platform::player::{
-    self, AudioPlayer, AudioPlayerCreationError, AudioPlayerHandle, PacketSink, VideoDecoderConfig,
-    VideoPlayer, VideoPlayerHandle,
+    self, AudioPlayer, AudioPlayerCreationError, AudioPlayerHandle, PacketSink, VideoPlayer,
+    VideoPlayerHandle,
 };
 use crate::platform::InputMsgSink;
-use crate::{BackendDriver, MessageSender, VideoSessionConfig};
+use crate::{BackendDriver, MessageSender};
 use crate::{Error, Result};
 
 #[derive(Clone)]
@@ -81,29 +81,6 @@ impl Player {
             audio_player.stop().await;
         }
     }
-}
-
-async fn create_video_decoder_config(config: &VideoSessionConfig) -> Option<VideoDecoderConfig> {
-    let supported_video_codecs =
-        player::supported_video_codecs(config.player.software_decode).await;
-
-    let codec = config.codec.into();
-    let supported_video_codecs: Vec<_> = supported_video_codecs
-        .into_iter()
-        .filter(|candidate_config| {
-            candidate_config.codec == codec && candidate_config.yuv444 == config.yuv444
-        })
-        .collect();
-
-    let video_decoder_config = if supported_video_codecs.len() > 1 {
-        supported_video_codecs.into_iter().find(|config| {
-            config.hardware_acceleration == web_sys::HardwareAcceleration::PreferHardware
-        })?
-    } else {
-        supported_video_codecs[0].clone()
-    };
-
-    Some(video_decoder_config)
 }
 
 fn to_player_packet(packet: types::AVPacket) -> player::packet::Packet {
@@ -187,11 +164,6 @@ async fn create_videoplayer(
     let mut player_list = vec![];
 
     for (config, endpoint) in video_config.iter().zip(endpoints.into_iter()) {
-        let video_config = create_video_decoder_config(config).await.ok_or_else(|| {
-            warn!("No valid decoder config for display {}", config.display_id);
-            Error::Rejected
-        })?;
-
         let listener = Box::new(VideoMessageForwarder {
             message_sender: backend_config.msg_sender.clone(),
             source_id: config.display_id,
@@ -199,15 +171,13 @@ async fn create_videoplayer(
         let player_config = player::VideoPlayerConfig {
             canvas: config.player.canvas.clone(),
             app_crate_name: "kyclient-wasm".to_string(),
+            force_software_decoding: config.player.software_decode,
             notify_decoded: config.player.notify_decoded,
             video_buffer: config.player.video_buffer,
+            yuv444: config.yuv444,
         };
-        let (video_player, video_player_handle) = VideoPlayer::create(
-            listener,
-            &player_config,
-            video_config,
-            metrics,
-        )?;
+        let (video_player, video_player_handle) =
+            VideoPlayer::create(listener, &player_config, metrics).await?;
 
         info!("Start video");
 

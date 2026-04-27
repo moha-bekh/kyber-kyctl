@@ -29,7 +29,7 @@ pub use audio::player::{
 pub use video::player::{
     VideoPlayer, VideoPlayerEvent, VideoPlayerHandle, VideoPlayerListener, VideoPlayerMetric,
 };
-pub use video::{get_video_decoder_config, supported_video_codecs, VideoCodec, VideoDecoderConfig};
+pub use video::{supported_video_codecs, VideoCodec, VideoDecoderConfig};
 
 use packet::Packet;
 
@@ -39,8 +39,10 @@ use wasm_bindgen::prelude::*;
 pub struct VideoPlayerConfig {
     pub canvas: String,
     pub app_crate_name: String,
+    pub force_software_decoding: bool,
     pub notify_decoded: bool,
     pub video_buffer: u32, // ms
+    pub yuv444: bool,      // HACK: should be parsed from the config packet
 }
 
 #[derive(Clone, Debug)]
