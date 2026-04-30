@@ -81,42 +81,34 @@ git_clone() {
     cd ..
 }
 
-generate_kyctl_cargo_config() {
-    echo "Generating kyctl .cargo/config.toml"
+checkout_deps() {
+    # Save current directory and go to parent to clone deps as siblings
+    local KYCTL_DIR=$(pwd)
+    cd ..
+
+    git_clone "core/kymux.git"
+    git_clone "core/kyutil.git"
+    git_clone "core/kynput.git"
+    git_clone "core/kymedia.git"
+
+    # Generate unified cargo config at parent level for all sibling repos
+    echo "Generating .cargo/config.toml"
     mkdir -p .cargo
     cat > .cargo/config.toml << 'EOF'
 [patch.crates-io]
-kyavservice-types = { path = "../kymedia/kyavservice-types" }
-kynputservice-types = { path = "../kynput/kynputservice-types" }
-kyaudioreg = { path = "../kymedia/kyaudioreg" }
-kycom = { path = "../kymux/kycom" }
-kymux = { path = "../kymux/kymux" }
-libkypc = { path = "../kyutil/libkypc" }
-kynput = { path = "../kynput/kynput" }
-kynput-rs = { path = "../kynput/kynput-rs" }
-kynput-sys = { path = "../kynput/kynput-rs/kynput-sys" }
-vlc-rs = { path = "../kymedia/external/vlc-rs" }
+kyavservice-types = { path = "./kymedia/kyavservice-types" }
+kynputservice-types = { path = "./kynput/kynputservice-types" }
+kyaudioreg = { path = "./kymedia/kyaudioreg" }
+kycom = { path = "./kymux/kycom" }
+kymux = { path = "./kymux/kymux" }
+libkypc = { path = "./kyutil/libkypc" }
+kynput = { path = "./kynput/kynput" }
+kynput-rs = { path = "./kynput/kynput-rs" }
+kynput-sys = { path = "./kynput/kynput-rs/kynput-sys" }
+vlc-rs = { path = "./kymedia/external/vlc-rs" }
 EOF
-}
 
-generate_kynput_cargo_config() {
-    echo "Generating kynput .cargo/config.toml"
-    mkdir -p ../kynput/.cargo
-    cat > ../kynput/.cargo/config.toml << 'EOF'
-[patch.crates-io]
-libkypc = { path = "../kyutil/libkypc" }
-kycom = { path = "../kymux/kycom" }
-EOF
-}
-
-generate_kymedia_cargo_config() {
-    echo "Generating kymedia .cargo/config.toml"
-    mkdir -p ../kymedia/.cargo
-    cat > ../kymedia/.cargo/config.toml << 'EOF'
-[patch.crates-io]
-libkypc = { path = "../kyutil/libkypc" }
-kycom = { path = "../kymux/kycom" }
-EOF
+    cd "$KYCTL_DIR"
 }
 
 get_cargo_target() {
@@ -191,35 +183,7 @@ get_vlc_target() {
     esac
 }
 
-checkout_deps() {
-    # Save current directory and go to parent to clone deps as siblings
-    local KYCTL_DIR=$(pwd)
-    cd ..
-
-    git_clone "core/kymux.git"
-    git_clone "core/kyutil.git"
-    git_clone "core/kynput.git"
-    git_clone "core/kymedia.git"
-
-    cd "$KYCTL_DIR"
-
-    # Always regenerate dependency configs if directories exist
-    if [ -d "../kynput" ]; then
-        generate_kynput_cargo_config
-    fi
-    if [ -d "../kymedia" ]; then
-        generate_kymedia_cargo_config
-    fi
-}
-
 build_deps() {
-    # Always regenerate dependency configs if directories exist
-    if [ -d "../kynput" ]; then
-        generate_kynput_cargo_config
-    fi
-    if [ -d "../kymedia" ]; then
-        generate_kymedia_cargo_config
-    fi
 
     # Build kymedia
     cd ../kymedia
@@ -293,9 +257,6 @@ if [ "$ACTION" = "build-kycontroller" ] || [ "$ACTION" = "clippy-kycontroller" ]
     usage
     exit 1
 fi
-
-# Always generate kyctl .cargo/config.toml
-generate_kyctl_cargo_config
 
 # Checkout dependencies
 if [ "$FETCH_KYBER_DEPS" = true ]; then
