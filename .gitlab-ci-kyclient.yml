@@ -62,6 +62,26 @@ kyclient-clippy-debian-trixie-x86_64:
     # Run clippy on kyclient
     ./build-linux.sh -k -s -o $ROOTFS_PATH clippy-kyclient
 
+kyclient-test-debian-trixie-x86_64:
+  stage: test
+  image: $DEBIAN_IMAGE
+  tags:
+    - docker
+  only:
+    - main
+    - merge_requests
+    - tags
+  needs:
+    - contrib-debian-trixie-x86_64
+  script: |
+    # Configure contrib artifacts
+    export ROOTFS_PATH=$(pwd)/rootfs
+    cd $ROOTFS_PATH
+    ../scripts/change_prefix.sh
+    cd -
+    # Run kyclient tests
+    ./build-linux.sh -k -s -o $ROOTFS_PATH test-kyclient
+
 kyclient-build-windows-x86_64:
   stage: build
   image: $WIN64_IMAGE

@@ -32,6 +32,20 @@ kycontroller-clippy-debian-trixie-x86_64:
   script: |
     ./build-linux.sh -k -o $(pwd)/rootfs clippy-kycontroller
 
+kycontroller-test-debian-trixie-x86_64:
+  stage: test
+  image: $DEBIAN_IMAGE
+  tags:
+    - docker
+  only:
+    - main
+    - merge_requests
+    - tags
+  needs:
+    - lint
+  script: |
+    ./build-linux.sh -k -o $(pwd)/rootfs test-kycontroller
+
 kycontroller-build-windows-x86_64:
   stage: build
   image: $WIN64_IMAGE
