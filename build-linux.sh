@@ -46,7 +46,9 @@ ACTIONS:
    clippy               Run clippy on both kycontroller and kyclient
    clippy-kycontroller  Run clippy on kycontroller only
    clippy-kyclient     Run clippy on kyclient only
-   test                 Run tests
+   test                 Run tests on both kycontroller and kyclient
+   test-kycontroller    Run tests on kycontroller only
+   test-kyclient        Run tests on kyclient only
 EOF
 }
 
@@ -210,7 +212,7 @@ if [ "x$1" != "x" ]; then
 fi
 
 # Skip dependencies for kycontroller-only builds (kycontroller doesn't need native deps)
-if [ "$ACTION" = "build-kycontroller" ] || [ "$ACTION" = "clippy-kycontroller" ]; then
+if [ "$ACTION" = "build-kycontroller" ] || [ "$ACTION" = "clippy-kycontroller" ] || [ "$ACTION" = "test-kycontroller" ]; then
     BUILD_DEPS=false
 fi
 
@@ -268,14 +270,21 @@ case "$ACTION" in
         kyclient_linux_do_clippy
     ;;
     "test")
-        echo "Test functionality not yet implemented"
+        kycontroller_linux_do_test
+        kyclient_linux_do_test
+    ;;
+    "test-kycontroller")
+        kycontroller_linux_do_test
+    ;;
+    "test-kyclient")
+        kyclient_linux_do_test
     ;;
     "none")
         echo "No action requested"
     ;;
     *)
         echo "Error: Invalid action '$ACTION'"
-        echo "Valid actions: build, build-kycontroller, build-kyclient, clippy, clippy-kycontroller, clippy-kyclient, test"
+        echo "Valid actions: build, build-kycontroller, build-kyclient, clippy, clippy-kycontroller, clippy-kyclient, test, test-kycontroller, test-kyclient"
         usage
         exit 1
     ;;

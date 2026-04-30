@@ -36,6 +36,11 @@ kycontroller_linux_do_clippy()
     cargo clippy -p kycontroller --features=auth-jwt,cli -- -D warnings
 }
 
+kycontroller_linux_do_test()
+{
+    cargo test -p kycontroller --features=auth-jwt,cli --release
+}
+
 # macOS platform functions
 kycontroller_macos_do_build()
 {

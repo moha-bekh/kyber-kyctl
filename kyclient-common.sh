@@ -47,6 +47,14 @@ kyclient_linux_do_clippy()
         -- -D warnings -A clippy::missing_safety_doc
 }
 
+kyclient_linux_do_test()
+{
+    cargo test \
+        -p kyclient \
+        --release \
+        --features=desktop,kymux,rtp
+}
+
 # Win32 platform functions
 kyclient_win32_do_build()
 {
