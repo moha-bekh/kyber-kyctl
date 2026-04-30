@@ -3000,7 +3000,6 @@ dependencies = [
  "async-trait",
  "bytes",
  "kymux-types",
- "kyutil",
  "log",
  "tokio",
  "url",
@@ -3073,7 +3072,14 @@ dependencies = [
  "async-trait",
  "byteorder",
  "bytes",
- "kyutil",
+ "kymux-util",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "kymux-util"
+version = "0.1.0"
+dependencies = [
  "thiserror 1.0.69",
 ]
 
@@ -3085,7 +3091,7 @@ dependencies = [
  "bytes",
  "hex",
  "js-sys",
- "kyutil",
+ "kymux-util",
  "log",
  "quinn",
  "quinn-proto",
@@ -3173,8 +3179,8 @@ dependencies = [
  "byteorder",
  "bytes",
  "kymux-types",
+ "kymux-util",
  "kynet",
- "kyutil",
  "kywasmtime",
  "libc",
  "log",
@@ -3202,13 +3208,6 @@ dependencies = [
  "vergen",
  "windows-service",
  "windows-sys 0.52.0",
-]
-
-[[package]]
-name = "kyutil"
-version = "0.1.0"
-dependencies = [
- "thiserror 1.0.69",
 ]
 
 [[package]]
