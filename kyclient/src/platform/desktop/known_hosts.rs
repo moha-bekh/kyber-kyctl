@@ -328,8 +328,8 @@ mod tests {
         assert!(!removed);
     }
 
-    #[tokio::test]
-    async fn test_save_and_load() {
+    #[test]
+    fn test_save_and_load() {
         let temp_file = NamedTempFile::new().unwrap();
         let path = temp_file.path().to_path_buf();
 
@@ -340,16 +340,16 @@ mod tests {
         let kh = KnownHosts::new();
         kh.insert("host1.example.com", fp1).unwrap();
         kh.insert("host2.example.com", fp2).unwrap();
-        kh.save_to_path(&path).await.unwrap();
+        kh.save_to_path(&path).unwrap();
 
         // Load and verify
-        let loaded = KnownHosts::load_from_path(&path).await.unwrap();
+        let loaded = KnownHosts::load_from_path(&path).unwrap();
         assert_eq!(loaded.get("host1.example.com"), Some(fp1.to_string()));
         assert_eq!(loaded.get("host2.example.com"), Some(fp2.to_string()));
     }
 
-    #[tokio::test]
-    async fn test_load_with_comments_and_empty_lines() {
+    #[test]
+    fn test_load_with_comments_and_empty_lines() {
         let mut temp_file = NamedTempFile::new().unwrap();
         let path = temp_file.path().to_path_buf();
 
@@ -360,7 +360,7 @@ mod tests {
         writeln!(temp_file, "  # Indented comment").unwrap();
         writeln!(temp_file, "other.com sha256:11:22:33:44").unwrap();
 
-        let loaded = KnownHosts::load_from_path(&path).await.unwrap();
+        let loaded = KnownHosts::load_from_path(&path).unwrap();
         assert!(loaded.contains("example.com"));
         assert!(loaded.contains("other.com"));
         assert_eq!(
@@ -369,10 +369,10 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn test_load_nonexistent_file() {
+    #[test]
+    fn test_load_nonexistent_file() {
         let path = PathBuf::from("/nonexistent/path/known_hosts");
-        let kh = KnownHosts::load_from_path(&path).await.unwrap();
+        let kh = KnownHosts::load_from_path(&path).unwrap();
         assert!(!kh.contains("any.host"));
     }
 
