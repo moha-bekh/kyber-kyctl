@@ -47,78 +47,6 @@ impl MessageWrapper {
     }
 }
 
-pub(crate) struct MessageBlockingCompletionReceiver {
-    rx: std::sync::mpsc::Receiver<()>,
-}
-
-impl MessageBlockingCompletionReceiver {
-    pub(crate) fn wait(self) {
-        let ret = self.rx.recv();
-        if ret.is_err() {
-            warn!("MessageBlockingCompletionReceiver::wait() failed");
-        }
-    }
-}
-
-pub(crate) struct MessageBlockingCompletionSender {
-    tx: std::sync::mpsc::Sender<()>,
-}
-
-impl MessageBlockingCompletionSender {
-    pub(crate) fn notify(self) {
-        let ret = self.tx.send(());
-        if ret.is_err() {
-            warn!("MessageBlockingCompletionSender::notify() failed");
-        }
-    }
-}
-
-pub(crate) fn create_message_blocking_completion() -> (
-    MessageBlockingCompletionSender,
-    MessageBlockingCompletionReceiver,
-) {
-    let (tx, rx) = std::sync::mpsc::channel();
-    (
-        MessageBlockingCompletionSender { tx },
-        MessageBlockingCompletionReceiver { rx },
-    )
-}
-
-pub(crate) struct MessageAsyncCompletionReceiver {
-    rx: tokio::sync::oneshot::Receiver<()>,
-}
-
-impl MessageAsyncCompletionReceiver {
-    pub(crate) async fn wait(self) {
-        let ret = self.rx.await;
-        if ret.is_err() {
-            warn!("MessageAsyncCompletionReceiver::wait() failed");
-        }
-    }
-}
-
-pub(crate) struct MessageAsyncCompletionSender {
-    tx: tokio::sync::oneshot::Sender<()>,
-}
-
-impl MessageAsyncCompletionSender {
-    pub(crate) fn notify(self) {
-        let ret = self.tx.send(());
-        if ret.is_err() {
-            warn!("MessageAsyncCompletionSender::notify() failed");
-        }
-    }
-}
-
-pub(crate) fn create_message_async_completion(
-) -> (MessageAsyncCompletionSender, MessageAsyncCompletionReceiver) {
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    (
-        MessageAsyncCompletionSender { tx },
-        MessageAsyncCompletionReceiver { rx },
-    )
-}
-
 pub struct MessageReceiver {
     receiver: tokio::sync::mpsc::Receiver<MessageWrapper>,
 }
@@ -162,10 +90,12 @@ impl MessageSender {
     }
 
     pub(crate) fn send_and_wait_completion(&self, msg: Message) -> Result<()> {
-        let (tx, rx) = create_message_blocking_completion();
+        let (tx, rx) = std::sync::mpsc::channel();
 
         let completion_cb = Box::new(move || {
-            tx.notify();
+            if tx.send(()).is_err() {
+                warn!("Notify failed");
+            }
         });
 
         self.send_wrapper(MessageWrapper {
@@ -173,7 +103,9 @@ impl MessageSender {
             completion_cb: Some(completion_cb),
         })?;
 
-        rx.wait();
+        if rx.recv().is_err() {
+            warn!("Wait failed");
+        }
 
         Ok(())
     }
@@ -187,10 +119,12 @@ impl MessageSender {
     }
 
     pub(crate) async fn send_async_and_wait_completion(&self, msg: Message) -> Result<()> {
-        let (tx, rx) = create_message_async_completion();
+        let (tx, rx) = tokio::sync::oneshot::channel();
 
         let completion_cb = Box::new(move || {
-            tx.notify();
+            if tx.send(()).is_err() {
+                warn!("Notify failed");
+            }
         });
 
         self.send_wrapper(MessageWrapper {
@@ -198,7 +132,9 @@ impl MessageSender {
             completion_cb: Some(completion_cb),
         })?;
 
-        rx.wait().await;
+        if rx.await.is_err() {
+            warn!("Wait failed");
+        }
 
         Ok(())
     }
