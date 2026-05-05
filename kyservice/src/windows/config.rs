@@ -90,6 +90,7 @@ impl Default for KiddConfig {
 
 #[derive(Debug, Default, Deserialize)]
 pub(crate) struct Config {
+    #[serde(default)]
     pub(crate) kidd: KiddConfig,
 }
 
