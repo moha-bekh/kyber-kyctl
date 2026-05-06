@@ -18,6 +18,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use std::net::IpAddr;
+
 use actix_web::{get, post, web, HttpRequest, HttpResponse};
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
@@ -88,9 +90,17 @@ async fn hello(req: HttpRequest, _user: Identity) -> HttpResponse {
         return HttpResponse::Forbidden().finish();
     };
 
-    HttpResponse::Ok().json(HelloResponse {
-        ip: peer_addr.ip().to_string(),
-    })
+    // The HTTP listener is dual-stack (`[::]:8080`), so an IPv4 client is
+    // reported as `::ffff:a.b.c.d`. Strict SDP parsers reject `c=IN IP4 ::ffff:...` and refuse the session.
+    let ip = match peer_addr.ip() {
+        IpAddr::V6(v6) => v6
+            .to_ipv4_mapped()
+            .map(IpAddr::V4)
+            .unwrap_or(IpAddr::V6(v6)),
+        v4 @ IpAddr::V4(_) => v4,
+    };
+
+    HttpResponse::Ok().json(HelloResponse { ip: ip.to_string() })
 }
 
 #[post("/generate_sdp")]
