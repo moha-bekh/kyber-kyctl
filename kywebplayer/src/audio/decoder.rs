@@ -53,10 +53,6 @@ impl AudioDecoder {
 
     pub fn send_packet(&mut self, packet: MediaPacket) -> Result<(), JsValue> {
         if packet.header.is_config {
-            // Do not set description so that the format is AnnexB:
-            // <https://www.w3.org/TR/webcodecs-avc-codec-registration/#videodecoderconfig-description>
-            // About the codec string format:
-            // <https://developer.mozilla.org/en-US/docs/Web/Media/Formats/codecs_parameter#basic_syntax>
             info!("Create AudioDecoder");
 
             self.audio_decoder
