@@ -42,108 +42,80 @@
 //! 4. If expired: Calls `Controller::stop()` to terminate that session's streaming services
 //! 5. Cleans up expired pending authentication tokens
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use actix_web::web;
 use log::{error, warn};
 use time::OffsetDateTime;
-use tokio::sync::{Mutex, Notify};
+use tokio::sync::Mutex;
 
-use crate::Controller;
+use crate::{utils::Task, Controller};
 
-pub(crate) struct ExpirationTask {
-    stop: Arc<Notify>,
-    join_handle: tokio::task::JoinHandle<()>,
-}
-
-impl ExpirationTask {
-    /// Creates and starts a new expiration monitoring task.
-    ///
-    /// The task spawns immediately and begins checking for expired sessions
-    /// every 30 seconds.
-    ///
-    /// # Parameters
-    /// - `ctrl`: Shared reference to the Controller
-    ///
-    /// # Returns
-    /// An `ExpirationTask` handle that can be used to stop the task
-    pub(crate) fn new(ctrl: web::Data<Mutex<Controller>>) -> Self {
-        let stop = Arc::new(Notify::new());
-        let join_handle = tokio::spawn(Self::task_entry(ctrl, stop.clone()));
-
-        Self { stop, join_handle }
-    }
-
-    /// Gracefully stops the expiration monitoring task.
-    ///
-    /// Signals the task to exit and waits for it to complete. Should be called
-    /// during application shutdown.
-    pub(crate) async fn stop(self) {
-        self.stop.notify_one();
-        let err = self.join_handle.await;
-        if let Err(err) = err {
-            warn!("Session expiration watcher failed to join: {err}");
-        }
-    }
-
-    /// Main task loop - runs continuously until stopped.
-    async fn task_entry(ctrl: web::Data<Mutex<Controller>>, stop: Arc<Notify>) {
+/// Creates and starts a new expiration monitoring task.
+///
+/// The task spawns immediately and begins checking for expired sessions
+/// every 30 seconds.
+///
+/// # Parameters
+/// - `ctrl`: Shared reference to the Controller
+///
+/// # Returns
+/// An `ExpirationTask` handle that can be used to stop the task
+pub(crate) fn expiration_task(ctrl: web::Data<Mutex<Controller>>) -> Task {
+    Task::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(30));
         loop {
-            tokio::select! {
-                _ = stop.notified() => break,
-                _ = interval.tick() => Self::check_expiration(&ctrl).await,
+            interval.tick().await;
+            check_expiration(&ctrl).await;
+        }
+    })
+}
+
+/// Checks if any sessions have expired and terminates them.
+///
+/// ## Process:
+///
+/// 1. Lock the controller (brief - no I/O while locked)
+/// 2. Iterate through all client sessions
+/// 3. Check if session has expiration time (skip for Basic auth)
+/// 4. Compare expiration to current UTC time
+/// 5. If expired: Call `Controller::stop()` to terminate that session's streaming services
+/// 6. Clean up any expired pending authentication tokens
+async fn check_expiration(ctrl: &web::Data<Mutex<Controller>>) {
+    // Collect expired sessions and extract cleanup data under the lock
+    let (cleanups, infra) = {
+        let mut ctrl = ctrl.lock().await;
+
+        let now = OffsetDateTime::now_utc();
+        let expired_sessions: Vec<_> = ctrl
+            .sessions
+            .iter()
+            .filter_map(|(uid, session)| {
+                session
+                    .expiration
+                    .and_then(|exp| if now > exp { Some(*uid) } else { None })
+            })
+            .collect();
+
+        let mut cleanups = Vec::new();
+        for session_id in expired_sessions {
+            warn!("Killing expired session \"{}\"", session_id);
+            match ctrl.take_session(session_id) {
+                Ok(cleanup) => cleanups.push(cleanup),
+                Err(err) => error!("Fail to stop session: {err:?}"),
             }
         }
+
+        let infra = ctrl.shared_kymux_infra.clone();
+        (cleanups, infra)
+    };
+    // Lock dropped - run cleanup without blocking other requests
+
+    for cleanup in cleanups {
+        cleanup.run().await;
+        ctrl.lock().await.update_tray_status().await;
     }
 
-    /// Checks if any sessions have expired and terminates them.
-    ///
-    /// ## Process:
-    ///
-    /// 1. Lock the controller (brief - no I/O while locked)
-    /// 2. Iterate through all client sessions
-    /// 3. Check if session has expiration time (skip for Basic auth)
-    /// 4. Compare expiration to current UTC time
-    /// 5. If expired: Call `Controller::stop()` to terminate that session's streaming services
-    /// 6. Clean up any expired pending authentication tokens
-    async fn check_expiration(ctrl: &web::Data<Mutex<Controller>>) {
-        // Collect expired sessions and extract cleanup data under the lock
-        let (cleanups, infra) = {
-            let mut ctrl = ctrl.lock().await;
-
-            let now = OffsetDateTime::now_utc();
-            let expired_sessions: Vec<_> = ctrl
-                .sessions
-                .iter()
-                .filter_map(|(uid, session)| {
-                    session
-                        .expiration
-                        .and_then(|exp| if now > exp { Some(*uid) } else { None })
-                })
-                .collect();
-
-            let mut cleanups = Vec::new();
-            for session_id in expired_sessions {
-                warn!("Killing expired session \"{}\"", session_id);
-                match ctrl.take_session(session_id) {
-                    Ok(cleanup) => cleanups.push(cleanup),
-                    Err(err) => error!("Fail to stop session: {err:?}"),
-                }
-            }
-
-            let infra = ctrl.shared_kymux_infra.clone();
-            (cleanups, infra)
-        };
-        // Lock dropped - run cleanup without blocking other requests
-
-        for cleanup in cleanups {
-            cleanup.run().await;
-            ctrl.lock().await.update_tray_status().await;
-        }
-
-        // Cleanup expired pending auth tokens in shared Kymux infrastructure
-        infra.lock().await.cleanup_expired().await;
-    }
+    // Cleanup expired pending auth tokens in shared Kymux infrastructure
+    infra.lock().await.cleanup_expired().await;
 }

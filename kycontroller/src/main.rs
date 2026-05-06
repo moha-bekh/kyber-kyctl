@@ -769,7 +769,7 @@ async fn real_main() -> Result<()> {
         watchdog
     };
 
-    let session_exp_task = session::expiration::ExpirationTask::new(ctrl.clone());
+    let _session_exp_task = session::expiration::expiration_task(ctrl.clone());
 
     info!("HTTP listening on port {listening_port}");
 
@@ -873,7 +873,6 @@ async fn real_main() -> Result<()> {
 
     ctrl_for_tray.lock().await.shutdown_tray().await;
 
-    session_exp_task.stop().await;
     if let Some(watchdog) = watchdog {
         watchdog.stop().await?;
     }
