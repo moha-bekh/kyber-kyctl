@@ -8,5 +8,5 @@ libc = "0.2.153"
 kynput-sys = "0.1.0"
 
 [build-dependencies]
-bindgen = {version = "0.69", optional = false }
+bindgen = "0.72"
 pkg-config = "0.3"

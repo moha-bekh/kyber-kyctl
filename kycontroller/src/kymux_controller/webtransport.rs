@@ -18,6 +18,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use hex::ToHex;
 use rustls::pki_types;
 use sha2::{Digest, Sha256};
 use time::Duration;
@@ -58,7 +59,7 @@ pub(super) fn gen_webtransport_cert() -> Result<Cert> {
     // Create key digest
     let mut hasher = Sha256::new();
     hasher.update(&cert_der);
-    let cert_digest = format!("{:x}", hasher.finalize());
+    let cert_digest = hasher.finalize().encode_hex();
 
     Ok(Cert {
         cert_der,

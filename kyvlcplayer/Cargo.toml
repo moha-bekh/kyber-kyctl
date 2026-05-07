@@ -7,7 +7,7 @@ edition = "2021"
 libc = "0.2.153"
 log = "0.4.21"
 raw-window-handle = "0.5.0"
-thiserror = "1.0.47"
+thiserror = "2.0"
 tokio = { version = "1.47.1", features = ["macros", "sync", "io-util"] }
 
 [target.'cfg(any(target_os = "android", target_os = "linux", target_os = "macos", target_os = "windows"))'.dependencies.vlc-rs]
