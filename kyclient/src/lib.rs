@@ -529,7 +529,6 @@ impl Handler {
                             }
                             Error::HttpQueryFailed { .. } => ConnectFailedReason::ServerError,
                             Error::TlsVerificationFailed => ConnectFailedReason::TlsVerification,
-                            Error::TlsInvalidFile => ConnectFailedReason::TlsConfiguration,
                             Error::WsConnectFailed => ConnectFailedReason::WebSocket,
                             Error::DeserializationFailed => ConnectFailedReason::Protocol,
                             _ => ConnectFailedReason::NetworkError,

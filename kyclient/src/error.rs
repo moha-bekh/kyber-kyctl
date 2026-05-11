@@ -42,8 +42,6 @@ pub enum Error {
     ChannelSend,
     Rejected,
     ThreadPanicked,
-    NoPipeline,
-    NoClient,
     NoInputService,
     NoPlayer,
     NoAudioPlayer,
@@ -69,7 +67,6 @@ pub enum Error {
     #[cfg(feature = "desktop")]
     TaskJoin(tokio::task::JoinError),
     FileNotFound(PathBuf),
-    TlsInvalidFile,
     TlsInvalidFingerprint,
     TlsVerificationFailed,
     InvalidState,
@@ -77,17 +74,7 @@ pub enum Error {
     #[cfg(feature = "web")]
     JsError(wasm_bindgen::JsValue),
     #[cfg(feature = "web")]
-    JsElementNotFound {
-        name: String,
-    },
-    #[cfg(feature = "web")]
-    JsCastFailed {
-        to: String,
-    },
-    #[cfg(feature = "web")]
     JsDomInvalid,
-    #[cfg(feature = "web")]
-    NoValidVideoDecoderConfig,
     #[cfg(feature = "web")]
     SharedArrayBufferUndefined,
 
