@@ -28,87 +28,92 @@ use kymux::{kynet, kyproto};
 #[cfg(feature = "desktop")]
 use platform::player::PlayerError;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
-    IO(std::io::Error),
+    #[error("io error: {0}")]
+    IO(#[from] std::io::Error),
+    #[error("no peer address")]
     NoPeerAddress,
-    InvalidAddress {
-        addr: String,
-    },
-    FailToResolveAddress {
-        addr: String,
-    },
+    #[error("invalid address {addr:?}")]
+    InvalidAddress { addr: String },
+    #[error("failed to resolve address {addr:?}")]
+    FailToResolveAddress { addr: String },
+    #[error("string is not valid unicode")]
     InvalidUnicodeStr,
+    #[error("failed to send message to channel")]
     ChannelSend,
+    #[error("command or request was rejected")]
     Rejected,
+    #[error("thread panicked")]
     ThreadPanicked,
+    #[error("no input service")]
     NoInputService,
+    #[error("no player")]
     NoPlayer,
+    #[error("no audio player")]
     NoAudioPlayer,
-    Input(platform::InputError),
+    #[error("input error: {0}")]
+    Input(#[from] platform::InputError),
     #[cfg(feature = "kymux")]
+    #[error("kymux not started")]
     KymuxNotStarted,
     #[cfg(feature = "kymux")]
-    KymuxReadyFailed {
-        reason: String,
-    },
+    #[error("kymux ready failed: {reason}")]
+    KymuxReadyFailed { reason: String },
     #[cfg(feature = "kymux")]
-    KymuxSendFailed {
-        reason: String,
-    },
+    #[error("kymux send failed: {reason}")]
+    KymuxSendFailed { reason: String },
     #[cfg(feature = "kymux")]
+    #[error("kymux invalid token")]
     KymuxInvalidToken,
     #[cfg(feature = "kymux")]
-    KynetConnectionError(kynet::ConnectionError),
+    #[error("kynet connection error: {0}")]
+    KynetConnectionError(#[from] kynet::ConnectionError),
     #[cfg(feature = "kymux")]
-    DecodeHexError(kynet::DecodeHexError),
+    #[error("kynet decode hex error: {0}")]
+    DecodeHexError(#[from] kynet::DecodeHexError),
     #[cfg(feature = "kymux")]
-    KyProtoProtocolError(kyproto::ProtocolError),
+    #[error("kyproto protocol error: {0}")]
+    KyProtoProtocolError(#[from] kyproto::ProtocolError),
     #[cfg(feature = "desktop")]
-    TaskJoin(tokio::task::JoinError),
+    #[error("failed to join async task: {0}")]
+    TaskJoin(#[from] tokio::task::JoinError),
+    #[error("file not found: {0:?}")]
     FileNotFound(PathBuf),
+    #[error("invalid tls fingerprint")]
     TlsInvalidFingerprint,
+    #[error("tls verification failed")]
     TlsVerificationFailed,
+    #[error("invalid state")]
     InvalidState,
 
     #[cfg(feature = "web")]
+    #[error("js error: {0:?}")]
     JsError(wasm_bindgen::JsValue),
     #[cfg(feature = "web")]
+    #[error("js dom invalid")]
     JsDomInvalid,
     #[cfg(feature = "web")]
+    #[error("SharedArrayBuffer unvailable")]
     SharedArrayBufferUndefined,
 
     // Player errors
     #[cfg(feature = "desktop")]
-    Player(PlayerError),
+    #[error("player error: {0}")]
+    Player(#[from] PlayerError),
     // Host service errors
-    HttpClient(reqwest::Error),
+    #[error("http client error: {0}")]
+    HttpClient(#[from] reqwest::Error),
+    #[error("http request timed out")]
     HttpQueryTimeout,
-    HttpQueryFailed {
-        status: u16,
-    },
+    #[error("http error {status}")]
+    HttpQueryFailed { status: u16 },
+    #[error("WebSocket connection failed")]
     WsConnectFailed,
+    #[error("data-plane connection failed")]
     DataPlaneConnectFailed,
+    #[error("deserialization failed")]
     DeserializationFailed,
-}
-
-impl From<std::io::Error> for Error {
-    fn from(err: std::io::Error) -> Error {
-        Error::IO(err)
-    }
-}
-
-#[cfg(feature = "desktop")]
-impl From<PlayerError> for Error {
-    fn from(err: PlayerError) -> Error {
-        Error::Player(err)
-    }
-}
-
-impl From<reqwest::Error> for Error {
-    fn from(err: reqwest::Error) -> Error {
-        Error::HttpClient(err)
-    }
 }
 
 impl<T> From<tokio::sync::mpsc::error::SendError<T>> for Error {
@@ -120,40 +125,6 @@ impl<T> From<tokio::sync::mpsc::error::SendError<T>> for Error {
 impl<T> From<std::sync::PoisonError<T>> for Error {
     fn from(_: std::sync::PoisonError<T>) -> Error {
         Error::ThreadPanicked
-    }
-}
-
-impl From<platform::InputError> for Error {
-    fn from(err: platform::InputError) -> Error {
-        Error::Input(err)
-    }
-}
-
-#[cfg(feature = "kymux")]
-impl From<kynet::ConnectionError> for Error {
-    fn from(err: kynet::ConnectionError) -> Error {
-        Error::KynetConnectionError(err)
-    }
-}
-
-#[cfg(feature = "kymux")]
-impl From<kynet::DecodeHexError> for Error {
-    fn from(err: kynet::DecodeHexError) -> Error {
-        Error::DecodeHexError(err)
-    }
-}
-
-#[cfg(feature = "kymux")]
-impl From<kyproto::ProtocolError> for Error {
-    fn from(err: kyproto::ProtocolError) -> Error {
-        Error::KyProtoProtocolError(err)
-    }
-}
-
-#[cfg(feature = "desktop")]
-impl From<tokio::task::JoinError> for Error {
-    fn from(err: tokio::task::JoinError) -> Error {
-        Error::TaskJoin(err)
     }
 }
 
