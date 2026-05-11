@@ -186,7 +186,7 @@ struct InputService {
 }
 
 pub(super) struct KymuxDesktop {
-    kycom: Option<kycom::KyCom>,
+    _kycom: kycom::KyCom,
     player: Option<Player>,
     input_service: Option<InputService>,
 }
@@ -220,7 +220,7 @@ impl KymuxDesktop {
         .await?;
 
         Ok(Self {
-            kycom: Some(kycom),
+            _kycom: kycom,
             player,
             input_service,
         })
@@ -273,10 +273,6 @@ impl BackendDriver for KymuxDesktop {
 
         if let Some(input_service) = self.input_service.take() {
             input_service.pipeline.stop()?;
-        }
-
-        if let Some(kycom) = self.kycom.take() {
-            kycom.stop();
         }
 
         Ok(())

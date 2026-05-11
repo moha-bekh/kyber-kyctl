@@ -3464,15 +3464,10 @@ dependencies = [
 name = "kymux"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "kycom",
  "kymux-types",
  "kynet",
  "kyproto",
- "log",
- "rustls",
- "thiserror 1.0.69",
- "tokio",
 ]
 
 [[package]]
@@ -3596,7 +3591,6 @@ dependencies = [
  "log",
  "raptorq",
  "rmp-serde",
- "rustls",
  "serde",
  "thiserror 1.0.69",
  "tokio",

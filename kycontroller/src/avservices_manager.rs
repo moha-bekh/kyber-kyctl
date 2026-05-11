@@ -587,10 +587,10 @@ impl AVServicesManager {
                     let mut ctrl = strong.lock().await;
                     ctrl.try_take_idle_kycom()
                 };
-                if let Some(kycom) = kycom_to_stop {
+                if kycom_to_stop.is_some() {
                     info!("Last AV stream torn down, stopping shared kycom");
-                    kycom.stop();
                 }
+                drop(kycom_to_stop);
             }
         });
     }

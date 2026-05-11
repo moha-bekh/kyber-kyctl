@@ -124,9 +124,7 @@ impl SessionCleanup {
             warn!("Failed to stop streaming services: {err:?}");
         }
 
-        if let Some(kycom) = self.kycom_to_stop.take() {
-            kycom.stop();
-        }
+        drop(self.kycom_to_stop);
 
         if self.should_stop_infra {
             if let Err(err) = self.infra.lock().await.stop().await {
