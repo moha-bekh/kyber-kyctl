@@ -103,7 +103,7 @@ pub enum Error {
     Player(#[from] PlayerError),
     // Host service errors
     #[error("http client error: {0}")]
-    HttpClient(#[from] reqwest::Error),
+    HttpClient(reqwest::Error),
     #[error("http request timed out")]
     HttpQueryTimeout,
     #[error("http error {status}")]
@@ -114,6 +114,20 @@ pub enum Error {
     DataPlaneConnectFailed,
     #[error("deserialization failed")]
     DeserializationFailed,
+}
+
+impl From<reqwest::Error> for Error {
+    fn from(err: reqwest::Error) -> Error {
+        if let Some(status) = err.status() {
+            Error::HttpQueryFailed {
+                status: status.into(),
+            }
+        } else if err.is_timeout() {
+            Error::HttpQueryTimeout
+        } else {
+            Error::HttpClient(err)
+        }
+    }
 }
 
 impl<T> From<tokio::sync::mpsc::error::SendError<T>> for Error {

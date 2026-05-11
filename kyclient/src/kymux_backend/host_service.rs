@@ -19,11 +19,10 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use log::{info, warn};
-use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::http::HttpClient;
 use crate::platform::get_cursor_format;
 use crate::{CursorFormat, VideoCodec};
@@ -57,15 +56,15 @@ pub(crate) async fn start_kymux(
         "backend": backend,
     });
 
-    let response = client.post(&url).json(&body).send().await?;
-    if response.status() != StatusCode::OK {
-        warn!("POST /kymux/start_mux failed: {}", response.status());
-        return Err(Error::HttpQueryFailed {
-            status: response.status().into(),
-        });
-    }
+    let response = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await?
+        .error_for_status()
+        .inspect_err(|err| warn!("POST failed: {err}"))?;
 
-    Ok(response.json::<_>().await?)
+    Ok(response.json().await?)
 }
 
 #[derive(Debug, Serialize)]
@@ -187,13 +186,9 @@ pub(crate) async fn start_stream(
         .post(&url)
         .json(&body)
         .send()
-        .await?;
-    if response.status() != StatusCode::OK {
-        warn!("POST /kymux/start_session failed: {}", response.status());
-        return Err(Error::HttpQueryFailed {
-            status: response.status().into(),
-        });
-    }
+        .await?
+        .error_for_status()
+        .inspect_err(|err| warn!("POST failed: {err}"))?;
 
     let response = response.json::<StartSessionResponse>().await?;
     info!(

@@ -24,9 +24,9 @@ use log::{error, warn};
 use reqwest::{self, StatusCode};
 use serde::{Deserialize, Serialize};
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 use crate::http::HttpClient;
-use crate::{AuthCredentials, Capabilities, Display};
+use crate::{AuthCredentials, Capabilities, Display, Error};
 
 #[derive(Debug, Serialize)]
 pub(crate) struct SetBitrateRequest {
@@ -38,14 +38,12 @@ pub(crate) async fn capabilities(
 ) -> Result<(Capabilities, Option<SocketAddr>)> {
     let url = format!("{base_url}/capabilities", base_url = client.base_url());
 
-    let response = client.get(&url).send().await?;
-
-    if response.status() != StatusCode::OK {
-        warn!("GET /capabilities failed: {}", response.status());
-        return Err(Error::HttpQueryFailed {
-            status: response.status().into(),
-        });
-    }
+    let response = client
+        .get(&url)
+        .send()
+        .await?
+        .error_for_status()
+        .inspect_err(|err| warn!("GET failed: {err}"))?;
 
     let peer_addr = client.peer_addr_from_response(&response);
 
@@ -93,14 +91,11 @@ pub(crate) async fn login(
         }
     };
 
-    let response = match request.send().await {
-        Ok(r) => r,
-        Err(e) if e.is_timeout() => {
+    let response = request.send().await.inspect_err(|e| {
+        if e.is_timeout() {
             warn!("POST /session/login has timed out");
-            return Err(Error::HttpQueryTimeout);
         }
-        Err(e) => return Err(Error::HttpClient(e)),
-    };
+    })?;
 
     if response.status() == StatusCode::UNAUTHORIZED {
         if let Some(challenge) = response
@@ -111,16 +106,11 @@ pub(crate) async fn login(
         {
             return Ok(LoginResult::OidcRequired(challenge));
         }
-        error!("POST /session/login failed: 401 Unauthorized");
-        return Err(Error::HttpQueryFailed { status: 401 });
     }
 
-    if response.status() != StatusCode::OK {
-        error!("POST /session/login failed: {}", response.status());
-        return Err(Error::HttpQueryFailed {
-            status: response.status().into(),
-        });
-    }
+    let response = response
+        .error_for_status()
+        .inspect_err(|err| error!("POST failed: {err}"))?;
 
     Ok(LoginResult::Success(response.json().await?))
 }
@@ -196,24 +186,21 @@ pub(crate) async fn renew_session(
         }
     };
 
-    let response = match request.send().await {
-        Ok(r) => r,
-        Err(e) if e.is_timeout() => {
+    let response = request.send().await.inspect_err(|e| {
+        if e.is_timeout() {
             warn!("POST /session/renew has timed out");
-            return Err(Error::HttpQueryTimeout);
         }
-        Err(e) => return Err(Error::HttpClient(e)),
-    };
+    })?;
 
-    match response.status() {
-        StatusCode::OK => Ok(RenewResult::Renewed),
-        StatusCode::UNAUTHORIZED | StatusCode::NOT_FOUND => Ok(RenewResult::SessionGone),
-        status => {
-            warn!("POST /session/renew failed: {status}");
-            Err(Error::HttpQueryFailed {
-                status: status.into(),
-            })
-        }
+    match response.error_for_status() {
+        Ok(_) => Ok(RenewResult::Renewed),
+        Err(e) => match e.status() {
+            Some(StatusCode::UNAUTHORIZED | StatusCode::NOT_FOUND) => Ok(RenewResult::SessionGone),
+            status => {
+                status.inspect(|status| warn!("POST /session/renew failed: {status}"));
+                Err(e.into())
+            }
+        },
     }
 }
 
@@ -223,27 +210,25 @@ pub(crate) async fn enumerate_displays(client: &HttpClient) -> Result<Vec<Displa
         base_url = client.base_url()
     );
 
-    let response = client.get(&url).send().await?;
-    if response.status() != StatusCode::OK {
-        warn!("GET /enumerate_displays failed: {}", response.status());
-        return Err(Error::HttpQueryFailed {
-            status: response.status().into(),
-        });
-    }
+    let response = client
+        .get(&url)
+        .send()
+        .await?
+        .error_for_status()
+        .inspect_err(|err| warn!("GET failed: {err}"))?;
 
-    Ok(response.json::<_>().await?)
+    Ok(response.json().await?)
 }
 
 pub(crate) async fn stop_streaming(client: &HttpClient) -> Result<()> {
     let url = format!("{base_url}/stop_streaming", base_url = client.base_url());
 
-    let response = client.post(&url).send().await?;
-    if response.status() != StatusCode::OK {
-        warn!("POST /stop_streaming failed: {}", response.status());
-        return Err(Error::HttpQueryFailed {
-            status: response.status().into(),
-        });
-    }
+    client
+        .post(&url)
+        .send()
+        .await?
+        .error_for_status()
+        .inspect_err(|err| warn!("POST failed: {err}"))?;
 
     Ok(())
 }
@@ -251,13 +236,12 @@ pub(crate) async fn stop_streaming(client: &HttpClient) -> Result<()> {
 pub(crate) async fn logout(client: &HttpClient) -> Result<()> {
     let url = format!("{base_url}/session/logout", base_url = client.base_url());
 
-    let response = client.post(&url).send().await?;
-    if response.status() != StatusCode::OK {
-        warn!("POST /session/logout failed: {}", response.status());
-        return Err(Error::HttpQueryFailed {
-            status: response.status().into(),
-        });
-    }
+    client
+        .post(&url)
+        .send()
+        .await?
+        .error_for_status()
+        .inspect_err(|err| warn!("POST failed: {err}"))?;
 
     Ok(())
 }
@@ -267,13 +251,13 @@ pub(crate) async fn set_bitrate(http_client: &HttpClient, bitrate: u32) -> Resul
 
     let body = SetBitrateRequest { bitrate };
 
-    let response = http_client.post(&url).json(&body).send().await?;
-    if response.status() != StatusCode::OK {
-        warn!("POST /set_bitrate failed: {}", response.status());
-        return Err(Error::HttpQueryFailed {
-            status: response.status().into(),
-        });
-    }
+    http_client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await?
+        .error_for_status()
+        .inspect_err(|err| warn!("POST failed: {err}"))?;
 
     Ok(())
 }
