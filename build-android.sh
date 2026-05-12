@@ -1,7 +1,7 @@
 #!/bin/bash
 # Project Kyber: build-android.sh
 # Copyright © 2022-2026 Kyber SAS
-# SPDX-License-Identifier: LicenseRef-Kyber-Commercial OR AGPL-3.0
+# SPDX-License-Identifier: LicenseRef-Kyber-Commercial OR AGPL-3.0-or-later
 #
 # This file is both under dual license: AGPLv3 and a Commercial one.
 #
