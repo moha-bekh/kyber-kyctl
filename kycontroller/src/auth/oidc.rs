@@ -239,7 +239,10 @@ async fn fetch_jwks(
 #[derive(Deserialize)]
 struct Claims {
     exp: i64,
-    sub: String,
+    // Access tokens are not required to carry `sub` (some IdPs strip it
+    // from access tokens via mappers). Only enforce its presence when
+    // `identity_claim = "sub"`.
+    sub: Option<String>,
     email: Option<String>,
     preferred_username: Option<String>,
     /// Group memberships from the IdP (requires a `groups` client scope).
@@ -251,7 +254,7 @@ impl std::fmt::Debug for Claims {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Claims")
             .field("exp", &self.exp)
-            .field("sub", &"[REDACTED]")
+            .field("sub", &self.sub.as_ref().map(|_| "[REDACTED]"))
             .field("email", &self.email.as_ref().map(|_| "[REDACTED]"))
             .field(
                 "preferred_username",
@@ -337,7 +340,9 @@ impl Backend for Oidc {
         let claims = jwt.map_err(map_jwt_error)?.claims;
 
         let identity = match self.config.identity_claim {
-            IdentityClaim::Sub => claims.sub,
+            IdentityClaim::Sub => claims.sub.ok_or_else(|| Error::MissingField {
+                field: "sub".to_owned(),
+            })?,
             IdentityClaim::Email => claims.email.ok_or_else(|| Error::MissingField {
                 field: "email".to_owned(),
             })?,
@@ -485,7 +490,8 @@ yQX6iM2kKs7vI3nTID1fVSDu6MOqsaPWbVtWnl37M8P56c57zyU=
 
     #[derive(serde::Serialize)]
     struct TokenClaims {
-        sub: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        sub: Option<String>,
         iss: String,
         exp: i64,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -522,7 +528,7 @@ yQX6iM2kKs7vI3nTID1fVSDu6MOqsaPWbVtWnl37M8P56c57zyU=
 
     fn valid_claims() -> TokenClaims {
         TokenClaims {
-            sub: "user-123".to_owned(),
+            sub: Some("user-123".to_owned()),
             iss: TEST_ISSUER.to_owned(),
             exp: future_exp(),
             email: None,
@@ -555,6 +561,39 @@ yQX6iM2kKs7vI3nTID1fVSDu6MOqsaPWbVtWnl37M8P56c57zyU=
         let token = make_token(&claims, Some("test-key-1"));
         let session = oidc.authenticate(&token).unwrap();
         assert_eq!(session.username, "alice@example.com");
+    }
+
+    #[test]
+    fn email_claim_works_when_sub_missing() {
+        // Some IdPs (e.g. Keycloak realms with a custom mapper) strip `sub`
+        // from access tokens. The controller must still authenticate when
+        // `identity_claim = "email"` and `email` is present.
+        let oidc = Oidc::new_for_test(
+            Config {
+                identity_claim: IdentityClaim::Email,
+                ..default_config()
+            },
+            test_jwks(),
+        );
+        let claims = TokenClaims {
+            sub: None,
+            email: Some("alice@example.com".to_owned()),
+            ..valid_claims()
+        };
+        let token = make_token(&claims, Some("test-key-1"));
+        let session = oidc.authenticate(&token).unwrap();
+        assert_eq!(session.username, "alice@example.com");
+    }
+
+    #[test]
+    fn missing_sub_with_sub_identity_claim_fails() {
+        let claims = TokenClaims {
+            sub: None,
+            ..valid_claims()
+        };
+        let token = make_token(&claims, Some("test-key-1"));
+        let err = default_oidc().authenticate(&token).unwrap_err();
+        assert!(matches!(err, Error::MissingField { field } if field == "sub"));
     }
 
     #[test]
