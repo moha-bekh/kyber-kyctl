@@ -110,4 +110,11 @@ impl Task {
     {
         Self(tokio::spawn(f))
     }
+
+    pub fn spawn_local<F>(f: F) -> Self
+    where
+        F: std::future::Future<Output = ()> + 'static,
+    {
+        Self(tokio::task::spawn_local(f))
+    }
 }

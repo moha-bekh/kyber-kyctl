@@ -25,10 +25,11 @@ use std::time::{Duration, Instant};
 use kymux::{kynet, kyproto};
 use log::{error, info, warn};
 use tokio::sync::{oneshot, Mutex};
-use tokio::task::{self, JoinHandle};
+use tokio::task;
 use uuid::Uuid;
 
-use crate::error::{Error, Result};
+use crate::error::Result;
+use crate::utils::Task;
 
 /// Timeout for pending authentication tokens (tokens not used within this duration are cleaned up)
 const PENDING_AUTH_TIMEOUT: Duration = Duration::from_secs(60);
@@ -141,14 +142,9 @@ impl IncomingConnectionRouter {
     }
 }
 
-struct KymuxServerTask {
-    stop_tx: oneshot::Sender<()>,
-    join_handle: JoinHandle<()>,
-}
-
 pub(crate) struct KymuxServer {
     server: Arc<dyn kynet::Server>,
-    task: Option<KymuxServerTask>,
+    _task: Task,
 }
 
 impl KymuxServer {
@@ -156,40 +152,19 @@ impl KymuxServer {
         server: Box<dyn kynet::Server>,
         router: Arc<Mutex<IncomingConnectionRouter>>,
     ) -> Result<Self> {
-        let (stop_tx, stop_rx) = oneshot::channel();
-
         let server: Arc<dyn kynet::Server> = Arc::from(server);
         let server_task = server.clone();
 
-        let join_handle = task::spawn(async move {
-            tokio::select! {
-                _ = stop_rx => {}
-                ret = Self::run_task(server_task, router) => {
-                    if let Err(err) = ret {
-                        warn!("KymuxServer task ended with error {err:?}");
-                    }
-                }
+        let _task = Task::spawn(async move {
+            if let Err(err) = Self::run_task(server_task, router).await {
+                warn!("KymuxServer task ended with error {err:?}");
             }
         });
 
-        Ok(Self {
-            server,
-            task: Some(KymuxServerTask {
-                stop_tx,
-                join_handle,
-            }),
-        })
+        Ok(Self { server, _task })
     }
 
     pub(crate) async fn stop(self) -> Result<()> {
-        if let Some(task) = self.task {
-            let _ = task.stop_tx.send(());
-            task.join_handle.await.map_err(|err| {
-                warn!("KymuxServer panicked: {err:?}");
-                Error::ThreadPanicked
-            })?;
-        }
-
         self.server.close(0, "Server stopping");
         self.server.wait_idle().await;
 

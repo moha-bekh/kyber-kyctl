@@ -41,12 +41,14 @@ use crate::kydup;
 use crate::kymux_controller::{KymuxBackend, SharedKymuxInfra};
 use crate::session::ClientAuthTokens;
 use crate::tls;
+use crate::utils::Task;
 use crate::ws::WebsocketBackend;
 use crate::HostEventSender;
 use crate::StateMachineProxy;
 
 use crate::tray::{TrayHandle, TrayStatus};
 
+#[allow(unused)]
 pub(crate) enum DataPlaneBackend {
     Rtp,
     Kymux(KymuxBackend),
@@ -74,12 +76,8 @@ impl StreamingSession {
     pub(crate) async fn stop_dataplane(&mut self) -> Result<()> {
         match self.data_plane.take() {
             Some(DataPlaneBackend::Rtp) => {}
-            Some(DataPlaneBackend::Kymux(backend)) => {
-                backend.stop().await?;
-            }
-            Some(DataPlaneBackend::Websocket(backend)) => {
-                backend.stop().await?;
-            }
+            Some(DataPlaneBackend::Kymux(_)) => {}
+            Some(DataPlaneBackend::Websocket(backend)) => backend.stop().await?,
             None => {}
         }
 
@@ -89,9 +87,6 @@ impl StreamingSession {
     pub(crate) async fn stop(mut self) -> Result<()> {
         info!("Stop dataplane");
         self.stop_dataplane().await?;
-
-        info!("Stop running HostEventSender");
-        self.host_event_sender.stop().await?;
 
         Ok(())
     }
@@ -143,11 +138,6 @@ pub(crate) struct StreamingCleanup {
 impl StreamingCleanup {
     pub(crate) async fn run(mut self) {
         match self.data_plane.take() {
-            Some(DataPlaneBackend::Kymux(backend)) => {
-                if let Err(err) = backend.stop().await {
-                    warn!("Failed to stop kymux backend: {err:?}");
-                }
-            }
             Some(DataPlaneBackend::Websocket(backend)) => {
                 if let Err(err) = backend.stop().await {
                     warn!("Failed to stop websocket backend: {err:?}");
@@ -194,8 +184,8 @@ pub(crate) struct StreamingServices {
     /// Per-session audio avserver, RTP only, same rationale as `video`.
     pub(crate) audio: Option<avservice::Handler>,
     pub(crate) input: Option<inputservice::Handler>,
-    pub(crate) clock_sync: Option<crate::kymux_controller::ClockSyncTask>,
-    pub(crate) metrics: Option<crate::kymux_controller::MetricsTask>,
+    pub(crate) clock_sync: Option<Task>,
+    pub(crate) metrics: Option<Task>,
     /// Kydup output handles for this client (Kymux/WS backends).
     /// Dropping clears the handles, which aborts the output tasks automatically.
     pub(crate) output_handles: Vec<kydup::OutputHandle>,
@@ -229,14 +219,6 @@ impl StreamingServices {
         if let Some(input) = self.input {
             info!("Stop running InputServer");
             input.stop().await?;
-        }
-
-        if let Some(clock_sync) = self.clock_sync {
-            clock_sync.stop().await;
-        }
-
-        if let Some(metrics) = self.metrics {
-            metrics.stop().await;
         }
 
         Ok(())

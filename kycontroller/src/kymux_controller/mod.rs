@@ -31,18 +31,17 @@ use actix_web::web;
 use bytes::Bytes;
 use kymux::{kycom, kynet, kyproto, types};
 use log::{info, warn};
-use tokio::sync::{oneshot, Mutex};
-use tokio::task::{self, JoinHandle};
 
 use libkypc::process::ProcessFactory;
 
 pub(crate) use server::{IncomingConnectionRouter, KymuxServer};
+use tokio::sync::Mutex;
 
 use crate::config::{ListenMode, SessionMode};
 use crate::error::{Error, Result};
 use crate::inputservice;
 use crate::kydup;
-use crate::utils::TypeConvert;
+use crate::utils::{Task, TypeConvert};
 use crate::{Controller, DataPlaneBackend, StateMachineEvent, StateMachineProxy};
 
 use metrics::NetworkStats;
@@ -53,63 +52,18 @@ const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(5);
 // get killed between pings.
 const MAX_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
-struct ConnectionTask {
-    stop_tx: oneshot::Sender<()>,
-    join_handle: JoinHandle<()>,
-}
-
-impl ConnectionTask {
-    fn new(
-        connection: Arc<kyproto::Connection>,
-        statemachine_proxy: StateMachineProxy,
-        session_id: uuid::Uuid,
-    ) -> Self {
-        let (stop_tx, stop_rx) = oneshot::channel();
-
-        let join_handle = task::spawn(async move {
-            tokio::select! {
-                _ = stop_rx => {
-                }
-                ret = Self::run_task(connection, statemachine_proxy, session_id) => {
-                    if let Err(err) = ret {
-                        warn!("ClosedTask task ended with error {err:?}");
-                    }
-                }
-            }
-        });
-
-        Self {
-            stop_tx,
-            join_handle,
-        }
-    }
-
-    async fn stop(self) -> Result<()> {
-        let ret = self.stop_tx.send(());
-        if ret.is_err() {
-            warn!("ClosedTask already stopped");
-        }
-
-        self.join_handle.await.map_err(|err| {
-            warn!("ClosedTask panicked: {err:?}");
-            Error::ThreadPanicked
-        })
-    }
-
-    async fn run_task(
-        connection: Arc<kyproto::Connection>,
-        statemachine_proxy: StateMachineProxy,
-        session_id: uuid::Uuid,
-    ) -> Result<()> {
+fn run_connection_task(
+    connection: Arc<kyproto::Connection>,
+    statemachine_proxy: StateMachineProxy,
+    session_id: uuid::Uuid,
+) -> Task {
+    Task::spawn(async move {
         let ret = connection.closed().await;
         info!("Kymux connection closed for session {session_id}: {ret:?}");
-
         statemachine_proxy
             .send(StateMachineEvent::KymuxTimeout { session_id })
             .await;
-
-        Ok(())
-    }
+    })
 }
 
 /// Configuration for starting Kymux infrastructure
@@ -248,29 +202,7 @@ impl SharedKymuxInfra {
 /// The pending connection state (between start_mux and start_session) is stored in
 /// `StreamingSession.pending_kymux_rx` instead.
 pub(crate) struct KymuxBackend {
-    connection_task: ConnectionTask,
-}
-
-impl KymuxBackend {
-    fn new(connection_task: ConnectionTask) -> Self {
-        Self { connection_task }
-    }
-
-    pub(crate) async fn stop(self) -> Result<()> {
-        info!("Stop running Kymux Connection");
-
-        let ret = self.connection_task.stop().await;
-        if let Err(err) = ret {
-            warn!("Kymux Closed task stop raised an error: {err:?}");
-        }
-
-        // NOTE: We don't stop the KymuxServer here because other sessions may
-        // still be using it. The Controller owns kycom (and the avservices);
-        // both are torn down via `take_session` / the AV reaper when the last
-        // session leaves, not here, not on Controller shutdown.
-
-        Ok(())
-    }
+    _connection_task: Task,
 }
 
 async fn start_kymux(
@@ -662,12 +594,12 @@ pub(crate) struct StartSessionInputResponse {
 }
 
 pub(crate) struct StartSessionClockSyncResponse {
-    task: ClockSyncTask,
+    task: Task,
     endpoint: u16,
 }
 
 pub(crate) struct StartSessionMetricsResponse {
-    task: MetricsTask,
+    task: Task,
     endpoint: u16,
 }
 
@@ -679,68 +611,20 @@ pub(crate) struct StartSessionResponse {
     pub(crate) metrics: Option<StartSessionMetricsResponse>,
 }
 
-pub(crate) struct ClockSyncTask {
-    stop_tx: oneshot::Sender<()>,
-    handle: tokio::task::JoinHandle<()>,
-}
-
-impl ClockSyncTask {
-    fn new(endpoint: kyproto::ClockSyncServerEndpoint) -> Self {
-        let (stop_tx, stop_rx) = oneshot::channel();
-
-        let handle = task::spawn(async move {
-            tokio::select! {
-                _ = stop_rx => {
-                }
-                _ = Self::clock_sync_task(endpoint) => {
-                }
-
-            }
-        });
-
-        Self { stop_tx, handle }
-    }
-
-    pub(crate) async fn stop(self) {
-        let _ = self.stop_tx.send(());
-        let _ = self.handle.await;
-    }
-
-    async fn clock_sync_task(endpoint: kyproto::ClockSyncServerEndpoint) {
+fn run_clock_sync_task(endpoint: kyproto::ClockSyncServerEndpoint) -> Task {
+    Task::spawn(async move {
         let mut protocol = endpoint.ready().await.unwrap();
         protocol.serve().await.unwrap();
-    }
+    })
 }
 
-pub(crate) struct MetricsTask {
-    stop_tx: oneshot::Sender<()>,
-    handle: tokio::task::JoinHandle<()>,
-}
-
-impl MetricsTask {
-    fn new(
-        endpoint: types::MetricsServerEndpoint,
-        stats_provider: kyproto::KyProtoStatsProvider,
-    ) -> Self {
-        let (stop_tx, stop_rx) = oneshot::channel();
-
-        let handle = task::spawn(async move {
-            tokio::select! {
-                _ = stop_rx => {
-                }
-                _ = run_stats_poller(endpoint, stats_provider, Duration::from_secs(5)) => {
-                }
-
-            }
-        });
-
-        Self { stop_tx, handle }
-    }
-
-    pub(crate) async fn stop(self) {
-        let _ = self.stop_tx.send(());
-        let _ = self.handle.await;
-    }
+fn run_metrics_task(
+    endpoint: types::MetricsServerEndpoint,
+    stats_provider: kyproto::KyProtoStatsProvider,
+) -> Task {
+    Task::spawn(async move {
+        let _ = run_stats_poller(endpoint, stats_provider, Duration::from_secs(5)).await;
+    })
 }
 
 async fn start_session(
@@ -838,7 +722,7 @@ async fn start_session(
         let endpoint_id = endpoint.id();
         info!("Start clock sync. Endpoint: {endpoint_id:X}");
 
-        let task = ClockSyncTask::new(endpoint);
+        let task = run_clock_sync_task(endpoint);
         Some(StartSessionClockSyncResponse {
             endpoint: endpoint_id,
             task,
@@ -853,7 +737,7 @@ async fn start_session(
         info!("Start metrics server. Endpoint: {endpoint_id:X}");
 
         let stats_provider = connection.stats_provider();
-        let task = MetricsTask::new(endpoint, stats_provider);
+        let task = run_metrics_task(endpoint, stats_provider);
 
         Some(StartSessionMetricsResponse {
             endpoint: endpoint_id,
@@ -870,9 +754,9 @@ async fn start_session(
             return Err(Error::ControlPlaneNotOpened);
         };
 
-        let connection_task =
-            ConnectionTask::new(connection.clone(), state_machine_proxy, session_id);
-        let backend = KymuxBackend::new(connection_task);
+        let _connection_task =
+            run_connection_task(connection.clone(), state_machine_proxy, session_id);
+        let backend = KymuxBackend { _connection_task };
         streaming_session.data_plane = Some(DataPlaneBackend::Kymux(backend));
     }
 

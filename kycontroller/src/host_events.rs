@@ -23,12 +23,9 @@ use std::time::Duration;
 use actix_ws::{CloseCode, CloseReason};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
-use tokio::{
-    sync::{mpsc, oneshot},
-    task,
-};
+use tokio::sync::mpsc;
 
-use crate::{Error, Result, StateMachineEvent, StateMachineProxy};
+use crate::{utils::Task, Error, Result, StateMachineEvent, StateMachineProxy};
 
 // Naming taken from man(7) tcp: TCP_KEEPCNT/TCP_KEEPINTVL
 pub(crate) const KEEPINTVL: Duration = Duration::from_secs(20);
@@ -195,8 +192,7 @@ enum HostEventFrame {
 
 pub(crate) struct HostEventSender {
     events_tx: mpsc::Sender<HostEventFrame>,
-    handle: task::JoinHandle<()>,
-    stop_tx: oneshot::Sender<()>,
+    _task: Task,
 }
 
 impl HostEventSender {
@@ -207,37 +203,17 @@ impl HostEventSender {
         statemachine_proxy: StateMachineProxy,
     ) -> Self {
         let (events_tx, events_rx) = mpsc::channel(32);
-        let (stop_tx, stop_rx) = oneshot::channel();
 
-        let handle = task::spawn_local(Self::task_entry(
+        let _task = Task::spawn_local(Self::task_entry(
             session_id,
             session,
             msg_stream,
             events_tx.clone(),
             events_rx,
-            stop_rx,
             statemachine_proxy,
         ));
 
-        Self {
-            events_tx,
-            handle,
-            stop_tx,
-        }
-    }
-
-    pub(crate) async fn stop(self) -> Result<()> {
-        let ret = self.stop_tx.send(());
-        if let Err(err) = ret {
-            warn!("Failed to send stop event to task: {err:?}");
-        }
-
-        self.handle.await.map_err(|err| {
-            warn!("HostEvent task panicked: {err:?}");
-            Error::ThreadPanicked
-        })?;
-
-        Ok(())
+        Self { events_tx, _task }
     }
 
     pub(crate) async fn send(&self, event: HostEvent) {
@@ -260,7 +236,6 @@ impl HostEventSender {
         msg_stream: actix_ws::MessageStream,
         events_tx: mpsc::Sender<HostEventFrame>,
         events_rx: mpsc::Receiver<HostEventFrame>,
-        stop_rx: oneshot::Receiver<()>,
         statemachine_proxy: StateMachineProxy,
     ) {
         let (ping_task_tx, ping_task_rx) = mpsc::channel(32);
@@ -273,8 +248,6 @@ impl HostEventSender {
         };
 
         tokio::select! {
-            _ = stop_rx => {
-            }
             _ = Self::process_rx_events(session_id, msg_stream, ping_task_tx, statemachine_proxy.clone()) => {}
             _ = Self::process_tx_events(session_id, session.clone(), events_rx, statemachine_proxy) => {}
             _ = ping_task.run() => {}

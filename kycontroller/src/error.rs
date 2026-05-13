@@ -81,8 +81,6 @@ pub enum Error {
     DateOperationOverflow,
     #[error("Actix Web error: {0}")]
     Actix(String),
-    #[error("Thread panicked")]
-    ThreadPanicked,
     #[error("Channel receive failed (channel closed)")]
     ChannelClosedRx,
     #[error("Channel send failed (channel closed)")]
