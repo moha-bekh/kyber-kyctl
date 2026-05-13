@@ -73,22 +73,13 @@ impl StreamingSession {
         }
     }
 
-    pub(crate) async fn stop_dataplane(&mut self) -> Result<()> {
-        match self.data_plane.take() {
-            Some(DataPlaneBackend::Rtp) => {}
-            Some(DataPlaneBackend::Kymux(_)) => {}
-            Some(DataPlaneBackend::Websocket(backend)) => backend.stop().await?,
-            None => {}
-        }
-
-        Ok(())
+    pub(crate) fn stop_dataplane(&mut self) {
+        self.data_plane = None;
     }
 
-    pub(crate) async fn stop(mut self) -> Result<()> {
+    pub(crate) fn stop(mut self) {
         info!("Stop dataplane");
-        self.stop_dataplane().await?;
-
-        Ok(())
+        self.stop_dataplane();
     }
 }
 
@@ -110,9 +101,7 @@ impl SessionCleanup {
         info!("Stop session {}", self.session.uid);
 
         if let Some(stream_session) = self.session.stream_session.take() {
-            if let Err(err) = stream_session.stop().await {
-                warn!("Failed to stop client session: {err:?}");
-            }
+            stream_session.stop();
         }
 
         if let Err(err) = self.session.services.stop().await {
@@ -137,14 +126,7 @@ pub(crate) struct StreamingCleanup {
 
 impl StreamingCleanup {
     pub(crate) async fn run(mut self) {
-        match self.data_plane.take() {
-            Some(DataPlaneBackend::Websocket(backend)) => {
-                if let Err(err) = backend.stop().await {
-                    warn!("Failed to stop websocket backend: {err:?}");
-                }
-            }
-            _ => {}
-        }
+        self.data_plane = None;
 
         if let Err(err) = self.services.stop().await {
             warn!("Failed to stop streaming services: {err:?}");

@@ -30,6 +30,7 @@ use tokio::sync::{oneshot, Mutex};
 use crate::config::SessionMode;
 use crate::inputservice;
 use crate::kydup;
+use crate::utils::Task;
 use crate::utils::TypeConvert;
 use crate::{Controller, DataPlaneBackend};
 use crate::{Error, Result};
@@ -67,20 +68,10 @@ pub(crate) struct WebsocketBackend {
     /// `None` if input was not requested or already connected.
     input: Option<oneshot::Sender<InputConnection>>,
     /// Join handle for the input WS→channel forwarding task.
-    input_forward_handle: Option<tokio::task::JoinHandle<()>>,
+    input_forward_handle: Option<Task>,
 }
 
 impl WebsocketBackend {
-    pub(crate) async fn stop(self) -> Result<()> {
-        // Output handles are cleaned up via StreamingServices.
-        if let Some(handle) = self.input_forward_handle {
-            if let Err(err) = handle.await {
-                log::warn!("Input forward task panicked: {err}");
-            }
-        }
-        Ok(())
-    }
-
     /// Connect a WebSocket to the backend for a given service.
     ///
     /// - `Video`/`Audio` in Multi: wraps the session in [`av::AVWebSocketSendDriver`]

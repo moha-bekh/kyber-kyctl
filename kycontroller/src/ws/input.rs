@@ -29,6 +29,7 @@ use kymux::types::{
     ProtocolSend, ProtocolSendDriver,
 };
 
+use crate::utils::Task;
 use crate::{Error, Result};
 
 /// Carries the WebSocket session and receive channel from [`connect`] to
@@ -176,7 +177,7 @@ pub(super) fn connect(
     connection_tx: oneshot::Sender<InputConnection>,
     ws_session: actix_ws::Session,
     ws_rx: actix_ws::MessageStream,
-) -> Result<tokio::task::JoinHandle<()>> {
+) -> Result<Task> {
     let (ws_recv_tx, ws_recv) = mpsc::channel::<InputPacket>(32);
 
     connection_tx
@@ -188,7 +189,5 @@ pub(super) fn connect(
             component: "input".into(),
         })?;
 
-    let handle = tokio::task::spawn_local(forward_ws_to_channel(ws_rx, ws_recv_tx));
-
-    Ok(handle)
+    Ok(Task::spawn_local(forward_ws_to_channel(ws_rx, ws_recv_tx)))
 }
