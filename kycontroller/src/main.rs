@@ -876,7 +876,6 @@ async fn real_main() -> Result<()> {
     if let Some(watchdog) = watchdog {
         watchdog.stop().await?;
     }
-    statemachine.stop().await?;
     av_tasks_handle.stop();
 
     Ok(())

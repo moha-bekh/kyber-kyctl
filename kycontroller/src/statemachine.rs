@@ -20,16 +20,13 @@
 
 use actix_web::web;
 use log::{info, warn};
-use tokio::{
-    sync::{mpsc, oneshot, Mutex},
-    task,
-};
+use tokio::sync::{mpsc, Mutex};
 use uuid::Uuid;
 
 use crate::avservices_manager::StreamId;
-use crate::utils::TypeConvert;
+use crate::utils::{Task, TypeConvert};
 use crate::{avservice, host_events};
-use crate::{Controller, Error, HostEvent, Result};
+use crate::{Controller, HostEvent, Result};
 
 /// Route a stream event (PipelineEvent or Stopped) emitted by an
 /// AVServicesManager handler to exactly the sessions subscribed to that
@@ -107,53 +104,21 @@ impl StateMachineProxy {
 
 pub(crate) struct StateMachine {
     events_tx: mpsc::Sender<StateMachineEvent>,
-    handle: task::JoinHandle<()>,
-    stop_tx: oneshot::Sender<()>,
+    _task: Task,
 }
 
 impl StateMachine {
     pub(crate) fn new(ctrl: web::Data<Mutex<Controller>>) -> Result<Self> {
         let (events_tx, events_rx) = mpsc::channel(32);
-        let (stop_tx, stop_rx) = oneshot::channel();
 
-        let handle = task::spawn_local(Self::task_entry(ctrl, events_rx, stop_rx));
+        let _task = Task::spawn(Self::process_events(ctrl, events_rx));
 
-        Ok(Self {
-            events_tx,
-            handle,
-            stop_tx,
-        })
-    }
-
-    pub(crate) async fn stop(self) -> Result<()> {
-        let ret = self.stop_tx.send(());
-        if ret.is_err() {
-            warn!("Statemachine task stop send request failed");
-        }
-
-        self.handle.await.map_err(|err| {
-            warn!("Statemachine task panicked: {err:?}");
-            Error::ThreadPanicked
-        })?;
-
-        Ok(())
+        Ok(Self { events_tx, _task })
     }
 
     pub(crate) fn create_proxy(&self) -> StateMachineProxy {
         StateMachineProxy {
             events_tx: self.events_tx.clone(),
-        }
-    }
-
-    async fn task_entry(
-        ctrl: web::Data<Mutex<Controller>>,
-        events_rx: mpsc::Receiver<StateMachineEvent>,
-        stop_rx: oneshot::Receiver<()>,
-    ) {
-        tokio::select! {
-            _ = stop_rx => {
-            }
-            _ = Self::process_events(ctrl, events_rx) => {}
         }
     }
 
