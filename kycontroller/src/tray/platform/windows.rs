@@ -23,15 +23,12 @@
 //! This module contains all Windows-specific code for the system tray,
 //! including the message pump, tray icon creation, and Windows service integration.
 //!
-//! # Native Shell_NotifyIconW Implementation
-//!
-//! This module uses direct Windows Shell_NotifyIconW API calls with NIF_GUID
-//! to enable cross-process icon identification. This allows:
-//! - New controller instances to clean up orphan icons from crashed instances
-//! - Reliable icon removal regardless of how the process exits
-//!
-//! The tray-icon crate is NOT used for icon management because it creates icons
-//! without NIF_GUID, making orphan cleanup impossible.
+//! The icon is identified by the (hWnd, uID) pair, matching the approach used
+//! by PowerToys, Tailscale, Netbird, tauri-apps/tray-icon, and other major
+//! Windows tray apps. NIF_GUID is avoided because Windows binds the GUID to
+//! the path of the executable that first registered it, causing NIM_ADD to
+//! fail on machines that have previously run a Kyber build from a different
+//! path. See NOTIFYICONDATAA "Troubleshooting" on Microsoft Learn for details.
 
 use super::super::status::{TrayCommand, TrayStatus};
 use crate::error::{Error, Result};
@@ -50,7 +47,7 @@ use windows_sys::Win32::Graphics::Gdi::{
 };
 use windows_sys::Win32::System::Threading::SetEvent;
 use windows_sys::Win32::UI::Shell::{
-    Shell_NotifyIconW, NIF_GUID, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY,
+    Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY,
     NOTIFYICONDATAW,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -219,16 +216,10 @@ const WM_TRAYICON: u32 = windows_sys::Win32::UI::WindowsAndMessaging::WM_USER + 
 /// Window class name for the hidden tray window.
 const TRAY_WINDOW_CLASS: &str = "KyberTrayWindow";
 
-/// Fixed GUID for the tray icon.
-/// Using NIF_GUID allows Windows to identify the icon across process restarts,
-/// enabling cleanup of orphan icons when a new controller starts.
-/// GUID: {7B3F8E2A-1C4D-4E5F-9A6B-8C7D0E1F2A3B}
-const TRAY_ICON_GUID: windows_sys::core::GUID = windows_sys::core::GUID {
-    data1: 0x7B3F8E2A,
-    data2: 0x1C4D,
-    data3: 0x4E5F,
-    data4: [0x9A, 0x6B, 0x8C, 0x7D, 0x0E, 0x1F, 0x2A, 0x3B],
-};
+/// Identifier for the tray icon within this process.
+/// Combined with the owning hWnd, this uniquely identifies the icon for
+/// Shell_NotifyIcon calls.
+const TRAY_ICON_UID: u32 = 1;
 
 /// Wait result from the tray event loop.
 enum WaitResult {
@@ -241,7 +232,7 @@ enum WaitResult {
 }
 
 // ============================================================================
-// Native Tray Icon Implementation using Shell_NotifyIconW with NIF_GUID
+// Native Tray Icon Implementation using Shell_NotifyIconW (hWnd + uID)
 // ============================================================================
 
 /// Context for the tray window procedure to access the menu and signal events.
@@ -301,7 +292,7 @@ unsafe extern "system" fn tray_window_proc(
     DefWindowProcW(hwnd, msg, wparam, lparam)
 }
 
-/// Native tray window and icon using Shell_NotifyIconW with NIF_GUID.
+/// Native tray window and icon using Shell_NotifyIconW with hWnd + uID.
 ///
 /// The hidden window is always created (needed to receive broadcast messages
 /// like TaskbarCreated). The tray icon may or may not be active — use
@@ -396,13 +387,15 @@ impl NativeTrayIcon {
 
     /// Add the tray icon to the system tray. Returns true on success.
     fn add_icon(&mut self, tooltip: &str) -> bool {
-        remove_orphan_icon();
-
         let mut nid = create_notify_icon_data(self.hwnd, self.hicon, tooltip);
-        nid.uFlags = NIF_ICON | NIF_TIP | NIF_MESSAGE | NIF_GUID;
+        nid.uFlags = NIF_ICON | NIF_TIP | NIF_MESSAGE;
 
         let result = unsafe { Shell_NotifyIconW(NIM_ADD, &nid) };
         self.icon_visible = result != 0;
+        if !self.icon_visible {
+            let err = unsafe { GetLastError() };
+            warn!("Shell_NotifyIconW(NIM_ADD) failed: GetLastError={err}");
+        }
         self.icon_visible
     }
 
@@ -412,7 +405,7 @@ impl NativeTrayIcon {
             return;
         }
         let mut nid = create_notify_icon_data(self.hwnd, self.hicon, tooltip);
-        nid.uFlags = NIF_TIP | NIF_GUID;
+        nid.uFlags = NIF_TIP;
 
         unsafe { Shell_NotifyIconW(NIM_MODIFY, &nid) };
     }
@@ -423,8 +416,8 @@ impl Drop for NativeTrayIcon {
         if self.icon_visible {
             let mut nid: NOTIFYICONDATAW = unsafe { std::mem::zeroed() };
             nid.cbSize = std::mem::size_of::<NOTIFYICONDATAW>() as u32;
-            nid.uFlags = NIF_GUID;
-            nid.guidItem = TRAY_ICON_GUID;
+            nid.hWnd = self.hwnd;
+            nid.uID = TRAY_ICON_UID;
             unsafe { Shell_NotifyIconW(NIM_DELETE, &nid) };
         }
 
@@ -450,10 +443,9 @@ fn create_notify_icon_data(hwnd: HWND, hicon: HICON, tooltip: &str) -> NOTIFYICO
     let mut nid: NOTIFYICONDATAW = unsafe { std::mem::zeroed() };
     nid.cbSize = std::mem::size_of::<NOTIFYICONDATAW>() as u32;
     nid.hWnd = hwnd;
-    nid.uID = 0; // Not used when NIF_GUID is set
+    nid.uID = TRAY_ICON_UID;
     nid.uCallbackMessage = WM_TRAYICON;
     nid.hIcon = hicon;
-    nid.guidItem = TRAY_ICON_GUID;
 
     // Copy tooltip (max 127 chars + null terminator)
     let tooltip_wide = to_wide_string(tooltip);
@@ -595,26 +587,6 @@ fn create_hicon_from_png(png_data: &[u8]) -> Result<HICON> {
     }
 
     Ok(hicon)
-}
-
-/// Remove any orphan tray icon with our GUID.
-///
-/// This is called before creating a new tray icon to clean up icons from
-/// previous controller instances that were killed without proper cleanup.
-/// Using NIF_GUID allows Windows to identify the icon across process restarts.
-fn remove_orphan_icon() {
-    // Safety: NOTIFYICONDATAW is a POD type, zeroing is valid
-    let mut nid: NOTIFYICONDATAW = unsafe { std::mem::zeroed() };
-    nid.cbSize = std::mem::size_of::<NOTIFYICONDATAW>() as u32;
-    nid.uFlags = NIF_GUID;
-    nid.guidItem = TRAY_ICON_GUID;
-
-    // Try to delete any existing icon with our GUID
-    // This will succeed if there's an orphan icon, fail silently otherwise
-    let result = unsafe { Shell_NotifyIconW(NIM_DELETE, &nid) };
-    if result != 0 {
-        info!("Removed orphan tray icon with GUID");
-    }
 }
 
 /// Build the context menu for the tray icon.
@@ -829,7 +801,7 @@ fn run_tray_loop(
     }
 
     info!("Removing tray icon");
-    // tray is dropped here, which calls Shell_NotifyIconW(NIM_DELETE) with NIF_GUID
+    // tray is dropped here, which calls Shell_NotifyIconW(NIM_DELETE) with hWnd + uID
     Ok(())
 }
 
