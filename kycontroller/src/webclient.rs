@@ -97,16 +97,14 @@ pub fn root(override_path: Option<&Path>) -> Option<String> {
             return None;
         };
 
-        let mut webclient_root = if cfg!(target_os = "windows") {
-            path.pop();
-
-            path
-        } else if cfg!(target_os = "linux") {
+        let mut webclient_root = if cfg!(target_os = "linux") {
             path.pop();
             path.pop();
 
             path
         } else {
+            path.pop();
+
             path
         };
 
