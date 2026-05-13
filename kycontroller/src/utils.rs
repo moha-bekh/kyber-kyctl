@@ -94,3 +94,20 @@ impl TypeConvert<kynputservice_types::Display> for kyavservice_types::Display {
         }
     }
 }
+
+pub(crate) struct Task(tokio::task::JoinHandle<()>);
+
+impl Drop for Task {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+impl Task {
+    pub fn spawn<F>(f: F) -> Self
+    where
+        F: std::future::Future<Output = ()> + Send + 'static,
+    {
+        Self(tokio::spawn(f))
+    }
+}
