@@ -162,8 +162,7 @@ struct ReconnectionState {
     max_attempts: u32,
     interval: Duration,
     current_attempt: u32,
-    reconnecting: bool,
-    reconnection_task: Option<runtime::JoinHandle<()>>,
+    reconnection_task: Option<runtime::Task>,
 }
 
 impl ReconnectionState {
@@ -175,7 +174,6 @@ impl ReconnectionState {
             max_attempts: 10,
             interval: Duration::from_secs(1),
             current_attempt: 0,
-            reconnecting: false,
             reconnection_task: None,
         }
     }
@@ -421,7 +419,7 @@ impl Handler {
             return false;
         }
 
-        if self.reconnection_state.reconnecting {
+        if self.reconnection_state.reconnection_task.is_some() {
             return false;
         }
 
@@ -430,7 +428,6 @@ impl Handler {
         }
 
         self.reconnection_state.current_attempt += 1;
-        self.reconnection_state.reconnecting = true;
         let attempt = self.reconnection_state.current_attempt;
         let max_attempts = self.reconnection_state.max_attempts;
 
@@ -442,7 +439,7 @@ impl Handler {
         // Schedule reconnect message
         let msg_sender = self.message_sender.clone();
         let interval = self.reconnection_state.interval;
-        let task = runtime::spawn(async move {
+        let task = runtime::Task::spawn(async move {
             runtime::sleep(interval).await;
             let _ = msg_sender.send(Message::Reconnect { attempt });
         });
@@ -453,19 +450,10 @@ impl Handler {
         true
     }
 
-    fn cancel_reconnection_task(&mut self) {
-        if let Some(task) = self.reconnection_state.reconnection_task.take() {
-            task.abort();
-            info!("Reconnection task cancelled");
-        }
-        self.reconnection_state.reconnecting = false;
-        self.reconnection_state.current_attempt = 0;
-    }
-
     async fn on_control_plane_reconnected(&mut self) -> Result<()> {
         info!("Control plane reconnected successfully");
         self.reconnection_state.current_attempt = 0;
-        self.reconnection_state.reconnecting = false;
+        self.reconnection_state.reconnection_task = None;
 
         let should_restart_streaming = self.reconnection_state.streaming_should_be_up;
 
@@ -482,7 +470,7 @@ impl Handler {
             self.reconnection_state.current_attempt
         );
 
-        self.reconnection_state.reconnecting = false;
+        self.reconnection_state.reconnection_task = None;
         if self.schedule_reconnection() {
             return Ok(());
         }
@@ -548,7 +536,8 @@ impl Handler {
                 // Clear intent flags and cancel any pending reconnection
                 self.reconnection_state.control_should_be_up = false;
                 self.reconnection_state.streaming_should_be_up = false;
-                self.cancel_reconnection_task();
+                self.reconnection_state.reconnection_task = None;
+                self.reconnection_state.current_attempt = 0;
 
                 let ret = self.disconnect(*stop_session).await;
 
@@ -564,7 +553,7 @@ impl Handler {
                 // Check if reconnection is still desired
                 if !self.reconnection_state.control_should_be_up {
                     info!("Reconnection cancelled - control plane should not be up");
-                    self.reconnection_state.reconnecting = false;
+                    self.reconnection_state.reconnection_task = None;
                     self.reconnection_state.current_attempt = 0;
                     return Ok(());
                 }
@@ -572,7 +561,7 @@ impl Handler {
                 match self.connect().await {
                     Ok(ConnectOutcome::Connected) => self.on_control_plane_reconnected().await,
                     Ok(ConnectOutcome::AuthenticationRequired { issuer, client_id }) => {
-                        self.reconnection_state.reconnecting = false;
+                        self.reconnection_state.reconnection_task = None;
                         self.reconnection_state.current_attempt = 0;
                         self.event_manager
                             .send_event(Event::AuthenticationRequired { issuer, client_id });

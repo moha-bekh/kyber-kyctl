@@ -78,3 +78,20 @@ where
         _marker: std::marker::PhantomData,
     }
 }
+
+pub(crate) struct Task(JoinHandle<()>);
+
+impl Drop for Task {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+impl Task {
+    pub fn spawn<F>(f: F) -> Self
+    where
+        F: std::future::Future<Output = ()> + crate::util::KySend + 'static,
+    {
+        Self(spawn(f))
+    }
+}
