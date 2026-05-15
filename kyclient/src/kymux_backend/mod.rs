@@ -162,12 +162,12 @@ impl BackendDriver for KymuxBackend {
         self.platform.audio_resume().await
     }
 
-    async fn input_service_connected(&mut self) -> Result<()> {
-        self.platform.input_service_connected().await
+    fn input_service_connected(&mut self) -> Result<()> {
+        self.platform.input_service_connected()
     }
 
-    async fn input_service_disconnected(&mut self) -> Result<()> {
-        self.platform.input_service_disconnected().await
+    fn input_service_disconnected(&mut self) -> Result<()> {
+        self.platform.input_service_disconnected()
     }
 
     async fn stop(&mut self) -> Result<()> {

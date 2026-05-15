@@ -120,9 +120,9 @@ trait BackendDriver: KySend {
     #[cfg(feature = "js-player")]
     async fn audio_resume(&self) -> Result<()>;
 
-    async fn input_service_connected(&mut self) -> Result<()>;
+    fn input_service_connected(&mut self) -> Result<()>;
 
-    async fn input_service_disconnected(&mut self) -> Result<()>;
+    fn input_service_disconnected(&mut self) -> Result<()>;
 
     async fn stop(&mut self) -> Result<()>;
 }
@@ -717,7 +717,7 @@ impl Handler {
                 info!("Input service connected");
 
                 if let Some(backend) = self.backend.as_mut() {
-                    backend.input_service_connected().await?;
+                    backend.input_service_connected()?;
                 }
 
                 self.event_manager.send_event(Event::InputServiceConnected);
@@ -728,7 +728,7 @@ impl Handler {
                 info!("Input service disconnected");
 
                 if let Some(backend) = self.backend.as_mut() {
-                    backend.input_service_disconnected().await?;
+                    backend.input_service_disconnected()?;
                 }
 
                 self.event_manager

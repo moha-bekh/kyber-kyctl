@@ -282,7 +282,7 @@ impl BackendDriver for RtpBackend {
         Ok(())
     }
 
-    async fn input_service_connected(&mut self) -> Result<()> {
+    fn input_service_connected(&mut self) -> Result<()> {
         let input_service = self.input_service.as_mut().ok_or(Error::NoInputService)?;
 
         input_service
@@ -293,7 +293,7 @@ impl BackendDriver for RtpBackend {
         Ok(())
     }
 
-    async fn input_service_disconnected(&mut self) -> Result<()> {
+    fn input_service_disconnected(&mut self) -> Result<()> {
         let input_service = self.input_service.as_mut().ok_or(Error::NoInputService)?;
         input_service.pipeline.stop()?;
 
