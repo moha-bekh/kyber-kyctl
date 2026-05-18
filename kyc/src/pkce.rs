@@ -24,9 +24,8 @@ use std::time::Duration;
 
 use log::info;
 use openidconnect::{
-    core::{CoreAuthenticationFlow, CoreClient, CoreProviderMetadata},
-    reqwest::async_http_client,
-    AuthorizationCode, ClientId, CsrfToken, IssuerUrl, Nonce, OAuth2TokenResponse,
+    core::{CoreAuthenticationFlow, CoreProviderMetadata},
+    reqwest, AuthorizationCode, ClientId, CsrfToken, IssuerUrl, Nonce, OAuth2TokenResponse,
     PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, RefreshToken, Scope, TokenResponse,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -35,6 +34,24 @@ use crate::{Error, OidcTokens};
 
 const IDP_TIMEOUT: Duration = Duration::from_secs(30);
 const CALLBACK_TIMEOUT: Duration = Duration::from_secs(300);
+
+// Maybe `openidconnect` abuses typestates a little bit. Maybe.
+type CoreClient = openidconnect::core::CoreClient<
+    openidconnect::EndpointSet,
+    openidconnect::EndpointNotSet,
+    openidconnect::EndpointNotSet,
+    openidconnect::EndpointNotSet,
+    openidconnect::EndpointMaybeSet,
+    openidconnect::EndpointMaybeSet,
+>;
+
+fn new_reqwest_client() -> reqwest::Client {
+    // Disable redirects to protect against SSRF vulnerabilities.
+    reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .unwrap()
+}
 
 /// A pending PKCE Authorization Code Flow.
 ///
@@ -152,8 +169,9 @@ impl PkceFlow {
             IDP_TIMEOUT,
             self.client
                 .exchange_code(AuthorizationCode::new(code))
+                .map_err(|e| Error::TokenExchange(e.to_string()))?
                 .set_pkce_verifier(self.pkce_verifier)
-                .request_async(async_http_client),
+                .request_async(&new_reqwest_client()),
         )
         .await
         .map_err(|_| Error::TokenExchange("timed out".to_owned()))?
@@ -181,7 +199,8 @@ pub async fn refresh(
         IDP_TIMEOUT,
         client
             .exchange_refresh_token(&RefreshToken::new(refresh_token.to_owned()))
-            .request_async(async_http_client),
+            .map_err(|e| Error::TokenExchange(e.to_string()))?
+            .request_async(&new_reqwest_client()),
     )
     .await
     .map_err(|_| Error::TokenExchange("timed out".to_owned()))?
@@ -203,7 +222,7 @@ async fn discover(
 
     let provider_metadata = tokio::time::timeout(
         IDP_TIMEOUT,
-        CoreProviderMetadata::discover_async(issuer_url, async_http_client),
+        CoreProviderMetadata::discover_async(issuer_url, &new_reqwest_client()),
     )
     .await
     .map_err(|_| Error::Discovery("timed out".to_owned()))?
