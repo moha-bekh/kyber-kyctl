@@ -70,9 +70,9 @@ impl WsClient {
         };
 
         let timer_duration = host_events::timeout_duration(capabilities);
-        let Ok(resp) = tokio::time::timeout(timer_duration, stream.next()).await else {
-            return Err(Error::HttpQueryTimeout);
-        };
+        let resp = tokio::time::timeout(timer_duration, stream.next())
+            .await
+            .map_err(|_| Error::Timeout)?;
 
         let Some(Ok(tungstenite_Message::Text(status))) = resp else {
             return Err(Error::Rejected);

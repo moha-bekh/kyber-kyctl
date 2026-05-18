@@ -52,6 +52,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use log::{info, warn};
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 
 pub use crate::error::{Error, Result};
@@ -520,14 +521,15 @@ impl Handler {
                         warn!("Failed to connect to ControlPlane: {err:?}");
 
                         let reason = match &err {
-                            Error::HttpClient(_) => ConnectFailedReason::NetworkError,
-                            Error::HttpQueryTimeout => ConnectFailedReason::Timeout,
-                            Error::HttpQueryFailed { status }
-                                if *status == 401 || *status == 403 =>
-                            {
-                                ConnectFailedReason::Unauthorized
-                            }
-                            Error::HttpQueryFailed { .. } => ConnectFailedReason::ServerError,
+                            Error::Timeout => ConnectFailedReason::Timeout,
+                            Error::Http(err) if err.is_timeout() => ConnectFailedReason::Timeout,
+                            Error::Http(err) => match err.status() {
+                                Some(StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) => {
+                                    ConnectFailedReason::Unauthorized
+                                }
+                                Some(s) if s.is_server_error() => ConnectFailedReason::ServerError,
+                                _ => ConnectFailedReason::NetworkError,
+                            },
                             Error::TlsVerificationFailed => ConnectFailedReason::TlsVerification,
                             Error::WsConnectFailed => ConnectFailedReason::WebSocket,
                             Error::DeserializationFailed => ConnectFailedReason::Protocol,
