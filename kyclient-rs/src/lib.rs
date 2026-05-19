@@ -1084,6 +1084,16 @@ impl Client {
         }
     }
 
+    pub fn renew_session(&self, credentials: &AuthCredentials) -> Result<()> {
+        let raw_creds = raw_credentials(credentials)?;
+        let ret = unsafe { sys::kyclient_client_renew_session(self.ptr, raw_creds.as_ptr()) };
+        if ret == 0 {
+            Ok(())
+        } else {
+            Err(Error::Generic)
+        }
+    }
+
     pub fn disconnect(&self) -> Result<()> {
         let ret = unsafe { sys::kyclient_client_disconnect(self.ptr) };
         if ret == 0 {
