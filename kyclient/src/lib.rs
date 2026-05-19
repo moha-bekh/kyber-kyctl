@@ -786,6 +786,27 @@ impl Handler {
                 self.conn_params.credentials = credentials.clone();
                 Ok(())
             }
+            Message::RenewSession(credentials) => {
+                self.conn_params.credentials = credentials.clone();
+                if self.host_events.is_none() {
+                    self.message_sender.send(Message::Connect)?;
+                    return Ok(());
+                }
+                match host_service::renew_session(&self.http_client, credentials).await {
+                    Ok(host_service::RenewResult::Renewed) => {
+                        info!("Session renewed");
+                    }
+                    Ok(host_service::RenewResult::SessionGone) => {
+                        info!("Session gone on renewal, reconnecting");
+                        self.message_sender.send(Message::Connect)?;
+                    }
+                    Err(e) => {
+                        warn!("Session renewal failed: {e:?}, reconnecting");
+                        self.message_sender.send(Message::Connect)?;
+                    }
+                }
+                Ok(())
+            }
         }
     }
 
@@ -1105,6 +1126,15 @@ impl Client {
     pub fn update_credentials(&self, credentials: AuthCredentials) -> Result<()> {
         self.msg_sender
             .send(Message::UpdateCredentials(credentials))?;
+        Ok(())
+    }
+
+    /// Queues a session renewal with updated credentials. Returns `Ok(())` once the message is
+    /// enqueued, not when the renewal completes. If the server-side session is gone or the
+    /// request fails, the client falls back to a full reconnect using the new credentials.
+    /// Queues a session renewal with updated credentials. Returns `Ok(())` once the message is enqueued, not when the renewal completes. If the server-side session is gone or the request fails, the client falls back to a full reconnect using the new credentials.
+    pub fn renew_session(&self, credentials: AuthCredentials) -> Result<()> {
+        self.msg_sender.send(Message::RenewSession(credentials))?;
         Ok(())
     }
 

@@ -225,12 +225,6 @@ async fn login(
 /// - `200 OK`: Session renewed successfully (empty body)
 /// - `400 Bad Request`: Invalid Authorization header format
 /// - `401 Unauthorized`: Authentication failed or validation check failed
-///
-/// ## Note on Cookie-Only Access
-///
-/// Currently, this endpoint requires an existing session cookie, so external clients
-/// with only a JWT (no cookie) cannot renew. This is documented as an open design
-/// question in Auth.md.
 #[post("/renew")]
 async fn renew(
     ctrl: web::Data<Mutex<Controller>>,

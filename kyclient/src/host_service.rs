@@ -171,6 +171,52 @@ fn extract_quoted_param(header: &str, key: &str) -> Option<String> {
     }
 }
 
+pub(crate) enum RenewResult {
+    Renewed,
+    SessionGone,
+}
+
+pub(crate) async fn renew_session(
+    client: &HttpClient,
+    credentials: &AuthCredentials,
+) -> Result<RenewResult> {
+    let base_url = client.base_url();
+    let request = match credentials {
+        AuthCredentials::Basic { .. } => {
+            warn!("Basic credentials cannot be renewed (no expiration)");
+            return Err(Error::InvalidState);
+        }
+        AuthCredentials::Jwt { token } => {
+            let url = format!("{base_url}/session/renew");
+            client.post(&url).bearer_auth(token)
+        }
+        AuthCredentials::Oidc { token } => {
+            let url = format!("{base_url}/session/renew?auth=oidc");
+            client.post(&url).bearer_auth(token)
+        }
+    };
+
+    let response = match request.send().await {
+        Ok(r) => r,
+        Err(e) if e.is_timeout() => {
+            warn!("POST /session/renew has timed out");
+            return Err(Error::HttpQueryTimeout);
+        }
+        Err(e) => return Err(Error::HttpClient(e)),
+    };
+
+    match response.status() {
+        StatusCode::OK => Ok(RenewResult::Renewed),
+        StatusCode::UNAUTHORIZED | StatusCode::NOT_FOUND => Ok(RenewResult::SessionGone),
+        status => {
+            warn!("POST /session/renew failed: {status}");
+            Err(Error::HttpQueryFailed {
+                status: status.into(),
+            })
+        }
+    }
+}
+
 pub(crate) async fn enumerate_displays(client: &HttpClient) -> Result<Vec<Display>> {
     let url = format!(
         "{base_url}/enumerate_displays",

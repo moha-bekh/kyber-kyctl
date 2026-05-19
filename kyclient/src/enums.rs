@@ -137,6 +137,7 @@ pub(crate) enum Message {
     Metric(Metric),
 
     UpdateCredentials(AuthCredentials),
+    RenewSession(AuthCredentials),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
