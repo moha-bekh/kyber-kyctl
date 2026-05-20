@@ -29,7 +29,6 @@ use kymux::{kynet, kyproto, types};
 use log::{error, info, warn};
 use serde::Serialize;
 use std::collections::HashMap;
-use tokio::sync::oneshot;
 
 #[cfg(feature = "js-player")]
 use kywebplayer::AudioResumeState;
@@ -106,7 +105,7 @@ pub(crate) struct PlatformEndpoints {
 pub(crate) struct KymuxBackend {
     platform: Box<dyn BackendDriver>,
     connection: KyArc<kyproto::Connection>,
-    closed_task: Option<KymuxClosedTask>,
+    closed_task: Option<runtime::Task>,
 }
 
 impl KymuxBackend {
@@ -132,7 +131,7 @@ impl KymuxBackend {
         let platform = new_platform_backend(&backend_config, endpoints, has_metrics).await?;
 
         // Monitor connection closed
-        let closed_task = KymuxClosedTask::new(connection.clone(), msg_sender);
+        let closed_task = kymux_closed_task(connection.clone(), msg_sender);
 
         Ok(Self {
             platform,
@@ -172,55 +171,27 @@ impl BackendDriver for KymuxBackend {
     }
 
     async fn stop(&mut self) -> Result<()> {
-        if let Some(closed_task) = self.closed_task.take() {
-            let ret = closed_task.stop();
-            if let Err(err) = ret {
-                warn!("Failed to stop KymuxClosedTask: {err:?}");
-            }
-        }
+        self.closed_task = None;
 
         self.connection.close();
-
         self.platform.stop().await
     }
 }
 
-struct KymuxClosedTask {
-    stop_tx: oneshot::Sender<()>,
-}
+fn kymux_closed_task(
+    connection: KyArc<kyproto::Connection>,
+    msg_sender: MessageSender,
+) -> runtime::Task {
+    runtime::Task::spawn(async move {
+        let reason = match connection.closed().await {
+            Ok(()) => DataPlaneCloseReason::Closed,
+            Err(_) => DataPlaneCloseReason::Error,
+        };
 
-impl KymuxClosedTask {
-    fn new(connection: KyArc<kyproto::Connection>, msg_sender: MessageSender) -> Self {
-        let (stop_tx, stop_rx) = oneshot::channel();
-
-        runtime::spawn(async move {
-            tokio::select! {
-                _ = stop_rx => {}
-                ret = connection.closed() => {
-                    let reason = match ret {
-                        Ok(()) => DataPlaneCloseReason::Closed,
-                        Err(_) => DataPlaneCloseReason::Error,
-                    };
-
-                    let ret = msg_sender.send_async(Message::DataPlaneClosed{ reason }).await;
-                    if let Err(err) = ret {
-                        warn!("Fail to send DataPlaneClosed: {err:?}");
-                    }
-                }
-            }
-        });
-
-        Self { stop_tx }
-    }
-
-    fn stop(self) -> Result<()> {
-        let ret = self.stop_tx.send(());
-        if ret.is_err() {
-            warn!("ClosedTask already stopped");
-        }
-
-        Ok(())
-    }
+        let _ = msg_sender
+            .send_async(Message::DataPlaneClosed { reason })
+            .await;
+    })
 }
 
 async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kyproto::Connection> {
