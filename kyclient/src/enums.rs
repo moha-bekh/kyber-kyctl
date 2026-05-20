@@ -25,7 +25,8 @@ use kyclient_common::auth::AuthCredentials;
 use crate::host_events;
 use crate::metrics::Metric;
 use crate::{
-    StreamerPipelineEventType, StreamerPipelineStage, StreamerPipelineType, StreamingSessionConfig,
+    Error, StreamerPipelineEventType, StreamerPipelineStage, StreamerPipelineType,
+    StreamingSessionConfig,
 };
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -167,6 +168,26 @@ pub enum ConnectFailedReason {
     TlsConfiguration,
     WebSocket,
     Protocol,
+}
+
+impl From<Error> for ConnectFailedReason {
+    fn from(err: Error) -> Self {
+        match err {
+            Error::Timeout => Self::Timeout,
+            Error::Http(err) if err.is_timeout() => Self::Timeout,
+            Error::Http(err) => match err.status() {
+                Some(reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN) => {
+                    Self::Unauthorized
+                }
+                Some(s) if s.is_server_error() => Self::ServerError,
+                _ => Self::NetworkError,
+            },
+            Error::TlsVerificationFailed => Self::TlsVerification,
+            Error::WsConnectFailed => Self::WebSocket,
+            Error::DeserializationFailed => Self::Protocol,
+            _ => Self::NetworkError,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

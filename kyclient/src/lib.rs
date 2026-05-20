@@ -179,30 +179,58 @@ impl ReconnectionState {
     }
 }
 
+enum ConnectFullOutcome {
+    Connected {
+        connection: Connection,
+        displays: Vec<Display>,
+    },
+    AuthenticationRequired {
+        issuer: String,
+        client_id: String,
+    },
+}
+
 enum ConnectOutcome {
-    Connected,
-    AuthenticationRequired { issuer: String, client_id: String },
+    Connected { displays: Vec<Display> },
+    AuthenticationRequired,
 }
 
 struct Handler {
     conn_params: ConnectionParams,
-    peer_info: Option<PeerInfo>,
     http_client: HttpClient,
     event_manager: EventManager,
     message_sender: MessageSender,
     metrics: Option<MetricsProducer>,
 
-    host_events: Option<HostEventReceiver>,
-    capabilities: Option<Capabilities>,
-
     state: Arc<Mutex<State>>,
-    displays: Vec<Display>,
     reconnection_state: ReconnectionState,
 
-    #[cfg(target_arch = "wasm32")]
+    connection: Option<Connection>,
+}
+
+struct Connection {
+    #[allow(dead_code)] // This field might not be used depending on enabled features
+    peer_info: PeerInfo,
+    host_events: HostEventReceiver,
+
     backend: Option<Box<dyn BackendDriver>>,
-    #[cfg(not(target_arch = "wasm32"))]
-    backend: Option<Box<dyn BackendDriver + Send>>,
+}
+
+impl Connection {
+    async fn stop(self) {
+        if let Some(mut backend) = self.backend {
+            info!("Stop backend");
+            if let Err(err) = backend.stop().await {
+                warn!("Failed to stop backend: {err:?}");
+            }
+        }
+
+        let ret = self.host_events.stop().await;
+        match ret {
+            Ok(_) => info!("HostEventHandler stopped"),
+            Err(err) => warn!("Failed to stop HostEventHandler: {err:?}"),
+        }
+    }
 }
 
 impl Handler {
@@ -219,21 +247,18 @@ impl Handler {
 
         Ok(Self {
             conn_params,
-            peer_info: None,
             http_client,
             event_manager,
             message_sender,
             metrics,
-            host_events: None,
-            capabilities: None,
             state,
-            displays: vec![],
             reconnection_state: ReconnectionState::new(auto_reconnection),
-            backend: None,
+
+            connection: None,
         })
     }
 
-    async fn connect(&mut self) -> Result<ConnectOutcome> {
+    async fn connect(&self) -> Result<ConnectFullOutcome> {
         // Resolve the peer address from the HTTP response so we can later
         // connect QUIC to the same IP.  This matters because QUIC stack on
         // desktop does not implement Happy Eyeballs (RFC 8305) so we let
@@ -244,22 +269,19 @@ impl Handler {
         // performs its own Happy Eyeballs resolution internally.
         info!("Get Host capabilities");
         let (capabilities, _peer_addr) = host_service::capabilities(&self.http_client).await?;
-        self.capabilities = Some(capabilities);
 
-        self.peer_info = Some(PeerInfo {
+        let peer_info = PeerInfo {
             // On desktop, peer address is required for QUIC and WebSocket connections.
             // Fail early if the HTTP stack didn't expose it.
             #[cfg(feature = "desktop")]
             addr: _peer_addr.ok_or(Error::NoPeerAddress)?.ip(),
-        });
+        };
 
         let response =
             match host_service::login(&self.http_client, &self.conn_params.credentials).await? {
                 host_service::LoginResult::OidcRequired(challenge) => {
-                    return Ok(ConnectOutcome::AuthenticationRequired {
-                        issuer: challenge.issuer,
-                        client_id: challenge.client_id,
-                    });
+                    let host_service::OidcChallenge { issuer, client_id } = challenge;
+                    return Ok(ConnectFullOutcome::AuthenticationRequired { issuer, client_id });
                 }
                 host_service::LoginResult::Success(response) => response,
             };
@@ -267,55 +289,62 @@ impl Handler {
         info!("Logged in with uuid '{}'", response.uid);
 
         info!("Connect to Control Plane");
-        let capabilities = self.capabilities.as_ref().ok_or(Error::InvalidState)?;
         let host_events = HostEventReceiver::new(
             &self.conn_params,
-            self.peer_info()?,
+            &peer_info,
             &capabilities.control_plane,
             self.message_sender.clone(),
             &response.websocket,
         )
         .await?;
-        self.host_events = Some(host_events);
 
         // Enumerate displays
         info!("Enumerate displays");
-        self.displays = host_service::enumerate_displays(&self.http_client).await?;
-        info!("Got displays: {:?}", self.displays);
+        let displays = host_service::enumerate_displays(&self.http_client).await?;
+        info!("Got displays: {displays:?}");
 
-        Ok(ConnectOutcome::Connected)
-    }
+        let connection = Connection {
+            peer_info,
+            host_events,
 
-    async fn stop_hostevents(&mut self) -> Result<()> {
-        let Some(host_events) = self.host_events.take() else {
-            return Ok(());
+            backend: None,
         };
 
-        let ret = host_events.stop().await;
-        match ret {
-            Ok(_) => {
-                info!("HostEventHandler stopped");
-            }
-            Err(err) => {
-                warn!("Failed to stop HostEventHandler: {err:?}");
-            }
-        }
-
-        Ok(())
+        Ok(ConnectFullOutcome::Connected {
+            connection,
+            displays,
+        })
     }
 
-    async fn stop_backend(&mut self) -> Result<()> {
-        if let Some(mut backend) = self.backend.take() {
-            backend.stop().await?;
-        }
-
-        Ok(())
+    async fn connect_and_handle(&mut self) -> Result<ConnectOutcome> {
+        Ok(match self.connect().await? {
+            ConnectFullOutcome::Connected {
+                connection,
+                displays,
+            } => {
+                self.connection = Some(connection);
+                ConnectOutcome::Connected { displays }
+            }
+            ConnectFullOutcome::AuthenticationRequired { issuer, client_id } => {
+                self.event_manager
+                    .send_event(Event::AuthenticationRequired { issuer, client_id });
+                ConnectOutcome::AuthenticationRequired
+            }
+        })
     }
 
-    async fn disconnect(&mut self, stop_session: bool) -> Result<()> {
+    async fn stop_backend(&mut self) {
         info!("Stop backend");
-        self.stop_backend().await?;
+        if let Some(conn) = &mut self.connection {
+            if let Some(mut backend) = conn.backend.take() {
+                if let Err(err) = backend.stop().await {
+                    warn!("Failed to stop backend: {err:?}");
+                }
+            }
+        }
+    }
 
+    async fn disconnect(&mut self, stop_session: bool) {
         if stop_session {
             info!("Request to log out and stop host session");
             let ret = host_service::logout(&self.http_client).await;
@@ -329,19 +358,19 @@ impl Handler {
             }
         }
 
-        self.stop_hostevents().await?;
-
-        Ok(())
-    }
-
-    fn peer_info(&self) -> Result<&PeerInfo> {
-        self.peer_info.as_ref().ok_or(Error::NoPeerAddress)
+        if let Some(conn) = self.connection.take() {
+            conn.stop().await;
+        }
     }
 
     async fn start_streaming_session(
         &mut self,
         streaming_config: StreamingSessionConfig,
     ) -> Result<()> {
+        let Some(conn) = &mut self.connection else {
+            return Ok(());
+        };
+
         let msg_sender = self.message_sender.clone();
 
         info!("Start streaming session");
@@ -358,13 +387,13 @@ impl Handler {
 
                 let backend =
                     Box::new(ws_backend::WsBackend::new(config, self.metrics.is_some()).await?);
-                self.backend = Some(backend);
+                conn.backend = Some(backend);
             }
             #[cfg(feature = "kymux")]
             StreamingProtocol::Kymux(kymux_config) => {
                 let config = kymux_backend::KymuxBackendConfig {
                     conn_params: &self.conn_params,
-                    peer_info: self.peer_info()?,
+                    peer_info: &conn.peer_info,
                     http_client: &self.http_client,
                     streaming_config,
                     kymux_config: kymux_config.clone(),
@@ -373,12 +402,12 @@ impl Handler {
 
                 let backend =
                     Box::new(kymux_backend::KymuxBackend::new(config, self.metrics.clone()).await?);
-                self.backend = Some(backend);
+                conn.backend = Some(backend);
             }
             #[cfg(feature = "rtp")]
             StreamingProtocol::Rtp => {
                 let config = rtp_backend::RtpBackendConfig {
-                    peer_info: self.peer_info()?,
+                    peer_info: &conn.peer_info,
                     http_client: &self.http_client,
                     streaming_config,
                     msg_sender,
@@ -386,28 +415,23 @@ impl Handler {
 
                 let backend =
                     Box::new(rtp_backend::RtpBackend::new(config, self.metrics.is_some()).await?);
-                self.backend = Some(backend);
+                conn.backend = Some(backend);
             }
         };
 
         Ok(())
     }
 
-    async fn stop_streaming_session(&mut self) -> Result<()> {
-        self.stop_backend().await?;
-
+    async fn stop_streaming_session(&mut self) {
         info!("Request to stop streaming");
-        let ret = host_service::stop_streaming(&self.http_client).await;
-        if let Err(err) = ret {
-            warn!(
-                "Stop streaming rejected by controller ({:?}). Stop client anyway.",
-                err
-            );
-        } else {
-            info!("Streaming stopped");
+        match host_service::stop_streaming(&self.http_client).await {
+            Ok(()) => info!("Streaming stopped"),
+            Err(err) => {
+                warn!("Stop streaming rejected by controller ({err:?}). Stop client anyway.")
+            }
         }
 
-        Ok(())
+        self.stop_backend().await;
     }
 
     fn schedule_reconnection(&mut self) -> bool {
@@ -450,29 +474,14 @@ impl Handler {
         true
     }
 
-    async fn on_control_plane_reconnected(&mut self) -> Result<()> {
-        info!("Control plane reconnected successfully");
-        self.reconnection_state.current_attempt = 0;
-        self.reconnection_state.reconnection_task = None;
-
-        let should_restart_streaming = self.reconnection_state.streaming_should_be_up;
-
-        self.event_manager.send_event(Event::Reconnected {
-            should_restart_streaming,
-        });
-
-        Ok(())
-    }
-
-    async fn on_reconnection_failure(&mut self, err: Error) -> Result<()> {
+    fn on_reconnection_failure(&mut self, err: Error) {
         warn!(
             "Reconnection attempt {} failed: {err:?}",
             self.reconnection_state.current_attempt
         );
 
-        self.reconnection_state.reconnection_task = None;
         if self.schedule_reconnection() {
-            return Ok(());
+            return;
         }
 
         // All attempts exhausted
@@ -484,7 +493,6 @@ impl Handler {
         self.event_manager.send_event(Event::Stopped {
             reason: StopReason::ControlPlaneClosed,
         });
-        Ok(())
     }
 
     async fn handle_message(&mut self, msg: &Message) -> Result<()> {
@@ -493,40 +501,18 @@ impl Handler {
                 // Set intent: control plane should be up
                 self.reconnection_state.control_should_be_up = true;
 
-                match self.connect().await {
-                    Ok(ConnectOutcome::Connected) => {
-                        self.event_manager.send_event(Event::ControlPlaneConnected {
-                            displays: self.displays.clone(),
-                        });
-                        Ok(())
-                    }
-                    Ok(ConnectOutcome::AuthenticationRequired { issuer, client_id }) => {
+                match self.connect_and_handle().await {
+                    Ok(ConnectOutcome::Connected { displays }) => {
                         self.event_manager
-                            .send_event(Event::AuthenticationRequired { issuer, client_id });
-                        Ok(())
+                            .send_event(Event::ControlPlaneConnected { displays });
                     }
+                    Ok(ConnectOutcome::AuthenticationRequired) => (),
                     Err(err) => {
                         warn!("Failed to connect to ControlPlane: {err:?}");
 
-                        let reason = match &err {
-                            Error::Timeout => ConnectFailedReason::Timeout,
-                            Error::Http(err) if err.is_timeout() => ConnectFailedReason::Timeout,
-                            Error::Http(err) => match err.status() {
-                                Some(StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN) => {
-                                    ConnectFailedReason::Unauthorized
-                                }
-                                Some(s) if s.is_server_error() => ConnectFailedReason::ServerError,
-                                _ => ConnectFailedReason::NetworkError,
-                            },
-                            Error::TlsVerificationFailed => ConnectFailedReason::TlsVerification,
-                            Error::WsConnectFailed => ConnectFailedReason::WebSocket,
-                            Error::DeserializationFailed => ConnectFailedReason::Protocol,
-                            _ => ConnectFailedReason::NetworkError,
-                        };
-
+                        let reason = err.into();
                         self.event_manager
                             .send_event(Event::ControlPlaneConnectFailed { reason });
-                        Ok(())
                     }
                 }
             }
@@ -539,47 +525,49 @@ impl Handler {
                 self.reconnection_state.reconnection_task = None;
                 self.reconnection_state.current_attempt = 0;
 
-                let ret = self.disconnect(*stop_session).await;
+                self.disconnect(*stop_session).await;
 
                 self.event_manager.send_event(Event::Stopped {
                     reason: StopReason::Requested,
                 });
-
-                ret
             }
             Message::Reconnect { attempt } => {
                 info!("Attempting reconnection (attempt {})", attempt);
+                self.reconnection_state.reconnection_task = None;
 
                 // Check if reconnection is still desired
                 if !self.reconnection_state.control_should_be_up {
                     info!("Reconnection cancelled - control plane should not be up");
-                    self.reconnection_state.reconnection_task = None;
                     self.reconnection_state.current_attempt = 0;
                     return Ok(());
                 }
 
-                match self.connect().await {
-                    Ok(ConnectOutcome::Connected) => self.on_control_plane_reconnected().await,
-                    Ok(ConnectOutcome::AuthenticationRequired { issuer, client_id }) => {
-                        self.reconnection_state.reconnection_task = None;
+                match self.connect_and_handle().await {
+                    Ok(res) => {
                         self.reconnection_state.current_attempt = 0;
-                        self.event_manager
-                            .send_event(Event::AuthenticationRequired { issuer, client_id });
-                        Ok(())
+                        if let ConnectOutcome::Connected { .. } = res {
+                            info!("Control plane reconnected successfully");
+
+                            let should_restart_streaming =
+                                self.reconnection_state.streaming_should_be_up;
+                            self.event_manager.send_event(Event::Reconnected {
+                                should_restart_streaming,
+                            });
+                        }
                     }
-                    Err(err) => self.on_reconnection_failure(err).await,
+                    Err(err) => self.on_reconnection_failure(err),
                 }
             }
             Message::ControlPlaneClosed { reason } => {
                 warn!("ControlPlaneClosed. Reason: {reason:?}");
 
-                let ret_backend = self.stop_backend().await;
-                let ret_hostevents = self.stop_hostevents().await;
-                let ret = ret_backend.and(ret_hostevents);
+                if let Some(conn) = self.connection.take() {
+                    conn.stop().await;
+                }
 
                 // Schedule reconnection if enabled
                 if self.schedule_reconnection() {
-                    return ret;
+                    return Ok(());
                 }
 
                 // If reconnection disabled or exhausted, stop
@@ -590,94 +578,85 @@ impl Handler {
                 };
 
                 self.event_manager.send_event(Event::Stopped { reason });
-
-                ret
             }
             Message::DataPlaneClosed { reason } => {
                 warn!("DataPlaneClosed. Reason: {reason:?}");
 
-                let ret = self.stop_backend().await;
+                self.stop_backend().await;
 
                 self.event_manager.send_event(Event::DataPlaneClosed);
 
                 // Schedule reconnection if enabled
-                if self.schedule_reconnection() {
-                    return ret;
-                }
-
-                ret
+                self.schedule_reconnection();
             }
             Message::StartStreamingSession { config } => {
                 self.reconnection_state.streaming_should_be_up = true;
 
                 let ret = self.start_streaming_session(config.clone()).await;
-                let (event, stop) = match ret {
-                    Ok(()) => (Event::StreamingStarted, false),
+                let event = match &ret {
+                    Ok(()) => Event::StreamingStarted,
                     Err(Error::DataPlaneConnectFailed) => {
                         warn!("Dataplane connect failed. Stop client");
-                        (Event::DataPlaneConnectFailed, true)
+                        Event::DataPlaneConnectFailed
                     }
                     Err(err) => {
                         warn!("Streaming start failed: {err:?}. Stop client");
-                        (Event::StreamingStartFailed, true)
+                        Event::StreamingStartFailed
                     }
                 };
 
-                if stop {
-                    let ret = self.disconnect(true).await;
-                    if let Err(err) = ret {
-                        warn!("Fail to disconnect client: {err:?}");
-                    }
+                if ret.is_err() {
+                    self.disconnect(true).await;
                 }
 
                 self.event_manager.send_event(event);
 
                 self.bitrate_changed(config.bitrate)?;
-
-                Ok(())
             }
             Message::StopStreamingSession => {
                 self.reconnection_state.streaming_should_be_up = false;
 
-                self.stop_streaming_session().await?;
+                self.stop_streaming_session().await;
 
                 self.event_manager.send_event(Event::StreamingStopped);
-
-                Ok(())
             }
             Message::AudioSetVolume { volume } => {
-                if let Some(backend) = &self.backend {
-                    backend.audio_set_volume(*volume)?;
+                if let Some(conn) = &self.connection {
+                    if let Some(backend) = &conn.backend {
+                        backend.audio_set_volume(*volume)?;
+                    }
                 }
-
-                Ok(())
             }
             Message::AudioSetMute { mute } => {
-                if let Some(backend) = &self.backend {
-                    backend.audio_set_mute(*mute)?;
+                if let Some(conn) = &self.connection {
+                    if let Some(backend) = &conn.backend {
+                        backend.audio_set_mute(*mute)?;
+                    }
                 }
-
-                Ok(())
             }
             #[cfg(feature = "js-player")]
             Message::AudioTryResume { respond } => {
-                let state = match &self.backend {
-                    Some(backend) => backend.audio_try_resume(),
-                    None => player::AudioResumeState::Absent,
-                };
-                *respond.borrow_mut() = Some(state);
+                let mut state = player::AudioResumeState::Absent;
 
-                Ok(())
+                if let Some(conn) = &self.connection {
+                    if let Some(backend) = &conn.backend {
+                        state = backend.audio_try_resume();
+                    }
+                }
+
+                *respond.borrow_mut() = Some(state);
             }
             #[cfg(feature = "js-player")]
             Message::AudioResume { respond } => {
-                let result = match &self.backend {
-                    Some(backend) => backend.audio_resume().await,
-                    None => Ok(()),
-                };
-                *respond.borrow_mut() = Some(result);
+                let mut result = Ok(());
 
-                Ok(())
+                if let Some(conn) = &self.connection {
+                    if let Some(backend) = &conn.backend {
+                        result = backend.audio_resume().await;
+                    }
+                }
+
+                *respond.borrow_mut() = Some(result);
             }
             Message::AudioVolumeChanged { volume } => {
                 {
@@ -687,8 +666,6 @@ impl Handler {
 
                 self.event_manager
                     .send_event(Event::AudioVolumeChanged { volume: *volume });
-
-                Ok(())
             }
             Message::AudioMuteChanged { mute } => {
                 {
@@ -698,43 +675,39 @@ impl Handler {
 
                 self.event_manager
                     .send_event(Event::AudioMuteChanged { mute: *mute });
-
-                Ok(())
             }
             Message::SetBitrate { bitrate } => {
-                host_service::set_bitrate(&self.http_client, *bitrate).await
+                host_service::set_bitrate(&self.http_client, *bitrate).await?
             }
-            Message::BitrateChanged { bitrate } => self.bitrate_changed(*bitrate),
+            Message::BitrateChanged { bitrate } => self.bitrate_changed(*bitrate)?,
             Message::PlayerStarted => {
                 info!("Player started");
-                Ok(())
             }
             Message::PlayerStopped => {
                 info!("Player stopped");
-                Ok(())
             }
             Message::InputServiceConnected => {
                 info!("Input service connected");
 
-                if let Some(backend) = self.backend.as_mut() {
-                    backend.input_service_connected()?;
+                if let Some(conn) = &mut self.connection {
+                    if let Some(backend) = &mut conn.backend {
+                        backend.input_service_connected()?;
+                    }
                 }
 
                 self.event_manager.send_event(Event::InputServiceConnected);
-
-                Ok(())
             }
             Message::InputServiceDisconnected => {
                 info!("Input service disconnected");
 
-                if let Some(backend) = self.backend.as_mut() {
-                    backend.input_service_disconnected()?;
+                if let Some(conn) = &mut self.connection {
+                    if let Some(backend) = &mut conn.backend {
+                        backend.input_service_disconnected()?;
+                    }
                 }
 
                 self.event_manager
                     .send_event(Event::InputServiceDisconnected);
-
-                Ok(())
             }
             Message::DisplayListUpdated { displays } => {
                 info!("Display list updated: {displays:?}");
@@ -742,8 +715,6 @@ impl Handler {
                 self.event_manager.send_event(Event::DisplayListUpdated {
                     displays: displays.clone(),
                 });
-
-                Ok(())
             }
             Message::StreamerPipelineEvent(event) => {
                 self.event_manager.send_event(Event::StreamerPipelineEvent {
@@ -751,25 +722,19 @@ impl Handler {
                     stage: event.stage,
                     event: event.event,
                 });
-
-                Ok(())
             }
             Message::VideoDecodeError => {
-                let ret = self.disconnect(true).await;
+                self.disconnect(true).await;
 
                 self.event_manager.send_event(Event::Stopped {
                     reason: StopReason::DecodeError,
                 });
-
-                ret
             }
-            Message::AudioDecodeError => Ok(()),
+            Message::AudioDecodeError => (),
             #[cfg(feature = "web")]
             Message::ImageDecoded { pts } => {
                 self.event_manager
                     .send_event(Event::ImageDecoded { pts: *pts });
-
-                Ok(())
             }
             #[cfg(feature = "web")]
             Message::CanvasResized {
@@ -784,8 +749,6 @@ impl Handler {
                     frame_coded_width: *frame_coded_width,
                     frame_coded_height: *frame_coded_height,
                 });
-
-                Ok(())
             }
             Message::Metric(metric) => {
                 let metrics = self
@@ -795,16 +758,14 @@ impl Handler {
                 if let Err(err) = metrics.send(metric.clone()) {
                     warn!("Metric discarded: {err}");
                 }
-                Ok(())
             }
             Message::UpdateCredentials(credentials) => {
                 info!("Credentials updated");
                 self.conn_params.credentials = credentials.clone();
-                Ok(())
             }
             Message::RenewSession(credentials) => {
                 self.conn_params.credentials = credentials.clone();
-                if self.host_events.is_none() {
+                if self.connection.is_none() {
                     self.message_sender.send(Message::Connect)?;
                     return Ok(());
                 }
@@ -821,9 +782,10 @@ impl Handler {
                         self.message_sender.send(Message::Connect)?;
                     }
                 }
-                Ok(())
             }
         }
+
+        Ok(())
     }
 
     fn bitrate_changed(&self, bitrate: u32) -> Result<()> {
@@ -1014,22 +976,14 @@ impl MainLoop {
             });
         }
 
-        loop {
-            let wrapper = self.msg_receiver.recv().await;
-            if let Some(wrapper) = wrapper {
-                let msg = wrapper.msg();
-                let ret = self.handler.handle_message(msg).await;
-                if let Err(err) = ret {
-                    warn!(
-                        "Processing of message {:?} failed with error {:?}",
-                        msg, err
-                    );
-                }
-
-                wrapper.complete();
-            } else {
-                break;
+        while let Some(wrapper) = self.msg_receiver.recv().await {
+            let msg = wrapper.msg();
+            let ret = self.handler.handle_message(msg).await;
+            if let Err(err) = ret {
+                warn!("Processing of message {msg:?} failed with error {err:?}");
             }
+
+            wrapper.complete();
         }
     }
 }
@@ -1061,9 +1015,6 @@ impl Client {
         let event_manager = EventManager::new();
 
         let (msg_sender, msg_receiver) = message_bus::create();
-        let event_manager_handler = event_manager.clone();
-        let msg_sender_handler = msg_sender.clone();
-
         let metrics_collector = if metrics {
             Some(MetricsCollector::new())
         } else {
@@ -1075,8 +1026,8 @@ impl Client {
 
         let handler = Handler::new(
             connect_config,
-            event_manager_handler,
-            msg_sender_handler,
+            event_manager.clone(),
+            msg_sender.clone(),
             metrics_producer,
             state.clone(),
         )?;
