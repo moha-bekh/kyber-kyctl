@@ -999,26 +999,17 @@ impl MainLoop {
         }
     }
 
-    async fn process_metrics(
-        metrics_collector: &mut MetricsCollector,
-        metrics_cb: KyArc<KyMutex<Option<Box<MetricsCallback>>>>,
-    ) {
-        while let Some(metric) = metrics_collector.recv().await {
-            if let Some(cb) = &mut *metrics_cb.lock() {
-                cb(metric.clone());
-            }
-        }
-    }
-
     async fn run(mut self) {
-        let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
+        let _metrics_task;
 
         if let Some(mut metrics_collector) = self.metrics_collector.take() {
             let metrics_cb = self.metrics_cb.clone();
-            runtime::spawn(async move {
-                tokio::select! {
-                    _ = stop_rx => {}
-                    _ = Self::process_metrics(&mut metrics_collector, metrics_cb) => {}
+
+            _metrics_task = runtime::Task::spawn(async move {
+                while let Some(metric) = metrics_collector.recv().await {
+                    if let Some(cb) = &mut *metrics_cb.lock() {
+                        cb(metric.clone());
+                    }
                 }
             });
         }
@@ -1040,8 +1031,6 @@ impl MainLoop {
                 break;
             }
         }
-
-        let _ = stop_tx.send(()); // ignore send errors
     }
 }
 
