@@ -51,8 +51,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use log::{info, warn};
-use reqwest::StatusCode;
+use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 
 pub use crate::error::{Error, Result};
@@ -397,7 +396,7 @@ impl Handler {
                     peer_info: &conn.peer_info,
                     http_client: &self.http_client,
                     streaming_config,
-                    kymux_config: kymux_config.clone(),
+                    kymux_config,
                     msg_sender,
                 };
 
@@ -490,7 +489,7 @@ impl Handler {
         });
     }
 
-    async fn handle_message(&mut self, msg: &Message) -> Result<()> {
+    async fn handle_message(&mut self, msg: Message) -> Result<()> {
         match msg {
             Message::Connect => {
                 // Set intent: control plane should be up
@@ -517,7 +516,7 @@ impl Handler {
                 // Clear intent flags and cancel any pending reconnection
                 self.reconnection_state.should_be_up = None;
 
-                self.disconnect(*stop_session).await;
+                self.disconnect(stop_session).await;
 
                 self.event_manager.send_event(Event::Stopped {
                     reason: StopReason::Requested,
@@ -531,7 +530,7 @@ impl Handler {
                 intent.reconnection_task = None;
                 let should_restart_streaming = intent.data_up;
 
-                info!("Attempting reconnection (attempt {})", attempt);
+                info!("Attempting reconnection (attempt {attempt})");
 
                 match self.connect_and_handle().await {
                     Ok(res) => {
@@ -547,7 +546,7 @@ impl Handler {
                             });
                         }
                     }
-                    Err(err) => self.on_reconnection_failure(err, *attempt),
+                    Err(err) => self.on_reconnection_failure(err, attempt),
                 }
             }
             Message::ControlPlaneClosed { reason } => {
@@ -587,7 +586,8 @@ impl Handler {
                     _ => return Ok(()),
                 }
 
-                let ret = self.start_streaming_session(config.clone()).await;
+                let bitrate = config.bitrate;
+                let ret = self.start_streaming_session(config).await;
                 let event = match &ret {
                     Ok(()) => Event::StreamingStarted,
                     Err(Error::DataPlaneConnectFailed) => {
@@ -606,7 +606,7 @@ impl Handler {
 
                 self.event_manager.send_event(event);
 
-                self.bitrate_changed(config.bitrate)?;
+                self.bitrate_changed(bitrate)?;
             }
             Message::StopStreamingSession => {
                 if let Some(intent) = &mut self.reconnection_state.should_be_up {
@@ -620,14 +620,14 @@ impl Handler {
             Message::AudioSetVolume { volume } => {
                 if let Some(conn) = &self.connection {
                     if let Some(backend) = &conn.backend {
-                        backend.audio_set_volume(*volume)?;
+                        backend.audio_set_volume(volume)?;
                     }
                 }
             }
             Message::AudioSetMute { mute } => {
                 if let Some(conn) = &self.connection {
                     if let Some(backend) = &conn.backend {
-                        backend.audio_set_mute(*mute)?;
+                        backend.audio_set_mute(mute)?;
                     }
                 }
             }
@@ -658,25 +658,25 @@ impl Handler {
             Message::AudioVolumeChanged { volume } => {
                 {
                     let mut state = self.state.lock().unwrap();
-                    state.volume = Some(*volume);
+                    state.volume = Some(volume);
                 }
 
                 self.event_manager
-                    .send_event(Event::AudioVolumeChanged { volume: *volume });
+                    .send_event(Event::AudioVolumeChanged { volume });
             }
             Message::AudioMuteChanged { mute } => {
                 {
                     let mut state = self.state.lock().unwrap();
-                    state.mute = Some(*mute);
+                    state.mute = Some(mute);
                 }
 
                 self.event_manager
-                    .send_event(Event::AudioMuteChanged { mute: *mute });
+                    .send_event(Event::AudioMuteChanged { mute });
             }
             Message::SetBitrate { bitrate } => {
-                host_service::set_bitrate(&self.http_client, *bitrate).await?
+                host_service::set_bitrate(&self.http_client, bitrate).await?
             }
-            Message::BitrateChanged { bitrate } => self.bitrate_changed(*bitrate)?,
+            Message::BitrateChanged { bitrate } => self.bitrate_changed(bitrate)?,
             Message::PlayerStarted => {
                 info!("Player started");
             }
@@ -709,9 +709,8 @@ impl Handler {
             Message::DisplayListUpdated { displays } => {
                 info!("Display list updated: {displays:?}");
 
-                self.event_manager.send_event(Event::DisplayListUpdated {
-                    displays: displays.clone(),
-                });
+                self.event_manager
+                    .send_event(Event::DisplayListUpdated { displays });
             }
             Message::StreamerPipelineEvent(event) => {
                 self.event_manager.send_event(Event::StreamerPipelineEvent {
@@ -730,8 +729,7 @@ impl Handler {
             Message::AudioDecodeError => (),
             #[cfg(feature = "web")]
             Message::ImageDecoded { pts } => {
-                self.event_manager
-                    .send_event(Event::ImageDecoded { pts: *pts });
+                self.event_manager.send_event(Event::ImageDecoded { pts });
             }
             #[cfg(feature = "web")]
             Message::CanvasResized {
@@ -741,10 +739,10 @@ impl Handler {
                 frame_coded_height,
             } => {
                 self.event_manager.send_event(Event::CanvasResized {
-                    width: *width,
-                    height: *height,
-                    frame_coded_width: *frame_coded_width,
-                    frame_coded_height: *frame_coded_height,
+                    width,
+                    height,
+                    frame_coded_width,
+                    frame_coded_height,
                 });
             }
             Message::Metric(metric) => {
@@ -752,21 +750,23 @@ impl Handler {
                     .metrics
                     .as_ref()
                     .expect("Received a metric while metrics are disabled");
-                if let Err(err) = metrics.send(metric.clone()) {
+                if let Err(err) = metrics.send(metric) {
                     warn!("Metric discarded: {err}");
                 }
             }
             Message::UpdateCredentials(credentials) => {
                 info!("Credentials updated");
-                self.conn_params.credentials = credentials.clone();
+                self.conn_params.credentials = credentials;
             }
             Message::RenewSession(credentials) => {
-                self.conn_params.credentials = credentials.clone();
+                self.conn_params.credentials = credentials;
                 if self.connection.is_none() {
                     self.message_sender.send(Message::Connect)?;
                     return Ok(());
                 }
-                match host_service::renew_session(&self.http_client, credentials).await {
+                match host_service::renew_session(&self.http_client, &self.conn_params.credentials)
+                    .await
+                {
                     Ok(host_service::RenewResult::Renewed) => {
                         info!("Session renewed");
                     }
@@ -974,13 +974,16 @@ impl MainLoop {
         }
 
         while let Some(wrapper) = self.msg_receiver.recv().await {
-            let msg = wrapper.msg();
-            let ret = self.handler.handle_message(msg).await;
+            debug!("Got message: {:?}", wrapper.msg);
+
+            let ret = self.handler.handle_message(wrapper.msg).await;
             if let Err(err) = ret {
-                warn!("Processing of message {msg:?} failed with error {err:?}");
+                warn!("Processing of message failed with error {err:?}");
             }
 
-            wrapper.complete();
+            if let Some(completion_cb) = wrapper.completion_cb {
+                completion_cb();
+            };
         }
     }
 }

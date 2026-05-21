@@ -31,20 +31,8 @@ pub(crate) type MessageCompletionCb = Box<dyn FnOnce() + Send>;
 pub(crate) type MessageCompletionCb = Box<dyn FnOnce()>;
 
 pub(crate) struct MessageWrapper {
-    msg: Message,
-    completion_cb: Option<MessageCompletionCb>,
-}
-
-impl MessageWrapper {
-    pub(crate) fn msg(&self) -> &Message {
-        &self.msg
-    }
-
-    pub(crate) fn complete(self) {
-        if let Some(completion_cb) = self.completion_cb {
-            completion_cb();
-        }
-    }
+    pub msg: Message,
+    pub completion_cb: Option<MessageCompletionCb>,
 }
 
 pub struct MessageReceiver {
