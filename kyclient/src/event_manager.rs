@@ -20,15 +20,11 @@
 
 use super::enums::Event;
 
-pub trait EventSink {
+pub trait EventSink: crate::util::KySend {
     fn on_event(&self, event: &Event);
 }
 
-#[cfg(target_arch = "wasm32")]
 type BoxedEventSink = Box<dyn EventSink>;
-
-#[cfg(not(target_arch = "wasm32"))]
-type BoxedEventSink = Box<dyn EventSink + Send>;
 
 #[derive(Default)]
 struct Inner {
@@ -37,10 +33,6 @@ struct Inner {
 
 #[derive(Default)]
 pub struct EventManager {
-    #[cfg(target_arch = "wasm32")]
-    inner: std::rc::Rc<std::cell::RefCell<Inner>>,
-
-    #[cfg(not(target_arch = "wasm32"))]
     inner: std::sync::Arc<std::sync::Mutex<Inner>>,
 }
 
@@ -52,27 +44,12 @@ impl EventManager {
     }
 
     pub fn add_event_sink(&self, sink: BoxedEventSink) {
-        #[cfg(not(target_arch = "wasm32"))]
-        let Ok(mut inner) = self.inner.lock() else {
-            log::warn!("Failed to lock EventManager::inner");
-            return;
-        };
-
-        #[cfg(target_arch = "wasm32")]
-        let mut inner = self.inner.borrow_mut();
-
+        let mut inner = self.inner.lock().unwrap();
         inner.sinks.push(sink);
     }
 
     pub fn send_event(&self, event: Event) {
-        #[cfg(not(target_arch = "wasm32"))]
-        let Ok(inner) = self.inner.lock() else {
-            log::warn!("Failed to lock EventManager::inner");
-            return;
-        };
-
-        #[cfg(target_arch = "wasm32")]
-        let inner = self.inner.borrow();
+        let inner = self.inner.lock().unwrap();
 
         for sink in inner.sinks.iter() {
             sink.on_event(&event);
