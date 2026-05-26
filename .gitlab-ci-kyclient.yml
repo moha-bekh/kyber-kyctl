@@ -124,10 +124,7 @@ kyclient-clippy-windows-x86_64:
 
 .kyclient-macos-common:
   before_script: |
-    cd $CI_BUILDS_DIR/$CI_CONCURRENT_ID/kysdk
-    rm -rf kyutil kymux kynput kymedia
     rustup override set $MACOS_RUST_VERSION
-    cd $CI_BUILDS_DIR/$CI_CONCURRENT_ID/kysdk/kyctl
 
 .kyclient-build-macos-common:
   extends: .kyclient-macos-common
@@ -199,10 +196,7 @@ kyclient-clippy-wasm:
     - tags
   when: manual
   script: |
-    cd $CI_BUILDS_DIR/$CI_CONCURRENT_ID/kysdk
-    rm -rf kyutil kymux kynput kymedia
     rustup override set $RUST_VERSION
-    cd $CI_BUILDS_DIR/$CI_CONCURRENT_ID/kysdk/kyctl
     ./build-ios.sh -k -t $BUILD_TARGET -o $(pwd)/rootfs build-kyclient
   needs:
     - lint

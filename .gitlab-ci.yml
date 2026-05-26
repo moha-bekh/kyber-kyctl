@@ -1,6 +1,5 @@
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
-  GIT_CLONE_PATH: $CI_BUILDS_DIR/$CI_CONCURRENT_ID/kysdk/kyctl
   DEBIAN_IMAGE: ${CI_REGISTRY}/${ROOT_NAMESPACE}/ops/docker-images/debian-trixie:a3d1e282885b1ef5fd5fdbbf7a7d8e0b3a33de15
   WASM_IMAGE: ${CI_REGISTRY}/${ROOT_NAMESPACE}/ops/docker-images/debian-wasm:1708fd23b028cc9369b568f9ff976a84f7c869c2
   WIN64_IMAGE: ${CI_REGISTRY}/${ROOT_NAMESPACE}/ops/docker-images/debian-win64:a3d1e282885b1ef5fd5fdbbf7a7d8e0b3a33de15
@@ -82,10 +81,7 @@ contrib-windows-x86_64:
     - merge_requests
     - tags
   before_script: |
-    cd $CI_BUILDS_DIR/$CI_CONCURRENT_ID/kysdk
-    rm -rf kyutil kymux kynput kymedia
     rustup override set $MACOS_RUST_VERSION
-    cd $CI_BUILDS_DIR/$CI_CONCURRENT_ID/kysdk/kyctl
   script: |
     export KYBER_DIRNAME=rootfs
     export KYBER_PREFIX=$(pwd)/$KYBER_DIRNAME

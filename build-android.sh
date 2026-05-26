@@ -86,16 +86,11 @@ git_clone() {
 }
 
 checkout_deps() {
-    # Save current directory and go to parent to clone deps as siblings
-    local KYCTL_DIR=$(pwd)
-    cd ..
-
     git_clone "core/kymux.git"
     git_clone "core/kyutil.git"
     git_clone "core/kynput.git"
     git_clone "core/kymedia.git"
 
-    # Generate unified cargo config at parent level for all sibling repos
     echo "Generating .cargo/config.toml"
     mkdir -p .cargo
     cat > .cargo/config.toml << 'EOF'
@@ -111,8 +106,6 @@ kynput-rs = { path = "./kynput/kynput-rs" }
 kynput-sys = { path = "./kynput/kynput-rs/kynput-sys" }
 vlc-rs = { path = "./kymedia/subprojects/vlc-rs" }
 EOF
-
-    cd "$KYCTL_DIR"
 }
 
 get_actual_arch() {
@@ -158,12 +151,12 @@ build_deps() {
     VLC_CONTRIB_TARGET=$(get_vlc_target $HOST_ARCH)
 
     # Build kymedia
-    cd ../kymedia
+    cd ./kymedia
     ./build-android.sh -a $HOST_ARCH -o $OUT_DIR
     cd -
 
     # Build kynput
-    cd ../kynput
+    cd ./kynput
     ./build-android.sh -a $HOST_ARCH -o $OUT_DIR
     cd -
 }

@@ -82,16 +82,11 @@ git_clone() {
 }
 
 checkout_deps() {
-    # Save current directory and go to parent to clone deps as siblings
-    local KYCTL_DIR=$(pwd)
-    cd ..
-
     git_clone "core/kymux.git"
     git_clone "core/kyutil.git"
     git_clone "core/kynput.git"
     git_clone "core/kymedia.git"
 
-    # Generate unified cargo config at parent level for all sibling repos
     echo "Generating .cargo/config.toml"
     mkdir -p .cargo
     cat > .cargo/config.toml << 'EOF'
@@ -108,8 +103,6 @@ kynput-sys = { path = "./kynput/kynput-rs/kynput-sys" }
 keycode = { path = "./kynput/external/keycode/keycode" }
 keycode_macro = { path = "./kynput/external/keycode/keycode_macro" }
 EOF
-
-    cd "$KYCTL_DIR"
 }
 
 FETCH_KYBER_DEPS=false
