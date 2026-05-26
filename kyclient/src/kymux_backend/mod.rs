@@ -300,7 +300,7 @@ async fn connect_quinn(
         ..Default::default()
     };
 
-    let addr = std::net::SocketAddr::new(peer_info.addr.ip(), port);
+    let addr = std::net::SocketAddr::new(peer_info.addr, port);
     let conn = kynet::Connection::quinn_connect(addr, server_name, None, &options).await?;
     Ok(conn)
 }

@@ -246,7 +246,7 @@ impl RtpBackend {
             return Ok(None);
         };
 
-        let streamer_ip = backend_config.peer_info.addr.ip().to_string();
+        let streamer_ip = backend_config.peer_info.addr.to_string();
 
         let create_stream_cb =
             |_target, msg_sink| kynput_rs::tcp::new_client(&streamer_ip, msg_sink);

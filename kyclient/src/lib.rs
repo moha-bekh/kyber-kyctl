@@ -46,7 +46,7 @@ mod rtp_backend;
 mod ws_backend;
 
 #[cfg(feature = "desktop")]
-use std::net::SocketAddr;
+use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -100,10 +100,10 @@ pub(crate) struct Capabilities {
 
 /// Peer information resolved from the HTTP `/capabilities` response.
 pub(crate) struct PeerInfo {
-    /// Peer address resolved by the HTTP stack (Happy Eyeballs / RFC 8305).
+    /// Peer IP address resolved by the HTTP stack (Happy Eyeballs / RFC 8305).
     /// Reused for QUIC so it gets the same IPv4/IPv6 choice.
     #[cfg(feature = "desktop")]
-    pub(crate) addr: SocketAddr,
+    pub(crate) addr: IpAddr,
 }
 
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
@@ -251,7 +251,7 @@ impl Handler {
             // On desktop, peer address is required for QUIC and WebSocket connections.
             // Fail early if the HTTP stack didn't expose it.
             #[cfg(feature = "desktop")]
-            addr: _peer_addr.ok_or(Error::NoPeerAddress)?,
+            addr: _peer_addr.ok_or(Error::NoPeerAddress)?.ip(),
         });
 
         let response =
