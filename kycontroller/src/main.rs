@@ -513,29 +513,68 @@ pub(crate) async fn set_bitrate(
 ) -> HttpResponse {
     info!("Set bitrate: {}", request.bitrate);
 
+    // Split the global bitrate evenly across `count` streams and cast to the
+    // signed type the encoder expects. `count` is assumed non-zero; the call
+    // sites guard against an empty stream set first.
+    let split_bitrate = |count: usize| -> i32 { (request.bitrate / count as u32) as i32 };
+
     let Ok(uid) = user.uid() else {
         return HttpResponse::Unauthorized().finish();
     };
 
     let mut ctrl = ctrl.lock().await;
 
-    let Some(session) = ctrl.sessions.get_mut(&uid) else {
+    // Disjoint borrows for session and av_services_manager
+    let ctrl_inner: &mut Controller = &mut ctrl;
+    let sessions = &mut ctrl_inner.sessions;
+    let av_services_manager = &mut ctrl_inner.av_services_manager;
+
+    let Some(session) = sessions.get_mut(&uid) else {
         warn!("Session not found");
         return HttpResponse::Forbidden().finish();
     };
 
-    if session.services.video.is_empty() {
+    // Set bitrate: av_services_manager first (Kymux/WS), fallback to per-session (RTP legacy).
+    //
+    // Scope to this session's video subscriptions so client A can't reconfigure
+    // client B's avservice. For Shared entries the underlying avservice is still
+    // global; log a warning since the change will affect every other client
+    // on the same display (last-writer-wins, temporary).
+    if !session.services.video_subscriptions.is_empty() {
+        let keys: Vec<_> = session
+            .services
+            .video_subscriptions
+            .iter()
+            .map(|sub| sub.key().clone())
+            .collect();
+        let per_stream = split_bitrate(keys.len());
+        for key in &keys {
+            if matches!(
+                key,
+                crate::avservices_manager::VideoStreamKey::Shared { .. }
+            ) {
+                warn!(
+                    "set_bitrate on Shared stream {:?} overrides other clients on this display",
+                    key
+                );
+            }
+            let Some(stream) = av_services_manager.video_streams.get(key) else {
+                continue;
+            };
+            if let Err(err) = stream.avservice.lock().await.video_set_bitrate(per_stream).await {
+                warn!("Failed to set bitrate: {err:?}");
+            }
+        }
+    } else if !session.services.video.is_empty() {
+        let per_stream = split_bitrate(session.services.video.len());
+        for avserver in &mut session.services.video {
+            if let Err(err) = avserver.video_set_bitrate(per_stream).await {
+                warn!("Failed to set bitrate: {err:?}");
+            }
+        }
+    } else {
         warn!("No video streaming started");
         return HttpResponse::Forbidden().finish();
-    }
-
-    let splitted_bitrate = request.bitrate / session.services.video.len() as u32;
-
-    for avserver in &mut session.services.video {
-        let ret = avserver.video_set_bitrate(splitted_bitrate as _).await;
-        if let Err(err) = ret {
-            warn!("Failed to set bitrate for one video avserver: {err:?}");
-        }
     }
 
     if let Some(stream_session) = session.stream_session.as_ref() {

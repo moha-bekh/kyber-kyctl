@@ -337,6 +337,12 @@ pub(crate) struct VideoSubscription {
     tx: tokio::sync::mpsc::UnboundedSender<AvReaperMsg>,
 }
 
+impl VideoSubscription {
+    pub(crate) fn key(&self) -> &VideoStreamKey {
+        &self.key
+    }
+}
+
 impl Drop for VideoSubscription {
     fn drop(&mut self) {
         let _ = self.tx.send(AvReaperMsg::VideoDropped(self.key.clone()));
