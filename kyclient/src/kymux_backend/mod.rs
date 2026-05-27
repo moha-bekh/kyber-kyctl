@@ -31,6 +31,9 @@ use serde::Serialize;
 use std::collections::HashMap;
 use tokio::sync::oneshot;
 
+#[cfg(feature = "js-player")]
+use kywebplayer::AudioResumeState;
+
 use crate::error::{Error, Result};
 use crate::http::HttpClient;
 use crate::metrics::MetricsProducer;
@@ -148,6 +151,16 @@ impl BackendDriver for KymuxBackend {
 
     fn audio_set_mute(&self, mute: bool) -> Result<()> {
         self.platform.audio_set_mute(mute)
+    }
+
+    #[cfg(feature = "js-player")]
+    fn audio_try_resume(&self) -> AudioResumeState {
+        self.platform.audio_try_resume()
+    }
+
+    #[cfg(feature = "js-player")]
+    async fn audio_resume(&self) -> Result<()> {
+        self.platform.audio_resume().await
     }
 
     async fn input_service_connected(&mut self) -> Result<()> {

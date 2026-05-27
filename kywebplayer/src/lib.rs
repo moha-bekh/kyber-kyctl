@@ -26,6 +26,18 @@ mod video;
 pub use audio::player::{
     AudioPlayer, AudioPlayerCreationError, AudioPlayerEvent, AudioPlayerHandle, AudioPlayerListener,
 };
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AudioResumeState {
+    /// No AudioContext exists yet; the caller should retry later.
+    Absent,
+    /// Context is running, audio is playing.
+    Running,
+    /// Context is not running yet. Either a resume is in progress (a gesture was
+    /// active and the next poll will report `Running`) or the context is waiting
+    /// for a user gesture. Either way the caller should keep polling.
+    Suspended,
+}
 pub use video::player::{
     VideoPlayer, VideoPlayerEvent, VideoPlayerHandle, VideoPlayerListener, VideoPlayerMetric,
 };

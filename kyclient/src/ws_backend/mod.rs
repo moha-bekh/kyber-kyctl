@@ -39,7 +39,8 @@ use video::VideoWsSocketHandler;
 
 use crate::platform::message::{AudioMessageForwarder, VideoMessageForwarder};
 use crate::platform::player::{
-    self, AudioPlayer, AudioPlayerCreationError, AudioPlayerHandle, VideoPlayer, VideoPlayerHandle,
+    self, AudioPlayer, AudioPlayerCreationError, AudioPlayerHandle, AudioResumeState, VideoPlayer,
+    VideoPlayerHandle,
 };
 use crate::platform::InputMsgSink;
 
@@ -249,6 +250,26 @@ impl BackendDriver for WsBackend {
         audio_service.player_handle.set_mute(mute);
 
         Ok(())
+    }
+
+    fn audio_try_resume(&self) -> AudioResumeState {
+        let Some(audio_service) = self.audio_service.as_ref() else {
+            return AudioResumeState::Absent;
+        };
+
+        audio_service.player_handle.try_resume()
+    }
+
+    async fn audio_resume(&self) -> Result<()> {
+        let Some(audio_service) = self.audio_service.as_ref() else {
+            return Ok(());
+        };
+
+        audio_service
+            .player_handle
+            .resume()
+            .await
+            .map_err(Error::from)
     }
 
     async fn stop(&mut self) -> Result<()> {

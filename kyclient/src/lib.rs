@@ -113,6 +113,12 @@ trait BackendDriver: KySend {
 
     fn audio_set_mute(&self, mute: bool) -> Result<()>;
 
+    #[cfg(feature = "js-player")]
+    fn audio_try_resume(&self) -> player::AudioResumeState;
+
+    #[cfg(feature = "js-player")]
+    async fn audio_resume(&self) -> Result<()>;
+
     async fn input_service_connected(&mut self) -> Result<()>;
 
     async fn input_service_disconnected(&mut self) -> Result<()>;
@@ -663,6 +669,26 @@ impl Handler {
 
                 Ok(())
             }
+            #[cfg(feature = "js-player")]
+            Message::AudioTryResume { respond } => {
+                let state = match &self.backend {
+                    Some(backend) => backend.audio_try_resume(),
+                    None => player::AudioResumeState::Absent,
+                };
+                *respond.borrow_mut() = Some(state);
+
+                Ok(())
+            }
+            #[cfg(feature = "js-player")]
+            Message::AudioResume { respond } => {
+                let result = match &self.backend {
+                    Some(backend) => backend.audio_resume().await,
+                    None => Ok(()),
+                };
+                *respond.borrow_mut() = Some(result);
+
+                Ok(())
+            }
             Message::AudioVolumeChanged { volume } => {
                 {
                     let mut state = self.state.lock().unwrap();
@@ -1163,6 +1189,42 @@ impl Client {
     pub fn audio_set_mute(&self, mute: bool) -> Result<()> {
         self.msg_sender.send(Message::AudioSetMute { mute })?;
         Ok(())
+    }
+
+    /// Probes the AudioContext state and fires a non-blocking resume attempt. Returns `Absent`
+    /// until the backend has created the worklet, so callers can poll until it reports `Running`
+    /// or `Suspended`.
+    #[cfg(feature = "js-player")]
+    pub async fn audio_try_resume(&self) -> player::AudioResumeState {
+        let respond = std::rc::Rc::new(std::cell::RefCell::new(None));
+        if self
+            .msg_sender
+            .send_async_and_wait_completion(Message::AudioTryResume {
+                respond: respond.clone(),
+            })
+            .await
+            .is_err()
+        {
+            return player::AudioResumeState::Absent;
+        }
+
+        let state = respond.borrow_mut().take();
+        state.unwrap_or(player::AudioResumeState::Absent)
+    }
+
+    /// Resumes the AudioContext. Call this from a real user-gesture handler so the browser allows
+    /// the context to leave the suspended state.
+    #[cfg(feature = "js-player")]
+    pub async fn audio_resume(&self) -> Result<()> {
+        let respond = std::rc::Rc::new(std::cell::RefCell::new(None));
+        self.msg_sender
+            .send_async_and_wait_completion(Message::AudioResume {
+                respond: respond.clone(),
+            })
+            .await?;
+
+        let result = respond.borrow_mut().take();
+        result.unwrap_or(Ok(()))
     }
 
     pub fn set_bitrate(&self, bitrate: u32) -> Result<()> {

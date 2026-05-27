@@ -20,7 +20,7 @@
 
 use crate::audio::decoder::{AudioDecoder, AudioDecoderCallbacks};
 use crate::packet::{CodecPacket, HolePacket, Packet};
-use crate::{AudioPlayerConfig, PacketSink};
+use crate::{AudioPlayerConfig, AudioResumeState, PacketSink};
 
 use super::worklet::AudioWorklet;
 use super::{CHANNELS, SAMPLE_RATE, SAMPLE_SIZE};
@@ -33,6 +33,7 @@ use std::collections::VecDeque;
 use std::rc::Rc;
 
 use wasm_bindgen::prelude::*;
+use wasm_bindgen_futures::JsFuture;
 
 #[allow(unused)]
 use log::{debug, error, info, warn};
@@ -227,12 +228,37 @@ impl PacketSink for AudioPlayer {
     }
 }
 
-// Used to stop the player without the full player instance
+// Used to control the player without the full player instance.
 pub struct AudioPlayerHandle {
     audio_worklet: Option<AudioWorklet>,
 }
 
 impl AudioPlayerHandle {
+    /// Probes the AudioContext state and fires a non-blocking resume attempt.
+    /// Does not await ctx.resume() because Chrome parks that promise indefinitely
+    /// when no user gesture is active. Call this from a polling loop; call
+    /// resume() instead when a real user gesture is available.
+    pub fn try_resume(&self) -> AudioResumeState {
+        let Some(audio_worklet) = self.audio_worklet.as_ref() else {
+            return AudioResumeState::Absent;
+        };
+        audio_worklet.try_resume()
+    }
+
+    /// Resumes the AudioContext and awaits the result. Must be called from
+    /// inside a real user-gesture handler (click, keydown) so the browser
+    /// allows the AudioContext to transition from suspended to running.
+    pub async fn resume(&self) -> Result<(), JsValue> {
+        let Some(audio_worklet) = self.audio_worklet.as_ref() else {
+            return Ok(());
+        };
+        // ctx() returns a cloned AudioContext, so no borrow is held across the await.
+        let ctx = audio_worklet.ctx();
+        let promise = ctx.resume()?;
+        JsFuture::from(promise).await?;
+        Ok(())
+    }
+
     pub fn set_volume(&self, volume: f32) {
         let Some(audio_worklet) = &self.audio_worklet else {
             warn!("No AudioWorklet to control");

@@ -92,6 +92,14 @@ pub(crate) enum Message {
     AudioSetMute {
         mute: bool,
     },
+    #[cfg(feature = "js-player")]
+    AudioTryResume {
+        respond: std::rc::Rc<std::cell::RefCell<Option<crate::player::AudioResumeState>>>,
+    },
+    #[cfg(feature = "js-player")]
+    AudioResume {
+        respond: std::rc::Rc<std::cell::RefCell<Option<crate::Result<()>>>>,
+    },
     AudioVolumeChanged {
         volume: f32,
     },

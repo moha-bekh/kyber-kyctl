@@ -21,18 +21,20 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use log::warn;
 use wasm_bindgen::JsValue;
 use wasm_bindgen_futures::JsFuture;
 
 use super::player::{AudioPlayerEvent, AudioPlayerListener};
 use crate::reflect;
+use crate::AudioResumeState;
 
 struct GainNodeConfig {
     gain: f32,
     mute: bool,
 }
 
-pub(crate) struct AudioWorklet {
+pub struct AudioWorklet {
     ctx: web_sys::AudioContext,
     gain_node: web_sys::GainNode,
     gain_cfg: RefCell<GainNodeConfig>,
@@ -94,9 +96,13 @@ impl AudioWorklet {
         node.connect_with_audio_node(&gain_node)?;
         gain_node.connect_with_audio_node(&ctx.destination())?;
 
-        // Resume AudioContext
-        let promise = ctx.resume()?;
-        JsFuture::from(promise).await?;
+        // Fire a non-blocking resume attempt. If sticky activation is already
+        // set (normal connect flow) the browser resolves the promise silently.
+        // If not (OIDC redirect), the browser refuses and the caller probes
+        // via AudioPlayerHandle::try_resume() until the user provides a gesture.
+        if let Err(e) = ctx.resume() {
+            warn!("AudioContext.resume() failed synchronously: {:?}", e);
+        }
 
         Ok(Self {
             ctx,
@@ -105,6 +111,23 @@ impl AudioWorklet {
             node,
             listener,
         })
+    }
+
+    pub(super) fn ctx(&self) -> web_sys::AudioContext {
+        self.ctx.clone()
+    }
+
+    /// See [`crate::AudioPlayerHandle::try_resume`].
+    pub(super) fn try_resume(&self) -> AudioResumeState {
+        if self.ctx.state() == web_sys::AudioContextState::Running {
+            return AudioResumeState::Running;
+        }
+        // resume() returns a Promise; the state only flips to Running once it
+        // resolves, so we still report Suspended here and let the caller poll.
+        if let Err(e) = self.ctx.resume() {
+            warn!("AudioContext.resume() failed synchronously: {:?}", e);
+        }
+        AudioResumeState::Suspended
     }
 
     pub fn set_volume(&self, volume: f32) {
@@ -136,8 +159,12 @@ impl AudioWorklet {
     }
 
     pub async fn stop(self) -> Result<(), JsValue> {
-        let promise = self.ctx.suspend()?;
-        JsFuture::from(promise).await?;
+        // Suspend before close; ignore the error so close() always runs.
+        if let Ok(promise) = self.ctx.suspend() {
+            if let Err(e) = JsFuture::from(promise).await {
+                warn!("AudioContext.suspend() failed: {:?}", e);
+            }
+        }
 
         let promise = self.ctx.close()?;
         JsFuture::from(promise).await?;

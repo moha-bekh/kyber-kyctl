@@ -33,8 +33,8 @@ use super::{KymuxBackendConfig, PlatformEndpoints};
 use crate::platform::message::{AudioMessageForwarder, VideoMessageForwarder};
 use crate::platform::player::packet::*;
 use crate::platform::player::{
-    self, AudioPlayer, AudioPlayerCreationError, AudioPlayerHandle, PacketSink, VideoPlayer,
-    VideoPlayerHandle,
+    self, AudioPlayer, AudioPlayerCreationError, AudioPlayerHandle, AudioResumeState, PacketSink,
+    VideoPlayer, VideoPlayerHandle,
 };
 use crate::platform::InputMsgSink;
 use crate::{BackendDriver, MessageSender};
@@ -436,6 +436,30 @@ impl BackendDriver for KymuxWeb {
         audio_player.set_mute(mute);
 
         Ok(())
+    }
+
+    fn audio_try_resume(&self) -> AudioResumeState {
+        let Some(audio_player) = self
+            .player
+            .as_ref()
+            .and_then(|player| player.audio.as_ref())
+        else {
+            return AudioResumeState::Absent;
+        };
+
+        audio_player.try_resume()
+    }
+
+    async fn audio_resume(&self) -> Result<()> {
+        let Some(audio_player) = self
+            .player
+            .as_ref()
+            .and_then(|player| player.audio.as_ref())
+        else {
+            return Ok(());
+        };
+
+        audio_player.resume().await.map_err(Error::from)
     }
 
     async fn input_service_connected(&mut self) -> Result<()> {
