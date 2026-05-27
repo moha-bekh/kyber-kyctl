@@ -205,10 +205,8 @@ pub(crate) struct StreamingServices {
     /// Dropping triggers async decrement via the AV reaper, which stops the
     /// avservice when the last subscription leaves; covers both `Shared` and
     /// `Exclusive` entries.
-    #[allow(dead_code)] // populated by kymux/ws migrations in subsequent commits
     pub(crate) video_subscriptions: Vec<VideoSubscription>,
     /// RAII subscription to an [`AVServicesManager`] audio entry. See `video_subscriptions`.
-    #[allow(dead_code)] // populated by kymux/ws migrations in subsequent commits
     pub(crate) audio_subscription: Option<AudioSubscription>,
 }
 
@@ -289,7 +287,6 @@ pub struct Controller {
     // Shared kycom instance for all backends (IPC bridge to avserver/inputserver processes)
     pub(crate) kycom: Option<kymux::kycom::KyCom>,
     /// Counter for allocating kycom endpoint IDs (WS backend; Kymux uses kyproto's allocator)
-    #[allow(dead_code)] // used by ws migration in a subsequent commit
     pub(crate) next_ws_endpoint_id: u16,
 
     // Shared AV services: avservers and duplicators shared across clients
@@ -350,11 +347,9 @@ impl Controller {
     }
 
     /// Ports for the shared kycom instance.
-    #[allow(dead_code)] // used by kymux/ws migrations in subsequent commits
     const KYCOM_PORTS: std::ops::Range<u16> = 9091..9110;
 
     /// Start the shared kycom if not already running.
-    #[allow(dead_code)] // used by kymux/ws migrations in subsequent commits
     pub(crate) async fn ensure_kycom(&mut self) -> Result<()> {
         if self.kycom.is_none() {
             self.kycom = Some(kymux::kycom::KyCom::start_on_any_port(Self::KYCOM_PORTS).await?);
@@ -363,7 +358,6 @@ impl Controller {
     }
 
     /// Allocate a kycom endpoint ID for WS backend channels.
-    #[allow(dead_code)] // used by ws migration in a subsequent commit
     pub(crate) fn alloc_ws_endpoint_id(&mut self) -> u16 {
         let id = self.next_ws_endpoint_id;
         self.next_ws_endpoint_id = self.next_ws_endpoint_id.wrapping_add(1);

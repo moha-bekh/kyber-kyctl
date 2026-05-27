@@ -22,196 +22,58 @@ mod av;
 mod input;
 pub(crate) mod requests;
 
+use std::sync::Arc;
+
 use actix_web::web;
 use tokio::sync::{oneshot, Mutex};
 
+use crate::config::SessionMode;
+use crate::inputservice;
+use crate::kydup;
 use crate::utils::TypeConvert;
-use crate::{avservice, inputservice};
 use crate::{Controller, DataPlaneBackend};
 use crate::{Error, Result};
 
-use kymux::kycom::KyCom;
-
-use av::AVConnection;
 use input::InputConnection;
 
-const VIDEO_ENDPOINT_ID: u16 = 0;
-const AUDIO_ENDPOINT_ID: u16 = 1;
-const INPUT_ENDPOINT_ID: u16 = 2;
-
-/// Lifecycle state of the input WebSocket endpoint.
-enum InputState {
-    /// Input was not requested for this session.
-    NotRequested,
-    /// Waiting for a WebSocket client to connect.
-    WaitingForConnection(oneshot::Sender<InputConnection>),
-    /// Client connected; forwarding task is running.
-    Connected(tokio::task::JoinHandle<()>),
-}
-
-/// Service handlers started alongside the WebSocket backend.
+/// Per-service AV wiring state, picked at start_handler time based on
+/// [`SessionMode`].
 ///
-/// Returned from [`WebsocketBackend::start`] so `start_handler` can store
-/// them in the client session.
-pub(crate) struct StartedServices {
-    pub(crate) video: Vec<avservice::Handler>,
-    pub(crate) audio: Option<avservice::Handler>,
-    pub(crate) input: Option<inputservice::Handler>,
+/// `Multi`: a shared avservice feeds kydup; each /websocket/video or
+/// /websocket/audio connect adds the WS session as a kydup output. Many
+/// clients can subscribe.
+///
+/// `Mono`: a per-session avservice is plugged directly into kycom, routed to an
+/// [`av::AVWebSocketEndpoint`] that stalls until the WS session arrives. The
+/// avservice's TCP send buffer absorbs the warm-up; no kydup task is spawned.
+enum AvSlot<Dup> {
+    Multi(Dup),
+    Mono(oneshot::Sender<actix_ws::Session>),
 }
 
 pub(crate) struct WebsocketBackend {
-    kycom: KyCom,
-    /// Oneshot to deliver [`AVConnection`] to the video endpoint when a client connects.
-    /// `None` if video was not requested or already connected.
-    video: Option<oneshot::Sender<AVConnection>>,
-    /// Oneshot to deliver [`AVConnection`] to the audio endpoint when a client connects.
-    /// `None` if audio was not requested or already connected.
-    audio: Option<oneshot::Sender<AVConnection>>,
-    input: InputState,
+    /// Video wiring; `None` if video wasn't requested.
+    video: Option<AvSlot<kydup::KydupVideo>>,
+    /// Identity of the video stream behind the slot. Used to request a fresh
+    /// IDR on that exact stream when the WS video client attaches; for
+    /// `Shared` entries this matters because the avservice may be mid-stream;
+    /// for `Exclusive` it matters when the warm-up TCP buffer has overflowed
+    /// and the initial keyframe has been overwritten. `None` only when video
+    /// wasn't requested.
+    video_stream_key: Option<crate::avservices_manager::VideoStreamKey>,
+    /// Audio wiring; `None` if audio wasn't requested.
+    audio: Option<AvSlot<kydup::KydupAudio>>,
+    /// Oneshot to deliver [`InputConnection`] to the input endpoint when a client connects.
+    /// `None` if input was not requested or already connected.
+    input: Option<oneshot::Sender<InputConnection>>,
+    /// Join handle for the input WS→channel forwarding task.
+    input_forward_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl WebsocketBackend {
-    /// Start kycom, register endpoints, and launch services
-    pub(crate) async fn start(
-        ctrl: &Controller,
-        session_id: uuid::Uuid,
-        request: &requests::StartRequest,
-    ) -> Result<(Self, StartedServices)> {
-        let mut kycom = KyCom::start_on_any_port(9090..9100).await?;
-
-        let (video_sender, video_handler) =
-            Self::start_video(&mut kycom, ctrl, session_id, request).await?;
-        let (audio_sender, audio_handler) =
-            Self::start_audio(&mut kycom, ctrl, session_id, request).await?;
-        let (input_sender, input_handler) = Self::start_input(&mut kycom, ctrl, request).await?;
-
-        let backend = Self {
-            kycom,
-            video: video_sender,
-            audio: audio_sender,
-            input: match input_sender {
-                Some(tx) => InputState::WaitingForConnection(tx),
-                None => InputState::NotRequested,
-            },
-        };
-
-        let services = StartedServices {
-            video: video_handler.into_iter().collect(),
-            audio: audio_handler,
-            input: input_handler,
-        };
-
-        Ok((backend, services))
-    }
-
-    async fn start_video(
-        kycom: &mut KyCom,
-        ctrl: &Controller,
-        session_id: uuid::Uuid,
-        request: &requests::StartRequest,
-    ) -> Result<(
-        Option<oneshot::Sender<AVConnection>>,
-        Option<avservice::Handler>,
-    )> {
-        let Some(video_request) = request.video.as_ref() else {
-            return Ok((None, None));
-        };
-
-        let (endpoint, connection_tx) =
-            av::AVWebSocketEndpoint::<kymux::types::VideoServerProtocol>::new(VIDEO_ENDPOINT_ID);
-        let addr = kycom.register_and_forward(endpoint.into())?;
-
-        let mut avservice_video = avservice::Handler::new(
-            avservice::HandlerType::Video,
-            Some(session_id),
-            ctrl.state_machine_proxy()?,
-        );
-        avservice_video
-            .kymux_start_video(
-                &ctrl.process_factory,
-                video_request.display_id,
-                addr.url(),
-                None,
-                request.bitrate,
-                video_request.codec.clone(),
-                video_request.yuv444,
-                video_request.intra_refresh,
-            )
-            .await?;
-
-        Ok((Some(connection_tx), Some(avservice_video)))
-    }
-
-    async fn start_audio(
-        kycom: &mut KyCom,
-        ctrl: &Controller,
-        session_id: uuid::Uuid,
-        request: &requests::StartRequest,
-    ) -> Result<(
-        Option<oneshot::Sender<AVConnection>>,
-        Option<avservice::Handler>,
-    )> {
-        if !request.audio {
-            return Ok((None, None));
-        }
-
-        let (endpoint, connection_tx) =
-            av::AVWebSocketEndpoint::<kymux::types::AudioServerProtocol>::new(AUDIO_ENDPOINT_ID);
-        let addr = kycom.register_and_forward(endpoint.into())?;
-
-        let mut avservice_audio = avservice::Handler::new(
-            avservice::HandlerType::Audio,
-            Some(session_id),
-            ctrl.state_machine_proxy()?,
-        );
-        avservice_audio
-            .kymux_start_audio(&ctrl.process_factory, addr.url())
-            .await?;
-
-        Ok((Some(connection_tx), Some(avservice_audio)))
-    }
-
-    async fn start_input(
-        kycom: &mut KyCom,
-        ctrl: &Controller,
-        request: &requests::StartRequest,
-    ) -> Result<(
-        Option<oneshot::Sender<InputConnection>>,
-        Option<inputservice::Handler>,
-    )> {
-        let Some(inputs_request) = &request.inputs else {
-            return Ok((None, None));
-        };
-
-        let (endpoint, connection_tx) = input::InputWebSocketEndpoint::new(INPUT_ENDPOINT_ID);
-        let addr = kycom.register_and_forward(endpoint.into())?;
-
-        let host_config = kynputservice_types::HostConfig {
-            display_list: ctrl.displays.convert(),
-        };
-
-        let service_config = kynputservice_types::ServiceConfig {
-            cursor_format: inputs_request.cursor_format.clone(),
-            gamepad_force_xbox360: inputs_request.gamepad_force_xbox360,
-            clipboard: inputs_request.clipboard,
-        };
-
-        let mut inputservice = inputservice::Handler::new();
-        inputservice
-            .start_kymux(
-                &ctrl.process_factory,
-                host_config,
-                service_config,
-                addr.url(),
-            )
-            .await?;
-
-        Ok((Some(connection_tx), Some(inputservice)))
-    }
-
     pub(crate) async fn stop(self) -> Result<()> {
-        self.kycom.stop();
-        if let InputState::Connected(handle) = self.input {
+        // Output handles are cleaned up via StreamingServices.
+        if let Some(handle) = self.input_forward_handle {
             if let Err(err) = handle.await {
                 log::warn!("Input forward task panicked: {err}");
             }
@@ -219,48 +81,237 @@ impl WebsocketBackend {
         Ok(())
     }
 
-    /// Connect service's WebSocket to a kycom endpoint
-    pub(crate) async fn connect_service(
+    /// Connect a WebSocket to the backend for a given service.
+    ///
+    /// - `Video`/`Audio` in Multi: wraps the session in [`av::AVWebSocketSendDriver`]
+    ///   and adds it as a kydup output. Returns the [`kydup::OutputHandle`].
+    /// - `Video`/`Audio` in Mono: hands the session to the
+    ///   [`av::AVWebSocketEndpoint`] via its oneshot. kycom's forwarder, which
+    ///   was already pumping bytes from the per-session avservice into the
+    ///   stalled endpoint, unblocks and the stream flows directly to the WS.
+    ///   No kydup task, no [`kydup::OutputHandle`].
+    /// - `Input`: delivers the session to the kycom endpoint via oneshot and
+    ///   spawns the WS→channel forwarding task; its join handle is kept
+    ///   internally for [`Self::stop`] to await.
+    ///
+    /// `ws_rx` is unused for `Video`/`Audio` (AV is send-only) and dropped.
+    ///
+    /// Each variant consumes its matching slot (`.take()`); a second call
+    /// for the same service returns [`Error::WsComponentNotReady`].
+    pub(crate) fn connect_service(
         &mut self,
         service: &ServiceType,
-        ws_tx: actix_ws::Session,
+        ws_session: actix_ws::Session,
         ws_rx: actix_ws::MessageStream,
-    ) -> Result<()> {
-        const COMPONENT_VIDEO: &str = "video";
-        const COMPONENT_AUDIO: &str = "audio";
-        const COMPONENT_INPUT: &str = "input";
-
+    ) -> Result<Option<kydup::OutputHandle>> {
+        // KydupVideo and KydupAudio are distinct types (one per sync mode),
+        // so the match arms can't be folded together; each must take its
+        // own slot and dispatch.
         match service {
             ServiceType::Video => {
-                let sender = self
+                let slot = self
                     .video
                     .take()
                     .ok_or_else(|| Error::WsComponentNotReady {
-                        component: COMPONENT_VIDEO.into(),
+                        component: "video".into(),
                     })?;
-                av::connect(COMPONENT_VIDEO, sender, ws_tx, ws_rx)
+                drop(ws_rx);
+                match slot {
+                    AvSlot::Multi(dup) => {
+                        let send = kymux::types::ProtocolSend::new(av::AVWebSocketSendDriver::new(
+                            ws_session,
+                        ));
+                        Ok(Some(dup.add_output(send)))
+                    }
+                    AvSlot::Mono(tx) => {
+                        tx.send(ws_session)
+                            .map_err(|_| Error::WsComponentNotReady {
+                                component: "video".into(),
+                            })?;
+                        Ok(None)
+                    }
+                }
             }
             ServiceType::Audio => {
-                let sender = self
+                let slot = self
                     .audio
                     .take()
                     .ok_or_else(|| Error::WsComponentNotReady {
-                        component: COMPONENT_AUDIO.into(),
+                        component: "audio".into(),
                     })?;
-                av::connect(COMPONENT_AUDIO, sender, ws_tx, ws_rx)
+                drop(ws_rx);
+                match slot {
+                    AvSlot::Multi(dup) => {
+                        let send = kymux::types::ProtocolSend::new(av::AVWebSocketSendDriver::new(
+                            ws_session,
+                        ));
+                        Ok(Some(dup.add_output(send)))
+                    }
+                    AvSlot::Mono(tx) => {
+                        tx.send(ws_session)
+                            .map_err(|_| Error::WsComponentNotReady {
+                                component: "audio".into(),
+                            })?;
+                        Ok(None)
+                    }
+                }
             }
             ServiceType::Input => {
-                let InputState::WaitingForConnection(sender) =
-                    std::mem::replace(&mut self.input, InputState::NotRequested)
-                else {
-                    return Err(Error::WsComponentNotReady {
-                        component: COMPONENT_INPUT.into(),
-                    });
-                };
-                let handle = input::connect(sender, ws_tx, ws_rx)?;
-                self.input = InputState::Connected(handle);
-                Ok(())
+                let connection_sender =
+                    self.input
+                        .take()
+                        .ok_or_else(|| Error::WsComponentNotReady {
+                            component: "input".into(),
+                        })?;
+                let handle = input::connect(connection_sender, ws_session, ws_rx)?;
+                self.input_forward_handle = Some(handle);
+                Ok(None)
             }
+        }
+    }
+}
+
+struct VideoSetup {
+    slot: AvSlot<kydup::KydupVideo>,
+    /// Identity of the stream behind the slot, used to request a fresh IDR on
+    /// exactly that stream when the WS video client attaches. `Shared`
+    /// benefits because it joins a mid-flight stream; `Exclusive` benefits
+    /// when the encoder's initial keyframe scrolled out of the warm-up TCP
+    /// buffer before the WS connected.
+    stream_key: crate::avservices_manager::VideoStreamKey,
+    subscription: crate::avservices_manager::VideoSubscription,
+}
+
+struct AudioSetup {
+    slot: AvSlot<kydup::KydupAudio>,
+    subscription: crate::avservices_manager::AudioSubscription,
+}
+
+/// Build the WS video pipeline for one session. Mode-agnostic at the call
+/// site: the only branch is on the `VideoTopology` we hand to `av_services_manager`,
+/// and on whether the slot is `AvSlot::Multi(dup)` (caller attaches outputs
+/// to kydup at `/websocket/video` time) or `AvSlot::Mono(connection_tx)`
+/// (avservice already plumbed straight into an `AVWebSocketEndpoint` that
+/// stalls until `/websocket/video` arrives).
+async fn setup_video(
+    ctrl: &mut Controller,
+    session_id: uuid::Uuid,
+    request: &requests::StartRequest,
+    video_request: &requests::StartRequestVideo,
+    process_factory: &Arc<libkypc::process::ProcessFactory>,
+    statemachine_proxy: crate::StateMachineProxy,
+    mode: SessionMode,
+) -> Result<VideoSetup> {
+    let config = crate::avservices_manager::VideoStreamConfig {
+        bitrate: request.bitrate,
+        codec: video_request.codec.clone(),
+        yuv444: video_request.yuv444,
+        intra_refresh: video_request.intra_refresh,
+        video_stream_count: 1,
+    };
+    let display_id = video_request.display_id;
+
+    match mode {
+        SessionMode::Multi => {
+            let kycom = ctrl.kycom.as_mut().expect("ensure_kycom guarantees Some");
+            let topology = crate::avservices_manager::VideoTopology::Shared { display_id };
+            let acq = ctrl
+                .av_services_manager
+                .acquire_video(
+                    kycom,
+                    topology,
+                    config,
+                    false,
+                    process_factory,
+                    statemachine_proxy,
+                )
+                .await?;
+            let dup = acq.dup.expect("Shared topology guarantees Some(dup)");
+            Ok(VideoSetup {
+                slot: AvSlot::Multi(dup),
+                stream_key: acq.subscription.key().clone(),
+                subscription: acq.subscription,
+            })
+        }
+        SessionMode::Mono => {
+            let video_eid = ctrl.alloc_ws_endpoint_id();
+            let kycom = ctrl.kycom.as_mut().expect("ensure_kycom guarantees Some");
+            let (endpoint, connection_tx) =
+                av::AVWebSocketEndpoint::<kymux::types::VideoServerProtocol>::new(video_eid);
+            let kycom_uri = kycom
+                .register_and_forward(endpoint.into())
+                .map_err(|e| Error::IO { source: e })?
+                .url();
+            let topology = crate::avservices_manager::VideoTopology::Exclusive {
+                session_id,
+                display_id,
+                kycom_uri,
+            };
+            let acq = ctrl
+                .av_services_manager
+                .acquire_video(
+                    kycom,
+                    topology,
+                    config,
+                    false,
+                    process_factory,
+                    statemachine_proxy,
+                )
+                .await?;
+            debug_assert!(acq.dup.is_none());
+            Ok(VideoSetup {
+                slot: AvSlot::Mono(connection_tx),
+                stream_key: acq.subscription.key().clone(),
+                subscription: acq.subscription,
+            })
+        }
+    }
+}
+
+/// Audio counterpart of [`setup_video`].
+async fn setup_audio(
+    ctrl: &mut Controller,
+    session_id: uuid::Uuid,
+    process_factory: &Arc<libkypc::process::ProcessFactory>,
+    statemachine_proxy: crate::StateMachineProxy,
+    mode: SessionMode,
+) -> Result<AudioSetup> {
+    match mode {
+        SessionMode::Multi => {
+            let kycom = ctrl.kycom.as_mut().expect("ensure_kycom guarantees Some");
+            let topology = crate::avservices_manager::AudioTopology::Shared;
+            let acq = ctrl
+                .av_services_manager
+                .acquire_audio(kycom, topology, process_factory, statemachine_proxy)
+                .await?;
+            let dup = acq.dup.expect("Shared topology guarantees Some(dup)");
+            Ok(AudioSetup {
+                slot: AvSlot::Multi(dup),
+                subscription: acq.subscription,
+            })
+        }
+        SessionMode::Mono => {
+            let audio_eid = ctrl.alloc_ws_endpoint_id();
+            let kycom = ctrl.kycom.as_mut().expect("ensure_kycom guarantees Some");
+            let (endpoint, connection_tx) =
+                av::AVWebSocketEndpoint::<kymux::types::AudioServerProtocol>::new(audio_eid);
+            let kycom_uri = kycom
+                .register_and_forward(endpoint.into())
+                .map_err(|e| Error::IO { source: e })?
+                .url();
+            let topology = crate::avservices_manager::AudioTopology::Exclusive {
+                session_id,
+                kycom_uri,
+            };
+            let acq = ctrl
+                .av_services_manager
+                .acquire_audio(kycom, topology, process_factory, statemachine_proxy)
+                .await?;
+            debug_assert!(acq.dup.is_none());
+            Ok(AudioSetup {
+                slot: AvSlot::Mono(connection_tx),
+                subscription: acq.subscription,
+            })
         }
     }
 }
@@ -277,18 +328,112 @@ async fn start_handler(
         return Err(Error::DataPlaneAlreadyOpened);
     }
 
-    let (backend, services) = WebsocketBackend::start(&ctrl, session_id, request).await?;
+    // Ensure shared kycom is running
+    ctrl.ensure_kycom().await?;
 
-    // Store objects
+    // Extract values before borrows
+    let process_factory = ctrl.process_factory.clone();
+    let statemachine_proxy = ctrl.state_machine_proxy()?;
+    let mode = ctrl.config.session_mode();
+
+    let video_setup = if let Some(video_request) = request.video.as_ref() {
+        Some(
+            setup_video(
+                &mut ctrl,
+                session_id,
+                request,
+                video_request,
+                &process_factory,
+                statemachine_proxy.clone(),
+                mode,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
+
+    let audio_setup = if request.audio {
+        Some(
+            setup_audio(
+                &mut ctrl,
+                session_id,
+                &process_factory,
+                statemachine_proxy.clone(),
+                mode,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
+
+    // Input: per-session via kycom (not shared via kydup)
+    let (input_sender, inputservice) = if let Some(inputs_request) = &request.inputs {
+        let input_eid = ctrl.alloc_ws_endpoint_id();
+
+        let host_config = kynputservice_types::HostConfig {
+            display_list: ctrl.displays.convert(),
+        };
+        let service_config = kynputservice_types::ServiceConfig {
+            cursor_format: inputs_request.cursor_format.clone(),
+            gamepad_force_xbox360: inputs_request.gamepad_force_xbox360,
+            clipboard: inputs_request.clipboard,
+        };
+
+        let kycom = ctrl.kycom.as_mut().expect("ensure_kycom guarantees Some");
+        let (endpoint, connection_tx) = input::InputWebSocketEndpoint::new(input_eid);
+        let addr = kycom
+            .register_and_forward(endpoint.into())
+            .map_err(|e| Error::IO { source: e })?;
+
+        let mut inputservice = inputservice::Handler::new();
+        inputservice
+            .start_kymux(&process_factory, host_config, service_config, addr.url())
+            .await?;
+
+        (Some(connection_tx), Some(inputservice))
+    } else {
+        (None, None)
+    };
+
+    // Split slot/subscription and store both. Slots go into the backend so the
+    // /websocket/video|audio handler can dispatch on connect; subscriptions go into
+    // the session's services so they live as long as the session, and so
+    // their Drop signals the av_services_manager reaper when the session ends.
+    let (video_slot, video_stream_key, video_subscription) = match video_setup {
+        Some(s) => (Some(s.slot), Some(s.stream_key), Some(s.subscription)),
+        None => (None, None, None),
+    };
+    let (audio_slot, audio_subscription) = match audio_setup {
+        Some(s) => (Some(s.slot), Some(s.subscription)),
+        None => (None, None),
+    };
+
     let client_session = ctrl.get_session(&session_id)?;
     let Some(streaming_session) = client_session.stream_session.as_mut() else {
         return Err(Error::ControlPlaneNotOpened);
     };
 
+    let backend = WebsocketBackend {
+        video: video_slot,
+        video_stream_key,
+        audio: audio_slot,
+        input: input_sender,
+        input_forward_handle: None,
+    };
     streaming_session.data_plane = Some(DataPlaneBackend::Websocket(backend));
-    client_session.services.video = services.video;
-    client_session.services.audio = services.audio;
-    client_session.services.input = services.input;
+
+    client_session.services.input = inputservice;
+    if let Some(subscription) = video_subscription {
+        client_session
+            .services
+            .video_subscriptions
+            .push(subscription);
+    }
+    if let Some(subscription) = audio_subscription {
+        client_session.services.audio_subscription = Some(subscription);
+    }
 
     Ok(())
 }
@@ -314,18 +459,43 @@ pub(super) async fn start_websocket_handler(
 ) -> Result<()> {
     let mut ctrl = ctrl.lock().await;
 
-    let client_session = ctrl.get_session(&session_id)?;
-    let Some(streaming_session) = client_session.stream_session.as_mut() else {
-        return Err(Error::ControlPlaneNotOpened);
+    // Phase 1: under the per-session mutable borrow, run connect_service
+    // and capture (if Video) the stream key so we can request a fresh IDR
+    // afterwards on `av_services_manager`.
+    let idr_key = {
+        let client_session = ctrl.get_session(&session_id)?;
+        let (handle_opt, idr_key) = {
+            let streaming_session = client_session
+                .stream_session
+                .as_mut()
+                .ok_or(Error::ControlPlaneNotOpened)?;
+            let backend = match &mut streaming_session.data_plane {
+                Some(DataPlaneBackend::Websocket(b)) => b,
+                _ => return Err(Error::WsNoRouter),
+            };
+            let handle = backend.connect_service(&service, session, msg_stream)?;
+            let idr_key = if matches!(service, ServiceType::Video) {
+                backend.video_stream_key.clone()
+            } else {
+                None
+            };
+            (handle, idr_key)
+        };
+        if let Some(handle) = handle_opt {
+            client_session.services.output_handles.push(handle);
+        }
+        idr_key
     };
 
-    let Some(DataPlaneBackend::Websocket(backend)) = streaming_session.data_plane.as_mut() else {
-        return Err(Error::WsNoRouter);
-    };
-
-    backend
-        .connect_service(&service, session, msg_stream)
-        .await?;
+    // Phase 2: client_session borrow released, free to touch av_services_manager.
+    // Force an IDR to give the joining client a sync point: under intra-refresh
+    // (the default) the encoder emits no periodic keyframes, so this is the only
+    // frame a client in keyframe-sync mode can sync on. The WS output subscribes
+    // eagerly (add_output), so forcing the IDR here, after the subscribe, is
+    // correct. (Same rationale as `kymux_controller::start_video`.)
+    if let Some(key) = idr_key {
+        ctrl.av_services_manager.request_idr(key);
+    }
 
     Ok(())
 }

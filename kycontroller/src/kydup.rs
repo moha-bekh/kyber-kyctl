@@ -41,10 +41,6 @@
 //! }
 //! ```
 
-// Allowed until kymux_controller and ws backends migrate to using av_services_manager
-// in subsequent commits. Removed once all public items are wired up.
-#![allow(dead_code)]
-
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;

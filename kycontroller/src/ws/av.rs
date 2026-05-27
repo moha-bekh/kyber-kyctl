@@ -30,8 +30,6 @@ use kymux::types::{
     VideoServerProtocol,
 };
 
-use crate::{Error, Result};
-
 /// Trait for protocol types that wrap a single [`ProtocolSend<AVPacket>`].
 trait AVSendProtocol: 'static {
     fn from_send(send: ProtocolSend<AVPacket>) -> Self;
@@ -49,31 +47,24 @@ impl AVSendProtocol for AudioServerProtocol {
     }
 }
 
-/// Carries the WebSocket session from [`connect`] to [`AVWebSocketEndpoint::ready_boxed`]
-/// via a oneshot channel.
-pub(super) struct AVConnection {
-    /// The actix-ws session to send AV packets through
-    pub(super) ws_session: actix_ws::Session,
-}
-
-/// Implements [`ProtocolEndpointDriver`] for audio/video streams.
+/// Implements [`ProtocolEndpointDriver`] for audio/video streams in mono mode.
 ///
-/// Waits for a WebSocket connection (via [`AVConnection`] delivered over a oneshot),
-/// then wraps the session in a [`ProtocolSendDriver`] for
-/// unidirectional service → client packet forwarding.
+/// `ready_boxed` blocks on a oneshot until the WS client connects via
+/// `/websocket/video` or `/websocket/audio`; until then, kycom's forwarder
+/// stalls and the avservice
+/// back-pressures through its TCP send buffer. Once the session arrives, the
+/// session is wrapped in [`AVWebSocketSendDriver`] and the forwarder resumes.
 ///
 /// Generic over the protocol type (`P`): use [`VideoServerProtocol`] for video
 /// or [`AudioServerProtocol`] for audio.
-pub struct AVWebSocketEndpoint<P> {
-    /// Endpoint identifier (e.g. 0=video, 1=audio)
+pub(super) struct AVWebSocketEndpoint<P> {
     endpoint_id: u16,
-    /// Receives the [`AVConnection`] when a WebSocket client connects
-    connection_rx: oneshot::Receiver<AVConnection>,
+    connection_rx: oneshot::Receiver<actix_ws::Session>,
     _protocol: PhantomData<P>,
 }
 
 impl<P> AVWebSocketEndpoint<P> {
-    pub fn new(endpoint_id: u16) -> (Self, oneshot::Sender<AVConnection>) {
+    pub(super) fn new(endpoint_id: u16) -> (Self, oneshot::Sender<actix_ws::Session>) {
         let (tx, rx) = oneshot::channel();
         (
             Self {
@@ -94,16 +85,14 @@ impl<P: AVSendProtocol + Send> ProtocolEndpointDriver for AVWebSocketEndpoint<P>
         self.endpoint_id
     }
 
-    async fn ready_boxed(
-        mut self: Box<Self>,
-    ) -> std::result::Result<Self::Protocol, ProtocolError> {
-        let connection = self
+    async fn ready_boxed(self: Box<Self>) -> std::result::Result<Self::Protocol, ProtocolError> {
+        let ws_session = self
             .connection_rx
             .await
             .map_err(|_| ProtocolError::new("WebSocket session never connected"))?;
 
         Ok(P::from_send(ProtocolSend::new(AVWebSocketSendDriver {
-            ws_session: connection.ws_session,
+            ws_session,
         })))
     }
 }
@@ -111,8 +100,17 @@ impl<P: AVSendProtocol + Send> ProtocolEndpointDriver for AVWebSocketEndpoint<P>
 /// Implements [`kymux::kyproto::ProtocolSendDriver`] for AV packets.
 ///
 /// Serializes [`AVPacket`]s and sends them directly to the WebSocket session.
-struct AVWebSocketSendDriver {
+/// Used both as a kydup output (multi mode, one driver per WS subscriber) and
+/// as the send side of [`AVWebSocketEndpoint`] (mono mode, direct kycom →
+/// avservice → WS pipe).
+pub(super) struct AVWebSocketSendDriver {
     ws_session: actix_ws::Session,
+}
+
+impl AVWebSocketSendDriver {
+    pub(super) fn new(ws_session: actix_ws::Session) -> Self {
+        Self { ws_session }
+    }
 }
 
 #[async_trait]
@@ -155,24 +153,4 @@ impl ProtocolSendDriver for AVWebSocketSendDriver {
 
         Ok(())
     }
-}
-
-/// Bridge a WebSocket connection to an AV protocol endpoint.
-///
-/// Delivers the WebSocket session to the endpoint via the oneshot channel.
-/// The endpoint's [`AVWebSocketSendDriver`] will then send packets directly
-/// to the session.
-pub(super) fn connect(
-    component: &'static str,
-    connection_tx: oneshot::Sender<AVConnection>,
-    ws_session: actix_ws::Session,
-    _ws_rx: actix_ws::MessageStream,
-) -> Result<()> {
-    connection_tx
-        .send(AVConnection { ws_session })
-        .map_err(|_| Error::WsComponentNotReady {
-            component: component.into(),
-        })?;
-
-    Ok(())
 }

@@ -18,10 +18,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// Allowed until kymux_controller and ws backends migrate to using av_services_manager
-// in subsequent commits. Removed once all public items are wired up.
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
