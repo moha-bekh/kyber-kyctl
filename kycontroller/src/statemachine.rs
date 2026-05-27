@@ -180,61 +180,75 @@ impl StateMachine {
 
                     ctrl.displays = displays;
                 }
+                // Shared avservice (session_id: None): broadcast to all streaming sessions
                 StateMachineEvent::AvService {
-                    session_id,
+                    session_id: None,
                     event: kyavservice_types::Event::PipelineEvent(event),
                 } => {
-                    // PipelineEvent is session-specific, ignore if no session_id
-                    let Some(sid) = session_id else {
-                        warn!("Received PipelineEvent without session_id, ignoring");
-                        continue;
-                    };
-
                     let ctrl = ctrl.lock().await;
-
-                    if let Some(session) = ctrl.sessions.get(&sid) {
+                    let host_event = HostEvent::StreamerPipelineEvent(event.into());
+                    for session in ctrl.sessions.values() {
                         if let Some(streaming_session) = &session.stream_session {
                             streaming_session
                                 .host_event_sender
-                                .try_send(HostEvent::StreamerPipelineEvent(event.into()));
+                                .try_send(host_event.clone());
+                        }
+                    }
+                }
+                // Legacy per-session avservice: send to that session only
+                StateMachineEvent::AvService {
+                    session_id: Some(sid),
+                    event: kyavservice_types::Event::PipelineEvent(event),
+                } => {
+                    let ctrl = ctrl.lock().await;
+                    let host_event = HostEvent::StreamerPipelineEvent(event.into());
+                    if let Some(session) = ctrl.sessions.get(&sid) {
+                        if let Some(streaming_session) = &session.stream_session {
+                            streaming_session.host_event_sender.try_send(host_event);
                         }
                     }
                 }
                 StateMachineEvent::AvServiceStopped { session_id, type_ } => {
                     info!("AvServer {type_:?} stopped (session: {:?})", session_id);
 
-                    // Global AvService (e.g., watchdog) stopped - just log, no client notification
-                    let Some(sid) = session_id else {
-                        warn!("Global AvServer {type_:?} stopped");
-                        continue;
+                    let pipeline_type = match type_ {
+                        avservice::HandlerType::EnumerateDisplays => {
+                            host_events::StreamerPipelineType::EnumerateDisplays
+                        }
+                        avservice::HandlerType::VideoSdp => continue,
+                        avservice::HandlerType::Video => host_events::StreamerPipelineType::Video,
+                        avservice::HandlerType::Audio => host_events::StreamerPipelineType::Audio,
                     };
+
+                    let event =
+                        HostEvent::StreamerPipelineEvent(host_events::StreamerPipelineEvent {
+                            type_: pipeline_type,
+                            stage: host_events::StreamerPipelineStage::Process,
+                            event: host_events::StreamerPipelineEventType::Stopped,
+                        });
 
                     let ctrl = ctrl.lock().await;
 
-                    if let Some(session) = ctrl.sessions.get(&sid) {
-                        if let Some(streaming_session) = &session.stream_session {
-                            let type_ = match type_ {
-                                avservice::HandlerType::EnumerateDisplays => {
-                                    host_events::StreamerPipelineType::EnumerateDisplays
+                    match session_id {
+                        // Shared avservice (encoder) or watchdog stopped:
+                        // notify all streaming sessions. The watchdog only
+                        // emits this at server shutdown or if its child
+                        // process crashes — in both cases broadcasting is
+                        // the right call.
+                        None => {
+                            for session in ctrl.sessions.values() {
+                                if let Some(streaming_session) = &session.stream_session {
+                                    streaming_session.host_event_sender.try_send(event.clone());
                                 }
-                                avservice::HandlerType::VideoSdp => continue,
-                                avservice::HandlerType::Video => {
-                                    host_events::StreamerPipelineType::Video
+                            }
+                        }
+                        // Legacy per-session: notify that session only
+                        Some(sid) => {
+                            if let Some(session) = ctrl.sessions.get(&sid) {
+                                if let Some(streaming_session) = &session.stream_session {
+                                    streaming_session.host_event_sender.try_send(event);
                                 }
-                                avservice::HandlerType::Audio => {
-                                    host_events::StreamerPipelineType::Audio
-                                }
-                            };
-
-                            let event = host_events::StreamerPipelineEvent {
-                                type_,
-                                stage: host_events::StreamerPipelineStage::Process,
-                                event: host_events::StreamerPipelineEventType::Stopped,
-                            };
-
-                            streaming_session
-                                .host_event_sender
-                                .try_send(HostEvent::StreamerPipelineEvent(event));
+                            }
                         }
                     }
                 }
