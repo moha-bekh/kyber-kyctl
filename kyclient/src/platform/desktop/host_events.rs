@@ -21,7 +21,6 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use async_tungstenite::{
     tokio::{client_async_tls_with_connector, connect_async, ClientStream},
     tungstenite::Message as tungstenite_Message,
@@ -29,19 +28,19 @@ use async_tungstenite::{
 };
 use futures::StreamExt;
 use log::{error, info, warn};
-use tokio::{net::TcpStream, sync::oneshot, task};
+use tokio::net::TcpStream;
 
 use crate::host_events::{self, HostEventFrame, HostEventSink};
 use crate::platform;
 use crate::platform::tls::{self, VerifyMode};
+use crate::runtime::Task;
 use crate::{
     ConnectionParams, ControlPlaneCapabilities, ControlPlaneCloseReason, Error, Message, PeerInfo,
     Result,
 };
 
 pub(crate) struct WsClient {
-    handle: task::JoinHandle<()>,
-    stop_tx: oneshot::Sender<()>,
+    _task: Task,
 }
 
 impl WsClient {
@@ -87,16 +86,13 @@ impl WsClient {
         }
         info!("Control plane authentified");
 
-        let (stop_tx, stop_rx) = oneshot::channel();
-
-        let handle = task::spawn(Self::task_entry(
+        let _task = Task::spawn(Self::process_stream(
             stream,
             capabilities.clone(),
             event_sink,
-            stop_rx,
         ));
 
-        Ok(Self { handle, stop_tx })
+        Ok(Self { _task })
     }
 
     async fn connect_with_verify_mode(
@@ -130,19 +126,6 @@ impl WsClient {
         })?;
 
         Ok(stream)
-    }
-
-    async fn task_entry(
-        stream: WebSocketStream<ClientStream<TcpStream>>,
-        capabilities: ControlPlaneCapabilities,
-        event_sink: HostEventSink,
-        stop_rx: oneshot::Receiver<()>,
-    ) {
-        tokio::select! {
-            _ = stop_rx => {
-            }
-            _ = Self::process_stream(stream, capabilities, event_sink) => {}
-        }
     }
 
     async fn process_stream(
@@ -249,23 +232,8 @@ impl WsClient {
     }
 }
 
-#[async_trait]
-impl crate::host_events::WsClient for WsClient {
-    async fn stop(self) -> Result<()> {
-        let ret = self.stop_tx.send(());
-        if ret.is_err() {
-            warn!("HostEvent task stop send request failed");
-        }
-
-        self.handle.await?;
-
-        Ok(())
-    }
-}
-
 pub(crate) struct WsClientBuilder;
 
-#[async_trait]
 impl crate::host_events::WsClientBuilder for WsClientBuilder {
     type Type = WsClient;
 

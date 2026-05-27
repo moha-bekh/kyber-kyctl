@@ -20,7 +20,6 @@
 
 use std::time::Duration;
 
-use async_trait::async_trait;
 use log::warn;
 use serde::{Deserialize, Serialize};
 
@@ -29,16 +28,8 @@ use crate::{
     ConnectionParams, ControlPlaneCapabilities, Display, Message, MessageSender, PeerInfo, Result,
 };
 
-#[cfg_attr(target_family = "wasm", async_trait(?Send))]
-#[cfg_attr(not(target_family = "wasm"), async_trait)]
-pub(crate) trait WsClient {
-    async fn stop(self) -> Result<()>;
-}
-
-#[cfg_attr(target_family = "wasm", async_trait(?Send))]
-#[cfg_attr(not(target_family = "wasm"), async_trait)]
 pub(crate) trait WsClientBuilder {
-    type Type: WsClient;
+    type Type;
 
     async fn new(
         conn_params: &ConnectionParams,
@@ -142,7 +133,7 @@ impl HostEventSink {
 }
 
 pub(crate) struct HostEventReceiver {
-    client: platform::WsClient,
+    _client: platform::WsClient,
 }
 
 impl HostEventReceiver {
@@ -155,7 +146,7 @@ impl HostEventReceiver {
     ) -> Result<Self> {
         let event_sink = HostEventSink::new(msg_sender);
 
-        let client = platform::WsClientBuilder::new(
+        let _client = platform::WsClientBuilder::new(
             conn_params,
             peer_info,
             capabilities,
@@ -164,11 +155,7 @@ impl HostEventReceiver {
         )
         .await?;
 
-        Ok(Self { client })
-    }
-
-    pub(crate) async fn stop(self) -> Result<()> {
-        self.client.stop().await
+        Ok(Self { _client })
     }
 }
 

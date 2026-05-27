@@ -22,7 +22,6 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use log::{error, info, warn};
 use tokio::sync::oneshot;
 use wasm_bindgen::prelude::*;
@@ -291,19 +290,8 @@ impl WebSocketHandler for Inner {
     }
 }
 
-/// HACK: Inner requires to be Send on functions that will .await after
-/// calling `Inner::new()`.
-///
-/// Inner contains a web_sys::Websocket that isn't Send. Furthermore, the Rc<>
-/// isn't send too.
-///
-/// Since we are in a browser (single-threaded environment) and we don't want
-/// to send the value to a worker, it is acceptable to force Rc<Inner> to be
-/// Send.
-struct InnerRef(Rc<Inner>);
-
 pub(crate) struct WsClient {
-    _inner: InnerRef,
+    inner: Rc<Inner>,
 }
 
 impl WsClient {
@@ -317,27 +305,22 @@ impl WsClient {
         let host = platform::http::create_host(conn_params);
         let url = format!("wss://{host}/ws");
 
-        let inner = InnerRef(Inner::new(url, capabilities, event_sink, auth_token).await?);
+        let inner = Inner::new(url, capabilities, event_sink, auth_token).await?;
 
-        Ok(Self { _inner: inner })
+        Ok(Self { inner })
     }
 }
 
-#[async_trait(?Send)]
-impl crate::host_events::WsClient for WsClient {
-    async fn stop(self) -> Result<()> {
-        let ret = self._inner.0.stop();
-        if let Err(err) = ret {
+impl Drop for WsClient {
+    fn drop(&mut self) {
+        if let Err(err) = self.inner.stop() {
             warn!("Failed to stop HostEvent::Inner: {err:?}");
         }
-
-        Ok(())
     }
 }
 
 pub(crate) struct WsClientBuilder;
 
-#[async_trait(?Send)]
 impl crate::host_events::WsClientBuilder for WsClientBuilder {
     type Type = WsClient;
 

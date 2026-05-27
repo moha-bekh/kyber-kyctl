@@ -225,11 +225,8 @@ impl Connection {
             }
         }
 
-        let ret = self.host_events.stop().await;
-        match ret {
-            Ok(_) => info!("HostEventHandler stopped"),
-            Err(err) => warn!("Failed to stop HostEventHandler: {err:?}"),
-        }
+        drop(self.host_events);
+        info!("HostEventHandler stopped");
     }
 }
 
