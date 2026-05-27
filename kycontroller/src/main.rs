@@ -123,10 +123,11 @@ struct LoginQuery {
 /// - `400 Bad Request`: Invalid or unsupported Authorization header format
 /// - `401 Unauthorized`: Authentication failed (invalid credentials, expired JWT, etc.)
 ///
-/// ## Single-Session Enforcement
+/// ## Mono-Session Enforcement
 ///
-/// If an existing session is active, it's automatically terminated before creating
-/// the new session. This enforces a single-session-per-instance policy.
+/// When `multi_client = true` (default), multiple sessions are accepted.
+/// When `multi_client = false`, a second concurrent login attempt is rejected
+/// with `409 Conflict` until the existing session logs out.
 #[post("/login")]
 async fn login(
     ctrl: web::Data<Mutex<Controller>>,
@@ -177,6 +178,16 @@ async fn login(
         }
     };
 
+    let mut ctrl = ctrl.lock().await;
+
+    if ctrl.config.session_mode() == config::SessionMode::Mono && !ctrl.sessions.is_empty() {
+        warn!(
+            "Refusing login for \"{}\": mono-client mode and a session is already active",
+            auth_session.username
+        );
+        return HttpResponse::Conflict().json("Another client is already connected");
+    }
+
     info!("Logging in \"{}\"...", auth_session.username);
     let uuid = Identity::login(auth_session.expiration, &req.extensions()).unwrap();
     let client_session = ClientSession::new(uuid, auth_session);
@@ -185,9 +196,6 @@ async fn login(
         "websocket": client_session.auth_tokens.websocket,
     });
 
-    let mut ctrl = ctrl.lock().await;
-
-    // Multi-session support: allow multiple simultaneous sessions
     ctrl.sessions.insert(uuid, client_session);
     ctrl.update_tray_status().await;
 

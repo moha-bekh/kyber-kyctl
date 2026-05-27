@@ -37,6 +37,21 @@ pub(crate) enum ListenMode {
     DualStack,
 }
 
+/// Concurrency model selected by the `multi_client` config flag.
+///
+/// `Multi` (default, `multi_client = true`): many concurrent clients share
+/// one avservice per display via kydup. The RTP backend is rejected in this
+/// mode (no avservice-sharing path).
+///
+/// `Mono` (`multi_client = false`): one concurrent client allowed at the
+/// login gate; avservices are per-session and feed the client endpoint
+/// directly via kycom, no kydup fan-out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SessionMode {
+    Mono,
+    Multi,
+}
+
 #[derive(Debug, Default, Deserialize)]
 pub(crate) struct Config {
     port: Option<u16>,
@@ -51,6 +66,7 @@ pub(crate) struct Config {
     #[serde(default)]
     security: crate::security::Config,
     watchdog: Option<bool>,
+    multi_client: Option<bool>,
 }
 
 impl Config {
@@ -92,6 +108,13 @@ impl Config {
 
     pub(crate) fn tls_key(&self) -> Option<&str> {
         self.tls_key.as_deref()
+    }
+
+    pub(crate) fn session_mode(&self) -> SessionMode {
+        match self.multi_client.unwrap_or(true) {
+            true => SessionMode::Multi,
+            false => SessionMode::Mono,
+        }
     }
 }
 
