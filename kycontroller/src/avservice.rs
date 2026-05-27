@@ -30,6 +30,7 @@ use libkypc::{
     CommandSender, Commander, EventReceiver,
 };
 
+use crate::avservices_manager::StreamId;
 use crate::utils;
 use crate::{Error, Result, StateMachineEvent, StateMachineProxy};
 
@@ -43,6 +44,7 @@ impl ReceiverTask {
     fn new(
         type_: HandlerType,
         session_id: Option<uuid::Uuid>,
+        stream_id: Option<StreamId>,
         receiver: EventReceiver<Event>,
         statemachine_proxy: StateMachineProxy,
     ) -> Self {
@@ -51,6 +53,7 @@ impl ReceiverTask {
         let handle = task::spawn(Self::task_entry(
             type_,
             session_id,
+            stream_id,
             receiver,
             statemachine_proxy,
             stop_rx,
@@ -80,6 +83,7 @@ impl ReceiverTask {
     async fn task_entry(
         type_: HandlerType,
         session_id: Option<uuid::Uuid>,
+        stream_id: Option<StreamId>,
         receiver: EventReceiver<kyavservice_types::Event>,
         statemachine_proxy: StateMachineProxy,
         stop_rx: oneshot::Receiver<()>,
@@ -87,24 +91,33 @@ impl ReceiverTask {
         tokio::select! {
             _ = stop_rx => {
             }
-            _ = Self::process_receiver(type_, session_id, receiver, statemachine_proxy) => {}
+            _ = Self::process_receiver(type_, session_id, stream_id, receiver, statemachine_proxy) => {}
         }
     }
 
     async fn process_receiver(
         type_: HandlerType,
         session_id: Option<uuid::Uuid>,
+        stream_id: Option<StreamId>,
         mut receiver: EventReceiver<kyavservice_types::Event>,
         statemachine_proxy: StateMachineProxy,
     ) {
         while let Ok(event) = receiver.recv().await {
             statemachine_proxy
-                .send(StateMachineEvent::AvService { session_id, event })
+                .send(StateMachineEvent::AvService {
+                    session_id,
+                    stream_id: stream_id.clone(),
+                    event,
+                })
                 .await;
         }
 
         statemachine_proxy
-            .send(StateMachineEvent::AvServiceStopped { session_id, type_ })
+            .send(StateMachineEvent::AvServiceStopped {
+                session_id,
+                stream_id,
+                type_,
+            })
             .await;
     }
 }
@@ -122,12 +135,14 @@ impl Inner {
         &mut self,
         type_: HandlerType,
         session_id: Option<uuid::Uuid>,
+        stream_id: Option<StreamId>,
         statemachine_proxy: StateMachineProxy,
     ) -> Result<()> {
         let receiver = self.receiver.take().ok_or(Error::AvServerNoReceiver)?;
         self.receiver_task = Some(ReceiverTask::new(
             type_,
             session_id,
+            stream_id,
             receiver,
             statemachine_proxy,
         ));
@@ -147,6 +162,12 @@ pub(crate) enum HandlerType {
 pub(crate) struct Handler {
     type_: HandlerType,
     session_id: Option<uuid::Uuid>,
+    /// Routing identity of the stream this handler drives. `Some` for the
+    /// shared/exclusive video & audio streams owned by the AVServicesManager;
+    /// `None` for the legacy per-session RTP handlers (routed by `session_id`)
+    /// and the global enumerate/SDP handlers. Forwarded with each event so the
+    /// StateMachine delivers it to exactly that stream's subscribers.
+    stream_id: Option<StreamId>,
     avserver_path: PathBuf,
     statemachine_proxy: StateMachineProxy,
     inner: Option<Inner>,
@@ -156,11 +177,13 @@ impl Handler {
     pub(crate) fn new(
         type_: HandlerType,
         session_id: Option<uuid::Uuid>,
+        stream_id: Option<StreamId>,
         statemachine_proxy: StateMachineProxy,
     ) -> Self {
         Self {
             type_,
             session_id,
+            stream_id,
             avserver_path: utils::get_executable_path("kyavserver"),
             inner: None,
             statemachine_proxy,
@@ -202,7 +225,12 @@ impl Handler {
             return Err(Error::DisplayListEmpty);
         };
 
-        inner.start_receiver_task(self.type_, self.session_id, self.statemachine_proxy.clone())?;
+        inner.start_receiver_task(
+            self.type_,
+            self.session_id,
+            self.stream_id.clone(),
+            self.statemachine_proxy.clone(),
+        )?;
         self.inner = Some(inner);
 
         Ok(displays)
@@ -325,7 +353,12 @@ impl Handler {
         let mut inner = self.spawn_process(process_factory).await?;
         inner.sender.send(start_cmd).await?;
 
-        inner.start_receiver_task(self.type_, self.session_id, self.statemachine_proxy.clone())?;
+        inner.start_receiver_task(
+            self.type_,
+            self.session_id,
+            self.stream_id.clone(),
+            self.statemachine_proxy.clone(),
+        )?;
         self.inner = Some(inner);
 
         Ok(())
@@ -353,6 +386,18 @@ impl Handler {
 
         inner.commander.stop().await?;
         debug!("Commander {type_:?} stopped");
+
+        Ok(())
+    }
+
+    pub(crate) async fn video_force_idr(&mut self) -> Result<()> {
+        debug!("Requesting IDR frame");
+        self.inner
+            .as_mut()
+            .ok_or(Error::StreamerStopped)?
+            .sender
+            .send(Command::VideoForceIdr)
+            .await?;
 
         Ok(())
     }

@@ -39,6 +39,8 @@ pub async fn generate_video_sdp(
     let avservice = avservice::Handler::new(
         avservice::HandlerType::VideoSdp,
         Some(session_id),
+        // RTP is routed per-session via `session_id`; no stream_id.
+        None,
         state_machine_proxy,
     );
     avservice
@@ -75,6 +77,8 @@ pub async fn start(
         let mut avservice = avservice::Handler::new(
             avservice::HandlerType::Video,
             Some(session_id),
+            // RTP is routed per-session via `session_id`; no stream_id.
+            None,
             state_machine_proxy.clone(),
         );
         avservice
@@ -98,6 +102,7 @@ pub async fn start(
         let mut avservice = avservice::Handler::new(
             avservice::HandlerType::Audio,
             Some(session_id),
+            None,
             state_machine_proxy.clone(),
         );
         avservice

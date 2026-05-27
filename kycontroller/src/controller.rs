@@ -33,9 +33,11 @@ use libkypc::process::ProcessFactory;
 
 use crate::auth;
 use crate::avservice;
+use crate::avservices_manager::{AVServicesManager, AudioSubscription, VideoSubscription};
 use crate::config;
 use crate::error::{Error, Result};
 use crate::inputservice;
+use crate::kydup;
 use crate::kymux_controller::{KymuxBackend, SharedKymuxInfra};
 use crate::session::ClientAuthTokens;
 use crate::tls;
@@ -103,6 +105,9 @@ pub(crate) struct SessionCleanup {
     session: ClientSession,
     should_stop_infra: bool,
     infra: Arc<tokio::sync::Mutex<SharedKymuxInfra>>,
+    /// Idle kycom taken under the lock; stopped here so its TCP listener
+    /// teardown doesn't block other endpoints on the Controller mutex.
+    kycom_to_stop: Option<kymux::kycom::KyCom>,
 }
 
 impl SessionCleanup {
@@ -117,6 +122,10 @@ impl SessionCleanup {
 
         if let Err(err) = self.session.services.stop().await {
             warn!("Failed to stop streaming services: {err:?}");
+        }
+
+        if let Some(kycom) = self.kycom_to_stop.take() {
+            kycom.stop();
         }
 
         if self.should_stop_infra {
@@ -179,11 +188,28 @@ impl ClientSession {
 
 #[derive(Default)]
 pub(crate) struct StreamingServices {
+    /// Per-session video avservers, used by the legacy RTP backend only.
+    /// Kymux/WS backends route their video/audio streams through [`AVServicesManager`]
+    /// regardless of mode, so `video` stays empty for them and teardown is
+    /// handled via [`Self::video_subscriptions`].
     pub(crate) video: Vec<avservice::Handler>,
+    /// Per-session audio avserver, RTP only, same rationale as `video`.
     pub(crate) audio: Option<avservice::Handler>,
     pub(crate) input: Option<inputservice::Handler>,
     pub(crate) clock_sync: Option<crate::kymux_controller::ClockSyncTask>,
     pub(crate) metrics: Option<crate::kymux_controller::MetricsTask>,
+    /// Kydup output handles for this client (Kymux/WS backends).
+    /// Dropping clears the handles, which aborts the output tasks automatically.
+    pub(crate) output_handles: Vec<kydup::OutputHandle>,
+    /// RAII subscriptions to [`AVServicesManager`] video entries (Kymux/WS backends).
+    /// Dropping triggers async decrement via the AV reaper, which stops the
+    /// avservice when the last subscription leaves; covers both `Shared` and
+    /// `Exclusive` entries.
+    #[allow(dead_code)] // populated by kymux/ws migrations in subsequent commits
+    pub(crate) video_subscriptions: Vec<VideoSubscription>,
+    /// RAII subscription to an [`AVServicesManager`] audio entry. See `video_subscriptions`.
+    #[allow(dead_code)] // populated by kymux/ws migrations in subsequent commits
+    pub(crate) audio_subscription: Option<AudioSubscription>,
 }
 
 impl StreamingServices {
@@ -218,6 +244,12 @@ impl StreamingServices {
     }
 
     async fn stop(&mut self) -> Result<()> {
+        // OutputHandle::drop aborts the task automatically. Kymux/WS avservices
+        // are stopped by the AV reaper after the subscriptions held here
+        // drop; see AVServicesManager. RTP avservices (in `video`/`audio`) are
+        // per-session and stopped synchronously below.
+        self.output_handles.clear();
+
         for service in self.video.drain(0..) {
             Self::stop_avservice(Some(service)).await?;
         }
@@ -253,6 +285,15 @@ pub struct Controller {
     // Always exists but can be in stopped or running state internally
     pub(crate) shared_kymux_infra: Arc<tokio::sync::Mutex<SharedKymuxInfra>>,
     pub(crate) tray_handle: Option<TrayHandle>,
+
+    // Shared kycom instance for all backends (IPC bridge to avserver/inputserver processes)
+    pub(crate) kycom: Option<kymux::kycom::KyCom>,
+    /// Counter for allocating kycom endpoint IDs (WS backend; Kymux uses kyproto's allocator)
+    #[allow(dead_code)] // used by ws migration in a subsequent commit
+    pub(crate) next_ws_endpoint_id: u16,
+
+    // Shared AV services: avservers and duplicators shared across clients
+    pub(crate) av_services_manager: AVServicesManager,
 }
 
 impl Controller {
@@ -270,6 +311,9 @@ impl Controller {
             state_machine_proxy: None,
             shared_kymux_infra: Arc::new(tokio::sync::Mutex::new(SharedKymuxInfra::new())),
             tray_handle: None,
+            kycom: None,
+            next_ws_endpoint_id: 0x8000,
+            av_services_manager: Default::default(),
         }
     }
 
@@ -305,6 +349,49 @@ impl Controller {
         }
     }
 
+    /// Ports for the shared kycom instance.
+    #[allow(dead_code)] // used by kymux/ws migrations in subsequent commits
+    const KYCOM_PORTS: std::ops::Range<u16> = 9091..9110;
+
+    /// Start the shared kycom if not already running.
+    #[allow(dead_code)] // used by kymux/ws migrations in subsequent commits
+    pub(crate) async fn ensure_kycom(&mut self) -> Result<()> {
+        if self.kycom.is_none() {
+            self.kycom = Some(kymux::kycom::KyCom::start_on_any_port(Self::KYCOM_PORTS).await?);
+        }
+        Ok(())
+    }
+
+    /// Allocate a kycom endpoint ID for WS backend channels.
+    #[allow(dead_code)] // used by ws migration in a subsequent commit
+    pub(crate) fn alloc_ws_endpoint_id(&mut self) -> u16 {
+        let id = self.next_ws_endpoint_id;
+        self.next_ws_endpoint_id = self.next_ws_endpoint_id.wrapping_add(1);
+        id
+    }
+
+    /// Take ownership of the shared kycom iff no sessions and no AV streams
+    /// remain; the moment kycom can no longer be in use. The caller stops
+    /// it outside the Controller lock.
+    ///
+    /// Called from two sites:
+    ///   * the AV reaper, right after `AVCleanup::run()` has fully stopped
+    ///     the last avservers via libkypc; the normal path when a session
+    ///     drops its subscriptions;
+    ///   * `take_session`, for the path where the session never had (or
+    ///     already lost) its subscriptions, so the reaper wouldn't otherwise
+    ///     be woken to clean up kycom.
+    pub(crate) fn try_take_idle_kycom(&mut self) -> Option<kymux::kycom::KyCom> {
+        if self.sessions.is_empty()
+            && self.av_services_manager.video_streams.is_empty()
+            && self.av_services_manager.audio_streams.is_empty()
+        {
+            self.kycom.take()
+        } else {
+            None
+        }
+    }
+
     pub fn get_session<'a>(&'a mut self, uid: &uuid::Uuid) -> Result<&'a mut ClientSession> {
         self.sessions
             .get_mut(uid)
@@ -323,13 +410,29 @@ impl Controller {
             .remove(&session_id)
             .ok_or(Error::InvalidSession { uid: session_id })?;
 
+        // Subscriptions on session.services.video_subscriptions /
+        // audio_subscription will drop when SessionCleanup.run() drops the
+        // ClientSession outside the lock, signalling the reaper to decrement
+        // the shared AV client_counts asynchronously. The reaper stops each
+        // shared avservice once its client_count hits 0; no need to stop
+        // them synchronously here (which would block the Controller lock).
+        //
+        // kycom teardown is deferred to the reaper too, so the avservers
+        // receive their libkypc Stop before their IPC TCP sockets disappear.
+        // We only stop kycom here in the corner case where the session had
+        // no subscriptions left to drop (e.g. it logged out after explicitly
+        // stopping streaming); without that, no reaper message would fire
+        // and kycom would leak until the next start_session.
         let should_stop_infra = self.sessions.is_empty();
+        let kycom_to_stop = self.try_take_idle_kycom();
+
         let infra = self.shared_kymux_infra.clone();
 
         Ok(SessionCleanup {
             session,
             should_stop_infra,
             infra,
+            kycom_to_stop,
         })
     }
 
@@ -348,6 +451,10 @@ impl Controller {
             .stream_session
             .as_mut()
             .and_then(|s| s.data_plane.take());
+
+        // mem::take moves the subscriptions out with the rest of the services.
+        // They drop (and signal the reaper) when StreamingCleanup.run() drops
+        // the services outside the Controller lock.
         let services = mem::take(&mut client_session.services);
 
         Ok(StreamingCleanup {

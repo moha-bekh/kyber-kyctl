@@ -36,11 +36,13 @@ use tokio::sync::Mutex;
 
 mod auth;
 mod avservice;
+mod avservices_manager;
 mod config;
 mod controller;
 mod error;
 mod host_events;
 mod inputservice;
+pub(crate) mod kydup;
 mod kymux_controller;
 mod rtp;
 mod security;
@@ -695,8 +697,16 @@ async fn real_main() -> Result<()> {
 
     let statemachine = StateMachine::new(ctrl.clone())?;
 
+    // Spawn the AVServicesManager background tasks (IDR dispatcher, AV reaper).
+    // Must run before any session opens. The returned handle carries the
+    // cancel signal, dropped at the end of `real_main`, which signals both
+    // tasks to exit.
+    let av_tasks_handle;
     let watchdog = {
+        let weak = Arc::downgrade(&ctrl.clone().into_inner());
         let mut ctrl = ctrl.lock().await;
+
+        av_tasks_handle = ctrl.av_services_manager.init(weak);
 
         // Configure watchdog
         let watchdog = if ctrl.config.watchdog() {
@@ -827,6 +837,7 @@ async fn real_main() -> Result<()> {
         watchdog.stop().await?;
     }
     statemachine.stop().await?;
+    av_tasks_handle.stop();
 
     Ok(())
 }

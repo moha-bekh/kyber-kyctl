@@ -38,6 +38,7 @@ impl Watchdog {
         let mut avservice = avservice::Handler::new(
             avservice::HandlerType::EnumerateDisplays,
             None,
+            None,
             statemachine_proxy.clone(),
         );
 

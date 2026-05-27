@@ -26,20 +26,60 @@ use tokio::{
 };
 use uuid::Uuid;
 
+use crate::avservices_manager::StreamId;
 use crate::utils::TypeConvert;
 use crate::{avservice, host_events};
 use crate::{Controller, Error, HostEvent, Result};
 
+/// Route a stream event (PipelineEvent or Stopped) emitted by an
+/// AVServicesManager handler to exactly the sessions subscribed to that
+/// stream, matched by the subscription's registry key.
+///
+/// Several streams may target the same display (mono multi-session, or an
+/// exclusive stream alongside a shared one); matching by stream identity
+/// rather than by display keeps each session's events isolated.
+fn route_to_subscribers(ctrl: &Controller, stream_id: &StreamId, event: &HostEvent) {
+    for session in ctrl.sessions.values() {
+        let Some(streaming_session) = &session.stream_session else {
+            continue;
+        };
+        let matches = match stream_id {
+            StreamId::Video(key) => session
+                .services
+                .video_subscriptions
+                .iter()
+                .any(|sub| sub.key() == key),
+            StreamId::Audio(key) => session
+                .services
+                .audio_subscription
+                .as_ref()
+                .is_some_and(|sub| sub.key() == key),
+        };
+        if matches {
+            streaming_session.host_event_sender.try_send(event.clone());
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) enum StateMachineEvent {
     AvService {
-        /// None means the event targets all sessions (e.g., from watchdog)
+        /// `Some` only for the legacy per-session RTP handlers (routed to that
+        /// session). `None` for AVServicesManager and global handlers, which
+        /// are routed by `stream_id` instead.
         session_id: Option<Uuid>,
+        /// Routing identity of the emitting stream. `Some` for the
+        /// shared/exclusive AVServicesManager streams (routed to the sessions
+        /// subscribed to this exact stream); `None` for RTP (routed by
+        /// `session_id`) and global enumerate/SDP handlers (broadcast).
+        stream_id: Option<StreamId>,
         event: kyavservice_types::Event,
     },
     AvServiceStopped {
-        /// None means global (e.g., watchdog stopped)
+        /// See `AvService::session_id`.
         session_id: Option<Uuid>,
+        /// See `AvService::stream_id`.
+        stream_id: Option<StreamId>,
         type_: avservice::HandlerType,
     },
     HostEvents {
@@ -126,6 +166,7 @@ impl StateMachine {
             match evt {
                 StateMachineEvent::AvService {
                     session_id,
+                    stream_id: _,
                     event: kyavservice_types::Event::DisplayListUpdated { displays },
                 } => {
                     info!(
@@ -180,24 +221,21 @@ impl StateMachine {
 
                     ctrl.displays = displays;
                 }
-                // Shared avservice (session_id: None): broadcast to all streaming sessions
+                // AVServicesManager stream (shared or exclusive): route to
+                // every session subscribed to this exact stream.
                 StateMachineEvent::AvService {
-                    session_id: None,
+                    stream_id: Some(stream_id),
                     event: kyavservice_types::Event::PipelineEvent(event),
+                    ..
                 } => {
                     let ctrl = ctrl.lock().await;
                     let host_event = HostEvent::StreamerPipelineEvent(event.into());
-                    for session in ctrl.sessions.values() {
-                        if let Some(streaming_session) = &session.stream_session {
-                            streaming_session
-                                .host_event_sender
-                                .try_send(host_event.clone());
-                        }
-                    }
+                    route_to_subscribers(&ctrl, &stream_id, &host_event);
                 }
-                // Legacy per-session avservice: send to that session only
+                // Legacy per-session avservice (RTP): send to that session only.
                 StateMachineEvent::AvService {
                     session_id: Some(sid),
+                    stream_id: None,
                     event: kyavservice_types::Event::PipelineEvent(event),
                 } => {
                     let ctrl = ctrl.lock().await;
@@ -208,7 +246,11 @@ impl StateMachine {
                         }
                     }
                 }
-                StateMachineEvent::AvServiceStopped { session_id, type_ } => {
+                StateMachineEvent::AvServiceStopped {
+                    session_id,
+                    stream_id,
+                    type_,
+                } => {
                     info!("AvServer {type_:?} stopped (session: {:?})", session_id);
 
                     let pipeline_type = match type_ {
@@ -229,24 +271,26 @@ impl StateMachine {
 
                     let ctrl = ctrl.lock().await;
 
-                    match session_id {
-                        // Shared avservice (encoder) or watchdog stopped:
-                        // notify all streaming sessions. The watchdog only
-                        // emits this at server shutdown or if its child
-                        // process crashes — in both cases broadcasting is
-                        // the right call.
-                        None => {
-                            for session in ctrl.sessions.values() {
-                                if let Some(streaming_session) = &session.stream_session {
-                                    streaming_session.host_event_sender.try_send(event.clone());
-                                }
-                            }
+                    match (stream_id, session_id) {
+                        // AVServicesManager stream (shared or exclusive): reach
+                        // the sessions subscribed to this exact stream.
+                        (Some(stream_id), _) => {
+                            route_to_subscribers(&ctrl, &stream_id, &event);
                         }
-                        // Legacy per-session: notify that session only
-                        Some(sid) => {
+                        // Legacy per-session (RTP): notify that session only.
+                        (None, Some(sid)) => {
                             if let Some(session) = ctrl.sessions.get(&sid) {
                                 if let Some(streaming_session) = &session.stream_session {
                                     streaming_session.host_event_sender.try_send(event);
+                                }
+                            }
+                        }
+                        // Global handler (e.g. watchdog display enumeration):
+                        // broadcast to every session.
+                        (None, None) => {
+                            for session in ctrl.sessions.values() {
+                                if let Some(streaming_session) = &session.stream_session {
+                                    streaming_session.host_event_sender.try_send(event.clone());
                                 }
                             }
                         }
