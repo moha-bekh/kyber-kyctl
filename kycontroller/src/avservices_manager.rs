@@ -643,12 +643,23 @@ impl AVServicesManager {
                 }
 
                 let endpoint_id = self.alloc_endpoint_id();
-                // Lag handler: continue (re-sync on lag). Disconnecting laggy
-                // clients would be an application choice; for now we just wait
-                // for the next sync point. Per-client IDR forcing is done by
-                // the backend after wiring each output, via `request_idr`.
-                let (dup, upstream) =
-                    kydup::KydupVideo::new(endpoint_id, || kydup::LagAction::Continue);
+                // Lag handler: continue (re-sync on lag) AND force an IDR so the
+                // laggy output can resync on the next forced keyframe. This is
+                // required, not just an optimization: under intra-refresh (the
+                // default) the encoder emits no periodic keyframes, so a
+                // re-syncing output would otherwise wait forever for a keyframe
+                // that never comes. The dispatcher dedupes concurrent requests,
+                // so an N-client lag burst still produces a single IDR; non-laggy
+                // clients receive one extra keyframe (a bitrate blip, but
+                // functionally harmless).
+                let idr_tx = self.idr_tx.clone();
+                let idr_key = key.clone();
+                let (dup, upstream) = kydup::KydupVideo::new(endpoint_id, move || {
+                    if let Err(e) = idr_tx.try_send(idr_key.clone()) {
+                        warn!("IDR request on lag dropped for {idr_key:?}: {e}");
+                    }
+                    kydup::LagAction::Continue
+                });
                 // kycom drives the upstream pump: it bridges incoming IPC TCP
                 // from the avservice into kydup's broadcast send driver. No
                 // task to track on our side; kycom's Runner owns it and
