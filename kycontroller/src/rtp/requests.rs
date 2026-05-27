@@ -118,6 +118,11 @@ async fn generate_sdp(
 
     let mut ctrl = ctrl.lock().await;
 
+    if ctrl.config.session_mode() == crate::config::SessionMode::Multi {
+        warn!("RTP backend is disabled in multi-client mode");
+        return HttpResponse::Conflict().json("RTP backend unavailable in multi-client mode");
+    }
+
     // Check request validity
     if !ctrl.display_known(request.display_id) {
         warn!("Unknown Display Id {}", request.display_id);
@@ -152,6 +157,11 @@ async fn start(
     };
 
     let mut ctrl = ctrl.lock().await;
+
+    if ctrl.config.session_mode() == crate::config::SessionMode::Multi {
+        warn!("RTP backend is disabled in multi-client mode");
+        return HttpResponse::Conflict().json("RTP backend unavailable in multi-client mode");
+    }
 
     // Check request validity
     if let Some(video_request) = request.video.as_ref() {
