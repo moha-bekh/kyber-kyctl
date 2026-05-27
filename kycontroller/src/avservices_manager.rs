@@ -67,30 +67,38 @@ impl AVCleanup {
     }
 
     pub(crate) async fn run(self) {
+        // Stop every stream concurrently. Each `avservice.stop()` is itself
+        // bounded, so fanning them out keeps total teardown at ~one per-stream
+        // budget regardless of how many streams a burst collapsed into this
+        // batch — a sequential loop would be N × that budget, and one wedged
+        // stream would delay every stream behind it.
+        //
         // Note: the kydup input pump is owned by kycom's Runner, not by us;
         // stopping the avservice closes its IPC TCP, which causes that
         // forwarder to exit naturally. The metrics forwarder is ours and
         // must be aborted explicitly. For `Exclusive` entries there's no
         // kydup; same logic still applies (avservice TCP close ends kycom's
         // forwarder, metrics forwarder if any is ours to abort).
+        let mut tasks = Vec::with_capacity(self.videos.len() + self.audios.len());
         for stream in self.videos {
-            if let Some(metrics) = stream.metrics.as_ref() {
-                metrics.forwarder_task.abort();
-            }
-            let mut avservice = stream.avservice.lock().await;
-            if avservice.is_running() {
-                if let Err(e) = avservice.stop().await {
+            tasks.push(tokio::spawn(async move {
+                if let Some(metrics) = stream.metrics.as_ref() {
+                    metrics.forwarder_task.abort();
+                }
+                if let Err(e) = stream.avservice.stop().await {
                     warn!("Failed to stop video avservice: {e:?}");
                 }
-            }
+            }));
         }
         for stream in self.audios {
-            let mut avservice = stream.avservice.lock().await;
-            if avservice.is_running() {
-                if let Err(e) = avservice.stop().await {
+            tasks.push(tokio::spawn(async move {
+                if let Err(e) = stream.avservice.stop().await {
                     warn!("Failed to stop audio avservice: {e:?}");
                 }
-            }
+            }));
+        }
+        for task in tasks {
+            let _ = task.await;
         }
     }
 }
@@ -295,12 +303,12 @@ pub(crate) struct AudioAcquisition {
 }
 
 pub(crate) struct VideoStream {
-    /// Wrapped in `Arc<Mutex<_>>` so background tasks (IDR dispatcher,
-    /// reaper) can clone a handle under the Controller lock and then
-    /// issue IPC calls on the avservice AFTER releasing the Controller
-    /// lock — `video_force_idr`/`stop` await the avserver's ACK and
-    /// would otherwise stall every HTTP endpoint.
-    pub(crate) avservice: Arc<tokio::sync::Mutex<avservice::Handler>>,
+    /// Wrapped in [`avservice::SharedHandler`] so background tasks (IDR
+    /// dispatcher, reaper) and HTTP endpoints (set_bitrate) can post
+    /// commands via a sync mpsc send instead of acquiring an async mutex.
+    /// The actor task inside `SharedHandler` serializes the IPC `.await`s
+    /// off the Controller lock; same isolation guarantee, no `lock().await`.
+    pub(crate) avservice: avservice::SharedHandler,
     /// `Some` when the entry is `Shared` (kydup fan-out across N clients).
     /// `None` for `Exclusive`: no kydup, the avservice feeds the single
     /// client endpoint directly via kycom.
@@ -318,7 +326,7 @@ pub(crate) struct VideoStream {
 
 pub(crate) struct AudioStream {
     /// See `VideoStream::avservice`.
-    pub(crate) avservice: Arc<tokio::sync::Mutex<avservice::Handler>>,
+    pub(crate) avservice: avservice::SharedHandler,
     /// See `VideoStream::dup`.
     pub(crate) dup: Option<kydup::KydupAudio>,
     pub(crate) client_count: usize,
@@ -487,30 +495,20 @@ impl AVServicesManager {
                 let Some(strong) = weak.upgrade() else {
                     break;
                 };
-                // Clone the avservice handles under the Controller lock,
-                // then release it BEFORE awaiting the force_idr IPC —
-                // which waits on the avserver's ACK with no timeout and
-                // would otherwise stall every HTTP endpoint if a child
-                // is wedged (same rationale as the reaper).
+                // Each SharedHandler exposes a sync mpsc send for IDR, so
+                // we can issue the request directly under the Controller
+                // lock; no IPC `.await` is held here, the avservice's
+                // actor task drains the queue asynchronously off-lock.
                 //
                 // Requests carry the exact `VideoStreamKey`, so a direct map
                 // lookup forces an IDR on precisely the targeted stream —
                 // never on the other streams that happen to share its display.
-                let handles: Vec<(VideoStreamKey, Arc<tokio::sync::Mutex<avservice::Handler>>)> = {
-                    let ctrl = strong.lock().await;
-                    pending
-                        .into_iter()
-                        .filter_map(|key| {
-                            ctrl.av_services_manager
-                                .video_streams
-                                .get(&key)
-                                .map(|s| (key, s.avservice.clone()))
-                        })
-                        .collect()
-                };
-                for (key, handle) in handles {
-                    if let Err(e) = handle.lock().await.video_force_idr().await {
-                        warn!("Force IDR failed for {key:?}: {e}");
+                let ctrl = strong.lock().await;
+                for key in pending {
+                    if let Some(stream) = ctrl.av_services_manager.video_streams.get(&key) {
+                        if let Err(e) = stream.avservice.video_force_idr() {
+                            warn!("Force IDR failed for {key:?}: {e}");
+                        }
                     }
                 }
             }
@@ -744,7 +742,7 @@ impl AVServicesManager {
         self.video_streams.insert(
             key.clone(),
             VideoStream {
-                avservice: Arc::new(tokio::sync::Mutex::new(avservice)),
+                avservice: avservice::SharedHandler::spawn(avservice),
                 dup,
                 metrics,
                 config,
@@ -808,7 +806,7 @@ impl AVServicesManager {
         self.audio_streams.insert(
             key.clone(),
             AudioStream {
-                avservice: Arc::new(tokio::sync::Mutex::new(avservice)),
+                avservice: avservice::SharedHandler::spawn(avservice),
                 dup,
                 client_count: 0,
             },

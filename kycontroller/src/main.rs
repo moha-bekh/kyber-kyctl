@@ -535,6 +535,8 @@ pub(crate) async fn set_bitrate(
     };
 
     // Set bitrate: av_services_manager first (Kymux/WS), fallback to per-session (RTP legacy).
+    // The two paths stay separate because SharedHandler::video_set_bitrate is sync
+    // (actor-driven) while Handler::video_set_bitrate is async.
     //
     // Scope to this session's video subscriptions so client A can't reconfigure
     // client B's avservice. For Shared entries the underlying avservice is still
@@ -561,7 +563,7 @@ pub(crate) async fn set_bitrate(
             let Some(stream) = av_services_manager.video_streams.get(key) else {
                 continue;
             };
-            if let Err(err) = stream.avservice.lock().await.video_set_bitrate(per_stream).await {
+            if let Err(err) = stream.avservice.video_set_bitrate(per_stream) {
                 warn!("Failed to set bitrate: {err:?}");
             }
         }

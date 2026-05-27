@@ -20,9 +20,13 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use log::{debug, info, warn};
-use tokio::{sync::oneshot, task};
+use tokio::{
+    sync::{mpsc, oneshot},
+    task, time,
+};
 
 use kyavservice_types::{Command, Display, Event, VideoCodec};
 use libkypc::{
@@ -33,6 +37,23 @@ use libkypc::{
 use crate::avservices_manager::StreamId;
 use crate::utils;
 use crate::{Error, Result, StateMachineEvent, StateMachineProxy};
+
+/// Upper bound on how long the actor waits for an avserver to ACK a
+/// fire-and-forget control command (IDR / bitrate). A healthy child acks in
+/// milliseconds; [`CommandSender::send`] otherwise blocks until the worker
+/// answers, with no built-in timeout. Bounding it here keeps a wedged-but-alive
+/// child from blocking the actor forever — which would in turn stall teardown
+/// (see [`SharedHandler::stop`]) and let the unbounded command channel grow.
+const CMD_ACK_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Overall budget for [`SharedHandler::stop`]. The actor prioritizes `Stop`
+/// over any queued control command and its teardown force-kills the child, so
+/// this normally completes well within the budget (at most one in-flight
+/// command bounded by [`CMD_ACK_TIMEOUT`], plus the child kill). It only
+/// elapses if the child is wedged in a way even `child.kill()` can't clear
+/// promptly (e.g. an uninterruptible syscall); the actor is then aborted so
+/// the AV reaper is never frozen.
+const STOP_TIMEOUT: Duration = Duration::from_secs(15);
 
 struct ReceiverTask {
     type_: HandlerType,
@@ -396,7 +417,7 @@ impl Handler {
             .as_mut()
             .ok_or(Error::StreamerStopped)?
             .sender
-            .send(Command::VideoForceIdr)
+            .send_with_timeout(Command::VideoForceIdr, CMD_ACK_TIMEOUT)
             .await?;
 
         Ok(())
@@ -407,7 +428,7 @@ impl Handler {
             .as_mut()
             .ok_or(Error::StreamerStopped)?
             .sender
-            .send(Command::VideoSetBitrate { bitrate })
+            .send_with_timeout(Command::VideoSetBitrate { bitrate }, CMD_ACK_TIMEOUT)
             .await?;
 
         Ok(())
@@ -423,5 +444,162 @@ impl Handler {
         info!("AvServer {type_:?} exited", type_ = self.type_);
 
         Ok(())
+    }
+}
+
+/// Commands accepted by a [`SharedHandler`]'s actor task.
+enum SharedCmd {
+    VideoForceIdr,
+    VideoSetBitrate(i32),
+    Stop(oneshot::Sender<Result<()>>),
+}
+
+/// Single-owner wrapper around a started [`Handler`] that serializes IPC
+/// access through an actor task.
+///
+/// The shared av_services_manager (Kymux/WS) need concurrent access to a single
+/// avservice from the IDR dispatcher, the AV reaper, and HTTP endpoints
+/// (set_bitrate). Wrapping the Handler in an actor lets callers post
+/// commands via a plain mpsc `Sender::send` (sync, non-awaiting) instead
+/// of acquiring an async mutex.
+///
+/// - `video_force_idr` / `video_set_bitrate`: fire-and-forget; errors are
+///   logged inside the actor.
+/// - `stop`: async; sends the stop sentinel and awaits the actor's join
+///   handle so callers observe the same teardown semantics as
+///   `Handler::stop().await`.
+pub(crate) struct SharedHandler {
+    type_: HandlerType,
+    cmd_tx: mpsc::UnboundedSender<SharedCmd>,
+    actor_join: Option<task::JoinHandle<()>>,
+}
+
+impl SharedHandler {
+    /// Consume a started [`Handler`] and spawn its actor task.
+    pub(crate) fn spawn(handler: Handler) -> Self {
+        let type_ = handler.type_();
+        let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
+        let actor_join = task::spawn(Self::actor_loop(handler, cmd_rx));
+        Self {
+            type_,
+            cmd_tx,
+            actor_join: Some(actor_join),
+        }
+    }
+
+    pub(crate) fn type_(&self) -> HandlerType {
+        self.type_
+    }
+
+    pub(crate) fn video_force_idr(&self) -> Result<()> {
+        self.cmd_tx
+            .send(SharedCmd::VideoForceIdr)
+            .map_err(|_| Error::StreamerStopped)
+    }
+
+    pub(crate) fn video_set_bitrate(&self, bitrate: i32) -> Result<()> {
+        self.cmd_tx
+            .send(SharedCmd::VideoSetBitrate(bitrate))
+            .map_err(|_| Error::StreamerStopped)
+    }
+
+    pub(crate) async fn stop(mut self) -> Result<()> {
+        let (tx, rx) = oneshot::channel();
+        if self.cmd_tx.send(SharedCmd::Stop(tx)).is_err() {
+            // Actor already exited; treat as already-stopped.
+            return Ok(());
+        }
+        let Some(join) = self.actor_join.take() else {
+            return Ok(());
+        };
+        // `Stop` jumps ahead of any queued control command (see `actor_loop`)
+        // and the teardown force-kills the child, so the ack normally arrives
+        // promptly. The timeout is the last-resort backstop for a child wedged
+        // beyond what `child.kill()` can clear in time: abort the actor so the
+        // reaper is never frozen. Aborting drops the `Handler` (and thus the
+        // `Process` handle) without an explicit kill — `Process` has no
+        // `Drop`/`kill_on_drop`, so on that path the orphan is left for the OS
+        // to reap once its stuck syscall returns / on host exit. That is the
+        // strictly better outcome than freezing every later teardown.
+        match time::timeout(STOP_TIMEOUT, rx).await {
+            Ok(Ok(res)) => {
+                // Acked; the actor returns immediately after, so this is instant.
+                let _ = join.await;
+                res
+            }
+            Ok(Err(_)) => {
+                // Actor dropped the ack without sending (panicked); reap it.
+                let _ = join.await;
+                Err(Error::StreamerStopped)
+            }
+            Err(_) => {
+                warn!(
+                    "AvServer {type_:?} stop timed out after {STOP_TIMEOUT:?}; aborting actor",
+                    type_ = self.type_(),
+                );
+                join.abort();
+                Err(Error::AvServerStopTimeout)
+            }
+        }
+    }
+
+    async fn actor_loop(mut handler: Handler, mut cmd_rx: mpsc::UnboundedReceiver<SharedCmd>) {
+        while let Some(first) = cmd_rx.recv().await {
+            // Coalesce the whole backlog in one pass: redundant IDR requests
+            // collapse to one (IDR is idempotent), bitrate is last-writer-wins,
+            // and a queued Stop takes priority over both. This also keeps the
+            // unbounded command channel from growing without bound while the
+            // child is wedged — each control command is bounded by
+            // `CMD_ACK_TIMEOUT`, so without draining the actor would otherwise
+            // fall behind one queued command per timeout under sustained lag.
+            let mut want_idr = false;
+            let mut bitrate = None;
+            let mut stop_ack = None;
+
+            let mut next = Some(first);
+            loop {
+                let cmd = match next.take() {
+                    Some(cmd) => cmd,
+                    None => match cmd_rx.try_recv() {
+                        Ok(cmd) => cmd,
+                        Err(_) => break,
+                    },
+                };
+                match cmd {
+                    SharedCmd::VideoForceIdr => want_idr = true,
+                    SharedCmd::VideoSetBitrate(b) => bitrate = Some(b),
+                    SharedCmd::Stop(ack) => stop_ack = Some(ack),
+                }
+            }
+
+            // Stop wins: skip the queued control commands and tear down now, so
+            // the child is force-killed promptly even behind a large backlog.
+            if let Some(ack) = stop_ack {
+                let res = if handler.is_running() {
+                    handler.stop().await
+                } else {
+                    Ok(())
+                };
+                let _ = ack.send(res);
+                return;
+            }
+
+            if let Some(bitrate) = bitrate {
+                if let Err(e) = handler.video_set_bitrate(bitrate).await {
+                    warn!("Set bitrate failed: {e:?}");
+                }
+            }
+            if want_idr {
+                if let Err(e) = handler.video_force_idr().await {
+                    warn!("Force IDR failed: {e:?}");
+                }
+            }
+        }
+        // Channel closed without an explicit Stop (every sender dropped).
+        if handler.is_running() {
+            if let Err(e) = handler.stop().await {
+                warn!("Implicit avservice stop failed: {e:?}");
+            }
+        }
     }
 }

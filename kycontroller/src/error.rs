@@ -63,6 +63,8 @@ pub enum Error {
     AvServerUnexpectedResponse,
     #[error("Couldn't get a receiver from AvServer")]
     AvServerNoReceiver,
+    #[error("AvServer stop timed out")]
+    AvServerStopTimeout,
     #[error("Couldn't open file {path}")]
     FileNotFound { path: PathBuf },
     #[error("Invalid TLS file")]
