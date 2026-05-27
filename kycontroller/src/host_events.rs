@@ -172,7 +172,7 @@ impl From<kyavservice_types::PipelineEvent> for StreamerPipelineEvent {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) enum HostEvent {
     DisplayList { displays: Vec<Display> },
     StreamerPipelineEvent(StreamerPipelineEvent),
