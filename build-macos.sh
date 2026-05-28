@@ -210,11 +210,6 @@ fi
 
 CARGO_TARGET=$(get_cargo_target $HOST_ARCH)
 
-# Skip dependencies for kycontroller-only builds (kycontroller doesn't need native deps)
-if [ "$ACTION" = "build-kycontroller" ] || [ "$ACTION" = "clippy-kycontroller" ]; then
-    BUILD_DEPS=false
-fi
-
 # Build local repository
 export PATH=$OUT_DIR/bin:$PATH
 export PKG_CONFIG_LIBDIR=$OUT_DIR/lib/pkgconfig:$OUT_DIR/lib/${HOST_ARCH}-apple-darwin/pkgconfig
