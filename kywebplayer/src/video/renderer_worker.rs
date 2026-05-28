@@ -269,8 +269,15 @@ impl RendererWorker {
             .location();
         let origin = location.origin()?;
         let pathname = location.pathname()?;
+        // pathname can be a directory (".../") or include a filename
+        // (".../index.html"); strip back to the last "/" so we resolve the wasm
+        // glue next to the HTML rather than concatenating onto the filename.
+        let dir = match pathname.rfind('/') {
+            Some(i) => &pathname[..=i],
+            None => "/",
+        };
         let sanitized_crate_name = app_crate_name.replace("-", "_");
-        let wasm_js_url = format!("{origin}{pathname}{sanitized_crate_name}.js");
+        let wasm_js_url = format!("{origin}{dir}{sanitized_crate_name}.js");
         let worker_code = format!(
             r#"import init, {{ VideoRendererWorkerCtx }} from "{wasm_js_url}";
 let ctx;
