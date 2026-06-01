@@ -191,20 +191,32 @@ pub(crate) async fn start_session(
             let video = response.video.map(|video| {
                 video
                     .into_iter()
-                    .map(|video| {
-                        client_session.services.video.push(video.avservice);
+                    .map(|v| {
+                        if let Some(output) = v.output {
+                            client_session.services.output_handles.push(output);
+                        }
+                        if let Some(m) = v.metrics_output {
+                            client_session.services.output_handles.push(m);
+                        }
+                        client_session
+                            .services
+                            .video_subscriptions
+                            .push(v.subscription);
 
                         StartSessionVideoResponse {
-                            display_id: video.display_id,
-                            endpoint: video.endpoint,
-                            metrics_endpoint: video.metrics_endpoint,
+                            display_id: v.display_id,
+                            endpoint: v.endpoint,
+                            metrics_endpoint: v.metrics_endpoint,
                         }
                     })
                     .collect()
             });
 
             let audio = if let Some(audio) = response.audio {
-                client_session.services.audio = Some(audio.avservice);
+                if let Some(output) = audio.output {
+                    client_session.services.output_handles.push(output);
+                }
+                client_session.services.audio_subscription = Some(audio.subscription);
 
                 Some(StartSessionAudioResponse {
                     endpoint: audio.endpoint,

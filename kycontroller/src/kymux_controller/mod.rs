@@ -38,10 +38,10 @@ use libkypc::process::ProcessFactory;
 
 pub(crate) use server::{IncomingConnectionRouter, KymuxServer};
 
-use crate::avservice;
-use crate::config::ListenMode;
+use crate::config::{ListenMode, SessionMode};
 use crate::error::{Error, Result};
 use crate::inputservice;
+use crate::kydup;
 use crate::utils::TypeConvert;
 use crate::{Controller, DataPlaneBackend, StateMachineEvent, StateMachineProxy};
 
@@ -124,7 +124,6 @@ pub(crate) struct KymuxInfraConfig {
 /// Running state of the Kymux infrastructure
 struct RunningInfra {
     server: KymuxServer,
-    kycom: kycom::KyCom,
     certificate_hash: Option<requests::StartKymuxCertificateHash>,
     router: Arc<Mutex<IncomingConnectionRouter>>,
 }
@@ -132,7 +131,9 @@ struct RunningInfra {
 /// Shared infrastructure for all Kymux sessions (common server supports both QUIC and WebTransport)
 ///
 /// This object is always alive but can be in a "stopped" or "running" state internally.
-/// When stopped, it's an empty shell. When running, it holds the server, kycom, and router.
+/// When stopped, it's an empty shell. When running, it holds the server and router.
+/// kycom lives on the Controller (not here) since it's shared across all data-plane
+/// backends (Kymux, WS, RTP), not only Kymux sessions.
 pub(crate) struct SharedKymuxInfra {
     inner: Option<RunningInfra>,
 }
@@ -202,13 +203,8 @@ impl SharedKymuxInfra {
         // Create the server with the router
         let kymux_server = KymuxServer::new(server, router.clone()).await?;
 
-        // Create shared kycom for all sessions
-        const IPC_PORTS: std::ops::Range<u16> = 9091..9100;
-        let kycom = kycom::KyCom::start_on_any_port(IPC_PORTS).await?;
-
         self.inner = Some(RunningInfra {
             server: kymux_server,
-            kycom,
             certificate_hash: certificate_hash.clone(),
             router,
         });
@@ -224,21 +220,10 @@ impl SharedKymuxInfra {
 
         info!("Stopping shared Kymux infrastructure");
 
-        info!("Stopping kycom");
-        inner.kycom.stop();
-
         info!("Stopping Kymux server");
         inner.server.stop().await?;
 
         Ok(())
-    }
-
-    /// Get mutable reference to kycom. Returns error if not running.
-    pub(crate) fn kycom_mut(&mut self) -> Result<&mut kycom::KyCom> {
-        self.inner
-            .as_mut()
-            .map(|i| &mut i.kycom)
-            .ok_or(Error::KymuxNotListening)
     }
 
     /// Get reference to router. Returns error if not running.
@@ -279,8 +264,10 @@ impl KymuxBackend {
             warn!("Kymux Closed task stop raised an error: {err:?}");
         }
 
-        // NOTE: We don't stop the shared kycom or KymuxServer here because other sessions may still be using them
-        // They will be stopped when the Controller shuts down
+        // NOTE: We don't stop the KymuxServer here because other sessions may
+        // still be using it. The Controller owns kycom (and the avservices);
+        // both are torn down via `take_session` / the AV reaper when the last
+        // session leaves, not here, not on Controller shutdown.
 
         Ok(())
     }
@@ -358,13 +345,22 @@ async fn start_kymux(
     })
 }
 
+/// Start one video stream per `request.video` entry. Mode-agnostic at the
+/// top level: the only difference between [`SessionMode::Multi`] and
+/// [`SessionMode::Mono`] is the `VideoTopology` we hand to `av_services_manager`
+/// (which determines whether kydup is in the path). Everything else
+/// (metrics wiring, IDR force, subscription teardown) uses the same code
+/// in both modes.
+#[allow(clippy::too_many_arguments)]
 async fn start_video(
     request: &requests::StartRequest,
-    kycom: &mut kycom::KyCom,
+    kycom: &mut kymux::kycom::KyCom,
     connection: &kyproto::Connection,
     process_factory: &Arc<ProcessFactory>,
     session_id: uuid::Uuid,
     statemachine_proxy: StateMachineProxy,
+    av_services_manager: &mut crate::avservices_manager::AVServicesManager,
+    mode: SessionMode,
 ) -> Result<Option<Vec<StartSessionVideoResponse>>> {
     let Some(video_request) = &request.video else {
         return Ok(None);
@@ -380,61 +376,154 @@ async fn start_video(
             .video_protocol
             .unwrap_or(kyproto::VideoProtocol::Reliable);
 
-        let endpoint = connection
+        let client_endpoint = connection
             .register_video_endpoint(None, video_protocol)
             .await?;
+        let endpoint_id = client_endpoint.id();
+        let display_id = stream_request.display_id;
 
-        let endpoint_id = endpoint.id();
-        let uri = kycom.register_and_forward(endpoint)?.url();
-
-        let (metrics_uri, metrics_endpoint_id) = if request.metrics {
-            let metrics_endpoint = connection.register_metrics_endpoint(None).await?;
-            let metrics_endpoint_id = metrics_endpoint.id();
-
-            let metrics_uri = kycom.register_and_forward(metrics_endpoint)?.url();
-
-            (Some(metrics_uri), Some(metrics_endpoint_id))
-        } else {
-            (None, None)
+        let config = crate::avservices_manager::VideoStreamConfig {
+            bitrate: request.bitrate,
+            codec: stream_request.codec.clone(),
+            yuv444: stream_request.yuv444,
+            intra_refresh: stream_request.intra_refresh,
+            video_stream_count,
         };
 
-        info!("Start Video avservice. Protocol: {video_protocol:?}, Endpoint: {endpoint_id:X}");
-        let mut avservice = avservice::Handler::new(
-            avservice::HandlerType::Video,
-            Some(session_id),
-            statemachine_proxy.clone(),
-        );
-        avservice
-            .kymux_start_video(
-                process_factory,
-                stream_request.display_id,
-                uri,
-                metrics_uri,
-                request.bitrate / video_stream_count,
-                stream_request.codec.clone(),
-                stream_request.yuv444,
-                stream_request.intra_refresh,
-            )
-            .await?;
+        // Build the topology. In Mono mode we consume `client_endpoint`
+        // here to register it with kycom and use the resulting URI as the
+        // avservice's destination; no kydup is created. In Multi mode we
+        // keep `client_endpoint` aside to attach it to the kydup that
+        // `av_services_manager` creates (or reuses).
+        let (acquisition, output) = match mode {
+            SessionMode::Multi => {
+                let topology = crate::avservices_manager::VideoTopology::Shared { display_id };
+                let acq = av_services_manager
+                    .acquire_video(
+                        kycom,
+                        topology,
+                        config,
+                        request.metrics,
+                        process_factory,
+                        statemachine_proxy.clone(),
+                    )
+                    .await?;
+                let dup = acq
+                    .dup
+                    .as_ref()
+                    .expect("Shared topology guarantees Some(dup)")
+                    .clone();
+                let out = dup.register_and_forward(client_endpoint);
+                (acq, Some(out))
+            }
+            SessionMode::Mono => {
+                let kycom_uri = kycom.register_and_forward(client_endpoint)?.url();
+                let topology = crate::avservices_manager::VideoTopology::Exclusive {
+                    session_id,
+                    display_id,
+                    kycom_uri,
+                };
+                let acq = av_services_manager
+                    .acquire_video(
+                        kycom,
+                        topology,
+                        config,
+                        request.metrics,
+                        process_factory,
+                        statemachine_proxy.clone(),
+                    )
+                    .await?;
+                debug_assert!(acq.dup.is_none());
+                (acq, None)
+            }
+        };
+
+        // Metrics wiring is mode-agnostic. The forwarder lives inside
+        // `av_services_manager` either way: in `Shared` it's claim-once across N
+        // clients; in `Exclusive` there's just the single client, so the
+        // claim is trivial. Either way the kyproto metrics endpoint is
+        // attached identically.
+        let crate::avservices_manager::VideoAcquisition {
+            metrics_claim,
+            subscription,
+            ..
+        } = acquisition;
+        let (metrics_endpoint_id, metrics_output) = match (request.metrics, metrics_claim) {
+            (true, Some(claim)) => {
+                let metrics_endpoint = connection.register_metrics_endpoint(None).await?;
+                let meid = metrics_endpoint.id();
+                // Spawn a task that awaits the kyproto ready handshake then
+                // hands the `ProtocolSend` to the metrics forwarder via the
+                // one-shot upgrade channel. Wrapped in OutputHandle so it's
+                // aborted with the rest of the per-session outputs.
+                let task = tokio::spawn(async move {
+                    let protocol = match tokio::time::timeout(
+                        Duration::from_secs(5),
+                        metrics_endpoint.ready(),
+                    )
+                    .await
+                    {
+                        Ok(Ok(p)) => p,
+                        Ok(Err(e)) => {
+                            warn!("Metrics endpoint ready failed: {e}");
+                            return;
+                        }
+                        Err(_) => {
+                            warn!("Metrics endpoint ready timed out");
+                            return;
+                        }
+                    };
+                    claim.claim(protocol.send);
+                });
+                (Some(meid), Some(kydup::OutputHandle(task)))
+            }
+            (true, None) => {
+                // Only reachable for `Shared` topology when the stream was
+                // already created without metrics by an earlier client, or
+                // when the one-shot slot is already claimed. `Exclusive`
+                // entries always have a fresh slot for the single client.
+                warn!(
+                    "Client requested metrics for display {display_id} but the shared stream's \
+                     metrics slot is unavailable (created without metrics, or already claimed); \
+                     ignoring",
+                );
+                (None, None)
+            }
+            (false, _) => (None, None),
+        };
+
+        // Trigger a fresh keyframe so the joining client doesn't wait for
+        // the next natural one. For `Shared` reuse this matters (encoder
+        // is mid-stream); for fresh encoders (mono and the very first
+        // `Shared` subscriber) the first emitted frame is already a
+        // keyframe, so the request is harmless extra work. Targeted at this
+        // exact stream so other encoders on the same display are untouched.
+        av_services_manager.request_idr(subscription.key().clone());
 
         video_streams.push(StartSessionVideoResponse {
-            display_id: stream_request.display_id,
-            avservice,
+            display_id,
             endpoint: endpoint_id,
             metrics_endpoint: metrics_endpoint_id,
-        })
+            output,
+            metrics_output,
+            subscription,
+        });
     }
 
     Ok(Some(video_streams))
 }
 
+/// Audio counterpart of [`start_video`]. Same mode-agnostic structure.
+#[allow(clippy::too_many_arguments)]
 async fn start_audio(
     request: &requests::StartRequest,
-    kycom: &mut kycom::KyCom,
+    kycom: &mut kymux::kycom::KyCom,
     connection: &kyproto::Connection,
     process_factory: &Arc<ProcessFactory>,
     session_id: uuid::Uuid,
     statemachine_proxy: StateMachineProxy,
+    av_services_manager: &mut crate::avservices_manager::AVServicesManager,
+    mode: SessionMode,
 ) -> Result<Option<StartSessionAudioResponse>> {
     if !request.audio {
         warn!("Audio disabled");
@@ -446,24 +535,43 @@ async fn start_audio(
         .audio_protocol
         .unwrap_or(kyproto::AudioProtocol::Reliable);
 
-    let endpoint = connection
+    let client_endpoint = connection
         .register_audio_endpoint(None, audio_protocol)
         .await?;
+    let endpoint_id = client_endpoint.id();
 
-    let endpoint_id = endpoint.id();
-    let uri = kycom.register_and_forward(endpoint)?.url();
-
-    info!("Start Audio avservice. Protocol: {audio_protocol:?}, Endpoint: {endpoint_id:X}");
-    let mut avservice = avservice::Handler::new(
-        avservice::HandlerType::Audio,
-        Some(session_id),
-        statemachine_proxy,
-    );
-    avservice.kymux_start_audio(process_factory, uri).await?;
+    let (acquisition, output) = match mode {
+        SessionMode::Multi => {
+            let topology = crate::avservices_manager::AudioTopology::Shared;
+            let acq = av_services_manager
+                .acquire_audio(kycom, topology, process_factory, statemachine_proxy)
+                .await?;
+            let dup = acq
+                .dup
+                .as_ref()
+                .expect("Shared topology guarantees Some(dup)")
+                .clone();
+            let out = dup.register_and_forward(client_endpoint);
+            (acq, Some(out))
+        }
+        SessionMode::Mono => {
+            let kycom_uri = kycom.register_and_forward(client_endpoint)?.url();
+            let topology = crate::avservices_manager::AudioTopology::Exclusive {
+                session_id,
+                kycom_uri,
+            };
+            let acq = av_services_manager
+                .acquire_audio(kycom, topology, process_factory, statemachine_proxy)
+                .await?;
+            debug_assert!(acq.dup.is_none());
+            (acq, None)
+        }
+    };
 
     Ok(Some(StartSessionAudioResponse {
-        avservice,
         endpoint: endpoint_id,
+        output,
+        subscription: acquisition.subscription,
     }))
 }
 
@@ -509,15 +617,23 @@ async fn start_input(
 }
 
 pub(crate) struct StartSessionVideoResponse {
-    display_id: u32,
-    avservice: avservice::Handler,
-    endpoint: u16,
-    metrics_endpoint: Option<u16>,
+    pub(crate) display_id: u32,
+    pub(crate) endpoint: u16,
+    pub(crate) metrics_endpoint: Option<u16>,
+    /// `Some` when the entry is a `Shared` kydup output (multi mode), `None`
+    /// when the avservice writes directly to the client endpoint via kycom
+    /// (mono mode).
+    pub(crate) output: Option<kydup::OutputHandle>,
+    /// `Some` when the kyproto metrics endpoint task was spawned.
+    pub(crate) metrics_output: Option<kydup::OutputHandle>,
+    pub(crate) subscription: crate::avservices_manager::VideoSubscription,
 }
 
 pub(crate) struct StartSessionAudioResponse {
-    avservice: avservice::Handler,
-    endpoint: u16,
+    pub(crate) endpoint: u16,
+    /// See [`StartSessionVideoResponse::output`].
+    pub(crate) output: Option<kydup::OutputHandle>,
+    pub(crate) subscription: crate::avservices_manager::AudioSubscription,
 }
 
 pub(crate) struct StartSessionInputResponse {
@@ -619,9 +735,6 @@ async fn start_session(
     let process_factory = ctrl.process_factory.clone();
     let displays = ctrl.displays.convert();
 
-    // Get shared_infra from Controller
-    let shared_infra = ctrl.shared_kymux_infra.clone();
-
     // Get the pending connection receiver (was created in start_mux)
     let connection_rx = {
         let client_session = ctrl.get_session(&session_id)?;
@@ -652,44 +765,53 @@ async fn start_session(
 
     info!("Connection received for session {}", session_id);
 
-    // Start services
-    let (video, audio, input) = {
-        let mut infra = shared_infra.lock().await;
-        let kycom = infra.kycom_mut()?;
+    // Start services (using shared kycom and av_services_manager from Controller)
+    ctrl.ensure_kycom().await?;
 
-        let video = start_video(
-            &request,
-            kycom,
-            &connection,
-            &process_factory,
-            session_id,
-            state_machine_proxy.clone(),
-        )
-        .await?;
+    let mode = ctrl.config.session_mode();
 
-        let audio = start_audio(
-            &request,
-            kycom,
-            &connection,
-            &process_factory,
-            session_id,
-            state_machine_proxy.clone(),
-        )
-        .await?;
+    // Disjoint borrows: access kycom and av_services_manager independently. kycom is
+    // `&mut` everywhere; kydup's upstream endpoints are plugged via
+    // `kycom.register_and_forward(...)`, same as the per-client video / audio
+    // endpoints in mono mode.
+    let kycom = ctrl.kycom.as_mut().expect("ensure_kycom guarantees Some");
+    let av_services_manager = &mut ctrl.av_services_manager;
 
-        let input = start_input(
-            &request,
-            kycom,
-            &connection,
-            &process_factory,
-            kynputservice_types::HostConfig {
-                display_list: displays,
-            },
-        )
-        .await?;
+    let video = start_video(
+        &request,
+        kycom,
+        &connection,
+        &process_factory,
+        session_id,
+        state_machine_proxy.clone(),
+        av_services_manager,
+        mode,
+    )
+    .await?;
 
-        (video, audio, input)
-    };
+    let audio = start_audio(
+        &request,
+        kycom,
+        &connection,
+        &process_factory,
+        session_id,
+        state_machine_proxy.clone(),
+        av_services_manager,
+        mode,
+    )
+    .await?;
+
+    // Input still uses register_and_forward (1:1, not shared via kydup)
+    let input = start_input(
+        &request,
+        kycom,
+        &connection,
+        &process_factory,
+        kynputservice_types::HostConfig {
+            display_list: displays,
+        },
+    )
+    .await?;
 
     let clock_sync = if request.metrics {
         let endpoint: kyproto::ClockSyncServerEndpoint =
