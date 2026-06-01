@@ -54,10 +54,32 @@ use kymux::types::{
     VideoServerProtocol,
 };
 use log::{debug, error, warn};
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, Notify};
 use tokio::task::{JoinError, JoinHandle};
 
+/// Capacity of the `tokio::sync::broadcast` ring buffer, in retained packets.
+/// This is the hard backlog at which an output that has fallen this far behind
+/// is evicted by the broadcast (a `Lagged` error → forced keyframe resync). It
+/// is deliberately larger than [`BACKPRESSURE_THRESHOLD`] (20): the backpressure
+/// gate normally throttles the upstream before any output reaches this point, so
+/// the extra headroom only absorbs the brief window between a backlog spike and
+/// the gate taking effect. 32 keeps the buffer small and bounded so a transient
+/// stall is ridden out without unbounded memory growth.
 const DEFAULT_CAPACITY: usize = 32;
+
+/// Backpressure threshold, in queued packets. Once the slowest output's backlog
+/// reaches this many packets, the upstream `send()` blocks until that output
+/// drains, pausing the whole shared stream. This is global backpressure: every
+/// client runs at the pace of the slowest. Kept below [`DEFAULT_CAPACITY`] so
+/// active outputs never reach the broadcast's lag/eviction point.
+const BACKPRESSURE_THRESHOLD: usize = 20;
+
+/// Defense-in-depth upper bound on how long the backpressure gate sleeps
+/// between backlog re-checks. The gate is normally woken immediately by
+/// [`GatedReceiver`] when an output consumes a packet or disconnects; this
+/// guards against a missed wakeup so the stream can never stall indefinitely on
+/// a gate bug.
+const BACKPRESSURE_GATE_FALLBACK: Duration = Duration::from_secs(1);
 
 /// Time budget for an output's endpoint readiness handshake. After this, the
 /// output task gives up and the joining client is left to retry.
@@ -126,6 +148,9 @@ enum SyncMode {
 pub struct KydupVideo {
     tx: broadcast::Sender<AVBroadcast>,
     lag_handler: Arc<dyn Fn() -> LagAction + Send + Sync>,
+    /// Shared with the upstream send driver and every output: outputs notify it
+    /// when they drain or disconnect, waking the backpressure gate.
+    notify: Arc<Notify>,
 }
 
 impl KydupVideo {
@@ -147,13 +172,16 @@ impl KydupVideo {
         lag_handler: impl Fn() -> LagAction + Send + Sync + 'static,
     ) -> (Self, VideoServerEndpoint) {
         let (tx, _) = broadcast::channel(DEFAULT_CAPACITY);
+        let notify = Arc::new(Notify::new());
         let kydup = Self {
             tx: tx.clone(),
             lag_handler: Arc::new(lag_handler),
+            notify: Arc::clone(&notify),
         };
         let endpoint = ProtocolEndpoint::new(KydupVideoUpstreamDriver {
             endpoint_id,
             tx: Some(tx),
+            notify,
         });
         (kydup, endpoint)
     }
@@ -168,6 +196,7 @@ impl KydupVideo {
     pub fn register_and_forward(&self, endpoint: VideoServerEndpoint) -> OutputHandle {
         spawn_output(
             self.tx.subscribe(),
+            Arc::clone(&self.notify),
             SyncMode::Keyframe,
             Arc::clone(&self.lag_handler),
             async move { ready_with_timeout(endpoint).await.map(|p| p.send) },
@@ -183,6 +212,7 @@ impl KydupVideo {
     pub fn add_output(&self, send: ProtocolSend<AVPacket>) -> OutputHandle {
         spawn_output(
             self.tx.subscribe(),
+            Arc::clone(&self.notify),
             SyncMode::Keyframe,
             Arc::clone(&self.lag_handler),
             async move { Ok(send) },
@@ -203,6 +233,7 @@ struct KydupVideoUpstreamDriver {
     /// from the send driver later) vs early drop (never ready'd, must signal
     /// Shutdown ourselves so subscribers don't block forever).
     tx: Option<broadcast::Sender<AVBroadcast>>,
+    notify: Arc<Notify>,
 }
 
 #[async_trait]
@@ -219,7 +250,7 @@ impl ProtocolEndpointDriver for KydupVideoUpstreamDriver {
             .take()
             .expect("KydupVideoUpstreamDriver::ready_boxed called twice");
         Ok(VideoServerProtocol {
-            send: ProtocolSend::new(KydupBroadcastSendDriver::new(tx)),
+            send: ProtocolSend::new(KydupBroadcastSendDriver::new(tx, Arc::clone(&self.notify))),
         })
     }
 }
@@ -244,6 +275,8 @@ impl Drop for KydupVideoUpstreamDriver {
 pub struct KydupAudio {
     tx: broadcast::Sender<AVBroadcast>,
     lag_handler: Arc<dyn Fn() -> LagAction + Send + Sync>,
+    /// See [`KydupVideo::notify`].
+    notify: Arc<Notify>,
 }
 
 impl KydupAudio {
@@ -253,13 +286,16 @@ impl KydupAudio {
         lag_handler: impl Fn() -> LagAction + Send + Sync + 'static,
     ) -> (Self, AudioServerEndpoint) {
         let (tx, _) = broadcast::channel(DEFAULT_CAPACITY);
+        let notify = Arc::new(Notify::new());
         let kydup = Self {
             tx: tx.clone(),
             lag_handler: Arc::new(lag_handler),
+            notify: Arc::clone(&notify),
         };
         let endpoint = ProtocolEndpoint::new(KydupAudioUpstreamDriver {
             endpoint_id,
             tx: Some(tx),
+            notify,
         });
         (kydup, endpoint)
     }
@@ -268,6 +304,7 @@ impl KydupAudio {
     pub fn register_and_forward(&self, endpoint: AudioServerEndpoint) -> OutputHandle {
         spawn_output(
             self.tx.subscribe(),
+            Arc::clone(&self.notify),
             SyncMode::Immediate,
             Arc::clone(&self.lag_handler),
             async move { ready_with_timeout(endpoint).await.map(|p| p.send) },
@@ -278,6 +315,7 @@ impl KydupAudio {
     pub fn add_output(&self, send: ProtocolSend<AVPacket>) -> OutputHandle {
         spawn_output(
             self.tx.subscribe(),
+            Arc::clone(&self.notify),
             SyncMode::Immediate,
             Arc::clone(&self.lag_handler),
             async move { Ok(send) },
@@ -294,6 +332,7 @@ struct KydupAudioUpstreamDriver {
     endpoint_id: u16,
     /// See [`KydupVideoUpstreamDriver::tx`].
     tx: Option<broadcast::Sender<AVBroadcast>>,
+    notify: Arc<Notify>,
 }
 
 #[async_trait]
@@ -310,7 +349,7 @@ impl ProtocolEndpointDriver for KydupAudioUpstreamDriver {
             .take()
             .expect("KydupAudioUpstreamDriver::ready_boxed called twice");
         Ok(AudioServerProtocol {
-            send: ProtocolSend::new(KydupBroadcastSendDriver::new(tx)),
+            send: ProtocolSend::new(KydupBroadcastSendDriver::new(tx, Arc::clone(&self.notify))),
         })
     }
 }
@@ -340,13 +379,43 @@ impl Drop for KydupAudioUpstreamDriver {
 struct KydupBroadcastSendDriver {
     tx: broadcast::Sender<AVBroadcast>,
     headers: Arc<HeaderPackets>,
+    notify: Arc<Notify>,
 }
 
 impl KydupBroadcastSendDriver {
-    fn new(tx: broadcast::Sender<AVBroadcast>) -> Self {
+    fn new(tx: broadcast::Sender<AVBroadcast>, notify: Arc<Notify>) -> Self {
         Self {
             tx,
             headers: Arc::new(HeaderPackets::default()),
+            notify,
+        }
+    }
+
+    /// Block the upstream push until the slowest output's backlog drops below
+    /// [`BACKPRESSURE_THRESHOLD`], so a lagging client throttles the whole
+    /// shared stream instead of silently dropping packets.
+    ///
+    /// `broadcast::Sender::len()` reports the number of values not yet seen by
+    /// every live receiver, i.e. the backlog of the slowest output, evaluated
+    /// live. Outputs wake us through [`GatedReceiver`] as soon as they consume
+    /// a packet or disconnect; the timed fallback is only a safety net.
+    async fn await_backpressure(&self) {
+        loop {
+            if self.tx.len() < BACKPRESSURE_THRESHOLD {
+                return;
+            }
+            let notified = self.notify.notified();
+            tokio::pin!(notified);
+            // Arm before re-reading the backlog so a wakeup racing in right now
+            // is captured rather than lost between the check and the await.
+            notified.as_mut().enable();
+            if self.tx.len() < BACKPRESSURE_THRESHOLD {
+                return;
+            }
+            tokio::select! {
+                _ = notified.as_mut() => {}
+                _ = tokio::time::sleep(BACKPRESSURE_GATE_FALLBACK) => {}
+            }
         }
     }
 }
@@ -356,6 +425,7 @@ impl ProtocolSendDriver for KydupBroadcastSendDriver {
     type Packet = AVPacket;
 
     async fn send(&mut self, packet: AVPacket) -> Result<(), ProtocolError> {
+        self.await_backpressure().await;
         if is_header(&packet) {
             let mut updated = (*self.headers).clone();
             cache_header(&mut updated, &packet);
@@ -430,17 +500,54 @@ async fn ready_with_timeout<P: Send + 'static>(
     }
 }
 
+/// Broadcast receiver wrapper that drives the upstream backpressure gate.
+///
+/// Every successful (or failed) `recv()` means this output advanced, so the
+/// slowest backlog may have shrunk; and the `Drop` means the output went away
+/// and no longer holds the broadcast back. Both wake the gated upstream
+/// `send()` via the shared [`Notify`]. The wrapped `recv()` returns the exact
+/// same type as the underlying receiver, so call sites are unchanged.
+struct GatedReceiver {
+    rx: broadcast::Receiver<AVBroadcast>,
+    notify: Arc<Notify>,
+}
+
+impl GatedReceiver {
+    fn new(rx: broadcast::Receiver<AVBroadcast>, notify: Arc<Notify>) -> Self {
+        Self { rx, notify }
+    }
+
+    async fn recv(&mut self) -> Result<AVBroadcast, broadcast::error::RecvError> {
+        let res = self.rx.recv().await;
+        self.notify.notify_one();
+        res
+    }
+}
+
+impl Drop for GatedReceiver {
+    fn drop(&mut self) {
+        // This receiver is going away, so it no longer pins the broadcast
+        // backlog; wake a possibly-gated sender to re-evaluate.
+        self.notify.notify_one();
+    }
+}
+
 /// Spawn a driving task for one output. The task awaits `ready_send` (which
 /// produces the `ProtocolSend` to push packets into), then runs the sync /
 /// forward / lag-handling loop until either the broadcast is closed, the
 /// peer's send errors out, or the lag handler returns [`LagAction::Stop`].
 fn spawn_output(
     rx: broadcast::Receiver<AVBroadcast>,
+    notify: Arc<Notify>,
     sync_mode: SyncMode,
     lag_handler: Arc<dyn Fn() -> LagAction + Send + Sync>,
     ready_send: impl Future<Output = Result<ProtocolSend<AVPacket>, ProtocolError>> + Send + 'static,
 ) -> OutputHandle {
     let task = tokio::spawn(async move {
+        // Wrap before awaiting readiness so a failed or aborted handshake still
+        // wakes the gate on drop: the receiver is already subscribed and may be
+        // holding the broadcast backlog.
+        let mut rx = GatedReceiver::new(rx, notify);
         let send = match ready_send.await {
             Ok(s) => s,
             Err(e) => {
@@ -448,7 +555,7 @@ fn spawn_output(
                 return;
             }
         };
-        if let Err(e) = run_av_output(rx, send, sync_mode, lag_handler).await {
+        if let Err(e) = run_av_output(&mut rx, send, sync_mode, lag_handler).await {
             error!("Kydup AV output error: {e}");
         }
     });
@@ -474,7 +581,7 @@ enum DesyncReason {
 /// unchanged headers across re-syncs; the Keyframe path always re-sends the
 /// cached headers in front of every keyframe (and updates the version).
 async fn run_av_output(
-    mut rx: broadcast::Receiver<AVBroadcast>,
+    rx: &mut GatedReceiver,
     mut send: ProtocolSend<AVPacket>,
     sync_mode: SyncMode,
     lag_handler: Arc<dyn Fn() -> LagAction + Send + Sync>,
@@ -482,12 +589,12 @@ async fn run_av_output(
     let mut last_headers_version = 0u64;
 
     loop {
-        match wait_for_sync(&mut rx, &mut send, sync_mode, &mut last_headers_version).await? {
+        match wait_for_sync(rx, &mut send, sync_mode, &mut last_headers_version).await? {
             SyncOutcome::Synced => {}
             SyncOutcome::Shutdown => break,
         }
 
-        match forward_until_desync(&mut rx, &mut send).await {
+        match forward_until_desync(rx, &mut send).await {
             DesyncReason::Lagged(skipped) => {
                 warn!("Kydup AV output lagged, skipped {skipped} packets");
                 match lag_handler() {
@@ -505,7 +612,7 @@ async fn run_av_output(
 }
 
 async fn wait_for_sync(
-    rx: &mut broadcast::Receiver<AVBroadcast>,
+    rx: &mut GatedReceiver,
     send: &mut ProtocolSend<AVPacket>,
     sync_mode: SyncMode,
     last_headers_version: &mut u64,
@@ -517,7 +624,7 @@ async fn wait_for_sync(
 }
 
 async fn wait_for_keyframe(
-    rx: &mut broadcast::Receiver<AVBroadcast>,
+    rx: &mut GatedReceiver,
     send: &mut ProtocolSend<AVPacket>,
     last_headers_version: &mut u64,
 ) -> Result<SyncOutcome, ProtocolError> {
@@ -541,7 +648,7 @@ async fn wait_for_keyframe(
 /// travels with the packet, rather than re-reading a shared cache, guards
 /// against sending headers from a version produced after the packet.
 async fn wait_for_first_packet(
-    rx: &mut broadcast::Receiver<AVBroadcast>,
+    rx: &mut GatedReceiver,
     send: &mut ProtocolSend<AVPacket>,
     last_headers_version: &mut u64,
 ) -> Result<SyncOutcome, ProtocolError> {
@@ -586,7 +693,7 @@ async fn send_headers_if_changed(
 }
 
 async fn forward_until_desync(
-    rx: &mut broadcast::Receiver<AVBroadcast>,
+    rx: &mut GatedReceiver,
     send: &mut ProtocolSend<AVPacket>,
 ) -> DesyncReason {
     loop {
@@ -853,5 +960,123 @@ mod tests {
         cache_header(&mut headers, &codec(2));
         assert!(headers.config.is_none());
         assert!(matches!(&headers.codec, Some(AVPacket::Codec(c)) if c.header.codec == 2));
+    }
+
+    /// A sink whose `send` blocks until `gate` releases a permit, modelling a
+    /// client that stops consuming. With zero permits the output stalls, its
+    /// broadcast backlog grows, and the upstream backpressure gate must engage.
+    struct BlockingSink {
+        gate: Arc<tokio::sync::Semaphore>,
+        received: Arc<Mutex<Vec<AVPacket>>>,
+    }
+    #[async_trait]
+    impl ProtocolSendDriver for BlockingSink {
+        type Packet = AVPacket;
+        async fn send(&mut self, packet: AVPacket) -> Result<(), ProtocolError> {
+            self.gate.acquire().await.unwrap().forget();
+            self.received.lock().unwrap().push(packet);
+            Ok(())
+        }
+    }
+
+    /// Pumps `codec, config, keyframe` then `total_media` media packets into an
+    /// upstream, returning the join handle. Kept alive `VideoServerProtocol` is
+    /// returned so the caller controls when the broadcast shuts down.
+    fn spawn_pump(
+        mut proto: VideoServerProtocol,
+        total_media: usize,
+    ) -> tokio::task::JoinHandle<VideoServerProtocol> {
+        tokio::spawn(async move {
+            let send = &mut proto.send;
+            send.send(codec(1)).await.unwrap();
+            send.send(config(b"sps")).await.unwrap();
+            send.send(keyframe(0, b"idr")).await.unwrap();
+            for i in 0..total_media {
+                send.send(media(i as u64, b"p")).await.unwrap();
+            }
+            proto
+        })
+    }
+
+    /// A stalled client must block the upstream push for everyone once its
+    /// backlog reaches the threshold, then release it once it drains.
+    #[tokio::test]
+    async fn av_backpressure_blocks_until_slow_drains() {
+        let (kydup, upstream) = KydupVideo::new(0x1000, || LagAction::Continue);
+
+        // Fast output consumes immediately.
+        let (fast, fast_pkts) = collect_output();
+        let fast_h = kydup.add_output(fast);
+
+        // Slow output blocks on its first send (zero permits).
+        let gate = Arc::new(tokio::sync::Semaphore::new(0));
+        let slow_pkts = Arc::new(Mutex::new(Vec::new()));
+        let slow = ProtocolSend::new(BlockingSink {
+            gate: Arc::clone(&gate),
+            received: Arc::clone(&slow_pkts),
+        });
+        let slow_h = kydup.add_output(slow);
+
+        let total_media = BACKPRESSURE_THRESHOLD + 10;
+        let proto = upstream.ready().await.unwrap();
+        let pump = spawn_pump(proto, total_media);
+
+        // While the slow client is stalled, the gate must stop the push before
+        // the whole stream is sent: neither the pump nor the fast client finish.
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        assert!(!pump.is_finished(), "push must block while a client lags");
+        assert!(
+            fast_pkts.lock().unwrap().len() < 3 + total_media,
+            "fast client must be throttled to the slow client's pace"
+        );
+
+        // Let the slow client drain: the gate reopens and the push completes.
+        gate.add_permits(3 + total_media);
+        let proto = tokio::time::timeout(std::time::Duration::from_secs(5), pump)
+            .await
+            .expect("push must finish once the slow client drains")
+            .unwrap();
+        drop(proto);
+        fast_h.await.unwrap();
+        slow_h.await.unwrap();
+
+        assert_eq!(fast_pkts.lock().unwrap().len(), 3 + total_media);
+        assert_eq!(slow_pkts.lock().unwrap().len(), 3 + total_media);
+    }
+
+    /// Dropping a lagging output must release the global backpressure so the
+    /// remaining clients keep streaming.
+    #[tokio::test]
+    async fn av_backpressure_releases_when_slow_output_dropped() {
+        let (kydup, upstream) = KydupVideo::new(0x1000, || LagAction::Continue);
+
+        let (fast, fast_pkts) = collect_output();
+        let fast_h = kydup.add_output(fast);
+
+        let gate = Arc::new(tokio::sync::Semaphore::new(0));
+        let slow = ProtocolSend::new(BlockingSink {
+            gate: Arc::clone(&gate),
+            received: Arc::new(Mutex::new(Vec::new())),
+        });
+        let slow_h = kydup.add_output(slow);
+
+        let total_media = BACKPRESSURE_THRESHOLD + 10;
+        let proto = upstream.ready().await.unwrap();
+        let pump = spawn_pump(proto, total_media);
+
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        assert!(!pump.is_finished(), "push must block while a client lags");
+
+        // Dropping the stalled output removes its receiver; the gate reopens.
+        drop(slow_h);
+
+        let proto = tokio::time::timeout(std::time::Duration::from_secs(5), pump)
+            .await
+            .expect("push must resume once the lagging client is dropped")
+            .unwrap();
+        drop(proto);
+        fast_h.await.unwrap();
+
+        assert_eq!(fast_pkts.lock().unwrap().len(), 3 + total_media);
     }
 }
