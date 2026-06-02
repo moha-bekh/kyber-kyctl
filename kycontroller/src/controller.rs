@@ -221,6 +221,7 @@ impl Controller {
             .lock()
             .unwrap()
             .values()
+            .filter(|s| s.session.is_some())
             .map(|s| s.username.clone())
             .collect();
 

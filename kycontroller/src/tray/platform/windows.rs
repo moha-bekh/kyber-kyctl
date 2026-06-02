@@ -134,8 +134,6 @@ impl TrayHandle {
     }
 
     /// Update the tray icon status (tooltip and potentially icon).
-    ///
-    /// This is async and will not block the caller.
     pub fn set_status(&self, status: TrayStatus) {
         if let Err(e) = self.status_tx.send(status) {
             warn!("Failed to send status to tray: {e}");
@@ -759,9 +757,10 @@ fn run_tray_loop(
                 break;
             }
             WaitResult::Wake => {
-                // Wake event signaled - check for status updates
-                let status = status_rx.borrow_and_update();
-                update_tooltip(&tray, &status);
+                if status_rx.has_changed().unwrap_or(false) {
+                    let status = status_rx.borrow_and_update().clone();
+                    update_tooltip(&tray, &status);
+                }
             }
             WaitResult::WindowsMessage => {
                 // Process all pending Windows messages. TaskbarCreated is
@@ -775,7 +774,7 @@ fn run_tray_loop(
                 {
                     info!("TaskbarCreated received, re-creating tray icon");
                     if tray.add_icon("Kyber - Starting...") {
-                        let status = status_rx.borrow_and_update();
+                        let status = status_rx.borrow().clone();
                         update_tooltip(&tray, &status);
                     } else {
                         warn!("Tray icon re-creation failed");

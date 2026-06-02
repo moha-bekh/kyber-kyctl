@@ -439,6 +439,7 @@ async fn websocket_service(
         if ret.is_ok() {
             info!("Session \"{session_id}\" controlplane connected");
         }
+        ctrl.update_tray_status();
     });
 
     http_response
