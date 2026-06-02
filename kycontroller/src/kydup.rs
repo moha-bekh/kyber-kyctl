@@ -37,7 +37,7 @@
 //! let (kydup, upstream) = KydupVideo::new(endpoint_id, || LagAction::Continue);
 //! let uri = kycom.register_and_forward(upstream)?.url();
 //! for client_endpoint in clients {
-//!     kydup.register_and_forward(client_endpoint);
+//!     kydup.register_and_forward(client_endpoint, || { /* force a keyframe */ });
 //! }
 //! ```
 
@@ -189,17 +189,30 @@ impl KydupVideo {
     /// Wire a client endpoint as an output of this kydup.
     ///
     /// Mirror of `kycom.register_and_forward(endpoint)`; spawns a task that
-    /// awaits the endpoint's readiness handshake then forwards broadcast
-    /// packets to it (with keyframe-sync at start and lag handling at
-    /// runtime). The returned [`OutputHandle`] aborts the task on drop, so
-    /// the caller must store it for as long as the output should live.
-    pub fn register_and_forward(&self, endpoint: VideoServerEndpoint) -> OutputHandle {
-        spawn_output(
-            self.tx.subscribe(),
+    /// awaits the endpoint's readiness handshake, **then** subscribes to the
+    /// broadcast and forwards packets to it (keyframe-sync at start, lag
+    /// handling at runtime). Subscribing only after the handshake keeps a
+    /// joining client off the broadcast backlog while it connects, so it can't
+    /// trip the backpressure gate and freeze the shared stream for everyone
+    /// else (see [`spawn_output_lazy`]). The returned [`OutputHandle`] aborts
+    /// the task on drop, so the caller must store it for as long as the output
+    /// should live.
+    ///
+    /// `on_subscribed` runs right after the post-handshake subscribe; pass a
+    /// closure that forces a keyframe so this client (which drops every packet
+    /// until the next keyframe) gets one it cannot miss.
+    pub fn register_and_forward(
+        &self,
+        endpoint: VideoServerEndpoint,
+        on_subscribed: impl FnOnce() + Send + 'static,
+    ) -> OutputHandle {
+        spawn_output_lazy(
+            self.tx.clone(),
             Arc::clone(&self.notify),
             SyncMode::Keyframe,
             Arc::clone(&self.lag_handler),
             async move { ready_with_timeout(endpoint).await.map(|p| p.send) },
+            on_subscribed,
         )
     }
 
@@ -300,14 +313,16 @@ impl KydupAudio {
         (kydup, endpoint)
     }
 
-    /// See [`KydupVideo::register_and_forward`].
+    /// See [`KydupVideo::register_and_forward`]. Audio has no keyframe to force,
+    /// so there is no post-subscribe hook.
     pub fn register_and_forward(&self, endpoint: AudioServerEndpoint) -> OutputHandle {
-        spawn_output(
-            self.tx.subscribe(),
+        spawn_output_lazy(
+            self.tx.clone(),
             Arc::clone(&self.notify),
             SyncMode::Immediate,
             Arc::clone(&self.lag_handler),
             async move { ready_with_timeout(endpoint).await.map(|p| p.send) },
+            || {},
         )
     }
 
@@ -532,10 +547,15 @@ impl Drop for GatedReceiver {
     }
 }
 
-/// Spawn a driving task for one output. The task awaits `ready_send` (which
-/// produces the `ProtocolSend` to push packets into), then runs the sync /
-/// forward / lag-handling loop until either the broadcast is closed, the
-/// peer's send errors out, or the lag handler returns [`LagAction::Stop`].
+/// Spawn a driving task for one **already-subscribed** output. The task awaits
+/// `ready_send` (which produces the `ProtocolSend` to push packets into), then
+/// runs the sync / forward / lag-handling loop until either the broadcast is
+/// closed, the peer's send errors out, or the lag handler returns
+/// [`LagAction::Stop`].
+///
+/// Used by `add_output`, whose sink is ready immediately, so there is no
+/// handshake window during which the idle receiver could hold the broadcast
+/// backlog. Handshaking outputs must use [`spawn_output_lazy`] instead.
 fn spawn_output(
     rx: broadcast::Receiver<AVBroadcast>,
     notify: Arc<Notify>,
@@ -544,9 +564,6 @@ fn spawn_output(
     ready_send: impl Future<Output = Result<ProtocolSend<AVPacket>, ProtocolError>> + Send + 'static,
 ) -> OutputHandle {
     let task = tokio::spawn(async move {
-        // Wrap before awaiting readiness so a failed or aborted handshake still
-        // wakes the gate on drop: the receiver is already subscribed and may be
-        // holding the broadcast backlog.
         let mut rx = GatedReceiver::new(rx, notify);
         let send = match ready_send.await {
             Ok(s) => s,
@@ -555,6 +572,56 @@ fn spawn_output(
                 return;
             }
         };
+        if let Err(e) = run_av_output(&mut rx, send, sync_mode, lag_handler).await {
+            error!("Kydup AV output error: {e}");
+        }
+    });
+    OutputHandle(task)
+}
+
+/// Like [`spawn_output`], but subscribes to the broadcast only **after** the
+/// readiness handshake succeeds. Used by the `register_and_forward` paths,
+/// whose endpoints complete a network handshake (up to [`OUTPUT_READY_TIMEOUT`])
+/// before they can receive.
+///
+/// Subscribing eagerly would make the not-yet-consuming receiver count toward
+/// the broadcast backlog ([`broadcast::Sender::len`]) for the whole handshake,
+/// tripping the backpressure gate and freezing the shared stream for every
+/// other client until the handshake resolved (or timed out). Subscribing
+/// afterwards keeps a joining client off the backlog entirely.
+///
+/// `on_subscribed` runs immediately after the (post-ready) subscribe. Callers
+/// use it to force a keyframe; doing so *after* the subscribe guarantees the
+/// keyframe is produced while this receiver is already listening, so a client
+/// in keyframe-sync mode cannot miss it.
+fn spawn_output_lazy(
+    tx: broadcast::Sender<AVBroadcast>,
+    notify: Arc<Notify>,
+    sync_mode: SyncMode,
+    lag_handler: Arc<dyn Fn() -> LagAction + Send + Sync>,
+    ready_send: impl Future<Output = Result<ProtocolSend<AVPacket>, ProtocolError>> + Send + 'static,
+    on_subscribed: impl FnOnce() + Send + 'static,
+) -> OutputHandle {
+    let task = tokio::spawn(async move {
+        let send = match ready_send.await {
+            Ok(s) => s,
+            Err(e) => {
+                // Handshake failed before we subscribed: nothing is holding the
+                // broadcast backlog, so there is no gate to wake.
+                error!("Kydup AV output ready failed: {e}");
+                return;
+            }
+        };
+        // Subscribe now that the sink is live, then drop our `Sender` clone.
+        // The drop is hygiene, not load-bearing: outputs terminate on the
+        // explicit `AVBroadcast::Shutdown` message (the upstream send driver's
+        // Drop sends it), not on channel closure — and the kydup keeps its own
+        // `tx` clone alive for the stream's lifetime regardless. Dropping ours
+        // just releases a Sender promptly instead of holding it for the whole
+        // `run_av_output`.
+        let mut rx = GatedReceiver::new(tx.subscribe(), notify);
+        drop(tx);
+        on_subscribed();
         if let Err(e) = run_av_output(&mut rx, send, sync_mode, lag_handler).await {
             error!("Kydup AV output error: {e}");
         }

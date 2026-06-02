@@ -413,7 +413,26 @@ async fn start_video(
                     .as_ref()
                     .expect("Shared topology guarantees Some(dup)")
                     .clone();
-                let out = dup.register_and_forward(client_endpoint);
+                // Subscribe + forward, forcing a fresh IDR right after the
+                // (post-ready) subscribe so this joining client — which in
+                // keyframe-sync mode drops every packet until it sees a keyframe
+                // — gets a sync point it cannot miss. Under intra-refresh (the
+                // default) the encoder emits no periodic keyframes at all, so
+                // this forced IDR is the only reliable sync point, not merely a
+                // way to skip the wait for the next one. Forcing it after the
+                // subscribe is also why the
+                // subscribe is deferred until the endpoint is ready: an idle,
+                // not-yet-ready receiver would otherwise gate the whole shared
+                // stream during its handshake. The IDR is load-bearing even for
+                // a fresh encoder (the very first subscriber): the lazy subscribe
+                // happens after the handshake, so any sync frame the encoder
+                // emitted at startup was broadcast to zero receivers and lost
+                // for this output. Targeted at this exact stream so other
+                // streams on the same display are untouched.
+                let out = dup.register_and_forward(
+                    client_endpoint,
+                    av_services_manager.idr_requester(acq.subscription.key().clone()),
+                );
                 (acq, Some(out))
             }
             SessionMode::Mono => {
@@ -492,13 +511,13 @@ async fn start_video(
             (false, _) => (None, None),
         };
 
-        // Trigger a fresh keyframe so the joining client doesn't wait for
-        // the next natural one. For `Shared` reuse this matters (encoder
-        // is mid-stream); for fresh encoders (mono and the very first
-        // `Shared` subscriber) the first emitted frame is already a
-        // keyframe, so the request is harmless extra work. Targeted at this
-        // exact stream so other encoders on the same display are untouched.
-        av_services_manager.request_idr(subscription.key().clone());
+        // Note: the joining keyframe is forced from the kydup post-subscribe
+        // hook above (Multi mode), so it lands only once this client is ready
+        // and listening. Mono needs no explicit IDR here: the encoder is fresh
+        // and writes straight to this single client from its first frame (no
+        // kydup, no late join), so the client receives the encoder's own
+        // start-of-stream sequence and never has to catch up to a stream
+        // already in progress.
 
         video_streams.push(StartSessionVideoResponse {
             display_id,

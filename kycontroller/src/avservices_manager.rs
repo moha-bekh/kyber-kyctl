@@ -944,6 +944,19 @@ impl AVServicesManager {
             warn!("IDR request dropped for {key:?}: {e}");
         }
     }
+
+    /// An owned handle that requests a fresh IDR for `key` when invoked, usable
+    /// from a spawned task (e.g. a kydup post-subscribe hook). Same semantics as
+    /// [`request_idr`](Self::request_idr); cloning the dispatcher sender keeps it
+    /// cheap and lock-free, and duplicate requests are collapsed downstream.
+    pub(crate) fn idr_requester(&self, key: VideoStreamKey) -> impl FnOnce() + Send + 'static {
+        let idr_tx = self.idr_tx.clone();
+        move || {
+            if let Err(e) = idr_tx.try_send(key.clone()) {
+                warn!("IDR request dropped for {key:?}: {e}");
+            }
+        }
+    }
 }
 
 #[cfg(test)]

@@ -492,7 +492,9 @@ pub(super) async fn start_websocket_handler(
     // (the default) the encoder emits no periodic keyframes, so this is the only
     // frame a client in keyframe-sync mode can sync on. The WS output subscribes
     // eagerly (add_output), so forcing the IDR here, after the subscribe, is
-    // correct. (Same rationale as `kymux_controller::start_video`.)
+    // correct. (The kymux backend instead forces its IDR from the kydup
+    // post-subscribe hook, since it subscribes lazily; see
+    // `kymux_controller::start_video`.)
     if let Some(key) = idr_key {
         ctrl.av_services_manager.request_idr(key);
     }
