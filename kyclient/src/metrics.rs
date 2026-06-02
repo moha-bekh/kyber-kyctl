@@ -24,6 +24,24 @@ use std::collections::{HashMap, VecDeque};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::{SendError, TrySendError};
 
+/// Consumes raw, unprocessed metrics as they are emitted by the streaming pipeline.
+///
+/// Implementors receive each `Metric` individually and as-is, without any
+/// aggregation or clock normalization — suitable for logging raw events or
+/// feeding into a `MetricsConsolidator` for further processing.
+pub trait RawMetricsConsumer {
+    fn on_metric(&mut self, metric: &Metric);
+}
+
+/// Consumes consolidated, per-frame metrics once all pipeline stages are accounted for.
+///
+/// Implementors are notified by a `MetricsConsolidator` when a frame is
+/// considered complete, either because all expected events arrived or because
+/// the frame fell outside the reassembly window.
+pub trait ConsolidatedMetricsConsumer {
+    fn on_frame_timestamps(&mut self, frame_timestamps: &FrameTimestamps);
+}
+
 #[derive(Debug)]
 pub struct MetricsCollector {
     tx: mpsc::Sender<Metric>,
@@ -70,7 +88,10 @@ impl MetricsProducer {
 
 #[derive(Debug)]
 pub struct MetricsJSONProducer {
-    collector: FrameTimestampsCollector,
+    /// Each inner `Vec<u8>` represents a single metric record encoded as a JSON string in bytes.
+    /// The outer `Vec` acts as a write-ahead buffer: records accumulate here
+    /// until the caller drains them via `drain`.
+    buffer: Vec<Vec<u8>>,
 }
 
 impl Default for MetricsJSONProducer {
@@ -81,13 +102,21 @@ impl Default for MetricsJSONProducer {
 
 impl MetricsJSONProducer {
     pub fn new() -> Self {
-        let collector = FrameTimestampsCollector::new(2_000_000); // 2s
-        Self { collector }
+        Self { buffer: Vec::new() }
+    }
+
+    pub fn drain(&mut self) -> Vec<Vec<u8>> {
+        std::mem::take(&mut self.buffer)
     }
 
     pub fn push(&mut self, metric: &Metric) -> Vec<Vec<u8>> {
-        let mut lines = Vec::new();
+        self.on_metric(metric);
+        self.drain()
+    }
+}
 
+impl RawMetricsConsumer for MetricsJSONProducer {
+    fn on_metric(&mut self, metric: &Metric) {
         match metric {
             Metric::Video(video_metric) => {
                 let VideoMetric {
@@ -117,65 +146,7 @@ impl MetricsJSONProducer {
                     "ts": ts,
                 });
                 let data = serde_json::to_vec(&json).expect("Malformed JSON");
-                lines.push(data);
-
-                self.collector.push(video_metric);
-                while let Some(frame_timestamps) = self.collector.recv_frame_timestamps() {
-                    let mut obj = serde_json::Map::new();
-
-                    obj.insert("log_type".to_string(), json!("frame_metric"));
-                    obj.insert("source_id".to_string(), json!(frame_timestamps.source_id));
-                    obj.insert("pts".to_string(), json!(frame_timestamps.pts));
-
-                    let server_offset = frame_timestamps.server_offset.expect("No server offset");
-                    obj.insert("server_offset".to_string(), json!(server_offset));
-
-                    if let Some(raw_acquired) = frame_timestamps.raw_acquired {
-                        obj.insert("raw_acquired".to_string(), json!(raw_acquired));
-                    }
-                    if let Some(acquired) = frame_timestamps.get_compensated_acquired() {
-                        obj.insert("acquired".to_string(), json!(acquired));
-                    }
-                    if let Some(raw_encoding) = frame_timestamps.raw_encoding {
-                        obj.insert("raw_encoding".to_string(), json!(raw_encoding));
-                    }
-                    if let Some(encoding) = frame_timestamps.get_compensated_encoding() {
-                        obj.insert("encoding".to_string(), json!(encoding));
-                    }
-                    if let Some(raw_encoded) = frame_timestamps.raw_encoded {
-                        obj.insert("raw_encoded".to_string(), json!(raw_encoded));
-                    }
-                    if let Some(encoded) = frame_timestamps.get_compensated_encoded() {
-                        obj.insert("encoded".to_string(), json!(encoded));
-                    }
-                    if let Some(raw_sent) = frame_timestamps.raw_sent {
-                        obj.insert("raw_sent".to_string(), json!(raw_sent));
-                    }
-                    if let Some(sent) = frame_timestamps.get_compensated_sent() {
-                        obj.insert("sent".to_string(), json!(sent));
-                    }
-                    if let Some(received) = frame_timestamps.received {
-                        obj.insert("received".to_string(), json!(received));
-                    }
-                    if let Some(decoding) = frame_timestamps.decoding {
-                        obj.insert("decoding".to_string(), json!(decoding));
-                    }
-                    if let Some(decoded) = frame_timestamps.decoded {
-                        obj.insert("decoded".to_string(), json!(decoded));
-                    }
-                    if let Some(skipped) = frame_timestamps.skipped {
-                        obj.insert("skipped".to_string(), json!(skipped));
-                    }
-                    if let Some(prepared) = frame_timestamps.prepared {
-                        obj.insert("prepared".to_string(), json!(prepared));
-                    }
-                    if let Some(displayed) = frame_timestamps.displayed {
-                        obj.insert("displayed".to_string(), json!(displayed));
-                    }
-                    let json = serde_json::Value::Object(obj);
-                    let data = serde_json::to_vec(&json).expect("Malformed JSON");
-                    lines.push(data);
-                }
+                self.buffer.push(data);
             }
             Metric::NetworkLocal(network_stats) => {
                 let json = json!({
@@ -186,12 +157,9 @@ impl MetricsJSONProducer {
                     "dropped_packets": network_stats.dropped_packets.map(|v| v as i64).unwrap_or(-1),
                 });
                 let data = serde_json::to_vec(&json).expect("Malformed JSON");
-                lines.push(data);
+                self.buffer.push(data);
             }
             Metric::NetworkPing(network_ping) => {
-                self.collector
-                    .update_clock_offset(network_ping.offset_micros);
-
                 let json = json!({
                     "log_type": "raw_metric",
                     "type": "network_ping",
@@ -199,7 +167,7 @@ impl MetricsJSONProducer {
                     "delay_micros": network_ping.delay_micros,
                 });
                 let data = serde_json::to_vec(&json).expect("Malformed JSON");
-                lines.push(data);
+                self.buffer.push(data);
             }
             Metric::NetworkRemote(network_stats) => {
                 let json = json!({
@@ -210,14 +178,134 @@ impl MetricsJSONProducer {
                     "dropped_packets": network_stats.dropped_packets.map(|v| v as i64).unwrap_or(-1),
                 });
                 let data = serde_json::to_vec(&json).expect("Malformed JSON");
-                lines.push(data);
+                self.buffer.push(data);
             }
         }
-
-        lines
     }
 }
 
+impl ConsolidatedMetricsConsumer for MetricsJSONProducer {
+    fn on_frame_timestamps(&mut self, frame_timestamps: &FrameTimestamps) {
+        let mut obj = serde_json::Map::new();
+        obj.insert("log_type".to_string(), json!("frame_metric"));
+        obj.insert("source_id".to_string(), json!(frame_timestamps.source_id));
+        obj.insert("pts".to_string(), json!(frame_timestamps.pts));
+
+        let server_offset = frame_timestamps.server_offset.expect("No server offset");
+        obj.insert("server_offset".to_string(), json!(server_offset));
+
+        if let Some(raw_acquired) = frame_timestamps.raw_acquired {
+            obj.insert("raw_acquired".to_string(), json!(raw_acquired));
+        }
+        if let Some(acquired) = frame_timestamps.get_compensated_acquired() {
+            obj.insert("acquired".to_string(), json!(acquired));
+        }
+        if let Some(raw_encoding) = frame_timestamps.raw_encoding {
+            obj.insert("raw_encoding".to_string(), json!(raw_encoding));
+        }
+        if let Some(encoding) = frame_timestamps.get_compensated_encoding() {
+            obj.insert("encoding".to_string(), json!(encoding));
+        }
+        if let Some(raw_encoded) = frame_timestamps.raw_encoded {
+            obj.insert("raw_encoded".to_string(), json!(raw_encoded));
+        }
+        if let Some(encoded) = frame_timestamps.get_compensated_encoded() {
+            obj.insert("encoded".to_string(), json!(encoded));
+        }
+        if let Some(raw_sent) = frame_timestamps.raw_sent {
+            obj.insert("raw_sent".to_string(), json!(raw_sent));
+        }
+        if let Some(sent) = frame_timestamps.get_compensated_sent() {
+            obj.insert("sent".to_string(), json!(sent));
+        }
+        if let Some(received) = frame_timestamps.received {
+            obj.insert("received".to_string(), json!(received));
+        }
+        if let Some(decoding) = frame_timestamps.decoding {
+            obj.insert("decoding".to_string(), json!(decoding));
+        }
+        if let Some(decoded) = frame_timestamps.decoded {
+            obj.insert("decoded".to_string(), json!(decoded));
+        }
+        if let Some(skipped) = frame_timestamps.skipped {
+            obj.insert("skipped".to_string(), json!(skipped));
+        }
+        if let Some(prepared) = frame_timestamps.prepared {
+            obj.insert("prepared".to_string(), json!(prepared));
+        }
+        if let Some(displayed) = frame_timestamps.displayed {
+            obj.insert("displayed".to_string(), json!(displayed));
+        }
+        let json = serde_json::Value::Object(obj);
+        let data = serde_json::to_vec(&json).expect("Malformed JSON");
+        self.buffer.push(data);
+    }
+}
+
+/// Reassembles fragmented video metrics into complete, per-frame `FrameTimestamps`.
+///
+/// A frame is flushed either when all expected stage timestamps are present, or when
+/// its PTS falls outside the reassembly window (currently 2 seconds), preventing
+/// unbounded memory growth in the presence of dropped metrics.
+///
+/// `Metric::NetworkPing` events update the server/client offset and backfill any frames
+/// already in the buffer.
+///
+/// # Usage
+///
+/// Implement `ConsolidatedMetricsConsumer` and pass your consumers at construction time.
+/// Feed every incoming `Metric` through `RawMetricsConsumer::on_metric`.
+pub struct MetricsConsolidator {
+    collector: FrameTimestampsCollector,
+    consolidated_consumers: Vec<Box<dyn ConsolidatedMetricsConsumer>>,
+}
+
+impl Default for MetricsConsolidator {
+    fn default() -> Self {
+        Self::new(vec![])
+    }
+}
+
+impl MetricsConsolidator {
+    pub fn new(consolidated_consumers: Vec<Box<dyn ConsolidatedMetricsConsumer>>) -> Self {
+        let collector = FrameTimestampsCollector::new(2_000_000); // 2s
+        Self {
+            collector,
+            consolidated_consumers,
+        }
+    }
+}
+
+impl RawMetricsConsumer for MetricsConsolidator {
+    fn on_metric(&mut self, metric: &Metric) {
+        match metric {
+            Metric::Video(video_metric) => {
+                self.collector.push(video_metric);
+                while let Some(frame_timestamps) = self.collector.recv_frame_timestamps() {
+                    for consumer in &mut self.consolidated_consumers {
+                        consumer.on_frame_timestamps(&frame_timestamps);
+                    }
+                }
+            }
+
+            Metric::NetworkPing(network_ping) => {
+                self.collector
+                    .update_clock_offset(network_ping.offset_micros);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Raw, per-frame timestamps collected across all stages of the streaming pipeline.
+///
+/// Each field corresponds to a pipeline stage (server-side: acquired → encoding →
+/// encoded → sent; client-side: received → decoding → decoded → prepared/displayed
+/// or skipped). Timestamps are stored as microseconds in their original clock domain:
+/// server-side values use the server clock, client-side values use the local clock.
+///
+/// All fields are `Option` because metrics arrive asynchronously and out of order.
+/// A frame is considered complete only when all expected fields are populated.
 #[derive(Debug, Clone, Default)]
 pub struct FrameTimestamps {
     pub source_id: u32,
