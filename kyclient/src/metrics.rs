@@ -130,21 +130,29 @@ impl MetricsJSONProducer {
                     let server_offset = frame_timestamps.server_offset.expect("No server offset");
                     obj.insert("server_offset".to_string(), json!(server_offset));
 
-                    if let Some(acquired) = frame_timestamps.acquired {
-                        obj.insert("raw_acquired".to_string(), json!(acquired));
-                        obj.insert("acquired".to_string(), json!(acquired - server_offset));
+                    if let Some(raw_acquired) = frame_timestamps.raw_acquired {
+                        obj.insert("raw_acquired".to_string(), json!(raw_acquired));
                     }
-                    if let Some(encoding) = frame_timestamps.encoding {
-                        obj.insert("raw_encoding".to_string(), json!(encoding));
-                        obj.insert("encoding".to_string(), json!(encoding - server_offset));
+                    if let Some(acquired) = frame_timestamps.get_compensated_acquired() {
+                        obj.insert("acquired".to_string(), json!(acquired));
                     }
-                    if let Some(encoded) = frame_timestamps.encoded {
-                        obj.insert("raw_encoded".to_string(), json!(encoded));
-                        obj.insert("encoded".to_string(), json!(encoded - server_offset));
+                    if let Some(raw_encoding) = frame_timestamps.raw_encoding {
+                        obj.insert("raw_encoding".to_string(), json!(raw_encoding));
                     }
-                    if let Some(sent) = frame_timestamps.sent {
-                        obj.insert("raw_sent".to_string(), json!(sent));
-                        obj.insert("sent".to_string(), json!(sent - server_offset));
+                    if let Some(encoding) = frame_timestamps.get_compensated_encoding() {
+                        obj.insert("encoding".to_string(), json!(encoding));
+                    }
+                    if let Some(raw_encoded) = frame_timestamps.raw_encoded {
+                        obj.insert("raw_encoded".to_string(), json!(raw_encoded));
+                    }
+                    if let Some(encoded) = frame_timestamps.get_compensated_encoded() {
+                        obj.insert("encoded".to_string(), json!(encoded));
+                    }
+                    if let Some(raw_sent) = frame_timestamps.raw_sent {
+                        obj.insert("raw_sent".to_string(), json!(raw_sent));
+                    }
+                    if let Some(sent) = frame_timestamps.get_compensated_sent() {
+                        obj.insert("sent".to_string(), json!(sent));
                     }
                     if let Some(received) = frame_timestamps.received {
                         obj.insert("received".to_string(), json!(received));
@@ -211,14 +219,14 @@ impl MetricsJSONProducer {
 }
 
 #[derive(Debug, Clone, Default)]
-struct FrameTimestamps {
+pub struct FrameTimestamps {
     pub source_id: u32,
     pub pts: u64,
     pub server_offset: Option<i64>, // server - client
-    pub acquired: Option<i64>,
-    pub encoding: Option<i64>,
-    pub encoded: Option<i64>,
-    pub sent: Option<i64>,
+    pub raw_acquired: Option<i64>,
+    pub raw_encoding: Option<i64>,
+    pub raw_encoded: Option<i64>,
+    pub raw_sent: Option<i64>,
     pub received: Option<i64>,
     pub decoding: Option<i64>,
     pub decoded: Option<i64>,
@@ -238,34 +246,34 @@ impl FrameTimestamps {
 
     fn is_ready(&self) -> bool {
         self.server_offset.is_some()
-            && self.acquired.is_some()
-            && self.encoding.is_some()
-            && self.encoded.is_some()
-            && self.sent.is_some()
+            && self.raw_acquired.is_some()
+            && self.raw_encoding.is_some()
+            && self.raw_encoded.is_some()
+            && self.raw_sent.is_some()
             && self.received.is_some()
             && self.decoding.is_some()
             && self.decoded.is_some()
             && (self.skipped.is_some() || (self.prepared.is_some() && self.displayed.is_some()))
     }
 
-    fn set_acquired(&mut self, ts: i64) {
-        assert!(self.acquired.is_none());
-        self.acquired = Some(ts);
+    fn set_raw_acquired(&mut self, ts: i64) {
+        assert!(self.raw_acquired.is_none());
+        self.raw_acquired = Some(ts);
     }
 
-    fn set_encoding(&mut self, ts: i64) {
-        assert!(self.encoding.is_none());
-        self.encoding = Some(ts);
+    fn set_raw_encoding(&mut self, ts: i64) {
+        assert!(self.raw_encoding.is_none());
+        self.raw_encoding = Some(ts);
     }
 
-    fn set_encoded(&mut self, ts: i64) {
-        assert!(self.encoded.is_none());
-        self.encoded = Some(ts);
+    fn set_raw_encoded(&mut self, ts: i64) {
+        assert!(self.raw_encoded.is_none());
+        self.raw_encoded = Some(ts);
     }
 
-    fn set_sent(&mut self, ts: i64) {
-        assert!(self.sent.is_none());
-        self.sent = Some(ts);
+    fn set_raw_sent(&mut self, ts: i64) {
+        assert!(self.raw_sent.is_none());
+        self.raw_sent = Some(ts);
     }
 
     fn set_received(&mut self, ts: i64) {
@@ -304,10 +312,10 @@ impl FrameTimestamps {
         assert!(metric.pts == self.pts);
         let ts = metric.ts;
         match &metric.data {
-            VideoMetricData::FrameAcquired => self.set_acquired(ts),
-            VideoMetricData::FrameEncoding => self.set_encoding(ts),
-            VideoMetricData::FrameEncoded => self.set_encoded(ts),
-            VideoMetricData::FrameSent => self.set_sent(ts),
+            VideoMetricData::FrameAcquired => self.set_raw_acquired(ts),
+            VideoMetricData::FrameEncoding => self.set_raw_encoding(ts),
+            VideoMetricData::FrameEncoded => self.set_raw_encoded(ts),
+            VideoMetricData::FrameSent => self.set_raw_sent(ts),
             VideoMetricData::FrameReceived => self.set_received(ts),
             VideoMetricData::FrameDecoding => self.set_decoding(ts),
             VideoMetricData::FrameDecoded => self.set_decoded(ts),
@@ -315,6 +323,26 @@ impl FrameTimestamps {
             VideoMetricData::FramePrepared => self.set_prepared(ts),
             VideoMetricData::FrameDisplayed => self.set_displayed(ts),
         }
+    }
+
+    pub fn get_compensated_acquired(&self) -> Option<i64> {
+        let offset = self.server_offset?;
+        self.raw_acquired.map(|ts| ts - offset)
+    }
+
+    pub fn get_compensated_encoding(&self) -> Option<i64> {
+        let offset = self.server_offset?;
+        self.raw_encoding.map(|ts| ts - offset)
+    }
+
+    pub fn get_compensated_encoded(&self) -> Option<i64> {
+        let offset = self.server_offset?;
+        self.raw_encoded.map(|ts| ts - offset)
+    }
+
+    pub fn get_compensated_sent(&self) -> Option<i64> {
+        let offset = self.server_offset?;
+        self.raw_sent.map(|ts| ts - offset)
     }
 }
 
