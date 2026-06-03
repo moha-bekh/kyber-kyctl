@@ -991,7 +991,7 @@ struct MainLoop {
     msg_receiver: MessageReceiver,
     handler: Handler,
     metrics_collector: Option<MetricsCollector>,
-    metrics_cb: Arc<Mutex<Option<Box<MetricsCallback>>>>,
+    metrics_cb: KyArc<KyMutex<Option<Box<MetricsCallback>>>>,
 }
 
 impl MainLoop {
@@ -999,7 +999,7 @@ impl MainLoop {
         msg_receiver: MessageReceiver,
         handler: Handler,
         metrics_collector: Option<MetricsCollector>,
-        metrics_cb: Arc<Mutex<Option<Box<MetricsCallback>>>>,
+        metrics_cb: KyArc<KyMutex<Option<Box<MetricsCallback>>>>,
     ) -> Self {
         Self {
             msg_receiver,
@@ -1011,10 +1011,10 @@ impl MainLoop {
 
     async fn process_metrics(
         metrics_collector: &mut MetricsCollector,
-        metrics_cb: Arc<Mutex<Option<Box<MetricsCallback>>>>,
+        metrics_cb: KyArc<KyMutex<Option<Box<MetricsCallback>>>>,
     ) {
         while let Some(metric) = metrics_collector.recv().await {
-            if let Some(cb) = &mut *metrics_cb.lock().unwrap() {
+            if let Some(cb) = &mut *metrics_cb.lock() {
                 cb(metric.clone());
             }
         }
@@ -1062,7 +1062,10 @@ pub struct State {
     pub bitrate: Option<u32>,
 }
 
+#[cfg(not(target_family = "wasm"))]
 pub type MetricsCallback = dyn FnMut(Metric) + Send + Sync;
+#[cfg(target_family = "wasm")]
+pub type MetricsCallback = dyn FnMut(Metric);
 
 pub struct Client {
     event_manager: EventManager,
@@ -1071,7 +1074,7 @@ pub struct Client {
     mainloop_engine: MainLoopEngine,
     state: Arc<Mutex<State>>,
 
-    metrics_cb: Arc<Mutex<Option<Box<MetricsCallback>>>>,
+    metrics_cb: KyArc<KyMutex<Option<Box<MetricsCallback>>>>,
 }
 
 impl Client {
@@ -1099,7 +1102,7 @@ impl Client {
             state.clone(),
         )?;
 
-        let metrics_cb = Arc::new(Mutex::new(None));
+        let metrics_cb = KyArc::new(KyMutex::new(None));
         let mainloop = MainLoop::new(msg_receiver, handler, metrics_collector, metrics_cb.clone());
 
         let mainloop_engine = MainLoopEngine::new(mainloop);
@@ -1242,6 +1245,6 @@ impl Client {
     }
 
     pub fn set_metrics_callback(&self, cb: Option<Box<MetricsCallback>>) {
-        *self.metrics_cb.lock().unwrap() = cb;
+        *self.metrics_cb.lock() = cb;
     }
 }
