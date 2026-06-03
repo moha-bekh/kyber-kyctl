@@ -22,6 +22,7 @@ use std::collections::HashMap;
 
 use log::warn;
 use serde::Deserialize;
+use tokio::sync::mpsc::error::TrySendError;
 
 use kymux::{kyproto, types};
 
@@ -30,6 +31,21 @@ use crate::metrics::{
 };
 use crate::runtime::{self, Duration};
 use crate::{Error, Result};
+
+/// Send a metric.
+///
+/// # Returns
+///
+/// `true` if the channel is still alive, `false` if the channel is closed.
+fn send_metric(metrics: &MetricsProducer, metric: Metric) -> bool {
+    match metrics.send(metric) {
+        Ok(_) => {}
+        Err(TrySendError::Closed(_)) => return false,
+        Err(TrySendError::Full(_)) => warn!("Metric discarded (channel full)"),
+    }
+
+    true
+}
 
 pub(crate) async fn start_connection_stats_poller(
     connection: &kyproto::Connection,
@@ -51,8 +67,10 @@ pub(crate) async fn start_connection_stats_poller(
                 packets_lost: connection_stats.packets_lost,
                 dropped_packets: protocol_stats.dropped_packets,
             });
-            if let Err(err) = metrics.send(metric) {
-                warn!("Metric discarded: {err}");
+            if !send_metric(&metrics, metric) {
+                // The metrics consumer has gone away (e.g. after disconnect);
+                // stop polling instead of warning on every tick forever.
+                break;
             }
         }
     });
@@ -91,11 +109,15 @@ async fn run_clock_sync(
             offset_micros: result.offset_micros(),
             delay_micros: result.delay_micros(),
         });
-        if let Err(err) = metrics.send(metric) {
-            warn!("Metric discarded: {err}");
+        if !send_metric(&metrics, metric) {
+            // The metrics consumer has gone away (e.g. after disconnect);
+            // stop polling instead of warning on every tick forever.
+            break;
         }
         interval.tick().await;
     }
+
+    Ok(())
 }
 
 pub(crate) async fn start_remote_metrics_receiver(
@@ -126,8 +148,8 @@ async fn run_metrics_receiver(
         let network_stats =
             rmp_serde::from_slice(&packet.payload).map_err(|_| Error::DeserializationFailed)?;
         let metric = Metric::NetworkRemote(network_stats);
-        if let Err(err) = metrics.send(metric) {
-            warn!("Metric discarded: {err}");
+        if !send_metric(&metrics, metric) {
+            break;
         }
     }
 
