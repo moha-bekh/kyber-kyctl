@@ -1014,7 +1014,7 @@ impl MainLoop {
         metrics_cb: Arc<Mutex<Option<Box<MetricsCallback>>>>,
     ) {
         while let Some(metric) = metrics_collector.recv().await {
-            if let Some(cb) = &*metrics_cb.lock().unwrap() {
+            if let Some(cb) = &mut *metrics_cb.lock().unwrap() {
                 cb(metric.clone());
             }
         }
@@ -1062,7 +1062,7 @@ pub struct State {
     pub bitrate: Option<u32>,
 }
 
-pub type MetricsCallback = dyn Fn(Metric) + Send + Sync;
+pub type MetricsCallback = dyn FnMut(Metric) + Send + Sync;
 
 pub struct Client {
     event_manager: EventManager,
