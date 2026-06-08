@@ -42,9 +42,7 @@
 //! ```
 
 use std::future::Future;
-use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -55,7 +53,8 @@ use kymux::types::{
 };
 use log::{debug, error, warn};
 use tokio::sync::{broadcast, Notify};
-use tokio::task::{JoinError, JoinHandle};
+
+use crate::utils::Task;
 
 /// Capacity of the `tokio::sync::broadcast` ring buffer, in retained packets.
 /// This is the hard backlog at which an output that has fallen this far behind
@@ -88,25 +87,6 @@ const OUTPUT_READY_TIMEOUT: Duration = Duration::from_secs(5);
 // ===========================================================================
 // Public types
 // ===========================================================================
-
-/// Kydup output task handle.
-///
-/// Dropping the handle automatically aborts the output task.
-pub struct OutputHandle(pub(crate) JoinHandle<()>);
-
-impl Drop for OutputHandle {
-    fn drop(&mut self) {
-        self.0.abort();
-    }
-}
-
-impl Future for OutputHandle {
-    type Output = Result<(), JoinError>;
-
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Pin::new(&mut self.0).poll(cx)
-    }
-}
 
 /// Returned by the lag handler to tell the output what to do when the
 /// broadcast lags.
@@ -194,7 +174,7 @@ impl KydupVideo {
     /// handling at runtime). Subscribing only after the handshake keeps a
     /// joining client off the broadcast backlog while it connects, so it can't
     /// trip the backpressure gate and freeze the shared stream for everyone
-    /// else (see [`spawn_output_lazy`]). The returned [`OutputHandle`] aborts
+    /// else (see [`spawn_output_lazy`]). The returned [`Task`] aborts
     /// the task on drop, so the caller must store it for as long as the output
     /// should live.
     ///
@@ -205,7 +185,7 @@ impl KydupVideo {
         &self,
         endpoint: VideoServerEndpoint,
         on_subscribed: impl FnOnce() + Send + 'static,
-    ) -> OutputHandle {
+    ) -> Task {
         spawn_output_lazy(
             self.tx.clone(),
             Arc::clone(&self.notify),
@@ -222,7 +202,7 @@ impl KydupVideo {
     /// wrapped in [`ProtocolSend`]; no readiness handshake needed. Callers
     /// driving a kyproto endpoint should prefer
     /// [`register_and_forward`](Self::register_and_forward).
-    pub fn add_output(&self, send: ProtocolSend<AVPacket>) -> OutputHandle {
+    pub fn add_output(&self, send: ProtocolSend<AVPacket>) -> Task {
         spawn_output(
             self.tx.subscribe(),
             Arc::clone(&self.notify),
@@ -315,7 +295,7 @@ impl KydupAudio {
 
     /// See [`KydupVideo::register_and_forward`]. Audio has no keyframe to force,
     /// so there is no post-subscribe hook.
-    pub fn register_and_forward(&self, endpoint: AudioServerEndpoint) -> OutputHandle {
+    pub fn register_and_forward(&self, endpoint: AudioServerEndpoint) -> Task {
         spawn_output_lazy(
             self.tx.clone(),
             Arc::clone(&self.notify),
@@ -327,7 +307,7 @@ impl KydupAudio {
     }
 
     /// See [`KydupVideo::add_output`].
-    pub fn add_output(&self, send: ProtocolSend<AVPacket>) -> OutputHandle {
+    pub fn add_output(&self, send: ProtocolSend<AVPacket>) -> Task {
         spawn_output(
             self.tx.subscribe(),
             Arc::clone(&self.notify),
@@ -562,8 +542,8 @@ fn spawn_output(
     sync_mode: SyncMode,
     lag_handler: Arc<dyn Fn() -> LagAction + Send + Sync>,
     ready_send: impl Future<Output = Result<ProtocolSend<AVPacket>, ProtocolError>> + Send + 'static,
-) -> OutputHandle {
-    let task = tokio::spawn(async move {
+) -> Task {
+    Task::spawn(async move {
         let mut rx = GatedReceiver::new(rx, notify);
         let send = match ready_send.await {
             Ok(s) => s,
@@ -575,8 +555,7 @@ fn spawn_output(
         if let Err(e) = run_av_output(&mut rx, send, sync_mode, lag_handler).await {
             error!("Kydup AV output error: {e}");
         }
-    });
-    OutputHandle(task)
+    })
 }
 
 /// Like [`spawn_output`], but subscribes to the broadcast only **after** the
@@ -601,8 +580,8 @@ fn spawn_output_lazy(
     lag_handler: Arc<dyn Fn() -> LagAction + Send + Sync>,
     ready_send: impl Future<Output = Result<ProtocolSend<AVPacket>, ProtocolError>> + Send + 'static,
     on_subscribed: impl FnOnce() + Send + 'static,
-) -> OutputHandle {
-    let task = tokio::spawn(async move {
+) -> Task {
+    Task::spawn(async move {
         let send = match ready_send.await {
             Ok(s) => s,
             Err(e) => {
@@ -625,8 +604,7 @@ fn spawn_output_lazy(
         if let Err(e) = run_av_output(&mut rx, send, sync_mode, lag_handler).await {
             error!("Kydup AV output error: {e}");
         }
-    });
-    OutputHandle(task)
+    })
 }
 
 enum SyncOutcome {
@@ -905,7 +883,7 @@ mod tests {
         )
         .await
         .unwrap();
-        oh.await.unwrap();
+        oh.await;
 
         let p = pkts.lock().unwrap();
         assert_eq!(p.len(), 4);
@@ -940,7 +918,7 @@ mod tests {
         send.send(keyframe(100, b"idr1")).await.unwrap();
         send.send(media(133, b"p2")).await.unwrap();
         drop(proto);
-        oh.await.unwrap();
+        oh.await;
 
         let p = pkts.lock().unwrap();
         assert_eq!(p.len(), 4); // codec, config, keyframe(100), media(133)
@@ -963,7 +941,7 @@ mod tests {
 
         send.send(media(10, b"a1")).await.unwrap();
         drop(proto);
-        oh.await.unwrap();
+        oh.await;
 
         let p = pkts.lock().unwrap();
         assert_eq!(p.len(), 3); // codec, config, media
@@ -989,8 +967,8 @@ mod tests {
         )
         .await
         .unwrap();
-        h1.await.unwrap();
-        h2.await.unwrap();
+        h1.await;
+        h2.await;
 
         assert_eq!(p1.lock().unwrap().len(), 4);
         assert_eq!(p2.lock().unwrap().len(), 4);
@@ -1012,8 +990,8 @@ mod tests {
         // Drop upstream to end the stream; outputs see Shutdown via the
         // broadcast Drop on KydupBroadcastSendDriver.
         drop(upstream);
-        h1.await.unwrap();
-        h2.await.unwrap();
+        h1.await;
+        h2.await;
         assert_eq!(kydup.output_count(), 0);
     }
 
@@ -1104,8 +1082,8 @@ mod tests {
             .expect("push must finish once the slow client drains")
             .unwrap();
         drop(proto);
-        fast_h.await.unwrap();
-        slow_h.await.unwrap();
+        fast_h.await;
+        slow_h.await;
 
         assert_eq!(fast_pkts.lock().unwrap().len(), 3 + total_media);
         assert_eq!(slow_pkts.lock().unwrap().len(), 3 + total_media);
@@ -1142,7 +1120,7 @@ mod tests {
             .expect("push must resume once the lagging client is dropped")
             .unwrap();
         drop(proto);
-        fast_h.await.unwrap();
+        fast_h.await;
 
         assert_eq!(fast_pkts.lock().unwrap().len(), 3 + total_media);
     }

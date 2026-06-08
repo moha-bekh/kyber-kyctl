@@ -18,7 +18,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use std::path::PathBuf;
+use std::{path::PathBuf, pin::Pin, task};
 
 use crate::host_events;
 
@@ -116,5 +116,17 @@ impl Task {
         F: std::future::Future<Output = ()> + 'static,
     {
         Self(tokio::task::spawn_local(f))
+    }
+}
+
+impl std::future::Future for Task {
+    type Output = ();
+
+    fn poll(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut task::Context<'_>,
+    ) -> task::Poll<Self::Output> {
+        let _ = task::ready!(Pin::new(&mut Pin::into_inner(self).0).poll(cx));
+        task::Poll::Ready(())
     }
 }

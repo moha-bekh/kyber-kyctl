@@ -75,12 +75,12 @@ impl WebsocketBackend {
     /// Connect a WebSocket to the backend for a given service.
     ///
     /// - `Video`/`Audio` in Multi: wraps the session in [`av::AVWebSocketSendDriver`]
-    ///   and adds it as a kydup output. Returns the [`kydup::OutputHandle`].
+    ///   and adds it as a kydup output. Returns the [`Task`].
     /// - `Video`/`Audio` in Mono: hands the session to the
     ///   [`av::AVWebSocketEndpoint`] via its oneshot. kycom's forwarder, which
     ///   was already pumping bytes from the per-session avservice into the
     ///   stalled endpoint, unblocks and the stream flows directly to the WS.
-    ///   No kydup task, no [`kydup::OutputHandle`].
+    ///   No kydup task, no [`Task`].
     /// - `Input`: delivers the session to the kycom endpoint via oneshot and
     ///   spawns the WS→channel forwarding task; its join handle is kept
     ///   internally for [`Self::stop`] to await.
@@ -94,7 +94,7 @@ impl WebsocketBackend {
         service: &ServiceType,
         ws_session: actix_ws::Session,
         ws_rx: actix_ws::MessageStream,
-    ) -> Result<Option<kydup::OutputHandle>> {
+    ) -> Result<Option<Task>> {
         // KydupVideo and KydupAudio are distinct types (one per sync mode),
         // so the match arms can't be folded together; each must take its
         // own slot and dispatch.

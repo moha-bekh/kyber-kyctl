@@ -40,7 +40,6 @@ use tokio::sync::Mutex;
 use crate::config::{ListenMode, SessionMode};
 use crate::error::{Error, Result};
 use crate::inputservice;
-use crate::kydup;
 use crate::utils::{Task, TypeConvert};
 use crate::{Controller, DataPlaneBackend, StateMachineEvent, StateMachineProxy};
 
@@ -407,7 +406,7 @@ async fn start_video(
                 // hands the `ProtocolSend` to the metrics forwarder via the
                 // one-shot upgrade channel. Wrapped in OutputHandle so it's
                 // aborted with the rest of the per-session outputs.
-                let task = tokio::spawn(async move {
+                let task = Task::spawn(async move {
                     let protocol = match tokio::time::timeout(
                         Duration::from_secs(5),
                         metrics_endpoint.ready(),
@@ -426,7 +425,7 @@ async fn start_video(
                     };
                     claim.claim(protocol.send);
                 });
-                (Some(meid), Some(kydup::OutputHandle(task)))
+                (Some(meid), Some(task))
             }
             (true, None) => {
                 // Only reachable for `Shared` topology when the stream was
@@ -574,16 +573,16 @@ pub(crate) struct StartSessionVideoResponse {
     /// `Some` when the entry is a `Shared` kydup output (multi mode), `None`
     /// when the avservice writes directly to the client endpoint via kycom
     /// (mono mode).
-    pub(crate) output: Option<kydup::OutputHandle>,
+    pub(crate) output: Option<Task>,
     /// `Some` when the kyproto metrics endpoint task was spawned.
-    pub(crate) metrics_output: Option<kydup::OutputHandle>,
+    pub(crate) metrics_output: Option<Task>,
     pub(crate) subscription: crate::avservices_manager::VideoSubscription,
 }
 
 pub(crate) struct StartSessionAudioResponse {
     pub(crate) endpoint: u16,
     /// See [`StartSessionVideoResponse::output`].
-    pub(crate) output: Option<kydup::OutputHandle>,
+    pub(crate) output: Option<Task>,
     pub(crate) subscription: crate::avservices_manager::AudioSubscription,
 }
 

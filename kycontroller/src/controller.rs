@@ -37,7 +37,6 @@ use crate::avservices_manager::{AVServicesManager, AudioSubscription, VideoSubsc
 use crate::config;
 use crate::error::{Error, Result};
 use crate::inputservice;
-use crate::kydup;
 use crate::kymux_controller::{KymuxBackend, SharedKymuxInfra};
 use crate::session::ClientAuthTokens;
 use crate::tls;
@@ -170,7 +169,7 @@ pub(crate) struct StreamingServices {
     pub(crate) metrics: Option<Task>,
     /// Kydup output handles for this client (Kymux/WS backends).
     /// Dropping clears the handles, which aborts the output tasks automatically.
-    pub(crate) output_handles: Vec<kydup::OutputHandle>,
+    pub(crate) output_handles: Vec<Task>,
     /// RAII subscriptions to [`AVServicesManager`] video entries (Kymux/WS backends).
     /// Dropping triggers async decrement via the AV reaper, which stops the
     /// avservice when the last subscription leaves; covers both `Shared` and
