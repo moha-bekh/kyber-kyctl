@@ -32,6 +32,7 @@ use actix_web::{
 };
 use clap::Parser;
 use log::{error, info, warn};
+use log4ky::notice;
 use serde::Deserialize;
 use session::identity::Identity;
 use toml::Table;
@@ -812,15 +813,27 @@ async fn main() -> ExitCode {
     // Windows build has no stderr, so a parse failure must reach the log
     // file, not disappear. When the file can't be parsed its log section is
     // unreachable anyway, so fall back to the env-derived base config.
-    let _log_handle = match log4ky::LoggerBuilder::new("kycontroller")
+    let log_handle = match log4ky::LoggerBuilder::new("kycontroller")
         .toml(table_ref)
         .console(!cfg!(feature = "win32-hide-console"))
+        .cli_level(cli.log_level)
         .init()
     {
         Ok(handle) => handle,
-        // The warnings already went to stderr and the log file.
-        Err(_) => return ExitCode::FAILURE,
+        // Config-key warnings already went to stderr and the log file; a
+        // hard install failure (no log file exists yet) has not.
+        Err(e) => {
+            notice!("Failed to initialize logger: {e}");
+            return ExitCode::FAILURE;
+        }
     };
+    // Export the resolved root level so every spawned service (kynputserver)
+    // logs at the same level, regardless of whether it came from
+    // --log-level, KYBER_LOG_LEVEL, or the config file. Same rationale and
+    // thread-safety constraint as the KYBER_CONFIG export above.
+    unsafe {
+        std::env::set_var("KYBER_LOG_LEVEL", log_handle.level().to_string());
+    }
     info!("Kyber controller. Revision {}", env!("VERGEN_GIT_DESCRIBE"));
 
     let table = match parsed {

@@ -21,6 +21,7 @@
 use std::path::PathBuf;
 
 use clap::Parser;
+use log::LevelFilter;
 
 #[derive(Debug, Parser)]
 #[command(version = env!("VERGEN_GIT_DESCRIBE"), about = "Kyber controller daemon")]
@@ -29,4 +30,8 @@ pub(crate) struct Cli {
     /// executable-relative location is used.
     #[arg(short = 'c', long = "config", value_name = "PATH")]
     pub config: Option<PathBuf>,
+
+    /// Log verbosity level. Overrides KYBER_LOG_LEVEL and the config file.
+    #[arg(short = 'v', long = "log-level", value_name = "LEVEL")]
+    pub log_level: Option<LevelFilter>,
 }
