@@ -59,8 +59,6 @@ pub enum Error {
     KymuxNotListening,
     #[error("Got an unexpected response from AvServer")]
     AvServerUnexpectedResponse,
-    #[error("AvServer stop timed out")]
-    AvServerStopTimeout,
     #[error("Couldn't open file {path}")]
     FileNotFound { path: PathBuf },
     #[error("Invalid TLS file")]

@@ -31,6 +31,7 @@ use crate::avservice;
 use crate::controller::Controller;
 use crate::error::Result;
 use crate::kydup;
+use crate::utils::Task;
 use crate::StateMachineProxy;
 
 /// Backstop on a single reaper teardown batch. Each `avservice.stop()` is
@@ -81,21 +82,10 @@ impl AVCleanup {
         // forwarder, metrics forwarder if any is ours to abort).
         let mut tasks = Vec::with_capacity(self.videos.len() + self.audios.len());
         for stream in self.videos {
-            tasks.push(tokio::spawn(async move {
-                if let Some(metrics) = stream.metrics.as_ref() {
-                    metrics.forwarder_task.abort();
-                }
-                if let Err(e) = stream.avservice.stop().await {
-                    warn!("Failed to stop video avservice: {e:?}");
-                }
-            }));
+            tasks.push(tokio::spawn(stream.avservice.stop()));
         }
         for stream in self.audios {
-            tasks.push(tokio::spawn(async move {
-                if let Err(e) = stream.avservice.stop().await {
-                    warn!("Failed to stop audio avservice: {e:?}");
-                }
-            }));
+            tasks.push(tokio::spawn(stream.avservice.stop()));
         }
         for task in tasks {
             let _ = task.await;
@@ -113,7 +103,7 @@ impl AVCleanup {
 pub(crate) struct VideoMetrics {
     /// Forwarder task running [`metrics_forwarder_loop`]. Aborted on stream
     /// teardown by [`AVCleanup`].
-    pub(crate) forwarder_task: tokio::task::JoinHandle<()>,
+    pub(crate) _forwarder_task: Task,
 }
 
 /// Handle returned to the first client requesting metrics on a freshly-created
@@ -317,7 +307,7 @@ pub(crate) struct VideoStream {
     /// metrics. The choice sticks for the lifetime of the entry; later
     /// clients asking for metrics on the same `Shared` entry will silently
     /// not receive them. TODO: add a runtime toggle on the avservice API.
-    pub(crate) metrics: Option<VideoMetrics>,
+    pub(crate) _metrics: Option<VideoMetrics>,
     /// Effective config the avservice was started with. Kept around so that
     /// later subscribers can be warned when they ask for something different.
     pub(crate) config: VideoStreamConfig,
@@ -688,13 +678,13 @@ impl AVServicesManager {
         // for `Shared` entries, later subscribers never get metrics; for
         // `Exclusive` the single client is always the claimant, so this is
         // trivially "1st client only" in both modes.
-        let (metrics, metrics_claim, metrics_uri) = if metrics_requested {
+        let (_metrics, metrics_claim, metrics_uri) = if metrics_requested {
             let metrics_endpoint_id = self.alloc_endpoint_id();
             let metrics_kycom_channel = kycom.register_channel(metrics_endpoint_id)?;
             let metrics_uri = metrics_kycom_channel.addr().url();
 
             let (upgrade_tx, upgrade_rx) = tokio::sync::oneshot::channel();
-            let forwarder_task = tokio::spawn(async move {
+            let _forwarder_task = Task::spawn(async move {
                 let recv = match metrics_kycom_channel
                     .into_metrics_client_endpoint()
                     .ready()
@@ -710,7 +700,7 @@ impl AVServicesManager {
             });
 
             (
-                Some(VideoMetrics { forwarder_task }),
+                Some(VideoMetrics { _forwarder_task }),
                 Some(MetricsClaim { upgrade_tx }),
                 Some(metrics_uri),
             )
@@ -724,7 +714,7 @@ impl AVServicesManager {
         // `Shared` that's the multi-client fan-out; for `Exclusive` only the
         // owning session subscribes — and two streams on the same display no
         // longer cross-talk.
-        let res = avservice::Handler::kymux_start_video(
+        let avservice = avservice::Handler::kymux_start_video(
             StreamId::Video(key.clone()),
             process_factory,
             statemachine_proxy,
@@ -736,16 +726,7 @@ impl AVServicesManager {
             config.yuv444,
             config.intra_refresh,
         )
-        .await;
-        let avservice = match res {
-            Ok(av) => av,
-            Err(e) => {
-                if let Some(m) = metrics.as_ref() {
-                    m.forwarder_task.abort();
-                }
-                return Err(e);
-            }
-        };
+        .await?;
 
         let dup_for_return = dup.clone();
         self.video_streams.insert(
@@ -753,7 +734,7 @@ impl AVServicesManager {
             VideoStream {
                 avservice: avservice::SharedHandler::spawn(avservice),
                 dup,
-                metrics,
+                _metrics,
                 config,
                 client_count: 0,
             },

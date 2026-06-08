@@ -351,7 +351,7 @@ impl Handler {
 enum SharedCmd {
     VideoForceIdr,
     VideoSetBitrate(i32),
-    Stop(oneshot::Sender<Result<()>>),
+    Stop(oneshot::Sender<()>),
 }
 
 /// Single-owner wrapper around a started [`Handler`] that serializes IPC
@@ -403,14 +403,14 @@ impl SharedHandler {
             .map_err(|_| Error::StreamerStopped)
     }
 
-    pub(crate) async fn stop(mut self) -> Result<()> {
+    pub(crate) async fn stop(mut self) {
         let (tx, rx) = oneshot::channel();
         if self.cmd_tx.send(SharedCmd::Stop(tx)).is_err() {
             // Actor already exited; treat as already-stopped.
-            return Ok(());
+            return;
         }
-        let Some(join) = self.actor_join.take() else {
-            return Ok(());
+        let Some(_join) = self.actor_join.take() else {
+            return;
         };
         // `Stop` jumps ahead of any queued control command (see `actor_loop`)
         // and the teardown force-kills the child, so the ack normally arrives
@@ -422,16 +422,11 @@ impl SharedHandler {
         // to reap once its stuck syscall returns / on host exit. That is the
         // strictly better outcome than freezing every later teardown.
         match tokio::time::timeout(STOP_TIMEOUT, rx).await {
-            Ok(Ok(res)) => res,
-            Ok(Err(_)) => Err(Error::StreamerStopped),
-            Err(_) => {
-                warn!(
-                    "AvServer {type_:?} stop timed out after {STOP_TIMEOUT:?}; aborting actor",
-                    type_ = self.type_(),
-                );
-                drop(join);
-                Err(Error::AvServerStopTimeout)
-            }
+            Ok(_) => (),
+            Err(_) => warn!(
+                "AvServer {type_:?} stop timed out after {STOP_TIMEOUT:?}; aborting actor",
+                type_ = self.type_(),
+            ),
         }
     }
 
@@ -467,8 +462,10 @@ impl SharedHandler {
             // Stop wins: skip the queued control commands and tear down now, so
             // the child is force-killed promptly even behind a large backlog.
             if let Some(ack) = stop_ack {
-                let res = handler.stop().await;
-                let _ = ack.send(res);
+                if let Err(err) = handler.stop().await {
+                    warn!("Failed to stop avservice handler: {err}");
+                }
+                let _ = ack.send(());
                 return;
             }
 
