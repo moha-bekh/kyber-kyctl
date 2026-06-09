@@ -2743,7 +2743,7 @@ dependencies = [
  "kynputservice-types",
  "libkypc",
  "log",
- "log4rs",
+ "log4ky",
  "muda",
  "png",
  "rand 0.10.1",
@@ -2779,10 +2779,15 @@ dependencies = [
 name = "kymux"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "kycom",
  "kymux-types",
  "kynet",
  "kyproto",
+ "log",
+ "rustls",
+ "thiserror 1.0.69",
+ "tokio",
 ]
 
 [[package]]
@@ -2913,6 +2918,7 @@ dependencies = [
  "log",
  "raptorq",
  "rmp-serde",
+ "rustls",
  "serde",
  "thiserror 2.0.18",
  "tokio",
@@ -3105,6 +3111,14 @@ name = "log-mdc"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a94d21414c1f4a51209ad204c1776a3d0765002c76c6abcb602a6f09f1e881c7"
+
+[[package]]
+name = "log4ky"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "log4rs",
+]
 
 [[package]]
 name = "log4rs"

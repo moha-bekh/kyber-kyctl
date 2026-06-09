@@ -100,6 +100,7 @@ kyavservice-types = { path = "./kymedia/kyavservice-types" }
 kynputservice-types = { path = "./kynput/kynputservice-types" }
 kyaudioreg = { path = "./kymedia/kyaudioreg" }
 kycom = { path = "./kymux/kycom" }
+log4ky = { path = "./kyutil/log4ky" }
 kymux = { path = "./kymux/kymux" }
 libkypc = { path = "./kyutil/libkypc" }
 kynput = { path = "./kynput/kynput" }

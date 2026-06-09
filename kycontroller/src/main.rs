@@ -31,9 +31,10 @@ use actix_web::{
     App, HttpMessage, HttpRequest, HttpResponse, HttpServer, cookie, get, middleware, post, web,
 };
 use clap::Parser;
-use log::{LevelFilter, error, info, warn};
+use log::{error, info, warn};
 use serde::Deserialize;
 use session::identity::Identity;
+use toml::Table;
 
 mod auth;
 mod avservice;
@@ -618,60 +619,6 @@ fn build_serverconfig(tls_config: &tls::Config) -> Result<rustls::ServerConfig> 
         )?)
 }
 
-fn setup_logs(logfile: &str, level: LevelFilter) -> log4rs::Handle {
-    use std::path::Path;
-
-    use log4rs::{
-        append::{console::ConsoleAppender, file::FileAppender},
-        config::{Appender, Config, Root},
-        encode::pattern::PatternEncoder,
-    };
-
-    // Setup pattern
-    let pattern_encoder = PatternEncoder::new("{d(%Y-%m-%dT%H:%M:%S.%3f)} {h({l})} {t} - {m}{n}");
-
-    // Setup Console output
-    let stdout = ConsoleAppender::builder()
-        .encoder(Box::new(pattern_encoder.clone()))
-        .build();
-
-    // Compute log file
-    let log_folder = "log";
-    let log_file = format!("{logfile}.log");
-
-    // KYBER_LOG_DIR overrides the log directory; the file name is unchanged.
-    let log_path = if let Some(dir) = std::env::var_os("KYBER_LOG_DIR") {
-        Path::new(&dir).join(log_file)
-    } else if cfg!(windows) {
-        let mut exe_path = std::env::current_exe().unwrap();
-        exe_path.pop();
-
-        Path::new(&exe_path).join(log_folder).join(log_file)
-    } else {
-        Path::new(log_folder).join(log_file)
-    };
-
-    // Setup File output
-    let file = FileAppender::builder()
-        .encoder(Box::new(pattern_encoder))
-        .build(log_path)
-        .unwrap();
-
-    // Configure logger
-    let config = Config::builder()
-        .appender(Appender::builder().build("stdout", Box::new(stdout)))
-        .appender(Appender::builder().build("file", Box::new(file)))
-        .build(
-            Root::builder()
-                .appender("file")
-                .appender("stdout")
-                .build(level),
-        )
-        .unwrap();
-
-    log4rs::init_config(config).unwrap()
-}
-
 async fn real_main(config: config::Config) -> Result<()> {
     // Initialize rustls crypto
     let ret = rustls::crypto::ring::default_provider().install_default();
@@ -840,9 +787,7 @@ async fn real_main(config: config::Config) -> Result<()> {
 #[actix_web::main]
 async fn main() -> ExitCode {
     let cli = cli::Cli::parse();
-
-    let _log_handle = setup_logs("kycontroller", LevelFilter::Info);
-    info!("Kyber controller. Revision {}", env!("VERGEN_GIT_DESCRIBE"));
+    let path = config::config_path(cli.config.as_deref());
 
     // Export the config file the controller resolved (an explicit --config,
     // KYBER_CONFIG, or the executable-relative default) so every spawned
@@ -850,20 +795,48 @@ async fn main() -> ExitCode {
     // Done before real_main starts the server's worker threads, since the
     // environment is not safe to mutate once other threads run. If no readable
     // file resolves, leave it unset: a missing default stays a soft fallback,
-    // while a missing explicit pointer is reported by config::parse.
-    if let Ok(path) = std::fs::canonicalize(config::config_path(cli.config.as_deref())) {
+    // while a missing explicit pointer is reported below.
+    if let Ok(canonical) = std::fs::canonicalize(&path) {
         unsafe {
-            std::env::set_var("KYBER_CONFIG", path);
+            std::env::set_var("KYBER_CONFIG", canonical);
         }
     }
 
-    let table = match config::parse(cli.config.as_deref()) {
-        Ok(t) => t,
+    let parsed = config::parse(cli.config.as_deref());
+    let empty_table = Table::new();
+    let table_ref = match &parsed {
+        Ok(Some(table)) => table,
+        _ => &empty_table,
+    };
+    // Initialize the logger before reporting parse status: a hidden-console
+    // Windows build has no stderr, so a parse failure must reach the log
+    // file, not disappear. When the file can't be parsed its log section is
+    // unreachable anyway, so fall back to the env-derived base config.
+    let _log_handle = match log4ky::LoggerBuilder::new("kycontroller")
+        .toml(table_ref)
+        .console(!cfg!(feature = "win32-hide-console"))
+        .init()
+    {
+        Ok(handle) => handle,
+        // The warnings already went to stderr and the log file.
+        Err(_) => return ExitCode::FAILURE,
+    };
+    info!("Kyber controller. Revision {}", env!("VERGEN_GIT_DESCRIBE"));
+
+    let table = match parsed {
+        Ok(table) => {
+            match &table {
+                Some(_) => info!("Using configuration file {path:?}"),
+                None => info!("No configuration file found, using defaults"),
+            }
+            table
+        }
         Err(e) => {
             error!("Failed to load configuration: {e}");
             return ExitCode::FAILURE;
         }
     };
+
     let cfg = match table
         .as_ref()
         .map(config::from_table)
