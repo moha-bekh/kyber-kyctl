@@ -255,7 +255,9 @@ impl Handler {
         })
     }
 
-    async fn connect(&self) -> Result<ConnectFullOutcome> {
+    // This method uses a unique reference even though it does not mutable `self`
+    // to avoid making the resulting future `!Send`.
+    async fn connect(&mut self) -> Result<ConnectFullOutcome> {
         // Resolve the peer address from the HTTP response so we can later
         // connect QUIC to the same IP.  This matters because QUIC stack on
         // desktop does not implement Happy Eyeballs (RFC 8305) so we let
@@ -867,13 +869,13 @@ impl StreamingSessionConfig {
     pub fn print(&self) {
         info!("StreamingSessionConfig");
 
-        match &self.protocol {
+        match self.protocol {
             #[cfg(feature = "rtp")]
             StreamingProtocol::Rtp => {
                 info!("\tprotocol: RTP");
             }
             #[cfg(feature = "kymux")]
-            StreamingProtocol::Kymux(config) => {
+            StreamingProtocol::Kymux(ref config) => {
                 info!("\tprotocol: Kymux");
                 info!("\t\tbackend: {:?}", config.backend);
                 info!("\t\tvideo_protocol: {:?}", config.video_protocol);
@@ -1044,14 +1046,14 @@ impl Client {
 
     #[cfg(target_arch = "wasm32")]
     pub async fn stop(self) -> Result<()> {
-        self.mainloop_engine.stop().await;
-
+        self.mainloop_engine.stop();
         Ok(())
     }
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn stop(&self) -> Result<()> {
-        self.mainloop_engine.stop()
+        self.mainloop_engine.stop();
+        Ok(())
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -1060,7 +1062,7 @@ impl Client {
             .send_async_and_wait_completion(Message::Disconnect { stop_session })
             .await?;
 
-        self.mainloop_engine.stop().await;
+        self.mainloop_engine.stop();
 
         Ok(())
     }
@@ -1070,7 +1072,8 @@ impl Client {
         self.msg_sender
             .send_and_wait_completion(Message::Disconnect { stop_session })?;
 
-        self.mainloop_engine.stop()
+        self.mainloop_engine.stop();
+        Ok(())
     }
 
     pub fn connect(&self) -> Result<()> {
