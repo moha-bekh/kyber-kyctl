@@ -672,16 +672,13 @@ fn setup_logs(logfile: &str, level: LevelFilter) -> log4rs::Handle {
     log4rs::init_config(config).unwrap()
 }
 
-async fn real_main(cli: cli::Cli) -> Result<()> {
+async fn real_main(config: config::Config) -> Result<()> {
     // Initialize rustls crypto
     let ret = rustls::crypto::ring::default_provider().install_default();
     if ret.is_err() {
         warn!("Rustls default provider init failed");
         return Err(Error::RustlsDefaultProviderInit);
     }
-
-    // Load configuration
-    let config = config::load(cli.config.as_deref())?;
 
     // Load TLS config
     let tls_cert = config.tls_cert().unwrap_or(STREAMER_CERT);
@@ -853,14 +850,33 @@ async fn main() -> ExitCode {
     // Done before real_main starts the server's worker threads, since the
     // environment is not safe to mutate once other threads run. If no readable
     // file resolves, leave it unset: a missing default stays a soft fallback,
-    // while a missing explicit pointer is reported by config::load.
+    // while a missing explicit pointer is reported by config::parse.
     if let Ok(path) = std::fs::canonicalize(config::config_path(cli.config.as_deref())) {
         unsafe {
             std::env::set_var("KYBER_CONFIG", path);
         }
     }
 
-    match real_main(cli).await {
+    let table = match config::parse(cli.config.as_deref()) {
+        Ok(t) => t,
+        Err(e) => {
+            error!("Failed to load configuration: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let cfg = match table
+        .as_ref()
+        .map(config::from_table)
+        .unwrap_or(Ok(config::Config::default()))
+    {
+        Ok(c) => c,
+        Err(e) => {
+            error!("Failed to load configuration: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    match real_main(cfg).await {
         Err(e) => {
             error!("Main process exited with error: {e}");
             e.exit_code()

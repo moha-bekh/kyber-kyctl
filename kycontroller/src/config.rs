@@ -151,7 +151,7 @@ pub(crate) fn config_path(override_path: Option<&Path>) -> PathBuf {
     }
 }
 
-pub(crate) fn load(override_path: Option<&Path>) -> Result<Config, ParseError> {
+pub(crate) fn parse(override_path: Option<&Path>) -> Result<Option<toml::Table>, ParseError> {
     // An explicit pointer must resolve to a readable file: --config, or
     // KYBER_CONFIG when set. With neither, a missing executable-relative
     // default falls back to the built-in defaults.
@@ -160,19 +160,18 @@ pub(crate) fn load(override_path: Option<&Path>) -> Result<Config, ParseError> {
     let content = match fs::read(&path) {
         Ok(content) => content,
         Err(source) if required => return Err(ParseError::Read { path, source }),
-        Err(_) => {
-            info!("Use default configuration");
-            return Ok(Config::default());
-        }
+        Err(_) => return Ok(None),
     };
 
-    info!("Using configuration file {path:?}");
-
-    let content: toml::Table = str::from_utf8(&content)
+    let table: toml::Table = str::from_utf8(&content)
         .map_err(|_| ParseError::InvalidUTF8)?
         .parse()?;
 
-    let Some(controller_conf) = content.get("kycontroller") else {
+    Ok(Some(table))
+}
+
+pub(crate) fn from_table(table: &toml::Table) -> Result<Config, ParseError> {
+    let Some(controller_conf) = table.get("kycontroller") else {
         info!("No kycontroller section found. Use default configuration");
         return Ok(Config::default());
     };
