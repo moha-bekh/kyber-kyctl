@@ -20,6 +20,7 @@
 
 use std::{
     future::{ready, Future, Ready},
+    path::{Path, PathBuf},
     pin::Pin,
 };
 
@@ -87,26 +88,31 @@ where
     }
 }
 
-pub fn root() -> Option<String> {
-    let Ok(mut path) = std::env::current_exe() else {
-        warn!("Couldn't find current exe path");
-        return None;
-    };
-
-    let mut webclient_root = if cfg!(target_os = "windows") {
-        path.pop();
-
-        path
-    } else if cfg!(target_os = "linux") {
-        path.pop();
-        path.pop();
-
-        path
+pub fn root(override_path: Option<&Path>) -> Option<String> {
+    let webclient_root: PathBuf = if let Some(p) = override_path {
+        p.to_path_buf()
     } else {
-        path
-    };
+        let Ok(mut path) = std::env::current_exe() else {
+            warn!("Couldn't find current exe path");
+            return None;
+        };
 
-    webclient_root.push(WEBCLIENT_ROOT);
+        let mut webclient_root = if cfg!(target_os = "windows") {
+            path.pop();
+
+            path
+        } else if cfg!(target_os = "linux") {
+            path.pop();
+            path.pop();
+
+            path
+        } else {
+            path
+        };
+
+        webclient_root.push(WEBCLIENT_ROOT);
+        webclient_root
+    };
 
     let attr = std::fs::metadata(webclient_root.clone());
     if let Ok(attr) = attr {

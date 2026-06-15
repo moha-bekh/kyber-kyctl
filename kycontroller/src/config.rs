@@ -69,6 +69,7 @@ pub(crate) struct Config {
     security: crate::security::Config,
     watchdog: Option<bool>,
     multi_client: Option<bool>,
+    webclient: Option<String>,
 }
 
 impl Config {
@@ -117,6 +118,10 @@ impl Config {
             true => SessionMode::Multi,
             false => SessionMode::Mono,
         }
+    }
+
+    pub(crate) fn webclient(&self) -> Option<&str> {
+        self.webclient.as_deref()
     }
 }
 

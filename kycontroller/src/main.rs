@@ -21,6 +21,7 @@
 #![cfg_attr(feature = "win32-hide-console", windows_subsystem = "windows")]
 
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 
@@ -731,6 +732,7 @@ async fn real_main(cli: cli::Cli) -> Result<()> {
 
     let listening_port = config.port();
     let listener = create_listening_socket(&config)?;
+    let webclient_override = config.webclient().map(PathBuf::from);
 
     let ctrl = web::Data::new(Mutex::new(Controller::new(
         process_factory.clone(),
@@ -776,7 +778,7 @@ async fn real_main(cli: cli::Cli) -> Result<()> {
     info!("HTTP listening on port {listening_port}");
 
     // Serve webclient if found
-    let webclient_root = webclient::root();
+    let webclient_root = webclient::root(webclient_override.as_deref());
     if let Some(webclient_root) = &webclient_root {
         info!("Serving webclient from {webclient_root}");
     } else {
