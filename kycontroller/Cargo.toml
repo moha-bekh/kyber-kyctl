@@ -42,7 +42,7 @@ awc = { version = "3.8.2", optional = true, default-features = false, features =
 rustls-platform-verifier = { version = "0.6", optional = true }
 
 # CLI tooling specifics
-clap = { version = "4.5.40", features = ["derive"], optional = true }
+clap = { version = "4.5.40", features = ["derive"] }
 humantime = { version = "2.2.0", optional = true }
 
 kyavservice-types = "0.1"
@@ -71,7 +71,7 @@ default = ["auth-basic"]
 win32-hide-console = []
 win32-tray = ["dep:muda", "dep:png"]
 
-cli = ["dep:clap", "dep:humantime", "dep:rsa", "dep:rand_core_06"]
+cli = ["dep:humantime", "dep:rsa", "dep:rand_core_06"]
 
 auth-basic = ["dep:base64"]
 auth-jwt = ["dep:jsonwebtoken"]

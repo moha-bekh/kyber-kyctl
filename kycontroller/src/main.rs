@@ -29,6 +29,7 @@ use actix_session::SessionMiddleware;
 use actix_web::{
     cookie, get, middleware, post, web, App, HttpMessage, HttpRequest, HttpResponse, HttpServer,
 };
+use clap::Parser;
 use log::{error, info, warn, LevelFilter};
 use serde::{Deserialize, Serialize};
 use session::identity::Identity;
@@ -37,6 +38,7 @@ use tokio::sync::Mutex;
 mod auth;
 mod avservice;
 mod avservices_manager;
+mod cli;
 mod config;
 mod controller;
 mod error;
@@ -699,7 +701,7 @@ fn setup_logs(logfile: &str, level: LevelFilter) -> log4rs::Handle {
     log4rs::init_config(config).unwrap()
 }
 
-async fn real_main() -> Result<()> {
+async fn real_main(cli: cli::Cli) -> Result<()> {
     // Initialize rustls crypto
     let ret = rustls::crypto::ring::default_provider().install_default();
     if ret.is_err() {
@@ -708,7 +710,7 @@ async fn real_main() -> Result<()> {
     }
 
     // Load configuration
-    let config = config::load()?;
+    let config = config::load(cli.config.as_deref())?;
 
     // Load TLS config
     let tls_cert = config.tls_cert().unwrap_or(STREAMER_CERT);
@@ -883,10 +885,12 @@ async fn real_main() -> Result<()> {
 
 #[actix_web::main]
 async fn main() -> ExitCode {
+    let cli = cli::Cli::parse();
+
     let _log_handle = setup_logs("kycontroller", LevelFilter::Info);
     info!("Kyber controller. Revision {}", env!("VERGEN_GIT_DESCRIBE"));
 
-    match real_main().await {
+    match real_main(cli).await {
         Err(e) => {
             error!("Main process exited with error: {e}");
             e.exit_code()

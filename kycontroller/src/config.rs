@@ -19,6 +19,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::fs;
+use std::path::{Path, PathBuf};
 
 use log::{error, info};
 use serde::Deserialize;
@@ -27,6 +28,7 @@ use crate::auth;
 
 use super::utils;
 
+const CONFIG_FILE: &str = "kyber_config.toml";
 const LISTENING_PORT: u16 = 8080;
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
@@ -120,18 +122,32 @@ impl Config {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
+    #[error("cannot read configuration file {path:?}: {source}")]
+    Read {
+        path: PathBuf,
+        source: std::io::Error,
+    },
     #[error("text isn't valid UTF8")]
     InvalidUTF8,
     #[error(transparent)]
     InvalidTOML(#[from] toml::de::Error),
 }
 
-pub(crate) fn load() -> Result<Config, ParseError> {
-    let path = utils::get_resource_path("kyber_config.toml");
+pub(crate) fn load(override_path: Option<&Path>) -> Result<Config, ParseError> {
+    // An explicit --config path must exist; a missing default file falls back
+    // to the built-in defaults.
+    let (path, required) = match override_path {
+        Some(p) => (p.to_path_buf(), true),
+        None => (utils::get_resource_path(CONFIG_FILE), false),
+    };
 
-    let Ok(content) = fs::read(&path) else {
-        info!("Use default configuration");
-        return Ok(Config::default());
+    let content = match fs::read(&path) {
+        Ok(content) => content,
+        Err(source) if required => return Err(ParseError::Read { path, source }),
+        Err(_) => {
+            info!("Use default configuration");
+            return Ok(Config::default());
+        }
     };
 
     info!("Using configuration file {path:?}");
