@@ -672,7 +672,10 @@ fn setup_logs(logfile: &str, level: LevelFilter) -> log4rs::Handle {
     let log_folder = "log";
     let log_file = format!("{logfile}.log");
 
-    let log_path = if cfg!(windows) {
+    // KYBER_LOG_DIR overrides the log directory; the file name is unchanged.
+    let log_path = if let Some(dir) = std::env::var_os("KYBER_LOG_DIR") {
+        Path::new(&dir).join(log_file)
+    } else if cfg!(windows) {
         let mut exe_path = std::env::current_exe().unwrap();
         exe_path.pop();
 
