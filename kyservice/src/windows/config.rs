@@ -19,6 +19,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::fs;
+use std::path::Path;
 
 use log::{error, info};
 use serde::Deserialize;
@@ -27,6 +28,8 @@ use kidd_client::MonitorMode;
 
 use super::utils;
 use super::{Error, Result};
+
+const CONFIG_FILE: &str = "kyber_config.toml";
 
 #[derive(Clone, Copy, Debug, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -96,12 +99,24 @@ struct Root {
     kyservice: Config,
 }
 
-pub(crate) fn load() -> Result<Config> {
-    let path = utils::get_resource_path("kyber_config.toml");
+pub(crate) fn load(override_path: Option<&Path>) -> Result<Config> {
+    // An explicit --config path must exist; a missing default file falls back
+    // to the built-in defaults.
+    let (path, required) = match override_path {
+        Some(p) => (p.to_path_buf(), true),
+        None => (utils::get_resource_path(CONFIG_FILE), false),
+    };
 
-    let Ok(content) = fs::read(&path) else {
-        info!("Use default configuration");
-        return Ok(Config::default());
+    let content = match fs::read(&path) {
+        Ok(content) => content,
+        Err(err) if required => {
+            error!("Cannot read configuration file {path:?}: {err}");
+            return Err(Error::ConfigParseFail);
+        }
+        Err(_) => {
+            info!("Use default configuration");
+            return Ok(Config::default());
+        }
     };
 
     info!("Using configuration file {path:?}");

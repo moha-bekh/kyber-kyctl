@@ -85,7 +85,7 @@ impl ServiceContext {
         stop: Arc<AtomicBool>,
         sc_forwarder_rx: servicecontrol_forwarder::Receiver,
     ) -> Result<Self> {
-        let config = config::load()?;
+        let config = config::load(None)?;
 
         // Plug monitor if required
         let _kidd_interface = if config.kidd.enabled {
