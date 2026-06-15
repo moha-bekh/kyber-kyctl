@@ -679,8 +679,7 @@ impl AVServicesManager {
         // `Exclusive` the single client is always the claimant, so this is
         // trivially "1st client only" in both modes.
         let (_metrics, metrics_claim, metrics_uri) = if metrics_requested {
-            let metrics_endpoint_id = self.alloc_endpoint_id();
-            let metrics_kycom_channel = kycom.register_channel(metrics_endpoint_id)?;
+            let metrics_kycom_channel = kycom.register_channel()?;
             let metrics_uri = metrics_kycom_channel.addr().url();
 
             let (upgrade_tx, upgrade_rx) = tokio::sync::oneshot::channel();
