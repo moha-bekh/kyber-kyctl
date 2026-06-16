@@ -307,9 +307,7 @@ async fn start_video(
             .video_protocol
             .unwrap_or(kyproto::VideoProtocol::Reliable);
 
-        let client_endpoint = connection
-            .register_video_endpoint(None, video_protocol)
-            .await?;
+        let client_endpoint = connection.register_video_endpoint(video_protocol).await?;
         let endpoint_id = client_endpoint.id();
         let display_id = stream_request.display_id;
 
@@ -400,7 +398,7 @@ async fn start_video(
         } = acquisition;
         let (metrics_endpoint_id, metrics_output) = match (request.metrics, metrics_claim) {
             (true, Some(claim)) => {
-                let metrics_endpoint = connection.register_metrics_endpoint(None).await?;
+                let metrics_endpoint = connection.register_metrics_endpoint().await?;
                 let meid = metrics_endpoint.id();
                 // Spawn a task that awaits the kyproto ready handshake then
                 // hands the `ProtocolSend` to the metrics forwarder via the
@@ -485,9 +483,7 @@ async fn start_audio(
         .audio_protocol
         .unwrap_or(kyproto::AudioProtocol::Reliable);
 
-    let client_endpoint = connection
-        .register_audio_endpoint(None, audio_protocol)
-        .await?;
+    let client_endpoint = connection.register_audio_endpoint(audio_protocol).await?;
     let endpoint_id = client_endpoint.id();
 
     let (acquisition, output) = match mode {
@@ -537,7 +533,7 @@ async fn start_input(
         return Ok(None);
     };
 
-    let endpoint = connection.register_input_endpoint(None).await?;
+    let endpoint = connection.register_input_endpoint().await?;
 
     let endpoint_id = endpoint.id();
     let uri = kycom.register_and_forward(endpoint)?.url();
@@ -717,7 +713,7 @@ async fn start_session(
 
     let clock_sync = if request.metrics {
         let endpoint: kyproto::ClockSyncServerEndpoint =
-            connection.register_clock_sync_endpoint(None).await?;
+            connection.register_clock_sync_endpoint().await?;
         let endpoint_id = endpoint.id();
         info!("Start clock sync. Endpoint: {endpoint_id:X}");
 
@@ -731,7 +727,7 @@ async fn start_session(
     };
 
     let metrics = if request.metrics {
-        let endpoint = connection.register_metrics_endpoint(None).await?;
+        let endpoint = connection.register_metrics_endpoint().await?;
         let endpoint_id = endpoint.id();
         info!("Start metrics server. Endpoint: {endpoint_id:X}");
 
