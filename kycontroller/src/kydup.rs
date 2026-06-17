@@ -29,12 +29,12 @@
 //! ```ignore
 //! // Mono (no fan-out, no kydup): the avservice writes to the client
 //! // endpoint directly via kycom.
-//! let endpoint = connection.register_video_endpoint(None, proto).await?;
+//! let (_id, endpoint) = connection.register_video_endpoint(proto).await?;
 //! let uri = kycom.register_and_forward(endpoint)?.url();
 //!
 //! // Multi (with kydup fan-out): the avservice writes to a kydup upstream
 //! // endpoint via kycom; kydup broadcasts to N client endpoints.
-//! let (kydup, upstream) = KydupVideo::new(endpoint_id, || LagAction::Continue);
+//! let (kydup, upstream) = KydupVideo::new(|| LagAction::Continue);
 //! let uri = kycom.register_and_forward(upstream)?.url();
 //! for client_endpoint in clients {
 //!     kydup.register_and_forward(client_endpoint, || { /* force a keyframe */ });
@@ -141,14 +141,12 @@ impl KydupVideo {
     /// `kycom.register_and_forward(...)` to wire kycom IPC into the kydup
     /// broadcast.
     ///
-    /// `endpoint_id` is the kycom endpoint id under which the avservice will
-    /// connect. `lag_handler` is invoked whenever a downstream output cannot
+    /// `lag_handler` is invoked whenever a downstream output cannot
     /// keep up with the broadcast; see [`LagAction`] for the available
     /// responses. The handler is **not** called at first sync; joining
     /// outputs that need a fresh keyframe must request one via the caller's
     /// own IDR-forcing path.
     pub fn new(
-        endpoint_id: u16,
         lag_handler: impl Fn() -> LagAction + Send + Sync + 'static,
     ) -> (Self, VideoServerEndpoint) {
         let (tx, _) = broadcast::channel(DEFAULT_CAPACITY);
@@ -159,7 +157,6 @@ impl KydupVideo {
             notify: Arc::clone(&notify),
         };
         let endpoint = ProtocolEndpoint::new(KydupVideoUpstreamDriver {
-            endpoint_id,
             tx: Some(tx),
             notify,
         });
@@ -219,7 +216,6 @@ impl KydupVideo {
 }
 
 struct KydupVideoUpstreamDriver {
-    endpoint_id: u16,
     /// `Some` until `ready_boxed` is called; `take`n there and moved into the
     /// `KydupBroadcastSendDriver`. The [`Drop`] impl uses this to tell apart
     /// the two cases: normal teardown (already ready'd, Shutdown will come
@@ -232,10 +228,6 @@ struct KydupVideoUpstreamDriver {
 #[async_trait]
 impl ProtocolEndpointDriver for KydupVideoUpstreamDriver {
     type Protocol = VideoServerProtocol;
-
-    fn id(&self) -> u16 {
-        self.endpoint_id
-    }
 
     async fn ready_boxed(mut self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         let tx = self
@@ -275,7 +267,6 @@ pub struct KydupAudio {
 impl KydupAudio {
     /// Create a new kydup audio instance. See [`KydupVideo::new`].
     pub fn new(
-        endpoint_id: u16,
         lag_handler: impl Fn() -> LagAction + Send + Sync + 'static,
     ) -> (Self, AudioServerEndpoint) {
         let (tx, _) = broadcast::channel(DEFAULT_CAPACITY);
@@ -286,7 +277,6 @@ impl KydupAudio {
             notify: Arc::clone(&notify),
         };
         let endpoint = ProtocolEndpoint::new(KydupAudioUpstreamDriver {
-            endpoint_id,
             tx: Some(tx),
             notify,
         });
@@ -324,7 +314,6 @@ impl KydupAudio {
 }
 
 struct KydupAudioUpstreamDriver {
-    endpoint_id: u16,
     /// See [`KydupVideoUpstreamDriver::tx`].
     tx: Option<broadcast::Sender<AVBroadcast>>,
     notify: Arc<Notify>,
@@ -333,10 +322,6 @@ struct KydupAudioUpstreamDriver {
 #[async_trait]
 impl ProtocolEndpointDriver for KydupAudioUpstreamDriver {
     type Protocol = AudioServerProtocol;
-
-    fn id(&self) -> u16 {
-        self.endpoint_id
-    }
 
     async fn ready_boxed(mut self: Box<Self>) -> Result<Self::Protocol, ProtocolError> {
         let tx = self
@@ -868,7 +853,7 @@ mod tests {
 
     #[tokio::test]
     async fn av_basic_forwarding() {
-        let (kydup, upstream) = KydupVideo::new(0x1000, || LagAction::Continue);
+        let (kydup, upstream) = KydupVideo::new(|| LagAction::Continue);
         let (send, pkts) = collect_output();
         let oh = kydup.add_output(send);
 
@@ -899,7 +884,7 @@ mod tests {
     /// output, then keep pumping; only post-keyframe packets land.
     #[tokio::test]
     async fn av_late_joiner() {
-        let (kydup, upstream) = KydupVideo::new(0x1000, || LagAction::Continue);
+        let (kydup, upstream) = KydupVideo::new(|| LagAction::Continue);
 
         // First batch (pre-output): headers + early keyframe + early media,
         // all consumed by the broadcast and dropped because nothing is
@@ -929,7 +914,7 @@ mod tests {
     /// emitting cached headers if any.
     #[tokio::test]
     async fn av_immediate_mode() {
-        let (kydup, upstream) = KydupAudio::new(0x2000, || LagAction::Continue);
+        let (kydup, upstream) = KydupAudio::new(|| LagAction::Continue);
 
         let mut proto = upstream.ready().await.unwrap();
         let send = &mut proto.send;
@@ -949,7 +934,7 @@ mod tests {
 
     #[tokio::test]
     async fn av_multiple_outputs() {
-        let (kydup, upstream) = KydupVideo::new(0x1000, || LagAction::Continue);
+        let (kydup, upstream) = KydupVideo::new(|| LagAction::Continue);
 
         let (s1, p1) = collect_output();
         let (s2, p2) = collect_output();
@@ -976,7 +961,7 @@ mod tests {
 
     #[tokio::test]
     async fn av_output_count() {
-        let (kydup, upstream) = KydupAudio::new(0x2000, || LagAction::Continue);
+        let (kydup, upstream) = KydupAudio::new(|| LagAction::Continue);
         assert_eq!(kydup.output_count(), 0);
 
         let (s1, _) = collect_output();
@@ -1047,7 +1032,7 @@ mod tests {
     /// backlog reaches the threshold, then release it once it drains.
     #[tokio::test]
     async fn av_backpressure_blocks_until_slow_drains() {
-        let (kydup, upstream) = KydupVideo::new(0x1000, || LagAction::Continue);
+        let (kydup, upstream) = KydupVideo::new(|| LagAction::Continue);
 
         // Fast output consumes immediately.
         let (fast, fast_pkts) = collect_output();
@@ -1093,7 +1078,7 @@ mod tests {
     /// remaining clients keep streaming.
     #[tokio::test]
     async fn av_backpressure_releases_when_slow_output_dropped() {
-        let (kydup, upstream) = KydupVideo::new(0x1000, || LagAction::Continue);
+        let (kydup, upstream) = KydupVideo::new(|| LagAction::Continue);
 
         let (fast, fast_pkts) = collect_output();
         let fast_h = kydup.add_output(fast);

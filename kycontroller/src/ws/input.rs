@@ -48,32 +48,20 @@ pub(super) struct InputConnection {
 /// receive channel in a [`kymux::kyproto::ProtocolRecvDriver`] for bidirectional
 /// service ↔ client packet forwarding.
 pub struct InputWebSocketEndpoint {
-    /// Endpoint identifier
-    endpoint_id: u16,
     /// Receives the [`InputConnection`] when a WebSocket client connects
     connection_rx: oneshot::Receiver<InputConnection>,
 }
 
 impl InputWebSocketEndpoint {
-    pub fn new(endpoint_id: u16) -> (Self, oneshot::Sender<InputConnection>) {
+    pub fn new() -> (Self, oneshot::Sender<InputConnection>) {
         let (tx, rx) = oneshot::channel();
-        (
-            Self {
-                endpoint_id,
-                connection_rx: rx,
-            },
-            tx,
-        )
+        (Self { connection_rx: rx }, tx)
     }
 }
 
 #[async_trait]
 impl ProtocolEndpointDriver for InputWebSocketEndpoint {
     type Protocol = InputProtocol;
-
-    fn id(&self) -> u16 {
-        self.endpoint_id
-    }
 
     async fn ready_boxed(
         mut self: Box<Self>,

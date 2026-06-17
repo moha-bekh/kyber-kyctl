@@ -396,7 +396,6 @@ pub(crate) struct AVServicesManager {
     reaper_tx: tokio::sync::mpsc::UnboundedSender<AvReaperMsg>,
     /// Taken by `ensure_reaper` on first call to hand over to the spawned task.
     reaper_rx: Option<tokio::sync::mpsc::UnboundedReceiver<AvReaperMsg>>,
-    next_endpoint_id: u16,
 }
 
 impl Default for AVServicesManager {
@@ -410,7 +409,6 @@ impl Default for AVServicesManager {
             idr_rx: Some(idr_rx),
             reaper_tx,
             reaper_rx: Some(reaper_rx),
-            next_endpoint_id: 0xC000,
         }
     }
 }
@@ -624,7 +622,6 @@ impl AVServicesManager {
                     return Ok((key, stream.dup.clone(), None));
                 }
 
-                let endpoint_id = self.alloc_endpoint_id();
                 // Lag handler: continue (re-sync on lag) AND force an IDR so the
                 // laggy output can resync on the next forced keyframe. This is
                 // required, not just an optimization: under intra-refresh (the
@@ -636,7 +633,7 @@ impl AVServicesManager {
                 // functionally harmless).
                 let idr_tx = self.idr_tx.clone();
                 let idr_key = key.clone();
-                let (dup, upstream) = kydup::KydupVideo::new(endpoint_id, move || {
+                let (dup, upstream) = kydup::KydupVideo::new(move || {
                     if let Err(e) = idr_tx.try_send(idr_key.clone()) {
                         warn!("IDR request on lag dropped for {idr_key:?}: {e}");
                     }
@@ -754,9 +751,7 @@ impl AVServicesManager {
                 if let Some(stream) = self.audio_streams.get_mut(&key) {
                     return Ok((key, stream.dup.clone()));
                 }
-                let endpoint_id = self.alloc_endpoint_id();
-                let (dup, upstream) =
-                    kydup::KydupAudio::new(endpoint_id, || kydup::LagAction::Continue);
+                let (dup, upstream) = kydup::KydupAudio::new(|| kydup::LagAction::Continue);
                 let uri = kycom.register_and_forward(upstream)?.url();
                 (Some(dup), uri)
             }
@@ -885,12 +880,6 @@ impl AVServicesManager {
         }
         info!("Last client left audio {key:?}, stopping avservice");
         self.audio_streams.remove(key)
-    }
-
-    fn alloc_endpoint_id(&mut self) -> u16 {
-        let id = self.next_endpoint_id;
-        self.next_endpoint_id = self.next_endpoint_id.wrapping_add(1);
-        id
     }
 
     /// Request a fresh keyframe (IDR) on the single video stream identified by

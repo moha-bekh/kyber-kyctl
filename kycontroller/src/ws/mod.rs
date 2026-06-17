@@ -227,9 +227,8 @@ async fn setup_video(
             })
         }
         SessionMode::Mono => {
-            let video_eid = ctrl.alloc_ws_endpoint_id();
             let (endpoint, connection_tx) =
-                av::AVWebSocketEndpoint::<kymux::types::VideoServerProtocol>::new(video_eid);
+                av::AVWebSocketEndpoint::<kymux::types::VideoServerProtocol>::new();
             let kycom_uri = kycom
                 .register_and_forward(endpoint.into())
                 .map_err(|e| Error::IO { source: e })?
@@ -284,9 +283,8 @@ async fn setup_audio(
             })
         }
         SessionMode::Mono => {
-            let audio_eid = ctrl.alloc_ws_endpoint_id();
             let (endpoint, connection_tx) =
-                av::AVWebSocketEndpoint::<kymux::types::AudioServerProtocol>::new(audio_eid);
+                av::AVWebSocketEndpoint::<kymux::types::AudioServerProtocol>::new();
             let kycom_uri = kycom
                 .register_and_forward(endpoint.into())
                 .map_err(|e| Error::IO { source: e })?
@@ -353,8 +351,6 @@ async fn start_handler(
 
     // Input: per-session via kycom (not shared via kydup)
     let (input_sender, inputservice) = if let Some(inputs_request) = &request.inputs {
-        let input_eid = ctrl.alloc_ws_endpoint_id();
-
         let host_config = kynputservice_types::HostConfig {
             display_list: ctrl.displays.lock().unwrap().convert(),
         };
@@ -364,7 +360,7 @@ async fn start_handler(
             clipboard: inputs_request.clipboard,
         };
 
-        let (endpoint, connection_tx) = input::InputWebSocketEndpoint::new(input_eid);
+        let (endpoint, connection_tx) = input::InputWebSocketEndpoint::new();
         let addr = kycom
             .register_and_forward(endpoint.into())
             .map_err(|e| Error::IO { source: e })?;

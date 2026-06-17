@@ -270,8 +270,8 @@ async fn start_video(
             .video_protocol
             .unwrap_or(kyproto::VideoProtocol::Reliable);
 
-        let client_endpoint = connection.register_video_endpoint(video_protocol).await?;
-        let endpoint_id = client_endpoint.id();
+        let (endpoint_id, client_endpoint) =
+            connection.register_video_endpoint(video_protocol).await?;
         let display_id = stream_request.display_id;
 
         let config = crate::avservices_manager::VideoStreamConfig {
@@ -361,8 +361,7 @@ async fn start_video(
         } = acquisition;
         let (metrics_endpoint_id, metrics_output) = match (request.metrics, metrics_claim) {
             (true, Some(claim)) => {
-                let metrics_endpoint = connection.register_metrics_endpoint().await?;
-                let meid = metrics_endpoint.id();
+                let (meid, metrics_endpoint) = connection.register_metrics_endpoint().await?;
                 // Spawn a task that awaits the kyproto ready handshake then
                 // hands the `ProtocolSend` to the metrics forwarder via the
                 // one-shot upgrade channel. Wrapped in OutputHandle so it's
@@ -446,8 +445,7 @@ async fn start_audio(
         .audio_protocol
         .unwrap_or(kyproto::AudioProtocol::Reliable);
 
-    let client_endpoint = connection.register_audio_endpoint(audio_protocol).await?;
-    let endpoint_id = client_endpoint.id();
+    let (endpoint_id, client_endpoint) = connection.register_audio_endpoint(audio_protocol).await?;
 
     let (acquisition, output) = match mode {
         SessionMode::Multi => {
@@ -496,9 +494,8 @@ async fn start_input(
         return Ok(None);
     };
 
-    let endpoint = connection.register_input_endpoint().await?;
+    let (endpoint_id, endpoint) = connection.register_input_endpoint().await?;
 
-    let endpoint_id = endpoint.id();
     let uri = kycom.register_and_forward(endpoint)?.url();
 
     info!("Start Inputservice. Endpoint: {endpoint_id:X}");
@@ -672,9 +669,7 @@ async fn start_session(
     .await?;
 
     let clock_sync = if request.metrics {
-        let endpoint: kyproto::ClockSyncServerEndpoint =
-            connection.register_clock_sync_endpoint().await?;
-        let endpoint_id = endpoint.id();
+        let (endpoint_id, endpoint) = connection.register_clock_sync_endpoint().await?;
         info!("Start clock sync. Endpoint: {endpoint_id:X}");
 
         let task = run_clock_sync_task(endpoint);
@@ -687,8 +682,7 @@ async fn start_session(
     };
 
     let metrics = if request.metrics {
-        let endpoint = connection.register_metrics_endpoint().await?;
-        let endpoint_id = endpoint.id();
+        let (endpoint_id, endpoint) = connection.register_metrics_endpoint().await?;
         info!("Start metrics server. Endpoint: {endpoint_id:X}");
 
         let stats_provider = connection.stats_provider();

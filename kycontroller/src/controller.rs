@@ -20,7 +20,7 @@
 
 use std::collections::HashMap;
 use std::mem;
-use std::sync::{Arc, Mutex, atomic};
+use std::sync::{Arc, Mutex};
 
 use actix_web::web;
 use kymux::kyproto;
@@ -158,8 +158,6 @@ pub struct Controller {
 
     // Shared kycom instance for all backends (IPC bridge to avserver/inputserver processes)
     pub(crate) kycom: AsyncMutex<Option<kymux::kycom::KyCom>>,
-    /// Counter for allocating kycom endpoint IDs (WS backend; Kymux uses kyproto's allocator)
-    pub(crate) next_ws_endpoint_id: atomic::AtomicU16,
 
     // Shared AV services: avservers and duplicators shared across clients
     /// Must always be taken after `kycom`.
@@ -184,7 +182,6 @@ impl Controller {
             shared_kymux_infra: Default::default(),
             tray_handle: Mutex::new(None),
             kycom: Default::default(),
-            next_ws_endpoint_id: atomic::AtomicU16::new(0x8000),
             av_services_manager: Default::default(),
         });
         let state_machine = statemachine::run(this.clone(), events_rx);
@@ -230,12 +227,6 @@ impl Controller {
 
     /// Ports for the shared kycom instance.
     pub(crate) const KYCOM_PORTS: std::ops::Range<u16> = 9091..9110;
-
-    /// Allocate a kycom endpoint ID for WS backend channels.
-    pub(crate) fn alloc_ws_endpoint_id(&self) -> u16 {
-        self.next_ws_endpoint_id
-            .fetch_add(1, atomic::Ordering::Relaxed)
-    }
 
     /// Take ownership of the shared kycom iff no sessions and no AV streams
     /// remain; the moment kycom can no longer be in use. The caller stops

@@ -58,17 +58,15 @@ impl AVSendProtocol for AudioServerProtocol {
 /// Generic over the protocol type (`P`): use [`VideoServerProtocol`] for video
 /// or [`AudioServerProtocol`] for audio.
 pub(super) struct AVWebSocketEndpoint<P> {
-    endpoint_id: u16,
     connection_rx: oneshot::Receiver<actix_ws::Session>,
     _protocol: PhantomData<P>,
 }
 
 impl<P> AVWebSocketEndpoint<P> {
-    pub(super) fn new(endpoint_id: u16) -> (Self, oneshot::Sender<actix_ws::Session>) {
+    pub(super) fn new() -> (Self, oneshot::Sender<actix_ws::Session>) {
         let (tx, rx) = oneshot::channel();
         (
             Self {
-                endpoint_id,
                 connection_rx: rx,
                 _protocol: PhantomData,
             },
@@ -80,10 +78,6 @@ impl<P> AVWebSocketEndpoint<P> {
 #[async_trait]
 impl<P: AVSendProtocol + Send> ProtocolEndpointDriver for AVWebSocketEndpoint<P> {
     type Protocol = P;
-
-    fn id(&self) -> u16 {
-        self.endpoint_id
-    }
 
     async fn ready_boxed(self: Box<Self>) -> std::result::Result<Self::Protocol, ProtocolError> {
         let ws_session = self
