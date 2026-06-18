@@ -177,13 +177,6 @@ pub(crate) enum HostEvent {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-enum HostAuthEvent {
-    Request,
-    Token(String),
-    Succeed,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
 enum HostEventFrame {
     Ping { id: u64 },
     Pong { id: u64 },
