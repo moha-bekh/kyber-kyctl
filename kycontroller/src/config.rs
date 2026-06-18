@@ -21,7 +21,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use log::{error, info};
+use log::info;
 use serde::Deserialize;
 
 use crate::auth;
