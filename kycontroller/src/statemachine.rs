@@ -36,37 +36,40 @@ use crate::{Controller, HostEvent};
 /// exclusive stream alongside a shared one); matching by stream identity
 /// rather than by display keeps each session's events isolated.
 async fn route_to_subscribers(ctrl: &Controller, stream_id: &StreamId, event: &HostEvent) {
-    let all_services: Vec<_> = ctrl
+    // Use a `JoinAll` to run all updates concurrently
+    let futures: futures_util::future::JoinAll<_> = ctrl
         .sessions
         .lock()
         .unwrap()
         .values()
         .filter_map(|session| {
-            Some((
-                session.services.clone(),
-                session.session.as_ref()?.host_event_sender.events.clone(),
-            ))
+            let services = session.services.clone();
+            let host_event_sender = session.session.as_ref()?.host_event_sender.events.clone();
+            let stream_id = stream_id.clone();
+            let event = event.clone();
+
+            Some(async move {
+                let services = services.lock().await;
+
+                let matches = match stream_id {
+                    StreamId::Video(key) => services
+                        .video_subscriptions
+                        .iter()
+                        .any(|sub| sub.key() == &key),
+                    StreamId::Audio(key) => services
+                        .audio_subscription
+                        .as_ref()
+                        .is_some_and(|sub| sub.key() == &key),
+                };
+
+                if matches {
+                    host_event_sender.send(event);
+                }
+            })
         })
         .collect();
 
-    for (services, host_event_sender) in all_services {
-        let services = services.lock().await;
-
-        let matches = match stream_id {
-            StreamId::Video(key) => services
-                .video_subscriptions
-                .iter()
-                .any(|sub| sub.key() == key),
-            StreamId::Audio(key) => services
-                .audio_subscription
-                .as_ref()
-                .is_some_and(|sub| sub.key() == key),
-        };
-
-        if matches {
-            host_event_sender.send(event.clone());
-        }
-    }
+    futures.await;
 }
 
 #[derive(Debug)]
@@ -161,17 +164,28 @@ impl StateMachine {
                     match session_id {
                         // Global event (e.g., from watchdog): update all inputservices
                         None => {
-                            let services = ctrl.all_session_services();
-                            for services in services {
-                                let mut services = services.lock().await;
-                                if let Some(input) = &mut services.input {
-                                    if let Err(err) =
-                                        input.update_host_config(host_config.clone()).await
-                                    {
-                                        warn!("Failed to send HostConfig to InputServer: {err:?}");
+                            // Use a `JoinAll` to run all updates concurrently
+                            let futures: futures_util::future::JoinAll<_> = ctrl
+                                .sessions
+                                .lock()
+                                .unwrap()
+                                .values()
+                                .map(|session| {
+                                    let services = session.services.clone();
+                                    let host_config = host_config.clone();
+
+                                    async move {
+                                        let mut services = services.lock().await;
+                                        if let Some(input) = &mut services.input {
+                                            if let Err(err) = input.update_host_config(host_config).await {
+                                                warn!("Failed to send HostConfig to InputServer: {err:?}");
+                                            }
+                                        }
                                     }
-                                }
-                            }
+                                })
+                                .collect();
+
+                            futures.await;
                         }
                         // Session-specific event: update only that session's inputservice
                         Some(sid) => {

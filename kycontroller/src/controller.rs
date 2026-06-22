@@ -294,15 +294,6 @@ impl Controller {
         self.sessions.lock().unwrap().values_mut().for_each(f);
     }
 
-    pub fn all_session_services(&self) -> Vec<Arc<AsyncMutex<StreamingServices>>> {
-        self.sessions
-            .lock()
-            .unwrap()
-            .values()
-            .map(|s| s.services.clone())
-            .collect()
-    }
-
     pub fn insert_session(&self, session: ClientSession) {
         self.sessions.lock().unwrap().insert(session.uid, session);
         self.update_tray_status();
