@@ -37,6 +37,7 @@ use crate::avservice;
 use crate::avservices_manager::{AVServicesManager, AudioSubscription, VideoSubscription};
 use crate::config;
 use crate::error::{Error, Result};
+use crate::host_events;
 use crate::inputservice;
 use crate::kymux_controller::{KymuxBackend, SharedKymuxInfra};
 use crate::session::ClientAuthTokens;
@@ -44,7 +45,6 @@ use crate::statemachine::{self, StateMachineProxy};
 use crate::tls;
 use crate::utils::Task;
 use crate::ws::WebsocketBackend;
-use crate::HostEventSender;
 
 use crate::tray::{TrayHandle, TrayStatus};
 
@@ -56,7 +56,7 @@ pub(crate) enum DataPlaneBackend {
 }
 
 pub(crate) struct StreamingSession {
-    pub(crate) host_event_sender: HostEventSender,
+    pub(crate) host_event_sender: host_events::HostEventTask,
     pub(crate) data_plane: Option<DataPlaneBackend>,
     /// Pending Kymux connection receiver (between start_mux and start_session).
     /// This field holds the oneshot receiver while waiting for the client to connect.
@@ -65,7 +65,7 @@ pub(crate) struct StreamingSession {
 }
 
 impl StreamingSession {
-    pub(crate) fn new(host_event_sender: HostEventSender) -> Self {
+    pub(crate) fn new(host_event_sender: host_events::HostEventTask) -> Self {
         Self {
             host_event_sender,
             data_plane: None,
@@ -80,15 +80,8 @@ pub(crate) struct ClientSession {
     pub(crate) expiration: Option<OffsetDateTime>,
     pub(crate) auth_tokens: ClientAuthTokens,
 
-    // These resources are asynchronous, so they have their own async mutex.
-    // The `Arc` enables doing this outside the parent mutex.
-    pub(crate) stream: Arc<AsyncMutex<Stream>>,
-}
-
-#[derive(Default)]
-pub(crate) struct Stream {
     pub session: Option<StreamingSession>,
-    pub services: StreamingServices,
+    pub services: Arc<AsyncMutex<StreamingServices>>,
 }
 
 impl ClientSession {
@@ -98,17 +91,8 @@ impl ClientSession {
             username: session.username,
             expiration: session.expiration,
             auth_tokens: ClientAuthTokens::generate(),
-            stream: Default::default(),
-        }
-    }
-
-    async fn stop(self) {
-        info!("Stop session {}", self.uid);
-
-        let stream = mem::take(&mut *self.stream.lock().await);
-
-        if let Err(err) = stream.services.stop().await {
-            warn!("Failed to stop streaming services: {err:?}");
+            session: None,
+            services: Default::default(),
         }
     }
 }
@@ -127,7 +111,7 @@ pub(crate) struct StreamingServices {
     pub(crate) metrics: Option<Task>,
     /// Kydup output handles for this client (Kymux/WS backends).
     /// Dropping clears the handles, which aborts the output tasks automatically.
-    pub(crate) output_handles: Vec<Task>,
+    pub(crate) tasks: Vec<Task>,
     /// RAII subscriptions to [`AVServicesManager`] video entries (Kymux/WS backends).
     /// Dropping triggers async decrement via the AV reaper, which stops the
     /// avservice when the last subscription leaves; covers both `Shared` and
@@ -143,7 +127,7 @@ impl StreamingServices {
         // are stopped by the AV reaper after the subscriptions held here
         // drop; see AVServicesManager. RTP avservices (in `video`/`audio`) are
         // per-session and stopped synchronously below.
-        drop(self.output_handles);
+        drop(self.tasks);
 
         for service in self.video {
             info!("Stop running video AVServer");
@@ -286,25 +270,42 @@ impl Controller {
         }
     }
 
-    pub fn get_stream_session(&self, uid: &uuid::Uuid) -> Result<Arc<AsyncMutex<Stream>>> {
-        let sessions = self.sessions.lock().unwrap();
+    pub fn session_services(&self, uid: &uuid::Uuid) -> Result<Arc<AsyncMutex<StreamingServices>>> {
+        let mut sessions = self.sessions.lock().unwrap();
         let client_session = sessions
-            .get(uid)
+            .get_mut(uid)
             .ok_or(Error::InvalidSession { uid: *uid })?;
-        Ok(client_session.stream.clone())
+        Ok(client_session.services.clone())
     }
 
-    pub fn get_all_stream_sessions(&self) -> Vec<Arc<AsyncMutex<Stream>>> {
+    pub fn with_session<T>(
+        &self,
+        uid: &uuid::Uuid,
+        f: impl FnOnce(&mut ClientSession) -> Result<T>,
+    ) -> Result<T> {
+        let mut sessions = self.sessions.lock().unwrap();
+        let client_session = sessions
+            .get_mut(uid)
+            .ok_or(Error::InvalidSession { uid: *uid })?;
+        f(client_session)
+    }
+
+    pub fn for_each_session(&self, f: impl FnMut(&mut ClientSession)) {
+        self.sessions.lock().unwrap().values_mut().for_each(f);
+    }
+
+    pub fn all_session_services(&self) -> Vec<Arc<AsyncMutex<StreamingServices>>> {
         self.sessions
             .lock()
             .unwrap()
             .values()
-            .map(|s| s.stream.clone())
+            .map(|s| s.services.clone())
             .collect()
     }
 
     pub fn insert_session(&self, session: ClientSession) {
         self.sessions.lock().unwrap().insert(session.uid, session);
+        self.update_tray_status();
     }
 
     async fn cleanup_removed_session(&self, no_sessions: bool) {
@@ -330,19 +331,14 @@ impl Controller {
 
     /// Remove a session.
     pub(crate) async fn remove_session(&self, session_id: Uuid) -> Result<()> {
-        let session;
-        let no_sessions;
-
-        {
+        let no_sessions = {
             let mut sessions = self.sessions.lock().unwrap();
 
-            session = sessions
+            sessions
                 .remove(&session_id)
                 .ok_or(Error::InvalidSession { uid: session_id })?;
-            no_sessions = sessions.is_empty();
-        }
-
-        session.stop().await;
+            sessions.is_empty()
+        };
 
         self.cleanup_removed_session(no_sessions).await;
 
@@ -351,22 +347,12 @@ impl Controller {
 
     /// Remove multiple sessions.
     pub(crate) async fn remove_sessions_if(&self, mut f: impl FnMut(&ClientSession) -> bool) {
-        let removed: Vec<_>;
-        let no_sessions;
-
-        {
+        let no_sessions = {
             let mut sessions = self.sessions.lock().unwrap();
 
-            removed = sessions
-                .extract_if(|_, session| f(session))
-                .map(|(_, s)| s)
-                .collect();
-            no_sessions = sessions.is_empty();
-        }
-
-        for session in removed {
-            session.stop().await;
-        }
+            sessions.retain(|_, session| !f(session));
+            sessions.is_empty()
+        };
 
         self.cleanup_removed_session(no_sessions).await;
     }
@@ -374,27 +360,31 @@ impl Controller {
     /// Extract streaming resources for cleanup outside the lock.
     ///
     /// The session remains in the map but with empty services.
-    pub(crate) async fn remove_streaming(&self, session_id: &Uuid) -> Result<()> {
+    pub(crate) async fn stop_streaming(&self, session_id: &Uuid) -> Result<()> {
         info!("Stop streaming for session {}", session_id);
 
-        let stream = self.get_stream_session(session_id)?;
-        let mut stream = stream.lock().await;
+        let services = self.with_session(session_id, |s| {
+            if let Some(session) = &mut s.session {
+                session.data_plane = None;
+            }
 
-        if let Some(session) = &mut stream.session {
-            session.data_plane = None;
-        }
-        if let Err(err) = mem::take(&mut stream.services).stop().await {
+            Ok(s.services.clone())
+        })?;
+
+        if let Err(err) = mem::take(&mut *services.lock().await).stop().await {
             warn!("Failed to stop streaming services: {err:?}");
         }
 
         Ok(())
     }
 
-    pub(crate) async fn has_data_plane(&self, session_id: &Uuid) -> Result<bool> {
-        let stream = self.get_stream_session(session_id)?;
-        let stream = stream.lock().await;
+    pub(crate) fn has_data_plane(&self, session_id: &Uuid) -> Result<bool> {
+        let sessions = self.sessions.lock().unwrap();
+        let client_session = sessions
+            .get(session_id)
+            .ok_or(Error::InvalidSession { uid: *session_id })?;
 
-        let Some(stream_session) = stream.session.as_ref() else {
+        let Some(stream_session) = client_session.session.as_ref() else {
             return Err(Error::ControlPlaneNotOpened);
         };
 

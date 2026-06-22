@@ -29,6 +29,7 @@ use kymux::kycom::KyCom;
 use tokio::sync::oneshot;
 
 use crate::config::SessionMode;
+use crate::controller::StreamingServices;
 use crate::inputservice;
 use crate::kydup;
 use crate::utils::Task;
@@ -312,7 +313,7 @@ async fn start_handler(
     request: &requests::StartRequest,
 ) -> Result<()> {
     // Check if data plane is already opened for this session
-    if ctrl.has_data_plane(&session_id).await? {
+    if ctrl.has_data_plane(&session_id)? {
         return Err(Error::DataPlaneAlreadyOpened);
     }
 
@@ -395,29 +396,34 @@ async fn start_handler(
     };
 
     // Store objects
-    let stream = ctrl.get_stream_session(&session_id)?;
-    let mut stream = stream.lock().await;
+    let session_services = ctrl.with_session(&session_id, |s| {
+        let Some(stream) = s.session.as_mut() else {
+            return Err(Error::ControlPlaneNotOpened);
+        };
 
-    let Some(streaming_session) = stream.session.as_mut() else {
-        return Err(Error::ControlPlaneNotOpened);
+        let backend = WebsocketBackend {
+            video: video_slot,
+            video_stream_key,
+            audio: audio_slot,
+            input: input_sender,
+            input_forward_handle: None,
+        };
+        stream.data_plane = Some(DataPlaneBackend::Websocket(backend));
+
+        Ok(s.services.clone())
+    })?;
+
+    let services = StreamingServices {
+        video: Vec::new(),
+        audio: None,
+        input: inputservice,
+        clock_sync: None,
+        metrics: None,
+        tasks: Vec::new(),
+        video_subscriptions: video_subscription.map_or(Vec::new(), |s| vec![s]),
+        audio_subscription,
     };
-
-    let backend = WebsocketBackend {
-        video: video_slot,
-        video_stream_key,
-        audio: audio_slot,
-        input: input_sender,
-        input_forward_handle: None,
-    };
-    streaming_session.data_plane = Some(DataPlaneBackend::Websocket(backend));
-
-    stream.services.input = inputservice;
-    if let Some(subscription) = video_subscription {
-        stream.services.video_subscriptions.push(subscription);
-    }
-    if let Some(subscription) = audio_subscription {
-        stream.services.audio_subscription = Some(subscription);
-    }
+    *session_services.lock().await = services;
 
     Ok(())
 }
@@ -444,31 +450,26 @@ pub(super) async fn start_websocket_handler(
     // Phase 1: under the per-session mutable borrow, run connect_service
     // and capture (if Video) the stream key so we can request a fresh IDR
     // afterwards on `av_services_manager`.
-    let idr_key = {
-        let stream_session = ctrl.get_stream_session(&session_id)?;
-        let mut stream_session = stream_session.lock().await;
-
-        let (handle_opt, idr_key) = {
-            let Some(streaming_session) = &mut stream_session.session else {
-                return Err(Error::ControlPlaneNotOpened);
-            };
-            let backend = match &mut streaming_session.data_plane {
-                Some(DataPlaneBackend::Websocket(b)) => b,
-                _ => return Err(Error::WsNoRouter),
-            };
-            let handle = backend.connect_service(&service, session, msg_stream)?;
-            let idr_key = if matches!(service, ServiceType::Video) {
-                backend.video_stream_key.clone()
-            } else {
-                None
-            };
-            (handle, idr_key)
+    let (idr_key, services, handle) = ctrl.with_session(&session_id, |client_session| {
+        let Some(streaming_session) = &mut client_session.session else {
+            return Err(Error::ControlPlaneNotOpened);
         };
-        if let Some(handle) = handle_opt {
-            stream_session.services.output_handles.push(handle);
-        }
-        idr_key
-    };
+        let backend = match &mut streaming_session.data_plane {
+            Some(DataPlaneBackend::Websocket(b)) => b,
+            _ => return Err(Error::WsNoRouter),
+        };
+        let handle = backend.connect_service(&service, session, msg_stream)?;
+
+        let idr_key = if matches!(service, ServiceType::Video) {
+            backend.video_stream_key.clone()
+        } else {
+            None
+        };
+
+        Ok((idr_key, client_session.services.clone(), handle))
+    })?;
+
+    services.lock().await.tasks.extend(handle);
 
     // Phase 2: client_session borrow released, free to touch av_services_manager.
     // Force an IDR to give the joining client a sync point: under intra-refresh

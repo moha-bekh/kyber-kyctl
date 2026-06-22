@@ -183,12 +183,25 @@ enum HostEventFrame {
     Event { event: HostEvent },
 }
 
+#[derive(Debug, Clone)]
 pub(crate) struct HostEventSender {
     events_tx: mpsc::UnboundedSender<HostEventFrame>,
-    _task: Task,
 }
 
 impl HostEventSender {
+    pub(crate) fn send(&self, event: HostEvent) {
+        if let Err(err) = self.events_tx.send(HostEventFrame::Event { event }) {
+            warn!("Failed to send event {err:?}");
+        }
+    }
+}
+
+pub(crate) struct HostEventTask {
+    pub events: HostEventSender,
+    _task: Task,
+}
+
+impl HostEventTask {
     fn new(
         session_id: uuid::Uuid,
         session: actix_ws::Session,
@@ -206,13 +219,12 @@ impl HostEventSender {
             statemachine_proxy,
         ));
 
-        Self { events_tx, _task }
+        let events = HostEventSender { events_tx };
+        Self { events, _task }
     }
 
     pub(crate) fn send(&self, event: HostEvent) {
-        if let Err(err) = self.events_tx.send(HostEventFrame::Event { event }) {
-            warn!("Failed to send event {err:?}");
-        }
+        self.events.send(event);
     }
 
     async fn task_entry(
@@ -429,14 +441,14 @@ impl PendingHostEventSender {
         mut self,
         session_id: uuid::Uuid,
         proxy: StateMachineProxy,
-    ) -> Result<HostEventSender> {
+    ) -> Result<HostEventTask> {
         const SUCCESS_JSON: &str = "\"Welcome\"";
         let Ok(_) = self.session.text(SUCCESS_JSON).await else {
             self.reject().await;
             return Err(Error::ChannelClosedTx);
         };
 
-        Ok(HostEventSender::new(
+        Ok(HostEventTask::new(
             session_id,
             self.session,
             self.msg_stream,

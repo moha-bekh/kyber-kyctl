@@ -26,6 +26,7 @@ use serde::{Deserialize, Serialize};
 use kyavservice_types::VideoCodec;
 use kynputservice_types::CursorFormat;
 
+use crate::controller::StreamingServices;
 use crate::utils::generate_session_id;
 use crate::{controller::Controller, session::identity::Identity};
 
@@ -177,26 +178,19 @@ pub(crate) async fn start_session(
             let numeric_session_id = generate_session_id();
             info!("Session started. SessionId: {numeric_session_id}");
 
-            let Ok(stream) = ctrl.get_stream_session(&session_id) else {
-                error!(
-                    "Session {} disappeared after successful start_session",
-                    session_id
-                );
-                return HttpResponse::InternalServerError().finish();
-            };
-            let mut stream = stream.lock().await;
+            let mut services = StreamingServices::default();
 
             let video = response.video.map(|video| {
                 video
                     .into_iter()
                     .map(|v| {
                         if let Some(output) = v.output {
-                            stream.services.output_handles.push(output);
+                            services.tasks.push(output);
                         }
                         if let Some(m) = v.metrics_output {
-                            stream.services.output_handles.push(m);
+                            services.tasks.push(m);
                         }
-                        stream.services.video_subscriptions.push(v.subscription);
+                        services.video_subscriptions.push(v.subscription);
 
                         StartSessionVideoResponse {
                             display_id: v.display_id,
@@ -209,9 +203,9 @@ pub(crate) async fn start_session(
 
             let audio = if let Some(audio) = response.audio {
                 if let Some(output) = audio.output {
-                    stream.services.output_handles.push(output);
+                    services.tasks.push(output);
                 }
-                stream.services.audio_subscription = Some(audio.subscription);
+                services.audio_subscription = Some(audio.subscription);
 
                 Some(StartSessionAudioResponse {
                     endpoint: audio.endpoint,
@@ -221,7 +215,7 @@ pub(crate) async fn start_session(
             };
 
             let input = if let Some(input) = response.input {
-                stream.services.input = Some(input.inputservice);
+                services.input = Some(input.inputservice);
 
                 Some(StartSessionInputResponse {
                     endpoint: input.endpoint,
@@ -232,7 +226,7 @@ pub(crate) async fn start_session(
             };
 
             let clock_sync = if let Some(clock_sync) = response.clock_sync {
-                stream.services.clock_sync = Some(clock_sync.task);
+                services.clock_sync = Some(clock_sync.task);
 
                 Some(StartSessionClockSyncResponse {
                     endpoint: clock_sync.endpoint,
@@ -242,7 +236,7 @@ pub(crate) async fn start_session(
             };
 
             let metrics = if let Some(metrics) = response.metrics {
-                stream.services.metrics = Some(metrics.task);
+                services.metrics = Some(metrics.task);
 
                 Some(StartSessionMetricsResponse {
                     endpoint: metrics.endpoint,
@@ -250,6 +244,14 @@ pub(crate) async fn start_session(
             } else {
                 None
             };
+
+            let res = ctrl.with_session(&session_id, |session| Ok(session.services.clone()));
+
+            let Ok(session_services) = res else {
+                error!("Session {session_id} disappeared after successful start_session",);
+                return HttpResponse::InternalServerError().finish();
+            };
+            *session_services.lock().await = services;
 
             HttpResponse::Ok().json(StartSessionResponse {
                 session_id: Some(numeric_session_id),

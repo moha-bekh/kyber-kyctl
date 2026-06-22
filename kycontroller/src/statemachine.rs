@@ -36,25 +36,35 @@ use crate::{Controller, HostEvent};
 /// exclusive stream alongside a shared one); matching by stream identity
 /// rather than by display keeps each session's events isolated.
 async fn route_to_subscribers(ctrl: &Controller, stream_id: &StreamId, event: &HostEvent) {
-    for session in ctrl.get_all_stream_sessions() {
-        let session = session.lock().await;
-        let Some(streaming_session) = &session.session else {
-            continue;
-        };
+    let all_services: Vec<_> = ctrl
+        .sessions
+        .lock()
+        .unwrap()
+        .values()
+        .filter_map(|session| {
+            Some((
+                session.services.clone(),
+                session.session.as_ref()?.host_event_sender.events.clone(),
+            ))
+        })
+        .collect();
+
+    for (services, host_event_sender) in all_services {
+        let services = services.lock().await;
+
         let matches = match stream_id {
-            StreamId::Video(key) => session
-                .services
+            StreamId::Video(key) => services
                 .video_subscriptions
                 .iter()
                 .any(|sub| sub.key() == key),
-            StreamId::Audio(key) => session
-                .services
+            StreamId::Audio(key) => services
                 .audio_subscription
                 .as_ref()
                 .is_some_and(|sub| sub.key() == key),
         };
+
         if matches {
-            streaming_session.host_event_sender.send(event.clone());
+            host_event_sender.send(event.clone());
         }
     }
 }
@@ -134,17 +144,14 @@ impl StateMachine {
                         session_id
                     );
 
-                    // Broadcast display list to all sessions (non-blocking to avoid
-                    // holding the lock while a slow client backs up the channel)
-                    for stream in ctrl.get_all_stream_sessions() {
-                        if let Some(streaming_session) = &stream.lock().await.session {
-                            streaming_session
-                                .host_event_sender
-                                .send(HostEvent::DisplayList {
-                                    displays: displays.convert(),
-                                });
+                    // Broadcast display list to all sessions
+                    ctrl.for_each_session(|session| {
+                        if let Some(s) = &session.session {
+                            s.host_event_sender.send(HostEvent::DisplayList {
+                                displays: displays.convert(),
+                            });
                         }
-                    }
+                    });
 
                     // Update inputservice(s)
                     let host_config = kynputservice_types::HostConfig {
@@ -154,11 +161,12 @@ impl StateMachine {
                     match session_id {
                         // Global event (e.g., from watchdog): update all inputservices
                         None => {
-                            for stream in ctrl.get_all_stream_sessions() {
-                                if let Some(inputservice) = &mut stream.lock().await.services.input
-                                {
+                            let services = ctrl.all_session_services();
+                            for services in services {
+                                let mut services = services.lock().await;
+                                if let Some(input) = &mut services.input {
                                     if let Err(err) =
-                                        inputservice.update_host_config(host_config.clone()).await
+                                        input.update_host_config(host_config.clone()).await
                                     {
                                         warn!("Failed to send HostConfig to InputServer: {err:?}");
                                     }
@@ -167,13 +175,10 @@ impl StateMachine {
                         }
                         // Session-specific event: update only that session's inputservice
                         Some(sid) => {
-                            if let Ok(stream) = ctrl.get_stream_session(&sid) {
-                                if let Some(inputservice) =
-                                    stream.lock().await.services.input.as_mut()
-                                {
-                                    if let Err(err) =
-                                        inputservice.update_host_config(host_config).await
-                                    {
+                            if let Ok(services) = ctrl.session_services(&sid) {
+                                let mut services = services.lock().await;
+                                if let Some(input) = &mut services.input {
+                                    if let Err(err) = input.update_host_config(host_config).await {
                                         warn!("Failed to send HostConfig to InputServer: {err:?}");
                                     }
                                 }
@@ -200,12 +205,14 @@ impl StateMachine {
                     event: kyavservice_types::Event::PipelineEvent(event),
                 } => {
                     let host_event = HostEvent::StreamerPipelineEvent(event.into());
-                    if let Ok(session) = ctrl.get_stream_session(&sid) {
-                        if let Some(streaming_session) = &session.lock().await.session {
+                    let _ = ctrl.with_session(&sid, |session| {
+                        if let Some(streaming_session) = &session.session {
                             streaming_session.host_event_sender.send(host_event);
                         }
-                    }
+                        Ok(())
+                    });
                 }
+                StateMachineEvent::AvService { .. } => (),
                 StateMachineEvent::AvServiceStopped {
                     session_id,
                     stream_id,
@@ -233,26 +240,27 @@ impl StateMachine {
                         // AVServicesManager stream (shared or exclusive): reach
                         // the sessions subscribed to this exact stream.
                         (Some(stream_id), _) => {
-                            route_to_subscribers(&ctrl, &stream_id, &event).await;
+                            route_to_subscribers(&ctrl, &stream_id, &event).await
                         }
                         // Legacy per-session (RTP): notify that session only.
                         (None, Some(sid)) => {
-                            if let Ok(session) = ctrl.get_stream_session(&sid) {
-                                if let Some(streaming_session) = &session.lock().await.session {
+                            let _ = ctrl.with_session(&sid, |session| {
+                                if let Some(streaming_session) = &session.session {
                                     streaming_session.host_event_sender.send(event);
                                 }
-                            }
+                                Ok(())
+                            });
                         }
                         // Global handler (e.g. watchdog display enumeration):
                         // broadcast to every session.
                         (None, None) => {
-                            for session in ctrl.get_all_stream_sessions() {
-                                if let Some(streaming_session) = &session.lock().await.session {
+                            ctrl.for_each_session(|session| {
+                                if let Some(streaming_session) = &session.session {
                                     streaming_session.host_event_sender.send(event.clone());
                                 }
-                            }
+                            });
                         }
-                    }
+                    };
                 }
                 StateMachineEvent::HostEvents {
                     session_id,
@@ -269,7 +277,6 @@ impl StateMachine {
                 StateMachineEvent::KymuxTimeout { session_id } => {
                     warn!("Kymux connection timeout for session {}", session_id);
                 }
-                _ => {}
             }
         }
     }

@@ -59,9 +59,9 @@ mod ws;
 
 use libkypc::process::ProcessFactory;
 
-use controller::{ClientSession, Controller, DataPlaneBackend, StreamingSession};
+use controller::{ClientSession, Controller, DataPlaneBackend};
 use error::{Error, Result};
-use host_events::{HostEvent, HostEventSender};
+use host_events::HostEvent;
 use statemachine::{StateMachineEvent, StateMachineProxy};
 use utils::TypeConvert;
 
@@ -201,7 +201,6 @@ async fn login(
     });
 
     ctrl.insert_session(client_session);
-    ctrl.update_tray_status();
 
     HttpResponse::Ok().json(body)
 }
@@ -432,9 +431,12 @@ async fn websocket_service(
 
         sender.send(HostEvent::DisplayList { displays });
 
-        if let Ok(stream) = ctrl.get_stream_session(&session_id) {
-            let mut stream = stream.lock().await;
-            stream.session = Some(StreamingSession::new(sender));
+        let ret = ctrl.with_session(&session_id, |session| {
+            session.session = Some(controller::StreamingSession::new(sender));
+            Ok(())
+        });
+
+        if ret.is_ok() {
             info!("Session \"{session_id}\" controlplane connected");
         }
     });
@@ -453,9 +455,7 @@ async fn stop_streaming(ctrl: web::Data<Controller>, user: Identity) -> HttpResp
         return HttpResponse::Unauthorized().finish();
     };
 
-    let cleanup = ctrl.remove_streaming(&uid).await;
-
-    match cleanup {
+    match ctrl.stop_streaming(&uid).await {
         Ok(()) => {
             info!("Stream stopped");
             HttpResponse::Ok().finish()
@@ -501,20 +501,24 @@ pub(crate) async fn set_bitrate(
 ) -> HttpResponse {
     info!("Set bitrate: {}", request.bitrate);
 
+    let Ok(uid) = user.uid() else {
+        return HttpResponse::Unauthorized().finish();
+    };
+
     // Split the global bitrate evenly across `count` streams and cast to the
     // signed type the encoder expects. `count` is assumed non-zero; the call
     // sites guard against an empty stream set first.
     let split_bitrate = |count: usize| -> i32 { (request.bitrate / count as u32) as i32 };
 
-    let Ok(uid) = user.uid() else {
-        return HttpResponse::Unauthorized().finish();
+    let services = match ctrl.with_session(&uid, |s| Ok(s.services.clone())) {
+        Ok(s) => s,
+        Err(err) => {
+            warn!("Session not found: {err}");
+            return HttpResponse::Forbidden().finish();
+        }
     };
 
-    let Ok(stream) = ctrl.get_stream_session(&uid) else {
-        warn!("Session not found");
-        return HttpResponse::Forbidden().finish();
-    };
-    let mut stream = stream.lock().await;
+    let mut services = services.lock().await;
 
     // Set bitrate: av_services_manager first (Kymux/WS), fallback to per-session (RTP legacy).
     // The two paths stay separate because SharedHandler::video_set_bitrate is sync
@@ -524,25 +528,22 @@ pub(crate) async fn set_bitrate(
     // client B's avservice. For Shared entries the underlying avservice is still
     // global; log a warning since the change will affect every other client
     // on the same display (last-writer-wins, temporary).
-    if !stream.services.video_subscriptions.is_empty() {
-        let keys: Vec<_> = stream
-            .services
-            .video_subscriptions
-            .iter()
-            .map(|sub| sub.key().clone())
-            .collect();
-        let per_stream = split_bitrate(keys.len());
-        for key in &keys {
+    if !services.video_subscriptions.is_empty() {
+        let per_stream = split_bitrate(services.video_subscriptions.len());
+        let av_services_manager = ctrl.av_services_manager.lock().await;
+
+        for sub in &services.video_subscriptions {
+            let key = sub.key();
+
             if matches!(
                 key,
                 crate::avservices_manager::VideoStreamKey::Shared { .. }
             ) {
                 warn!(
-                    "set_bitrate on Shared stream {:?} overrides other clients on this display",
-                    key
+                    "set_bitrate on Shared stream {key:?} overrides other clients on this display"
                 );
             }
-            let av_services_manager = ctrl.av_services_manager.lock().await;
+
             let Some(stream) = av_services_manager.video_streams.get(key) else {
                 continue;
             };
@@ -550,25 +551,24 @@ pub(crate) async fn set_bitrate(
                 warn!("Failed to set bitrate: {err:?}");
             }
         }
-    } else if !stream.services.video.is_empty() {
-        let per_stream = split_bitrate(stream.services.video.len());
-        for avserver in &mut stream.services.video {
+    } else if !services.video.is_empty() {
+        let per_stream = split_bitrate(services.video.len());
+        for avserver in &mut services.video {
             if let Err(err) = avserver.video_set_bitrate(per_stream).await {
                 warn!("Failed to set bitrate: {err:?}");
             }
         }
-    } else {
-        warn!("No video streaming started");
-        return HttpResponse::Forbidden().finish();
     }
 
-    if let Some(stream_session) = &stream.session {
-        stream_session
-            .host_event_sender
-            .send(HostEvent::BitrateChanged {
-                bitrate: request.bitrate,
-            });
-    }
+    let _ = ctrl.with_session(&uid, |s| {
+        if let Some(s) = &s.session {
+            s.host_event_sender
+                .send(host_events::HostEvent::BitrateChanged {
+                    bitrate: request.bitrate,
+                });
+        }
+        Ok(())
+    });
 
     HttpResponse::Ok().finish()
 }

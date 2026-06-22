@@ -27,7 +27,7 @@ use tokio::time;
 
 use crate::error::{Error, Result};
 use crate::utils::TypeConvert;
-use crate::{avservice, inputservice, Controller, DataPlaneBackend};
+use crate::{avservice, controller, inputservice, Controller, DataPlaneBackend};
 
 pub async fn generate_video_sdp(
     ctrl: &Controller,
@@ -110,21 +110,26 @@ pub async fn start(
         warn!("Input server disabled");
     }
 
-    // Single session access to store all services
-    let stream = ctrl.get_stream_session(&session_id)?;
-    let mut stream = stream.lock().await;
+    // Store all services
+    let services = ctrl.with_session(&session_id, |s| {
+        let Some(streaming_session) = s.session.as_mut() else {
+            return Err(Error::ControlPlaneNotOpened);
+        };
 
-    if let Some(avservice) = avservice_video {
-        stream.services.video = vec![avservice];
-    }
-    stream.services.audio = avservice_audio;
-    stream.services.input = inputservice_handler;
+        streaming_session.data_plane = Some(DataPlaneBackend::Rtp);
+        Ok(s.services.clone())
+    })?;
 
-    let Some(streaming_session) = &mut stream.session else {
-        return Err(Error::ControlPlaneNotOpened);
+    *services.lock().await = controller::StreamingServices {
+        video: avservice_video.map_or_else(Vec::new, |s| vec![s]),
+        audio: avservice_audio,
+        input: inputservice_handler,
+        clock_sync: None,
+        metrics: None,
+        tasks: Vec::new(),
+        video_subscriptions: Vec::new(),
+        audio_subscription: None,
     };
-
-    streaming_session.data_plane = Some(DataPlaneBackend::Rtp);
 
     time::sleep(Duration::from_millis(100)).await;
     Ok(())
