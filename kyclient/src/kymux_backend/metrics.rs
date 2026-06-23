@@ -51,10 +51,10 @@ pub(crate) async fn start_connection_stats_poller(
     connection: &kyproto::Connection,
     metrics: MetricsProducer,
     interval: Duration,
-) {
+) -> runtime::Task {
     let stats_provider = connection.stats_provider();
 
-    runtime::spawn(async move {
+    runtime::Task::spawn(async move {
         let mut interval = runtime::interval(interval);
         loop {
             interval.tick().await;
@@ -73,7 +73,7 @@ pub(crate) async fn start_connection_stats_poller(
                 break;
             }
         }
-    });
+    })
 }
 
 pub(crate) async fn start_pinger(
@@ -81,20 +81,20 @@ pub(crate) async fn start_pinger(
     endpoint_id: u16,
     metrics: MetricsProducer,
     interval: Duration,
-) -> Result<()> {
+) -> Result<runtime::Task> {
     let clock_sync = connection.connect_clock_sync_endpoint(endpoint_id)?;
     let protocol = clock_sync
         .ready()
         .await
         .map_err(|err| Error::KymuxReadyFailed { reason: err.0 })?;
 
-    runtime::spawn(async move {
+    let task = runtime::Task::spawn(async move {
         if let Err(err) = run_clock_sync(protocol, metrics, interval).await {
             warn!("Clock sync error: {err:?}");
         }
     });
 
-    Ok(())
+    Ok(task)
 }
 
 async fn run_clock_sync(
@@ -124,20 +124,20 @@ pub(crate) async fn start_remote_metrics_receiver(
     connection: &kyproto::Connection,
     endpoint_id: u16,
     metrics: MetricsProducer,
-) -> Result<()> {
+) -> Result<runtime::Task> {
     let endpoint = connection.connect_metrics_endpoint(endpoint_id)?;
     let protocol = endpoint
         .ready()
         .await
         .map_err(|err| Error::KymuxReadyFailed { reason: err.0 })?;
 
-    runtime::spawn(async move {
+    let task = runtime::Task::spawn(async move {
         if let Err(err) = run_metrics_receiver(protocol, metrics).await {
             warn!("Remote metrics receiver error: {err:?}");
         }
     });
 
-    Ok(())
+    Ok(task)
 }
 
 async fn run_metrics_receiver(
@@ -234,18 +234,18 @@ pub(crate) async fn start_remote_video_metrics_receiver(
     source_id: u32,
     endpoint_id: u16,
     metrics: MetricsProducer,
-) -> Result<()> {
+) -> Result<runtime::Task> {
     let endpoint = connection.connect_metrics_endpoint(endpoint_id)?;
     let protocol = endpoint
         .ready()
         .await
         .map_err(|err| Error::KymuxReadyFailed { reason: err.0 })?;
 
-    runtime::spawn(async move {
+    let task = runtime::Task::spawn(async move {
         if let Err(err) = run_remote_video_metrics_receiver(source_id, protocol, metrics).await {
             warn!("Remote video metrics receiver error: {err:?}");
         }
     });
 
-    Ok(())
+    Ok(task)
 }

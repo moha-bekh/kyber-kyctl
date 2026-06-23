@@ -92,6 +92,7 @@ pub(crate) struct KymuxBackend {
     platform: Box<dyn BackendDriver>,
     connection: KyArc<kyproto::Connection>,
     closed_task: Option<runtime::Task>,
+    metrics_tasks: Vec<runtime::Task>,
 }
 
 impl KymuxBackend {
@@ -107,9 +108,11 @@ impl KymuxBackend {
         // Start stream
         let host_config = host_service::start_stream(&backend_config, has_metrics).await?;
 
-        if let Some(metrics) = metrics {
-            start_metrics(&connection, &host_config, metrics.clone()).await?;
-        }
+        let metrics_tasks = if let Some(metrics) = metrics {
+            start_metrics(&connection, &host_config, metrics.clone()).await?
+        } else {
+            Vec::new()
+        };
 
         let msg_sender = backend_config.msg_sender.clone();
 
@@ -123,6 +126,7 @@ impl KymuxBackend {
             platform,
             connection,
             closed_task: Some(closed_task),
+            metrics_tasks,
         })
     }
 }
@@ -157,6 +161,9 @@ impl BackendDriver for KymuxBackend {
     }
 
     async fn stop(&mut self) -> Result<()> {
+        // Abort the metrics pollers before closing the connection so they stop
+        // with the data plane instead of erroring against a dead connection.
+        self.metrics_tasks.clear();
         self.closed_task = None;
 
         self.connection.close();
@@ -288,35 +295,46 @@ async fn start_metrics(
     connection: &kyproto::Connection,
     host_config: &StartSessionResponse,
     metrics: MetricsProducer,
-) -> Result<()> {
+) -> Result<Vec<runtime::Task>> {
     let metrics2 = metrics.clone();
     let metrics3 = metrics.clone();
 
-    metrics::start_connection_stats_poller(connection, metrics.clone(), Duration::from_secs(5))
-        .await;
+    let mut tasks = Vec::new();
+
+    tasks.push(
+        metrics::start_connection_stats_poller(connection, metrics.clone(), Duration::from_secs(5))
+            .await,
+    );
 
     let clock_sync_id = host_config.clock_sync.as_ref().unwrap().endpoint;
-    metrics::start_pinger(connection, clock_sync_id, metrics2, Duration::from_secs(10)).await?;
+    tasks.push(
+        metrics::start_pinger(connection, clock_sync_id, metrics2, Duration::from_secs(10)).await?,
+    );
 
     let remote_network_stats_id = host_config.metrics.as_ref().unwrap().endpoint;
-    metrics::start_remote_metrics_receiver(connection, remote_network_stats_id, metrics3).await?;
+    tasks.push(
+        metrics::start_remote_metrics_receiver(connection, remote_network_stats_id, metrics3)
+            .await?,
+    );
 
     if let Some(video) = &host_config.video {
         let endpoints = video
             .iter()
             .filter_map(|v| v.metrics_endpoint.map(|endpoint| (v.display_id, endpoint)));
         for (display_id, endpoint) in endpoints {
-            metrics::start_remote_video_metrics_receiver(
-                connection,
-                display_id,
-                endpoint,
-                metrics.clone(),
-            )
-            .await?;
+            tasks.push(
+                metrics::start_remote_video_metrics_receiver(
+                    connection,
+                    display_id,
+                    endpoint,
+                    metrics.clone(),
+                )
+                .await?,
+            );
         }
     }
 
-    Ok(())
+    Ok(tasks)
 }
 
 fn create_video_endpoints(
