@@ -197,7 +197,7 @@ async fn setup_video(
 ) -> Result<VideoSetup> {
     let config = crate::avservices_manager::VideoStreamConfig {
         bitrate: request.bitrate,
-        codec: video_request.codec.clone(),
+        codec: video_request.codec.convert(),
         yuv444: video_request.yuv444,
         intra_refresh: video_request.intra_refresh,
         video_stream_count: 1,
@@ -359,7 +359,7 @@ async fn start_handler(
             display_list: ctrl.displays.lock().unwrap().convert(),
         };
         let service_config = kynputservice_types::ServiceConfig {
-            cursor_format: inputs_request.cursor_format.clone(),
+            cursor_format: inputs_request.cursor_format.convert(),
             gamepad_force_xbox360: inputs_request.gamepad_force_xbox360,
             clipboard: inputs_request.clipboard,
         };

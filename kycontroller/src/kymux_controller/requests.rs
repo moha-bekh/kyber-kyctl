@@ -21,32 +21,18 @@
 use actix_web::{HttpResponse, post, web};
 use kymux::kyproto;
 use log::{error, info, warn};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
-use kyavservice_types::VideoCodec;
-use kynputservice_types::CursorFormat;
+pub(crate) use kyctl_common::kymux::{
+    StartKymux, StartKymuxCertificateHash, StartKymuxResponse, StartRequestInput,
+    StartRequestVideo, StartSessionAudioResponse, StartSessionClockSyncResponse,
+    StartSessionInputResponse, StartSessionMetricsResponse, StartSessionResponse,
+    StartSessionVideoResponse,
+};
 
 use crate::controller::StreamingServices;
 use crate::utils::generate_session_id;
 use crate::{controller::Controller, session::identity::Identity};
-
-#[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct StartKymux {
-    pub(crate) public_streamer_port: u16,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub(crate) struct StartKymuxCertificateHash {
-    pub(crate) algorithm: String,
-    pub(crate) hash: String,
-}
-
-#[derive(Debug, Serialize)]
-pub(crate) struct StartKymuxResponse {
-    pub(crate) port: u16,
-    pub(crate) certificate_hash: Option<StartKymuxCertificateHash>,
-    pub(crate) token: String,
-}
 
 #[post("/start_mux")]
 pub(crate) async fn start_mux(
@@ -83,22 +69,6 @@ pub(crate) struct KymuxConfig {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct StartRequestVideo {
-    pub(crate) display_id: u32,
-    pub(crate) codec: VideoCodec,
-    pub(crate) yuv444: bool,
-    pub(crate) intra_refresh: Option<bool>,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct StartRequestInput {
-    pub(crate) cursor_format: CursorFormat,
-    pub(crate) gamepad_force_xbox360: Option<bool>,
-    #[serde(default)]
-    pub(crate) clipboard: bool,
-}
-
-#[derive(Debug, Deserialize)]
 pub(crate) struct StartRequest {
     // Global bitrate for the whole Quic connection. Unit: bits/sec
     pub(crate) bitrate: u32,
@@ -107,44 +77,6 @@ pub(crate) struct StartRequest {
     pub(crate) audio: bool,
     pub(crate) inputs: Option<StartRequestInput>,
     pub(crate) metrics: bool,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct StartSessionVideoResponse {
-    pub(crate) display_id: u32,
-    pub(crate) endpoint: u16,
-    pub(crate) metrics_endpoint: Option<u16>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct StartSessionAudioResponse {
-    pub(crate) endpoint: u16,
-}
-#[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct StartSessionInputResponse {
-    pub(crate) endpoint: u16,
-    #[serde(default)]
-    pub(crate) clipboard: bool,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct StartSessionClockSyncResponse {
-    pub(crate) endpoint: u16,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct StartSessionMetricsResponse {
-    pub(crate) endpoint: u16,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct StartSessionResponse {
-    pub(crate) session_id: Option<u32>,
-    pub(crate) video: Option<Vec<StartSessionVideoResponse>>,
-    pub(crate) audio: Option<StartSessionAudioResponse>,
-    pub(crate) input: Option<StartSessionInputResponse>,
-    pub(crate) clock_sync: Option<StartSessionClockSyncResponse>,
-    pub(crate) metrics: Option<StartSessionMetricsResponse>,
 }
 
 #[post("/start_session")]

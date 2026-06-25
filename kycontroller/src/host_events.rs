@@ -22,10 +22,15 @@ use std::time::Duration;
 
 use actix_ws::{CloseCode, CloseReason};
 use log::{error, info, warn};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tokio::sync::mpsc;
 
 use crate::{Error, Result, StateMachineEvent, StateMachineProxy, utils::Task};
+
+pub(crate) use kyctl_common::host_events::{
+    Display, HostEvent, HostEventFrame, StreamerPipelineEvent, StreamerPipelineEventType,
+    StreamerPipelineStage, StreamerPipelineType,
+};
 
 // Naming taken from man(7) tcp: TCP_KEEPCNT/TCP_KEEPINTVL
 pub(crate) const KEEPINTVL: Duration = Duration::from_secs(20);
@@ -94,96 +99,29 @@ pub(crate) enum Notification {
     ConnectionLost,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub(crate) struct Display {
-    pub id: u32,
-    pub name: String,
-    pub height: i32,
-    pub width: i32,
-    pub x: i32,
-    pub y: i32,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub enum StreamerPipelineType {
-    EnumerateDisplays,
-    Audio,
-    Video,
-}
-
-impl From<kyavservice_types::PipelineType> for StreamerPipelineType {
-    fn from(t: kyavservice_types::PipelineType) -> Self {
-        match t {
-            kyavservice_types::PipelineType::Audio => Self::Audio,
-            kyavservice_types::PipelineType::Video => Self::Video,
-        }
+pub(crate) fn convert_pipeline_event(
+    event: kyavservice_types::PipelineEvent,
+) -> StreamerPipelineEvent {
+    let type_ = match event.type_ {
+        kyavservice_types::PipelineType::Audio => StreamerPipelineType::Audio,
+        kyavservice_types::PipelineType::Video => StreamerPipelineType::Video,
+    };
+    let stage = match event.stage {
+        kyavservice_types::PipelineStage::Initialization => StreamerPipelineStage::Initialization,
+        kyavservice_types::PipelineStage::Acquisition => StreamerPipelineStage::Acquisition,
+        kyavservice_types::PipelineStage::Encoder => StreamerPipelineStage::Encoder,
+    };
+    let event = match event.event {
+        kyavservice_types::PipelineEventType::Error => StreamerPipelineEventType::Error,
+    };
+    StreamerPipelineEvent {
+        type_,
+        stage,
+        event,
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub enum StreamerPipelineStage {
-    Process,
-    Initialization,
-    Acquisition,
-    Encoder,
-}
-
-impl From<kyavservice_types::PipelineStage> for StreamerPipelineStage {
-    fn from(t: kyavservice_types::PipelineStage) -> Self {
-        match t {
-            kyavservice_types::PipelineStage::Initialization => Self::Initialization,
-            kyavservice_types::PipelineStage::Acquisition => Self::Acquisition,
-            kyavservice_types::PipelineStage::Encoder => Self::Encoder,
-        }
-    }
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub enum StreamerPipelineEventType {
-    Stopped,
-    Error,
-}
-
-impl From<kyavservice_types::PipelineEventType> for StreamerPipelineEventType {
-    fn from(event: kyavservice_types::PipelineEventType) -> Self {
-        match event {
-            kyavservice_types::PipelineEventType::Error => Self::Error,
-        }
-    }
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct StreamerPipelineEvent {
-    pub type_: StreamerPipelineType,
-    pub stage: StreamerPipelineStage,
-    pub event: StreamerPipelineEventType,
-}
-
-impl From<kyavservice_types::PipelineEvent> for StreamerPipelineEvent {
-    fn from(event: kyavservice_types::PipelineEvent) -> Self {
-        Self {
-            type_: event.type_.into(),
-            stage: event.stage.into(),
-            event: event.event.into(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub(crate) enum HostEvent {
-    DisplayList { displays: Vec<Display> },
-    StreamerPipelineEvent(StreamerPipelineEvent),
-    BitrateChanged { bitrate: u32 },
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-enum HostEventFrame {
-    Ping { id: u64 },
-    Pong { id: u64 },
-    Event { event: HostEvent },
-}
-
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct HostEventSender {
     events_tx: mpsc::UnboundedSender<HostEventFrame>,
 }

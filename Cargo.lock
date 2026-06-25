@@ -3322,6 +3322,7 @@ dependencies = [
  "humantime",
  "jsonwebtoken",
  "kyavservice-types",
+ "kyctl-common",
  "kymux",
  "kynputservice-types",
  "libkypc",

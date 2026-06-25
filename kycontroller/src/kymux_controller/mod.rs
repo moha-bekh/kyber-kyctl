@@ -276,7 +276,7 @@ async fn start_video(
 
         let config = crate::avservices_manager::VideoStreamConfig {
             bitrate: request.bitrate,
-            codec: stream_request.codec.clone(),
+            codec: stream_request.codec.convert(),
             yuv444: stream_request.yuv444,
             intra_refresh: stream_request.intra_refresh,
             video_stream_count,
@@ -504,7 +504,7 @@ async fn start_input(
     info!("Start Inputservice. Endpoint: {endpoint_id:X}");
 
     let service_config = kynputservice_types::ServiceConfig {
-        cursor_format: inputs_request.cursor_format.clone(),
+        cursor_format: inputs_request.cursor_format.convert(),
         gamepad_force_xbox360: inputs_request.gamepad_force_xbox360,
         clipboard: inputs_request.clipboard,
     };

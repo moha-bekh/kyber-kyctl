@@ -212,7 +212,9 @@ impl StateMachine {
                     event: kyavservice_types::Event::PipelineEvent(event),
                     ..
                 } => {
-                    let host_event = HostEvent::StreamerPipelineEvent(event.into());
+                    let host_event = HostEvent::StreamerPipelineEvent(
+                        host_events::convert_pipeline_event(event),
+                    );
                     route_to_subscribers(&ctrl, &stream_id, &host_event).await;
                 }
                 // Legacy per-session avservice (RTP): send to that session only.
@@ -221,7 +223,9 @@ impl StateMachine {
                     stream_id: None,
                     event: kyavservice_types::Event::PipelineEvent(event),
                 } => {
-                    let host_event = HostEvent::StreamerPipelineEvent(event.into());
+                    let host_event = HostEvent::StreamerPipelineEvent(
+                        host_events::convert_pipeline_event(event),
+                    );
                     let _ = ctrl.with_session(&sid, |session| {
                         if let Some(streaming_session) = &session.session {
                             streaming_session.host_event_sender.send(host_event);

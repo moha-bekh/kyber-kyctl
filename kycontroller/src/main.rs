@@ -32,7 +32,7 @@ use actix_web::{
 };
 use clap::Parser;
 use log::{LevelFilter, error, info, warn};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use session::identity::Identity;
 
 mod auth;
@@ -69,16 +69,7 @@ const WEBCLIENT_ROOT: &str = "webclient";
 const STREAMER_CERT: &str = "kybertest_cert.pem";
 const STREAMER_KEY: &str = "kybertest_key.pem";
 
-#[derive(Debug, Serialize)]
-struct ControlPlaneCapabilities {
-    keepintvl: u64,
-    keepcnt: u64,
-}
-
-#[derive(Debug, Serialize)]
-struct Capabilities {
-    control_plane: ControlPlaneCapabilities,
-}
+use kyctl_common::capabilities::{Capabilities, ControlPlaneCapabilities};
 
 #[derive(Debug, Deserialize)]
 struct LoginQuery {
@@ -488,11 +479,7 @@ async fn logout(ctrl: web::Data<Controller>, user: Identity) -> HttpResponse {
     }
 }
 
-#[derive(Debug, Deserialize)]
-pub(crate) struct SetBitrate {
-    // Global bitrate for the whole Quic connection. Unit: bits/sec
-    pub(crate) bitrate: u32,
-}
+use kyctl_common::set_bitrate::SetBitrate;
 
 #[post("/set_bitrate")]
 pub(crate) async fn set_bitrate(

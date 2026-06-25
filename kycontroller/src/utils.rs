@@ -130,3 +130,22 @@ impl std::future::Future for Task {
         task::Poll::Ready(())
     }
 }
+
+impl TypeConvert<kyavservice_types::VideoCodec> for kyctl_common::enums::VideoCodec {
+    fn convert(&self) -> kyavservice_types::VideoCodec {
+        match self {
+            Self::H264 => kyavservice_types::VideoCodec::H264,
+            Self::HEVC => kyavservice_types::VideoCodec::HEVC,
+            Self::AV1 => kyavservice_types::VideoCodec::AV1,
+        }
+    }
+}
+
+impl TypeConvert<kynputservice_types::CursorFormat> for kyctl_common::enums::CursorFormat {
+    fn convert(&self) -> kynputservice_types::CursorFormat {
+        match self {
+            Self::Raw => kynputservice_types::CursorFormat::Raw,
+            Self::Png => kynputservice_types::CursorFormat::Png,
+        }
+    }
+}

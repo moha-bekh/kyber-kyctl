@@ -47,6 +47,7 @@ clap = { version = "4.5.40", features = ["derive"] }
 humantime = { version = "2.2.0", optional = true }
 
 kyavservice-types = "0.1"
+kyctl-common = { version = "0.1.0", path = "../kyctl-common" }
 kynputservice-types = "0.1"
 kymux = {version = "0.1", features = ["server", "backend-quinn", "backend-wtransport", "ipc", "tokio-rt"]}
 libkypc = "0.1"

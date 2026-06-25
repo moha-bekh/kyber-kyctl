@@ -22,64 +22,12 @@ use std::net::IpAddr;
 
 use actix_web::{HttpRequest, HttpResponse, get, post, web};
 use log::{info, warn};
-use serde::{Deserialize, Serialize};
 
-use kynputservice_types::CursorFormat;
+pub(crate) use kyctl_common::rtp::{GenerateSdpRequest, StartRequest};
+use kyctl_common::rtp::{GenerateSdpResponse, HelloResponse, StartResponse};
 
 use crate::utils::generate_session_id;
 use crate::{controller::Controller, session::identity::Identity};
-
-#[derive(Debug, Serialize)]
-pub struct HelloResponse {
-    pub ip: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct GenerateSdpRequest {
-    pub yuv444: bool,
-    pub display_id: u32,
-    pub intra_refresh: Option<bool>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct GenerateSdpResponse {
-    pub params: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct StartRequestVideo {
-    pub port: u16,
-    pub display_id: u32,
-    pub yuv444: bool,
-    pub intra_refresh: Option<bool>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct StartRequestAudio {
-    pub port: u16,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct StartRequestInput {
-    pub(crate) cursor_format: CursorFormat,
-    pub(crate) gamepad_force_xbox360: Option<bool>,
-    #[serde(default)]
-    pub(crate) clipboard: bool,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct StartRequest {
-    pub ip: String,
-    pub bitrate: u32,
-    pub video: Option<StartRequestVideo>,
-    pub audio: Option<StartRequestAudio>,
-    pub(crate) inputs: Option<StartRequestInput>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct StartResponse {
-    pub session_id: Option<u32>,
-}
 
 #[get("/hello")]
 async fn hello(req: HttpRequest, _user: Identity) -> HttpResponse {

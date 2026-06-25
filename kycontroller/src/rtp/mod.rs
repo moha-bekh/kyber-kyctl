@@ -96,7 +96,7 @@ pub async fn start(
         };
 
         let service_config = kynputservice_types::ServiceConfig {
-            cursor_format: inputs_request.cursor_format,
+            cursor_format: inputs_request.cursor_format.convert(),
             gamepad_force_xbox360: inputs_request.gamepad_force_xbox360,
             clipboard: inputs_request.clipboard,
         };
