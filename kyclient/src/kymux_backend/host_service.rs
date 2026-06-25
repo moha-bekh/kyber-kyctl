@@ -19,29 +19,25 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use log::{info, warn};
-use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde::Serialize;
 
+use kyctl_common::kymux::{
+    StartKymuxResponse, StartRequestInput, StartRequestVideo, StartSessionResponse,
+};
+
+use crate::CursorFormat;
 use crate::error::Result;
 use crate::http::HttpClient;
 use crate::platform::get_cursor_format;
-use crate::{CursorFormat, VideoCodec};
 
 use super::{KymuxBackendConfig, KymuxConfig, KymuxTransportBackend};
 
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
-pub(crate) struct StartKymuxCertificateHash {
-    pub(crate) algorithm: String,
-    pub(crate) hash: String,
-}
+pub(crate) use kyctl_common::kymux::StartKymuxCertificateHash;
 
-#[allow(dead_code)]
-#[derive(Debug, Deserialize)]
-pub(crate) struct StartKymuxResponse {
-    pub(crate) port: u16,
-    pub(crate) certificate_hash: Option<StartKymuxCertificateHash>,
-    pub(crate) token: String,
+#[derive(Debug, Serialize)]
+struct StartMuxRequest {
+    public_streamer_port: u16,
+    backend: KymuxTransportBackend,
 }
 
 pub(crate) async fn start_kymux(
@@ -51,10 +47,10 @@ pub(crate) async fn start_kymux(
 ) -> Result<StartKymuxResponse> {
     let url = format!("{base_url}/kymux/start_mux", base_url = client.base_url());
 
-    let body = json!({
-        "public_streamer_port": streamer_port,
-        "backend": backend,
-    });
+    let body = StartMuxRequest {
+        public_streamer_port: streamer_port,
+        backend,
+    };
 
     let response = client
         .post(&url)
@@ -68,21 +64,6 @@ pub(crate) async fn start_kymux(
 }
 
 #[derive(Debug, Serialize)]
-struct StartRequestVideo {
-    display_id: u32,
-    codec: VideoCodec,
-    yuv444: bool,
-    intra_refresh: Option<bool>,
-}
-
-#[derive(Debug, Serialize)]
-struct StartRequestInput {
-    cursor_format: CursorFormat,
-    gamepad_force_xbox360: Option<bool>,
-    clipboard: bool,
-}
-
-#[derive(Debug, Serialize)]
 struct StartRequest {
     // Global bitrate for the whole Quic connection. Unit: bits/sec
     bitrate: u32,
@@ -92,44 +73,6 @@ struct StartRequest {
     audio: bool,
     inputs: Option<StartRequestInput>,
     metrics: bool,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct StartSessionVideoResponse {
-    pub(crate) display_id: u32,
-    pub(crate) endpoint: u16,
-    pub(crate) metrics_endpoint: Option<u16>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct StartSessionAudioResponse {
-    pub(crate) endpoint: u16,
-}
-#[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct StartSessionInputResponse {
-    pub(crate) endpoint: u16,
-    #[serde(default)]
-    pub(crate) clipboard: bool,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct StartSessionClockSyncResponse {
-    pub(crate) endpoint: u16,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct StartSessionMetricsResponse {
-    pub(crate) endpoint: u16,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct StartSessionResponse {
-    pub(crate) session_id: Option<u32>,
-    pub(crate) video: Option<Vec<StartSessionVideoResponse>>,
-    pub(crate) audio: Option<StartSessionAudioResponse>,
-    pub(crate) input: Option<StartSessionInputResponse>,
-    pub(crate) clock_sync: Option<StartSessionClockSyncResponse>,
-    pub(crate) metrics: Option<StartSessionMetricsResponse>,
 }
 
 pub(crate) async fn start_stream(
@@ -148,7 +91,7 @@ pub(crate) async fn start_stream(
                 .iter()
                 .map(|config| StartRequestVideo {
                     display_id: config.display_id,
-                    codec: config.codec,
+                    codec: config.codec.into(),
                     yuv444: config.yuv444,
                     intra_refresh: config.intra_refresh,
                 })
@@ -164,7 +107,7 @@ pub(crate) async fn start_stream(
             Some(CursorFormat::Raw)
         });
         cursor_format.map(|cursor_format| StartRequestInput {
-            cursor_format,
+            cursor_format: cursor_format.into(),
             gamepad_force_xbox360: input_config.gamepad_force_xbox360,
             clipboard: input_config.clipboard,
         })

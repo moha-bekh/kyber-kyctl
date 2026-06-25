@@ -21,6 +21,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use async_tungstenite::{
     WebSocketStream,
     tokio::{ClientStream, client_async_tls_with_connector, connect_async},
@@ -234,6 +235,7 @@ impl WsClient {
 
 pub(crate) struct WsClientBuilder;
 
+#[async_trait]
 impl crate::host_events::WsClientBuilder for WsClientBuilder {
     type Type = WsClient;
 

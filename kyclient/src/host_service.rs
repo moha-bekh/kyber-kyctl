@@ -22,16 +22,13 @@ use std::net::SocketAddr;
 
 use log::{error, warn};
 use reqwest::{self, StatusCode};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+
+use kyctl_common::set_bitrate::SetBitrate;
 
 use crate::error::Result;
 use crate::http::HttpClient;
 use crate::{AuthCredentials, Capabilities, Display, Error};
-
-#[derive(Debug, Serialize)]
-pub(crate) struct SetBitrateRequest {
-    pub(crate) bitrate: u32,
-}
 
 pub(crate) async fn capabilities(
     client: &HttpClient,
@@ -246,7 +243,7 @@ pub(crate) async fn logout(client: &HttpClient) -> Result<()> {
 pub(crate) async fn set_bitrate(http_client: &HttpClient, bitrate: u32) -> Result<()> {
     let url = format!("{base_url}/set_bitrate", base_url = http_client.base_url());
 
-    let body = SetBitrateRequest { bitrate };
+    let body = SetBitrate { bitrate };
 
     http_client
         .post(&url)

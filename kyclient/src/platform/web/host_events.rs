@@ -22,6 +22,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 
+use async_trait::async_trait;
 use log::{error, info, warn};
 use tokio::sync::oneshot;
 use wasm_bindgen::prelude::*;
@@ -320,6 +321,7 @@ impl Drop for WsClient {
 
 pub(crate) struct WsClientBuilder;
 
+#[async_trait(?Send)]
 impl crate::host_events::WsClientBuilder for WsClientBuilder {
     type Type = WsClient;
 

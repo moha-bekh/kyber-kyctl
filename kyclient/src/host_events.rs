@@ -20,14 +20,21 @@
 
 use std::time::Duration;
 
+use async_trait::async_trait;
 use log::warn;
-use serde::{Deserialize, Serialize};
 
 use crate::platform;
 use crate::{
     ConnectionParams, ControlPlaneCapabilities, Display, Message, MessageSender, PeerInfo, Result,
 };
 
+pub(crate) use kyctl_common::host_events::{HostEvent, HostEventFrame};
+pub use kyctl_common::host_events::{
+    StreamerPipelineEvent, StreamerPipelineEventType, StreamerPipelineStage, StreamerPipelineType,
+};
+
+#[cfg_attr(target_family = "wasm", async_trait(?Send))]
+#[cfg_attr(not(target_family = "wasm"), async_trait)]
 pub(crate) trait WsClientBuilder {
     type Type;
 
@@ -38,48 +45,6 @@ pub(crate) trait WsClientBuilder {
         event_sink: HostEventSink,
         auth_token: &str,
     ) -> Result<Self::Type>;
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
-pub enum StreamerPipelineType {
-    EnumerateDisplays,
-    Audio,
-    Video,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
-pub enum StreamerPipelineStage {
-    Process,
-    Initialization,
-    Acquisition,
-    Encoder,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
-pub enum StreamerPipelineEventType {
-    Stopped,
-    Error,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct StreamerPipelineEvent {
-    pub type_: StreamerPipelineType,
-    pub stage: StreamerPipelineStage,
-    pub event: StreamerPipelineEventType,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub(crate) enum HostEvent {
-    DisplayList { displays: Vec<Display> },
-    StreamerPipelineEvent(StreamerPipelineEvent),
-    BitrateChanged { bitrate: u32 },
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub(crate) enum HostEventFrame {
-    Event { event: HostEvent },
-    Ping { id: u64 },
-    Pong { id: u64 },
 }
 
 pub(crate) struct HostEventSink {
@@ -93,7 +58,9 @@ impl HostEventSink {
 
     fn convert_event(event: HostEvent) -> Message {
         match event {
-            HostEvent::DisplayList { displays } => Message::DisplayListUpdated { displays },
+            HostEvent::DisplayList { displays } => Message::DisplayListUpdated {
+                displays: displays.into_iter().map(Display::from).collect(),
+            },
             HostEvent::StreamerPipelineEvent(event) => Message::StreamerPipelineEvent(event),
             HostEvent::BitrateChanged { bitrate } => Message::BitrateChanged { bitrate },
         }

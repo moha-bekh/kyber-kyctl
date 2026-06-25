@@ -42,7 +42,7 @@ use crate::{
     BackendDriver, ConnectionParams, DataPlaneCloseReason, Message, MessageSender, PeerInfo,
     StreamingSessionConfig,
 };
-use host_service::StartSessionResponse;
+use kyctl_common::kymux::StartSessionResponse;
 
 pub(crate) mod host_service;
 pub(crate) mod metrics;

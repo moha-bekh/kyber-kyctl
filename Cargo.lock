@@ -3235,6 +3235,7 @@ dependencies = [
  "jni 0.21.1",
  "js-sys",
  "kyclient-common",
+ "kyctl-common",
  "kymux",
  "kynput",
  "kynput-rs",

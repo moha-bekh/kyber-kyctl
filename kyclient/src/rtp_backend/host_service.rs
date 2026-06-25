@@ -19,59 +19,18 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use log::{info, warn};
-use serde::{Deserialize, Serialize};
-use serde_json::json;
 
+use kyctl_common::rtp::{
+    GenerateSdpRequest, GenerateSdpResponse, HelloResponse, StartRequest, StartRequestAudio,
+    StartRequestInput, StartRequestVideo, StartResponse,
+};
+
+use crate::InputSessionConfig;
 use crate::error::Result;
 use crate::http::HttpClient;
 use crate::platform::get_cursor_format;
-use crate::{CursorFormat, InputSessionConfig};
 
 use super::{HostAudioConfig, HostVideoConfig};
-
-#[derive(Debug, Serialize)]
-struct StartRequestVideo {
-    port: u16,
-    display_id: u32,
-    yuv444: bool,
-    intra_refresh: Option<bool>,
-}
-
-#[derive(Debug, Serialize)]
-struct StartRequestAudio {
-    port: u16,
-}
-
-#[derive(Debug, Serialize)]
-pub(crate) struct StartRequestInput {
-    pub(crate) cursor_format: CursorFormat,
-    pub(crate) gamepad_force_xbox360: Option<bool>,
-    pub(crate) clipboard: bool,
-}
-
-#[derive(Debug, Serialize)]
-struct StartRequest {
-    ip: String,
-    bitrate: u32,
-    video: Option<StartRequestVideo>,
-    audio: Option<StartRequestAudio>,
-    inputs: Option<StartRequestInput>,
-}
-
-#[derive(Debug, Deserialize)]
-struct StartResponse {
-    session_id: Option<u32>,
-}
-
-#[derive(Debug, Deserialize)]
-struct HelloResponse {
-    ip: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct GenerateSdpResponse {
-    params: String,
-}
 
 pub(crate) async fn hello(client: &HttpClient) -> Result<String> {
     let url = format!("{base_url}/rtp/hello", base_url = client.base_url());
@@ -96,10 +55,11 @@ pub(crate) async fn generate_sdp(
 ) -> Result<String> {
     let url = format!("{base_url}/rtp/generate_sdp", base_url = client.base_url());
 
-    let body = json!({
-        "yuv444": yuv444,
-        "display_id": display_id,
-    });
+    let body = GenerateSdpRequest {
+        yuv444,
+        display_id,
+        intra_refresh: None,
+    };
 
     let response = client
         .post(&url)
@@ -139,7 +99,7 @@ pub(super) async fn start_stream(
     let inputs = if let Some(input_config) = input_config {
         let cursor_format = get_cursor_format(&input_config.pipeline);
         cursor_format.map(|cursor_format| StartRequestInput {
-            cursor_format,
+            cursor_format: cursor_format.into(),
             gamepad_force_xbox360: input_config.gamepad_force_xbox360,
             clipboard: input_config.clipboard,
         })

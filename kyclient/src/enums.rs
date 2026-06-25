@@ -39,6 +39,18 @@ pub struct Display {
     pub y: i32,
 }
 
+impl From<kyctl_common::host_events::Display> for Display {
+    fn from(d: kyctl_common::host_events::Display) -> Self {
+        Self {
+            id: d.id,
+            height: d.height,
+            width: d.width,
+            x: d.x,
+            y: d.y,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum TlsRootCert {
     Path(String),

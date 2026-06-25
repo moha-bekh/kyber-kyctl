@@ -19,40 +19,12 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use log::{info, warn};
-use serde::{Deserialize, Serialize};
+
+use kyctl_common::ws::{StartRequest, StartRequestInput, StartRequestVideo, StartResponse};
 
 use crate::Result;
 use crate::platform::get_cursor_format;
 use crate::ws_backend::WsBackendConfig;
-use crate::{CursorFormat, VideoCodec};
-
-#[derive(Clone, Debug, Serialize)]
-struct StartRequestVideo {
-    display_id: u32,
-    codec: VideoCodec,
-    yuv444: bool,
-    intra_refresh: Option<bool>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub(crate) struct StartRequestInput {
-    pub(crate) cursor_format: CursorFormat,
-    pub(crate) gamepad_force_xbox360: Option<bool>,
-    pub(crate) clipboard: bool,
-}
-
-#[derive(Clone, Debug, Serialize)]
-struct StartRequest {
-    bitrate: u32,
-    video: Option<StartRequestVideo>,
-    audio: bool,
-    inputs: Option<StartRequestInput>,
-}
-
-#[derive(Debug, Deserialize)]
-struct StartResponse {
-    session_id: Option<u32>,
-}
 
 pub(super) async fn start_stream(backend_config: &WsBackendConfig<'_>) -> Result<()> {
     let base_url = backend_config.http_client.base_url();
@@ -64,7 +36,7 @@ pub(super) async fn start_stream(backend_config: &WsBackendConfig<'_>) -> Result
 
         Some(StartRequestVideo {
             display_id: video.display_id,
-            codec: video.codec,
+            codec: video.codec.into(),
             yuv444: video.yuv444,
             intra_refresh: video.intra_refresh,
         })
@@ -75,7 +47,7 @@ pub(super) async fn start_stream(backend_config: &WsBackendConfig<'_>) -> Result
     let inputs = if let Some(input_config) = &backend_config.streaming_config.input {
         let cursor_format = get_cursor_format(&input_config.pipeline);
         cursor_format.map(|cursor_format| StartRequestInput {
-            cursor_format,
+            cursor_format: cursor_format.into(),
             gamepad_force_xbox360: input_config.gamepad_force_xbox360,
             clipboard: input_config.clipboard,
         })

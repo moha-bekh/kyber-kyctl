@@ -52,7 +52,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use log::{debug, info, warn};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 pub use crate::error::{Error, Result};
 use crate::util::*;
@@ -87,16 +87,7 @@ pub fn init_crypto() {
 #[allow(dead_code)]
 pub(crate) const STREAMER_PORT: u16 = 8080;
 
-#[derive(Clone, Debug, Deserialize)]
-pub(crate) struct ControlPlaneCapabilities {
-    pub(crate) keepintvl: u64,
-    pub(crate) keepcnt: u64,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub(crate) struct Capabilities {
-    pub(crate) control_plane: ControlPlaneCapabilities,
-}
+pub(crate) use kyctl_common::capabilities::{Capabilities, ControlPlaneCapabilities};
 
 /// Peer information resolved from the HTTP `/capabilities` response.
 pub(crate) struct PeerInfo {
@@ -820,10 +811,29 @@ pub enum VideoCodec {
     AV1,
 }
 
+impl From<VideoCodec> for kyctl_common::enums::VideoCodec {
+    fn from(c: VideoCodec) -> Self {
+        match c {
+            VideoCodec::H264 => Self::H264,
+            VideoCodec::HEVC => Self::HEVC,
+            VideoCodec::AV1 => Self::AV1,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub enum CursorFormat {
     Raw,
     Png,
+}
+
+impl From<CursorFormat> for kyctl_common::enums::CursorFormat {
+    fn from(c: CursorFormat) -> Self {
+        match c {
+            CursorFormat::Raw => Self::Raw,
+            CursorFormat::Png => Self::Png,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
