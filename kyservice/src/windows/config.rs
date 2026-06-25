@@ -19,7 +19,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use log::{error, info};
 use serde::Deserialize;
@@ -99,12 +99,23 @@ struct Root {
     kyservice: Config,
 }
 
+/// The config file this process reads when no explicit path is given:
+/// KYBER_CONFIG if set, otherwise one next to our own executable.
+pub(crate) fn config_path() -> PathBuf {
+    match std::env::var_os("KYBER_CONFIG") {
+        Some(path) => PathBuf::from(path),
+        None => utils::get_resource_path(CONFIG_FILE),
+    }
+}
+
 pub(crate) fn load(override_path: Option<&Path>) -> Result<Config> {
-    // An explicit --config path must exist; a missing default file falls back
-    // to the built-in defaults.
-    let (path, required) = match override_path {
-        Some(p) => (p.to_path_buf(), true),
-        None => (utils::get_resource_path(CONFIG_FILE), false),
+    // An explicit pointer must resolve to a readable file: --config, or
+    // KYBER_CONFIG when set. With neither, a missing executable-relative
+    // default falls back to the built-in defaults.
+    let required = override_path.is_some() || std::env::var_os("KYBER_CONFIG").is_some();
+    let path = match override_path {
+        Some(p) => p.to_path_buf(),
+        None => config_path(),
     };
 
     let content = match fs::read(&path) {

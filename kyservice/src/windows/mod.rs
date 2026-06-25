@@ -505,6 +505,15 @@ pub fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
         env!("VERGEN_GIT_DESCRIBE")
     );
 
+    // Resolve the config file once and export its absolute path so the
+    // kycontroller we spawn (and the services below it) read the same file
+    // instead of one next to their own executable. Set while still
+    // single-threaded, before the service dispatcher starts.
+    match std::fs::canonicalize(config::config_path()) {
+        Ok(path) => std::env::set_var("KYBER_CONFIG", path),
+        Err(err) => info!("No config file to export to kycontroller: {err}"),
+    }
+
     windows_service::service_dispatcher::start(SERVICE_NAME, ffi_service_main)?;
     Ok(())
 }
