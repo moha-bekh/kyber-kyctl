@@ -3351,6 +3351,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "kyctl-common"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "kymux"
 version = "0.1.0"
 dependencies = [
