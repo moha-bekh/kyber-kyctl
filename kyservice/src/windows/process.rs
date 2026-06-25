@@ -80,6 +80,7 @@ fn get_subprocess_token_for_session(mut session_id: u32) -> Result<Handle> {
 struct ProcThreadAttributeList {
     attributes: LPPROC_THREAD_ATTRIBUTE_LIST,
     _buffer: Vec<u8>,
+    _handles: Vec<HANDLE>,
 }
 
 impl ProcThreadAttributeList {
@@ -109,21 +110,21 @@ impl ProcThreadAttributeList {
         };
         check_win32_error!(InitializeProcThreadAttributeList, b != 0)?;
 
+        let handles: Vec<HANDLE> = inherited.iter().map(|e| e.handle()).collect();
+
         let attributes = Self {
             attributes,
             _buffer: buffer,
+            _handles: handles,
         };
-
-        // Fill the attribute list with the inherited handles
-        let events: Vec<HANDLE> = inherited.iter().map(|e| e.handle()).collect();
 
         let b = unsafe {
             UpdateProcThreadAttribute(
                 attributes.as_ptr(),
                 0,
                 PROC_THREAD_ATTRIBUTE_HANDLE_LIST as _,
-                events.as_ptr() as *const _,
-                events.len() * mem::size_of::<HANDLE>(),
+                attributes._handles.as_ptr() as *const _,
+                attributes._handles.len() * mem::size_of::<HANDLE>(),
                 ptr::null_mut(),
                 ptr::null(),
             )
