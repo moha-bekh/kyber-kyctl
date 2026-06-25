@@ -138,14 +138,25 @@ pub enum ParseError {
     InvalidTOML(#[from] toml::de::Error),
 }
 
-pub(crate) fn load(override_path: Option<&Path>) -> Result<Config, ParseError> {
-    // An explicit --config path must exist; a missing default file falls back
-    // to the built-in defaults.
-    let (path, required) = match override_path {
-        Some(p) => (p.to_path_buf(), true),
-        None => (utils::get_resource_path(CONFIG_FILE), false),
-    };
+/// The config file the controller reads: an explicit `--config`, else
+/// `KYBER_CONFIG`, else one next to our own executable. `main` exports the
+/// resolved path so every spawned service reads the same file.
+pub(crate) fn config_path(override_path: Option<&Path>) -> PathBuf {
+    match override_path {
+        Some(p) => p.to_path_buf(),
+        None => match std::env::var_os("KYBER_CONFIG") {
+            Some(p) => PathBuf::from(p),
+            None => utils::get_resource_path(CONFIG_FILE),
+        },
+    }
+}
 
+pub(crate) fn load(override_path: Option<&Path>) -> Result<Config, ParseError> {
+    // An explicit pointer must resolve to a readable file: --config, or
+    // KYBER_CONFIG when set. With neither, a missing executable-relative
+    // default falls back to the built-in defaults.
+    let required = override_path.is_some() || std::env::var_os("KYBER_CONFIG").is_some();
+    let path = config_path(override_path);
     let content = match fs::read(&path) {
         Ok(content) => content,
         Err(source) if required => return Err(ParseError::Read { path, source }),

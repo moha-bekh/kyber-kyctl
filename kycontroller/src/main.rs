@@ -895,6 +895,17 @@ async fn main() -> ExitCode {
     let _log_handle = setup_logs("kycontroller", LevelFilter::Info);
     info!("Kyber controller. Revision {}", env!("VERGEN_GIT_DESCRIBE"));
 
+    // Export the config file the controller resolved (an explicit --config,
+    // KYBER_CONFIG, or the executable-relative default) so every spawned
+    // service reads the same file instead of one next to its own executable.
+    // Done before real_main starts the server's worker threads, since the
+    // environment is not safe to mutate once other threads run. If no readable
+    // file resolves, leave it unset: a missing default stays a soft fallback,
+    // while a missing explicit pointer is reported by config::load.
+    if let Ok(path) = std::fs::canonicalize(config::config_path(cli.config.as_deref())) {
+        std::env::set_var("KYBER_CONFIG", path);
+    }
+
     match real_main(cli).await {
         Err(e) => {
             error!("Main process exited with error: {e}");
