@@ -18,6 +18,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use std::mem;
 use std::ptr;
 use std::sync::Arc;
 
@@ -36,7 +37,7 @@ pub struct Event {
 impl Event {
     pub fn new(name: &str, inheritable: bool) -> Result<Self> {
         let attrs = SECURITY_ATTRIBUTES {
-            nLength: 0,
+            nLength: mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
             lpSecurityDescriptor: ptr::null_mut(),
             bInheritHandle: if inheritable { TRUE } else { FALSE },
         };
