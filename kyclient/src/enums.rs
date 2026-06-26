@@ -105,11 +105,11 @@ pub(crate) enum Message {
     AudioSetMute {
         mute: bool,
     },
-    #[cfg(feature = "js-player")]
+    #[cfg(target_family = "wasm")]
     AudioTryResume {
         respond: std::rc::Rc<std::cell::RefCell<Option<crate::player::AudioResumeState>>>,
     },
-    #[cfg(feature = "js-player")]
+    #[cfg(target_family = "wasm")]
     AudioResume {
         respond: std::rc::Rc<std::cell::RefCell<Option<crate::Result<()>>>>,
     },
@@ -142,12 +142,12 @@ pub(crate) enum Message {
     VideoDecodeError,
     AudioDecodeError,
 
-    #[cfg(feature = "web")]
+    #[cfg(target_family = "wasm")]
     ImageDecoded {
         pts: u64,
     },
 
-    #[cfg(feature = "web")]
+    #[cfg(target_family = "wasm")]
     CanvasResized {
         width: i32,
         height: i32,
@@ -235,7 +235,7 @@ pub enum Event {
     StreamingStarted,
     StreamingStartFailed,
     StreamingStopped,
-    #[cfg(feature = "web")]
+    #[cfg(target_family = "wasm")]
     ImageDecoded {
         pts: u64,
     },
@@ -248,7 +248,7 @@ pub enum Event {
     BitrateChanged {
         bitrate: u32,
     },
-    #[cfg(feature = "web")]
+    #[cfg(target_family = "wasm")]
     CanvasResized {
         width: i32,
         height: i32,

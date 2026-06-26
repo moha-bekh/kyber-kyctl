@@ -25,7 +25,7 @@ use crate::platform;
 #[cfg(feature = "kymux")]
 use kymux::{kynet, kyproto};
 
-#[cfg(feature = "desktop")]
+#[cfg(not(target_family = "wasm"))]
 use platform::player::PlayerError;
 
 #[derive(Debug, thiserror::Error)]
@@ -75,7 +75,7 @@ pub enum Error {
     #[cfg(feature = "kymux")]
     #[error("kyproto protocol error: {0}")]
     KyProtoProtocolError(#[from] kyproto::ProtocolError),
-    #[cfg(feature = "desktop")]
+    #[cfg(not(target_family = "wasm"))]
     #[error("failed to join async task: {0}")]
     TaskJoin(#[from] tokio::task::JoinError),
     #[error("file not found: {0:?}")]
@@ -87,18 +87,18 @@ pub enum Error {
     #[error("invalid state")]
     InvalidState,
 
-    #[cfg(feature = "web")]
+    #[cfg(target_family = "wasm")]
     #[error("js error: {0:?}")]
     JsError(wasm_bindgen::JsValue),
-    #[cfg(feature = "web")]
+    #[cfg(target_family = "wasm")]
     #[error("js dom invalid")]
     JsDomInvalid,
-    #[cfg(feature = "web")]
+    #[cfg(target_family = "wasm")]
     #[error("SharedArrayBuffer unvailable")]
     SharedArrayBufferUndefined,
 
     // Player errors
-    #[cfg(feature = "desktop")]
+    #[cfg(not(target_family = "wasm"))]
     #[error("player error: {0}")]
     Player(#[from] PlayerError),
     // Host service errors
@@ -126,7 +126,7 @@ impl<T> From<std::sync::PoisonError<T>> for Error {
     }
 }
 
-#[cfg(feature = "web")]
+#[cfg(target_family = "wasm")]
 impl From<wasm_bindgen::JsValue> for Error {
     fn from(err: wasm_bindgen::JsValue) -> Error {
         Error::JsError(err)

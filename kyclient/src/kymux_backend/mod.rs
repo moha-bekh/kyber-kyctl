@@ -18,10 +18,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#[cfg(feature = "desktop")]
+#[cfg(not(target_family = "wasm"))]
 mod desktop;
 
-#[cfg(feature = "web")]
+#[cfg(target_family = "wasm")]
 mod web;
 
 use async_trait::async_trait;
@@ -30,7 +30,7 @@ use log::{error, info, warn};
 use serde::Serialize;
 use std::collections::HashMap;
 
-#[cfg(feature = "js-player")]
+#[cfg(target_family = "wasm")]
 use kywebplayer::AudioResumeState;
 
 use crate::error::{Error, Result};
@@ -52,9 +52,9 @@ const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(5);
 
 #[derive(Clone, Copy, Debug, Serialize)]
 pub enum KymuxTransportBackend {
-    #[cfg(feature = "desktop")]
+    #[cfg(not(target_family = "wasm"))]
     Quic,
-    #[cfg(feature = "web")]
+    #[cfg(target_family = "wasm")]
     Webtransport,
 }
 
@@ -76,7 +76,7 @@ pub(crate) struct KymuxBackendConfig<'a> {
     pub(crate) msg_sender: MessageSender,
 }
 
-#[cfg(feature = "desktop")]
+#[cfg(not(target_family = "wasm"))]
 async fn new_platform_backend(
     backend_config: &KymuxBackendConfig<'_>,
     endpoints: PlatformEndpoints,
@@ -86,7 +86,7 @@ async fn new_platform_backend(
     Ok(Box::new(backend))
 }
 
-#[cfg(feature = "web")]
+#[cfg(target_family = "wasm")]
 async fn new_platform_backend(
     backend_config: &KymuxBackendConfig<'_>,
     endpoints: PlatformEndpoints,
@@ -152,12 +152,12 @@ impl BackendDriver for KymuxBackend {
         self.platform.audio_set_mute(mute)
     }
 
-    #[cfg(feature = "js-player")]
+    #[cfg(target_family = "wasm")]
     fn audio_try_resume(&self) -> AudioResumeState {
         self.platform.audio_try_resume()
     }
 
-    #[cfg(feature = "js-player")]
+    #[cfg(target_family = "wasm")]
     async fn audio_resume(&self) -> Result<()> {
         self.platform.audio_resume().await
     }
@@ -210,7 +210,7 @@ async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kyproto:
     })?;
 
     let kynet = match backend_config.kymux_config.backend {
-        #[cfg(feature = "desktop")]
+        #[cfg(not(target_family = "wasm"))]
         KymuxTransportBackend::Quic => {
             info!(
                 "Connect using Quic backend. Port: {port}",
@@ -225,7 +225,7 @@ async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kyproto:
             )
             .await
         }
-        #[cfg(feature = "web")]
+        #[cfg(target_family = "wasm")]
         KymuxTransportBackend::Webtransport => {
             info!(
                 "Connect using Webtransport backend. Port: {port}",
@@ -256,7 +256,7 @@ async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kyproto:
     Ok(kyproto)
 }
 
-#[cfg(feature = "desktop")]
+#[cfg(not(target_family = "wasm"))]
 async fn connect_quinn(
     peer_info: &PeerInfo,
     server_name: &str,
@@ -276,7 +276,7 @@ async fn connect_quinn(
     Ok(conn)
 }
 
-#[cfg(feature = "web")]
+#[cfg(target_family = "wasm")]
 async fn connect_webtransport_js(
     url: &str,
     certificate_hash: Option<host_service::StartKymuxCertificateHash>,

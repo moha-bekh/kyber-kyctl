@@ -25,7 +25,6 @@ mod input_service;
 mod mainloop_engine;
 pub(crate) mod message;
 
-#[cfg(feature = "js-player")]
 pub use kywebplayer as player;
 mod websocket;
 
@@ -71,7 +70,6 @@ pub struct AudioPlayerConfig {
     pub audio_buffer: u32, // ms
 }
 
-#[cfg(feature = "js-player")]
 impl From<AudioPlayerConfig> for player::AudioPlayerConfig {
     fn from(config: AudioPlayerConfig) -> Self {
         Self {
@@ -80,7 +78,6 @@ impl From<AudioPlayerConfig> for player::AudioPlayerConfig {
     }
 }
 
-#[cfg(feature = "js-player")]
 impl From<VideoCodec> for player::VideoCodec {
     fn from(codec: VideoCodec) -> Self {
         match codec {

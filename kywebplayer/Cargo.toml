@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 js-sys = { version = "=0.3.77" }
-kyaudioreg = { version = "0.1.0", features = ["js"] }
+kyaudioreg = "0.1.0"
 kywasmtime = { git = "https://github.com/rom1v/kywasmtime.git", tag = "0.1" }
 log = { version = "0.4.21" }
 tokio = { version = "1.47.1", features = ["macros", "sync", "io-util"] }

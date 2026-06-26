@@ -31,20 +31,20 @@ kyclient_linux_do_build()
         -p kyclient \
         --release \
         --prefix="$out_dir" \
-        --features=desktop,kymux,rtp
+        --features=kymux,rtp
 
     cargo build \
         -p kyclient \
         --release \
-        --features=desktop,kymux,rtp
+        --features=kymux,rtp
 }
 
 kyclient_linux_do_clippy()
 {
     cargo clippy \
         -p kyclient \
-        --features=capi,desktop,kymux,rtp \
-        -- -D warnings -A clippy::missing_safety_doc
+        --features=capi,kymux,rtp \
+        -- -D warnings
 }
 
 kyclient_linux_do_test()
@@ -52,7 +52,7 @@ kyclient_linux_do_test()
     cargo test \
         -p kyclient \
         --release \
-        --features=desktop,kymux,rtp
+        --features=kymux,rtp
 }
 
 # Win32 platform functions
@@ -66,13 +66,13 @@ kyclient_win32_do_build()
         --prefix="$out_dir" \
         --target x86_64-pc-windows-gnu \
         --dlltool x86_64-w64-mingw32-dlltool \
-        --features=desktop,kymux,rtp
+        --features=kymux,rtp
 
     cargo build \
         -p kyclient \
         --target x86_64-pc-windows-gnu \
         --release \
-        --features=desktop,kymux,rtp
+        --features=kymux,rtp
 }
 
 kyclient_win32_do_clippy()
@@ -80,8 +80,8 @@ kyclient_win32_do_clippy()
     cargo clippy \
         -p kyclient \
         --target x86_64-pc-windows-gnu \
-        --features=capi,desktop,kymux,rtp \
-        -- -D warnings -A clippy::missing_safety_doc
+        --features=capi,kymux,rtp \
+        -- -D warnings
 }
 
 # macOS platform functions
@@ -95,13 +95,13 @@ kyclient_macos_do_build()
         --target "$cargo_target" \
         --release \
         --prefix="$out_dir" \
-        --features=desktop,kymux,rtp
+        --features=kymux,rtp
 
     cargo build \
         -p kyclient \
         --target "$cargo_target" \
         --release \
-        --features=desktop,kymux,rtp
+        --features=kymux,rtp
 }
 
 kyclient_macos_do_clippy()
@@ -111,8 +111,8 @@ kyclient_macos_do_clippy()
     cargo clippy \
         -p kyclient \
         --target "$cargo_target" \
-        --features=capi,desktop,kymux,rtp \
-        -- -D warnings -A clippy::missing_safety_doc
+        --features=capi,kymux,rtp \
+        -- -D warnings
 }
 
 kyclient_macos_do_test()
@@ -131,7 +131,7 @@ kyclient_android_do_build()
         -p kyclient \
         --release \
         --prefix="$out_dir" \
-        --features=desktop,kymux,rtp
+        --features=kymux,rtp
 }
 
 kyclient_android_do_clippy()
@@ -141,8 +141,8 @@ kyclient_android_do_clippy()
     cargo clippy \
         -p kyclient \
         --target "$cargo_target" \
-        --features=capi,desktop,kymux,rtp \
-        -- -D warnings -A clippy::missing_safety_doc
+        --features=capi,kymux,rtp \
+        -- -D warnings
 }
 
 # iOS platform functions
@@ -159,7 +159,7 @@ kyclient_ios_do_build()
         --release \
         --library-type=staticlib \
         --prefix="$out_dir" \
-        --features=desktop,kymux,rtp
+        --features=kymux,rtp
 }
 
 # WASM platform functions
@@ -171,7 +171,7 @@ kyclient_wasm_do_build()
         --target wasm32-unknown-unknown \
         -p kyclient \
         --release \
-        --features=kymux,web,websocket
+        --features=kymux,websocket
 }
 
 kyclient_wasm_do_clippy()
@@ -182,8 +182,8 @@ kyclient_wasm_do_clippy()
         --target wasm32-unknown-unknown \
         -p kyclient \
         --release \
-        --features=kymux,web,websocket \
-        -- -D warnings -A clippy::missing_safety_doc -A unexpected-cfgs
+        --features=kymux,websocket \
+        -- -D warnings
 }
 
 kyclient_wasm_do_package_js()

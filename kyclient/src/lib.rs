@@ -29,8 +29,8 @@ pub mod metrics;
 pub(crate) mod runtime;
 mod util;
 
-#[cfg_attr(feature = "desktop", path = "./platform/desktop/mod.rs")]
-#[cfg_attr(feature = "web", path = "./platform/web/mod.rs")]
+#[cfg_attr(not(target_family = "wasm"), path = "./platform/desktop/mod.rs")]
+#[cfg_attr(target_family = "wasm", path = "./platform/web/mod.rs")]
 mod platform;
 
 #[cfg(feature = "capi")]
@@ -45,7 +45,7 @@ mod rtp_backend;
 #[cfg(feature = "websocket")]
 mod ws_backend;
 
-#[cfg(feature = "desktop")]
+#[cfg(not(target_family = "wasm"))]
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -74,11 +74,11 @@ pub use platform::VerifyMode;
 pub use platform::{ConnectConfig, VideoPlayerConfig};
 pub(crate) use platform::{ConnectionParams, InputPipeline, MainLoopEngine};
 
-#[cfg(feature = "js-player")]
+#[cfg(target_family = "wasm")]
 pub use platform::player;
 
 pub fn init_crypto() {
-    #[cfg(feature = "desktop")]
+    #[cfg(not(target_family = "wasm"))]
     rustls::crypto::ring::default_provider()
         .install_default()
         .unwrap();
@@ -93,7 +93,7 @@ pub(crate) use kyctl_common::capabilities::{Capabilities, ControlPlaneCapabiliti
 pub(crate) struct PeerInfo {
     /// Peer IP address resolved by the HTTP stack (Happy Eyeballs / RFC 8305).
     /// Reused for QUIC so it gets the same IPv4/IPv6 choice.
-    #[cfg(feature = "desktop")]
+    #[cfg(not(target_family = "wasm"))]
     pub(crate) addr: IpAddr,
 }
 
@@ -104,10 +104,10 @@ trait BackendDriver: KySend {
 
     fn audio_set_mute(&self, mute: bool) -> Result<()>;
 
-    #[cfg(feature = "js-player")]
+    #[cfg(target_family = "wasm")]
     fn audio_try_resume(&self) -> player::AudioResumeState;
 
-    #[cfg(feature = "js-player")]
+    #[cfg(target_family = "wasm")]
     async fn audio_resume(&self) -> Result<()>;
 
     fn input_service_connected(&mut self) -> Result<()>;
@@ -263,7 +263,7 @@ impl Handler {
         let peer_info = PeerInfo {
             // On desktop, peer address is required for QUIC and WebSocket connections.
             // Fail early if the HTTP stack didn't expose it.
-            #[cfg(feature = "desktop")]
+            #[cfg(not(target_family = "wasm"))]
             addr: _peer_addr.ok_or(Error::NoPeerAddress)?.ip(),
         };
 
@@ -620,7 +620,7 @@ impl Handler {
                     backend.audio_set_mute(mute)?;
                 }
             }
-            #[cfg(feature = "js-player")]
+            #[cfg(target_family = "wasm")]
             Message::AudioTryResume { respond } => {
                 let mut state = player::AudioResumeState::Absent;
 
@@ -632,7 +632,7 @@ impl Handler {
 
                 *respond.borrow_mut() = Some(state);
             }
-            #[cfg(feature = "js-player")]
+            #[cfg(target_family = "wasm")]
             Message::AudioResume { respond } => {
                 let mut result = Ok(());
 
@@ -716,11 +716,11 @@ impl Handler {
                 });
             }
             Message::AudioDecodeError => (),
-            #[cfg(feature = "web")]
+            #[cfg(target_family = "wasm")]
             Message::ImageDecoded { pts } => {
                 self.event_manager.send_event(Event::ImageDecoded { pts });
             }
-            #[cfg(feature = "web")]
+            #[cfg(target_family = "wasm")]
             Message::CanvasResized {
                 width,
                 height,
@@ -1136,7 +1136,7 @@ impl Client {
     /// Probes the AudioContext state and fires a non-blocking resume attempt. Returns `Absent`
     /// until the backend has created the worklet, so callers can poll until it reports `Running`
     /// or `Suspended`.
-    #[cfg(feature = "js-player")]
+    #[cfg(target_family = "wasm")]
     pub async fn audio_try_resume(&self) -> player::AudioResumeState {
         let respond = std::rc::Rc::new(std::cell::RefCell::new(None));
         if self
@@ -1156,7 +1156,7 @@ impl Client {
 
     /// Resumes the AudioContext. Call this from a real user-gesture handler so the browser allows
     /// the context to leave the suspended state.
-    #[cfg(feature = "js-player")]
+    #[cfg(target_family = "wasm")]
     pub async fn audio_resume(&self) -> Result<()> {
         let respond = std::rc::Rc::new(std::cell::RefCell::new(None));
         self.msg_sender
