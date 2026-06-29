@@ -38,9 +38,8 @@ pub(crate) fn get_resource_path(resource_name: &str) -> PathBuf {
     }
 }
 
-// Windows requires a fullpath.
-// Unix platforms must have $PATH correctly configured.
-#[cfg(target_os = "windows")]
+// Windows and macOS requires a fullpath.
+#[cfg(not(target_os = "linux"))]
 pub fn get_executable_path(exe_name: &str) -> PathBuf {
     if let Ok(mut path) = std::env::current_exe() {
         path.pop();
@@ -52,7 +51,8 @@ pub fn get_executable_path(exe_name: &str) -> PathBuf {
     }
 }
 
-#[cfg(not(any(target_os = "windows")))]
+// Linux must have $PATH correctly configured.
+#[cfg(target_os = "linux")]
 pub fn get_executable_path(exe_name: &str) -> PathBuf {
     PathBuf::from(exe_name)
 }
