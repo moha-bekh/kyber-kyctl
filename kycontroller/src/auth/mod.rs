@@ -183,6 +183,10 @@ pub enum Error {
     #[error("Invalid credentials format")]
     InvalidCredentialsFormat,
 
+    /// Token was issued for another audience
+    #[error("Token audience mismatch")]
+    InvalidAudience,
+
     /// Required credential field is missing
     #[error("Missing mandatory field: {field}")]
     MissingField { field: String },

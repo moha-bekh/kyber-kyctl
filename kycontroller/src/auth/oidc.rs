@@ -35,6 +35,7 @@
 //! identity_claim = "sub"           # or "email" / "preferred_username"
 //! allowed_identifiers = ["user1@example.com"]  # identity-based ACL
 //! allowed_groups = ["friends"]                  # group-based ACL
+//! # audience = "<machine-client-id>"          # optional: the `aud` a token must carry
 //! ```
 //!
 //! Access is granted when the user matches `allowed_identifiers` **or** belongs
@@ -84,6 +85,8 @@ pub struct Config {
     pub allowed_groups: Vec<String>,
     /// How long (in seconds) the JWKS key set is cached before re-fetching.
     pub jwks_cache_ttl: Option<u64>,
+    /// If set, the JWT `aud` claim must match. Unset: `aud` is not checked.
+    pub audience: Option<String>,
 }
 
 /// Shared JWKS key pool refreshed by a background task.
@@ -165,9 +168,7 @@ impl Oidc {
             ));
         }
 
-        // Normalize once so JWKS discovery and JWT validation use the same form.
-        let mut config = config.clone();
-        config.issuer = config.issuer.trim_end_matches('/').to_owned();
+        let config = normalize(config)?;
 
         let jwks_cache_ttl =
             Duration::from_secs(config.jwks_cache_ttl.unwrap_or(DEFAULT_JWKS_CACHE_TTL_SECS));
@@ -316,11 +317,14 @@ impl Backend for Oidc {
             .filter(|a| ALLOWED_ALGS.contains(a))
             .ok_or(Error::InvalidSignature)?;
         let mut validation = Validation::new(alg);
-        // Clients send access tokens (RFC 6750), not ID tokens. The `aud`
-        // claim in access tokens is provider-specific and not standardised
-        // by OIDC, so we skip audience validation and rely on issuer + JWKS
-        // signature.
-        validation.validate_aud = false;
+        if let Some(audience) = &self.config.audience {
+            validation.set_audience(std::slice::from_ref(audience));
+            // Without this, a token with no `aud` passes.
+            validation.set_required_spec_claims(&["exp", "aud"]);
+        } else {
+            // Access tokens (RFC 6750) have a provider-specific `aud`.
+            validation.validate_aud = false;
+        }
         validation.set_issuer(&[&self.config.issuer]);
 
         let jwt = jsonwebtoken::decode::<Claims>(token, &decoding_key, &validation);
@@ -330,8 +334,8 @@ impl Backend for Oidc {
         {
             let mut v = validation.clone();
             v.validate_exp = false;
-            let expired = jsonwebtoken::decode::<Claims>(token, &decoding_key, &v)
-                .map_err(|_| Error::InvalidCredentialsFormat)?;
+            let expired =
+                jsonwebtoken::decode::<Claims>(token, &decoding_key, &v).map_err(map_jwt_error)?;
             let at = OffsetDateTime::from_unix_timestamp(expired.claims.exp)
                 .map_err(|_| Error::InvalidCredentialsFormat)?;
             return Err(Error::Expired { at });
@@ -407,6 +411,10 @@ fn map_jwt_error(e: jsonwebtoken::errors::Error) -> Error {
         | ErrorKind::InvalidKeyFormat
         | ErrorKind::InvalidAlgorithm
         | ErrorKind::InvalidAlgorithmName => Error::InvalidSignature,
+        ErrorKind::InvalidAudience => Error::InvalidAudience,
+        ErrorKind::MissingRequiredClaim(claim) => Error::MissingField {
+            field: claim.clone(),
+        },
         _ => Error::InvalidCredentialsFormat,
     }
 }
@@ -423,13 +431,24 @@ impl JwksPool {
 
 #[cfg(test)]
 impl Oidc {
-    fn new_for_test(mut config: Config, jwks: jsonwebtoken::jwk::JwkSet) -> Self {
-        config.issuer = config.issuer.trim_end_matches('/').to_owned();
+    fn new_for_test(config: Config, jwks: jsonwebtoken::jwk::JwkSet) -> Self {
         Self {
             jwks_pool: JwksPool::new_with_keys(jwks),
-            config,
+            config: normalize(&config).expect("valid test config"),
         }
     }
+}
+
+/// Normalize the config once, so every user of it sees the same values.
+fn normalize(config: &Config) -> Result<Config, String> {
+    let mut config = config.clone();
+    config.issuer = config.issuer.trim_end_matches('/').to_owned();
+    config.audience = config.audience.map(|a| a.trim().to_owned());
+    // An empty audience would reject every token.
+    if config.audience.as_deref() == Some("") {
+        return Err("OIDC audience must not be empty when set".to_owned());
+    }
+    Ok(config)
 }
 
 #[cfg(test)]
@@ -481,6 +500,7 @@ yQX6iM2kKs7vI3nTID1fVSDu6MOqsaPWbVtWnl37M8P56c57zyU=
             allowed_identifiers: vec![],
             allowed_groups: vec![],
             jwks_cache_ttl: None,
+            audience: None,
         }
     }
 
