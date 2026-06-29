@@ -3439,8 +3439,11 @@ dependencies = [
  "async-trait",
  "byteorder",
  "bytes",
+ "futures-util",
  "kymux-util",
  "thiserror 1.0.69",
+ "tokio",
+ "wasm-bindgen-futures",
 ]
 
 [[package]]
@@ -3448,6 +3451,7 @@ name = "kymux-util"
 version = "0.1.0"
 dependencies = [
  "thiserror 1.0.69",
+ "tokio",
 ]
 
 [[package]]
@@ -3558,8 +3562,6 @@ dependencies = [
  "serde",
  "thiserror 1.0.69",
  "tokio",
- "wasm-bindgen",
- "wasm-bindgen-futures",
  "windows",
 ]
 
