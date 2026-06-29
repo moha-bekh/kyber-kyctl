@@ -18,7 +18,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use actix_web::{get, post, web, HttpRequest, HttpResponse};
+use actix_web::{HttpRequest, HttpResponse, get, post, web};
 use log::info;
 use serde::{Deserialize, Serialize};
 
@@ -26,7 +26,7 @@ use kyavservice_types::VideoCodec;
 use kynputservice_types::CursorFormat;
 
 use crate::utils::generate_session_id;
-use crate::{session::identity::Identity, Controller};
+use crate::{Controller, session::identity::Identity};
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct StartRequestVideo {

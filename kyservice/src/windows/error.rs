@@ -23,11 +23,11 @@ use std::ptr;
 
 use log::warn;
 use windows_sys::{
-    core::*,
     Win32::{
         Foundation::*,
         System::{Diagnostics::Debug::*, SystemServices::*},
     },
+    core::*,
 };
 
 #[inline]

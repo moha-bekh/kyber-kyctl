@@ -20,7 +20,7 @@
 
 use std::net::IpAddr;
 
-use actix_web::{get, post, web, HttpRequest, HttpResponse};
+use actix_web::{HttpRequest, HttpResponse, get, post, web};
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 
@@ -156,11 +156,11 @@ async fn start(
     }
 
     // Check request validity
-    if let Some(video_request) = request.video.as_ref() {
-        if !ctrl.display_known(video_request.display_id) {
-            warn!("Unknown Display Id {}", video_request.display_id);
-            return HttpResponse::Forbidden().finish();
-        }
+    if let Some(video_request) = request.video.as_ref()
+        && !ctrl.display_known(video_request.display_id)
+    {
+        warn!("Unknown Display Id {}", video_request.display_id);
+        return HttpResponse::Forbidden().finish();
     }
 
     let ret = super::start(&ctrl, session_id, request.into_inner()).await;

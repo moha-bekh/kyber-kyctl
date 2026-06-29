@@ -27,8 +27,8 @@ use std::time::Duration;
 use core::ffi::c_void;
 use log::{info, warn};
 use windows_sys::{
-    core::*,
     Win32::{Devices::Enumeration::Pnp::*, Foundation::*},
+    core::*,
 };
 
 use crate::platform::Event;
@@ -96,7 +96,7 @@ impl DriverHandle {
         userdata: *const c_void,
         _pszdeviceinstanceid: PCWSTR,
     ) {
-        let event = &*(userdata as *const Event);
+        let event = unsafe { &*(userdata as *const Event) };
 
         info!("Driver device create result: 0x{:X}", createresult);
         if createresult == S_OK {

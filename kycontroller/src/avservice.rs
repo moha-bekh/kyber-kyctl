@@ -25,8 +25,8 @@ use log::{debug, warn};
 
 use kyavservice_types::{Command, Display, IpcApi, Response, VideoCodec};
 use libkypc::{
-    process::{Process, ProcessFactory},
     CommandSender, EventReceiver,
+    process::{Process, ProcessFactory},
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -429,15 +429,13 @@ impl SharedHandler {
                 return;
             }
 
-            if let Some(bitrate) = bitrate {
-                if let Err(e) = handler.video_set_bitrate(bitrate).await {
-                    warn!("Set bitrate failed: {e:?}");
-                }
+            if let Some(bitrate) = bitrate
+                && let Err(e) = handler.video_set_bitrate(bitrate).await
+            {
+                warn!("Set bitrate failed: {e:?}");
             }
-            if want_idr {
-                if let Err(e) = handler.video_force_idr().await {
-                    warn!("Force IDR failed: {e:?}");
-                }
+            if want_idr && let Err(e) = handler.video_force_idr().await {
+                warn!("Force IDR failed: {e:?}");
             }
         }
     }

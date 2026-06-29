@@ -48,7 +48,7 @@ use actix_web::web;
 use log::warn;
 use time::OffsetDateTime;
 
-use crate::{utils::Task, Controller};
+use crate::{Controller, utils::Task};
 
 /// Creates and starts a new expiration monitoring task.
 ///

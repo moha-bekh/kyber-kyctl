@@ -24,9 +24,10 @@ use std::time::Duration;
 
 use log::info;
 use openidconnect::{
-    core::{CoreAuthenticationFlow, CoreProviderMetadata},
-    reqwest, AuthorizationCode, ClientId, CsrfToken, IssuerUrl, Nonce, OAuth2TokenResponse,
+    AuthorizationCode, ClientId, CsrfToken, IssuerUrl, Nonce, OAuth2TokenResponse,
     PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, RefreshToken, Scope, TokenResponse,
+    core::{CoreAuthenticationFlow, CoreProviderMetadata},
+    reqwest,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 

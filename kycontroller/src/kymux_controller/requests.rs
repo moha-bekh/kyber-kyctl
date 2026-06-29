@@ -18,7 +18,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use actix_web::{post, web, HttpResponse};
+use actix_web::{HttpResponse, post, web};
 use kymux::kyproto;
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};

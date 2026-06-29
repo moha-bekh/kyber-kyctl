@@ -22,7 +22,7 @@ use std::cell::Cell;
 use std::ffi::{CStr, CString};
 use std::mem::{self, MaybeUninit};
 use std::os::raw::{c_char, c_void};
-use std::ptr::NonNull;
+use std::ptr;
 use std::sync::atomic::{self, AtomicPtr};
 
 use log::{error, warn};
@@ -278,12 +278,12 @@ struct EventSinkData {
 
 impl EventSinkData {
     pub unsafe extern "C" fn on_event_cb(event: *const sys::kyclient_Event, userdata: *mut c_void) {
-        let data: &EventSinkData = &*(userdata as *mut _);
+        let data: &EventSinkData = unsafe { &*(userdata as *mut _) };
 
         let event_type = unsafe { sys::kyclient_event_get_type(event) };
         match event_type {
             sys::kyclient_EventType_KYCLIENT_EVENT_TYPE_CONTROL_PLANE_CONNECTED => {
-                let mut cdisplays: *mut Display = std::ptr::null_mut();
+                let mut cdisplays: *mut Display = ptr::null_mut();
                 let mut len: u32 = 0;
 
                 let ret = unsafe {
@@ -315,7 +315,7 @@ impl EventSinkData {
                     return;
                 }
 
-                let c_reason = c_reason.assume_init();
+                let c_reason = unsafe { c_reason.assume_init() };
                 let reason = match c_reason {
                     sys::kyclient_ConnectFailedReason_KYCLIENT_CONNECT_FAILED_REASON_NETWORK_ERROR => {
                         ConnectFailedReason::NetworkError
@@ -351,8 +351,8 @@ impl EventSinkData {
                     .on_event(Event::ControlPlaneConnectFailed { reason });
             }
             sys::kyclient_EventType_KYCLIENT_EVENT_TYPE_AUTHENTICATION_REQUIRED => {
-                let mut c_issuer: *mut c_char = std::ptr::null_mut();
-                let mut c_client_id: *mut c_char = std::ptr::null_mut();
+                let mut c_issuer: *mut c_char = ptr::null_mut();
+                let mut c_client_id: *mut c_char = ptr::null_mut();
 
                 let ret = unsafe {
                     sys::kyclient_event_unpack_authentication_required(
@@ -429,7 +429,7 @@ impl EventSinkData {
                     return;
                 }
 
-                let c_reason = c_reason.assume_init();
+                let c_reason = unsafe { c_reason.assume_init() };
                 let reason = match c_reason {
                     sys::kyclient_StopReason_KYCLIENT_STOP_REASON_REQUESTED => {
                         StopReason::Requested
@@ -455,7 +455,7 @@ impl EventSinkData {
                 data.sink.on_event(Event::Stopped { reason });
             }
             sys::kyclient_EventType_KYCLIENT_EVENT_TYPE_DISPLAY_LIST_UPDATED => {
-                let mut cdisplays: *mut Display = std::ptr::null_mut();
+                let mut cdisplays: *mut Display = ptr::null_mut();
                 let mut len: u32 = 0;
 
                 let ret = unsafe {
@@ -509,7 +509,7 @@ impl EventSinkData {
                     return;
                 }
 
-                let c_type = c_type.assume_init();
+                let c_type = unsafe { c_type.assume_init() };
                 let type_ = match c_type {
                     sys::kyclient_StreamerPipelineType_KYCLIENT_STREAMER_PIPELINE_TYPE_ENUMERATE_DISPLAYS => {
                         StreamerPipelineType::EnumerateDisplays
@@ -526,7 +526,7 @@ impl EventSinkData {
                     }
                 };
 
-                let c_stage = c_stage.assume_init();
+                let c_stage = unsafe { c_stage.assume_init() };
                 let stage = match c_stage {
                     sys::kyclient_StreamerPipelineStage_KYCLIENT_STREAMER_PIPELINE_STAGE_PROCESS => {
                         StreamerPipelineStage::Process
@@ -546,7 +546,7 @@ impl EventSinkData {
                     }
                 };
 
-                let c_event = c_event.assume_init();
+                let c_event = unsafe { c_event.assume_init() };
                 let event = match c_event {
                     sys::kyclient_StreamerPipelineEventType_KYCLIENT_STREAMER_PIPELINE_EVENT_TYPE_STOPPED => {
                         StreamerPipelineEventType::Stopped
@@ -577,7 +577,7 @@ impl EventSinkData {
                     return;
                 }
 
-                let volume = volume.assume_init();
+                let volume = unsafe { volume.assume_init() };
                 data.sink.on_event(Event::AudioVolumeChanged { volume });
             }
             sys::kyclient_EventType_KYCLIENT_EVENT_TYPE_AUDIO_MUTE_CHANGED => {
@@ -591,7 +591,7 @@ impl EventSinkData {
                     return;
                 }
 
-                let mute = mute.assume_init();
+                let mute = unsafe { mute.assume_init() };
                 data.sink.on_event(Event::AudioMuteChanged { mute });
             }
             sys::kyclient_EventType_KYCLIENT_EVENT_TYPE_BITRATE_CHANGED => {
@@ -605,7 +605,7 @@ impl EventSinkData {
                     return;
                 }
 
-                let bitrate = bitrate.assume_init();
+                let bitrate = unsafe { bitrate.assume_init() };
                 data.sink.on_event(Event::BitrateChanged { bitrate });
             }
             _ => {
@@ -628,7 +628,7 @@ impl VideoPlayerConfig {
         let window_handle = if let Some(window_handle) = window_handle {
             window_handle.ptr
         } else {
-            std::ptr::null_mut()
+            ptr::null_mut()
         };
 
         unsafe {
@@ -663,14 +663,13 @@ pub struct VideoSessionConfig {
 
 impl VideoSessionConfig {
     pub fn default(display_id: u32, player: VideoPlayerConfig) -> Result<Self> {
-        unsafe {
-            let mut ptr: *mut _ = std::mem::zeroed();
-            let ret = sys::kyclient_video_session_config_default(display_id, player.ptr, &mut ptr);
-            if ret == 0 {
-                Ok(Self { ptr })
-            } else {
-                Err(Error::Generic)
-            }
+        let mut ptr = ptr::null_mut();
+        let ret =
+            unsafe { sys::kyclient_video_session_config_default(display_id, player.ptr, &mut ptr) };
+        if ret == 0 {
+            Ok(Self { ptr })
+        } else {
+            Err(Error::Generic)
         }
     }
 
@@ -699,14 +698,12 @@ pub struct AudioSessionConfig {
 
 impl AudioSessionConfig {
     pub fn new_default() -> Result<Self> {
-        unsafe {
-            let mut ptr: *mut _ = std::mem::zeroed();
-            let ret = sys::kyclient_audio_session_config_default(&mut ptr);
-            if ret == 0 {
-                Ok(Self { ptr })
-            } else {
-                Err(Error::Generic)
-            }
+        let mut ptr = ptr::null_mut();
+        let ret = unsafe { sys::kyclient_audio_session_config_default(&mut ptr) };
+        if ret == 0 {
+            Ok(Self { ptr })
+        } else {
+            Err(Error::Generic)
         }
     }
 
@@ -721,14 +718,13 @@ pub struct InputSessionConfig {
 
 impl InputSessionConfig {
     pub fn default(pipeline: &Pipeline) -> Result<Self> {
-        unsafe {
-            let mut ptr: *mut _ = std::mem::zeroed();
-            let ret = sys::kyclient_input_session_config_default(pipeline.to_ptr(), &mut ptr);
-            if ret == 0 {
-                Ok(Self { ptr })
-            } else {
-                Err(Error::Generic)
-            }
+        let mut ptr = ptr::null_mut();
+        let ret =
+            unsafe { sys::kyclient_input_session_config_default(pipeline.to_ptr(), &mut ptr) };
+        if ret == 0 {
+            Ok(Self { ptr })
+        } else {
+            Err(Error::Generic)
         }
     }
 
@@ -814,7 +810,7 @@ impl Drop for StreamingSessionConfig {
 
 fn raw_credentials(
     credentials: &AuthCredentials,
-) -> Result<NonNull<sys::kyclient_AuthCredentials>> {
+) -> Result<ptr::NonNull<sys::kyclient_AuthCredentials>> {
     let credentials = match credentials {
         AuthCredentials::Basic { username, password } => {
             let username = to_cstr(username);
@@ -832,7 +828,7 @@ fn raw_credentials(
             unsafe { sys::kyclient_auth_credentials_new_oidc(token_cstr.as_ptr()) }
         }
     };
-    NonNull::new(credentials).ok_or(Error::Generic)
+    ptr::NonNull::new(credentials).ok_or(Error::Generic)
 }
 
 type TofuCallbackPtr = *mut Box<dyn Fn(TofuPrompt) -> bool + Send + Sync>;
@@ -962,49 +958,51 @@ unsafe extern "C" fn tofu_callback_trampoline(
     prompt: *const sys::kyclient_TofuPrompt,
     userdata: *mut c_void,
 ) -> bool {
-    // userdata points to Box<Box<dyn Fn(TofuPrompt) -> bool>>
-    let callback = &*(userdata as *const Box<dyn Fn(TofuPrompt) -> bool>);
-    let prompt = &*prompt;
+    unsafe {
+        // userdata points to Box<Box<dyn Fn(TofuPrompt) -> bool>>
+        let callback = &*(userdata as *const Box<dyn Fn(TofuPrompt) -> bool>);
+        let prompt = &*prompt;
 
-    // Convert C prompt to Rust TofuPrompt
-    let rust_prompt = match prompt.prompt_type {
-        sys::kyclient_TofuPromptType_KYCLIENT_TOFU_PROMPT_TYPE_UNKNOWN_HOST => {
-            let hostname = CStr::from_ptr(prompt.hostname)
-                .to_str()
-                .unwrap_or("")
-                .to_string();
-            let fingerprint = CStr::from_ptr(prompt.fingerprint)
-                .to_str()
-                .unwrap_or("")
-                .to_string();
-            TofuPrompt::UnknownHost {
-                hostname,
-                fingerprint,
+        // Convert C prompt to Rust TofuPrompt
+        let rust_prompt = match prompt.prompt_type {
+            sys::kyclient_TofuPromptType_KYCLIENT_TOFU_PROMPT_TYPE_UNKNOWN_HOST => {
+                let hostname = CStr::from_ptr(prompt.hostname)
+                    .to_str()
+                    .unwrap_or("")
+                    .to_string();
+                let fingerprint = CStr::from_ptr(prompt.fingerprint)
+                    .to_str()
+                    .unwrap_or("")
+                    .to_string();
+                TofuPrompt::UnknownHost {
+                    hostname,
+                    fingerprint,
+                }
             }
-        }
-        sys::kyclient_TofuPromptType_KYCLIENT_TOFU_PROMPT_TYPE_CERTIFICATE_CHANGED => {
-            let hostname = CStr::from_ptr(prompt.hostname)
-                .to_str()
-                .unwrap_or("")
-                .to_string();
-            let expected_fingerprint = CStr::from_ptr(prompt.expected_fingerprint)
-                .to_str()
-                .unwrap_or("")
-                .to_string();
-            let actual_fingerprint = CStr::from_ptr(prompt.actual_fingerprint)
-                .to_str()
-                .unwrap_or("")
-                .to_string();
-            TofuPrompt::CertificateChanged {
-                hostname,
-                expected_fingerprint,
-                actual_fingerprint,
+            sys::kyclient_TofuPromptType_KYCLIENT_TOFU_PROMPT_TYPE_CERTIFICATE_CHANGED => {
+                let hostname = CStr::from_ptr(prompt.hostname)
+                    .to_str()
+                    .unwrap_or("")
+                    .to_string();
+                let expected_fingerprint = CStr::from_ptr(prompt.expected_fingerprint)
+                    .to_str()
+                    .unwrap_or("")
+                    .to_string();
+                let actual_fingerprint = CStr::from_ptr(prompt.actual_fingerprint)
+                    .to_str()
+                    .unwrap_or("")
+                    .to_string();
+                TofuPrompt::CertificateChanged {
+                    hostname,
+                    expected_fingerprint,
+                    actual_fingerprint,
+                }
             }
-        }
-        _ => return false, // Unknown prompt type
-    };
+            _ => return false, // Unknown prompt type
+        };
 
-    callback(rust_prompt)
+        callback(rust_prompt)
+    }
 }
 
 impl Drop for ConnectConfig {
@@ -1172,7 +1170,7 @@ impl Client {
             }
         } else {
             unsafe {
-                sys::kyclient_client_set_metrics_callback(self.ptr, None, std::ptr::null_mut());
+                sys::kyclient_client_set_metrics_callback(self.ptr, None, ptr::null_mut());
             }
         }
     }
@@ -1219,19 +1217,13 @@ extern "C" fn log_cb(
 
 pub fn init() {
     unsafe {
-        sys::kyclient_set_log_cb(Some(log_cb), std::ptr::null_mut());
+        sys::kyclient_set_log_cb(Some(log_cb), ptr::null_mut());
         sys::kyclient_init_crypto();
     }
 }
 
 fn to_c_metric(metric: &Metric) -> sys::kyclient_Metric {
-    let map_value = |v: Option<u64>| -> i64 {
-        if let Some(v) = v {
-            v as i64
-        } else {
-            -1
-        }
-    };
+    let map_value = |v: Option<u64>| -> i64 { if let Some(v) = v { v as i64 } else { -1 } };
 
     match metric {
         Metric::Video(metric) => {
@@ -1384,13 +1376,7 @@ fn from_video_metric_data(video_metric_data: &sys::kyclient_VideoMetricData) -> 
 }
 
 fn from_network_stats(network_stats: &sys::kyclient_NetworkStats) -> NetworkStats {
-    let map_value = |v: i64| -> Option<u64> {
-        if v >= 0 {
-            Some(v as u64)
-        } else {
-            None
-        }
-    };
+    let map_value = |v: i64| -> Option<u64> { if v >= 0 { Some(v as u64) } else { None } };
 
     NetworkStats {
         rtt_micros: map_value(network_stats.rtt_micros),
@@ -1505,7 +1491,7 @@ pub fn known_hosts_remove(hostname: &str) -> Result<bool> {
 /// List all hosts in the known_hosts file.
 /// Returns a vector of (hostname, fingerprint) pairs.
 pub fn known_hosts_list() -> Result<Vec<(String, String)>> {
-    let mut entries: *mut sys::kyclient_KnownHostEntry = std::ptr::null_mut();
+    let mut entries: *mut sys::kyclient_KnownHostEntry = ptr::null_mut();
     let mut count: usize = 0;
 
     let ret = unsafe { sys::kyclient_known_hosts_list(&mut entries, &mut count) };

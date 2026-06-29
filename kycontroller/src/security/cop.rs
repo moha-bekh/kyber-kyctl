@@ -19,16 +19,16 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::{
-    future::{ready, Future, Ready},
+    future::{Future, Ready, ready},
     pin::Pin,
     rc::Rc,
 };
 
 use actix_web::{
-    body::{BoxBody, MessageBody},
-    dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform},
-    http::{header, Method},
     Error, HttpResponse,
+    body::{BoxBody, MessageBody},
+    dev::{Service, ServiceRequest, ServiceResponse, Transform, forward_ready},
+    http::{Method, header},
 };
 
 use super::TrustedOrigins;
@@ -115,10 +115,10 @@ where
 
 fn is_safe(trusted_origins: &TrustedOrigins, origin: Option<&str>, sfs: Option<&str>) -> bool {
     // Allow origins matching the trusted list.
-    if let Some(o) = origin {
-        if trusted_origins.contains(o) {
-            return true;
-        }
+    if let Some(o) = origin
+        && trusted_origins.contains(o)
+    {
+        return true;
     }
 
     // Allow same-origin content reported by Sec-Fetch-Site.
@@ -144,8 +144,9 @@ mod tests {
     use super::*;
     use crate::security::TrustedOrigins;
     use actix_web::{
+        App, HttpResponse,
         http::{Method, StatusCode},
-        test, web, App, HttpResponse,
+        test, web,
     };
 
     fn no_origins() -> TrustedOrigins {

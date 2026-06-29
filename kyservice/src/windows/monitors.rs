@@ -23,12 +23,12 @@ use std::ptr;
 
 use log::{error, info, warn};
 
-use windows_sys::core::*;
 use windows_sys::Win32::Devices::DeviceAndDriverInstallation::*;
 use windows_sys::Win32::Foundation::*;
+use windows_sys::core::*;
 
 use crate::windows::config;
-use crate::windows::{last_win32_error, Result};
+use crate::windows::{Result, last_win32_error};
 
 const GUID_DEVCLASS_MONITOR: GUID = GUID {
     data1: 0x4d36e96e,

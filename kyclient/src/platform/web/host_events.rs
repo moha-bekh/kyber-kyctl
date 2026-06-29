@@ -141,8 +141,8 @@ impl Inner {
         )?;
 
         let timer = match state {
-            ConnectionState::Connecting { ref mut timer, .. } => timer,
-            ConnectionState::Authentified { ref mut timer, .. } => timer,
+            ConnectionState::Connecting { timer, .. } => timer,
+            ConnectionState::Authentified { timer, .. } => timer,
             _ => return Ok(()),
         };
 
@@ -215,12 +215,11 @@ impl WebSocketHandler for Inner {
 
     // Event handlers
     fn on_open(&self) -> Result<()> {
-        if self.send_token().is_err() {
-            if let ConnectionState::Connecting { connected_tx, .. } =
+        if self.send_token().is_err()
+            && let ConnectionState::Connecting { connected_tx, .. } =
                 self.state.replace(ConnectionState::Closed)
-            {
-                let _ = connected_tx.send(ConnectionResult::Failed);
-            }
+        {
+            let _ = connected_tx.send(ConnectionResult::Failed);
         }
         Ok(())
     }
@@ -237,7 +236,7 @@ impl WebSocketHandler for Inner {
             let mut state = self.state.borrow_mut();
             match *state {
                 ConnectionState::Authentified { .. } => {
-                    return self.handle_authentified_messages(msg, &mut state)
+                    return self.handle_authentified_messages(msg, &mut state);
                 }
                 ConnectionState::Closed => return Ok(()),
                 _ => (), // Connecting handled after as it changes the state.

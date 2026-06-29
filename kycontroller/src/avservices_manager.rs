@@ -27,12 +27,12 @@ use libkypc::process::ProcessFactory;
 use log::{error, info, warn};
 use uuid::Uuid;
 
+use crate::StateMachineProxy;
 use crate::avservice;
 use crate::controller::Controller;
 use crate::error::Result;
 use crate::kydup;
 use crate::utils::Task;
-use crate::StateMachineProxy;
 
 /// Backstop on a single reaper teardown batch. Each `avservice.stop()` is
 /// individually bounded (it force-kills the child and falls back to aborting
@@ -165,10 +165,10 @@ pub(crate) async fn metrics_forwarder_loop(
             Ok(Some(p)) => p,
             _ => return,
         };
-        if let Some(s) = send.as_mut() {
-            if s.send(packet).await.is_err() {
-                send = None; // client gone; drain for the rest of the stream
-            }
+        if let Some(s) = send.as_mut()
+            && s.send(packet).await.is_err()
+        {
+            send = None; // client gone; drain for the rest of the stream
         }
         // else: drain mode, discard.
     }
@@ -492,10 +492,10 @@ impl AVServicesManager {
                 // never on the other streams that happen to share its display.
                 let av_services_manager = ctrl.av_services_manager.lock().await;
                 for key in pending {
-                    if let Some(stream) = av_services_manager.video_streams.get(&key) {
-                        if let Err(e) = stream.avservice.video_force_idr() {
-                            warn!("Force IDR failed for {key:?}: {e}");
-                        }
+                    if let Some(stream) = av_services_manager.video_streams.get(&key)
+                        && let Err(e) = stream.avservice.video_force_idr()
+                    {
+                        warn!("Force IDR failed for {key:?}: {e}");
                     }
                 }
             }
@@ -917,7 +917,10 @@ impl AVServicesManager {
     /// from a spawned task (e.g. a kydup post-subscribe hook). Same semantics as
     /// [`request_idr`](Self::request_idr); cloning the dispatcher sender keeps it
     /// cheap and lock-free, and duplicate requests are collapsed downstream.
-    pub(crate) fn idr_requester(&self, key: VideoStreamKey) -> impl FnOnce() + Send + 'static {
+    pub(crate) fn idr_requester(
+        &self,
+        key: VideoStreamKey,
+    ) -> impl FnOnce() + Send + 'static + use<> {
         let idr_tx = self.idr_tx.clone();
         move || {
             if let Err(e) = idr_tx.try_send(key.clone()) {

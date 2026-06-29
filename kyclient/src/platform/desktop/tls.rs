@@ -25,7 +25,7 @@ use std::sync::Arc;
 
 use log::{error, info, warn};
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
-use rustls::crypto::{verify_tls12_signature, verify_tls13_signature, CryptoProvider};
+use rustls::crypto::{CryptoProvider, verify_tls12_signature, verify_tls13_signature};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{DigitallySignedStruct, SignatureScheme};
 
@@ -355,7 +355,7 @@ impl ServerCertVerifier for TofuServerCertVerifier {
             _ => {
                 return Err(rustls::Error::General(
                     "TOFU requires DNS or IP server name".to_string(),
-                ))
+                ));
             }
         };
 

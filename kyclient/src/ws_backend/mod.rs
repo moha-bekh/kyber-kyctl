@@ -30,19 +30,19 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use log::{info, warn};
 
-use kynput::bufferproxy::BufferProxy;
 use kynput::InputNetworkStream;
+use kynput::bufferproxy::BufferProxy;
 
 use audio::AudioWsSocketHandler;
 use input::InputWebSocketHandler;
 use video::VideoWsSocketHandler;
 
+use crate::platform::InputMsgSink;
 use crate::platform::message::{AudioMessageForwarder, VideoMessageForwarder};
 use crate::platform::player::{
     self, AudioPlayer, AudioPlayerCreationError, AudioPlayerHandle, AudioResumeState, VideoPlayer,
     VideoPlayerHandle,
 };
-use crate::platform::InputMsgSink;
 
 use crate::http::HttpClient;
 use crate::{BackendDriver, MessageSender, StreamingSessionConfig};
@@ -188,7 +188,7 @@ impl WsBackend {
             match AudioPlayer::create(listener, &audio_player_config).await {
                 Ok(data) => data,
                 Err(AudioPlayerCreationError::SharedArrayBufferNotAvailable) => {
-                    return Err(Error::SharedArrayBufferUndefined)
+                    return Err(Error::SharedArrayBufferUndefined);
                 }
                 Err(AudioPlayerCreationError::Other(err)) => return Err(err.into()),
             };

@@ -30,8 +30,8 @@ use web_sys::{CloseEvent, MessageEvent};
 use kynput::bufferproxy::{BufferProxyReceiver, BufferProxySender};
 use kynput::{InputNetworkStreamMsg, InputNetworkStreamObserver};
 
-use crate::platform::{WebSocket, WebSocketHandler};
 use crate::Result;
+use crate::platform::{WebSocket, WebSocketHandler};
 
 pub struct InputWebSocketHandler {
     ws: Rc<WebSocket>,

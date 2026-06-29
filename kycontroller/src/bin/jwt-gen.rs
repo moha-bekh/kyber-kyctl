@@ -21,7 +21,7 @@
 use std::{fs, io::Read, path::PathBuf};
 
 use clap::{Args, Parser, Subcommand};
-use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use serde::Serialize;
 
 const DEFAULT_DEV_KEY: &[u8] = b"kyber-authentication-development-key";

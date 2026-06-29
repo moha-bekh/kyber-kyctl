@@ -42,18 +42,18 @@ use std::thread::JoinHandle;
 use tokio::sync::{mpsc, watch};
 use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, HWND, LPARAM, LRESULT, WPARAM};
 use windows_sys::Win32::Graphics::Gdi::{
-    CreateBitmap, CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, BITMAPINFO,
-    BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
+    BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateBitmap, CreateCompatibleDC, CreateDIBSection,
+    DIB_RGB_COLORS, DeleteDC, DeleteObject,
 };
 use windows_sys::Win32::System::Threading::SetEvent;
 use windows_sys::Win32::UI::Shell::{
-    Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY,
-    NOTIFYICONDATAW,
+    NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY, NOTIFYICONDATAW,
+    Shell_NotifyIconW,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    ChangeWindowMessageFilterEx, CreateIconIndirect, CreateWindowExW, DefWindowProcW, DestroyIcon,
-    DestroyWindow, GetWindowLongPtrW, RegisterClassW, RegisterWindowMessageW, SetForegroundWindow,
-    SetWindowLongPtrW, CREATESTRUCTW, CW_USEDEFAULT, GWLP_USERDATA, HICON, ICONINFO, MSGFLT_ALLOW,
+    CREATESTRUCTW, CW_USEDEFAULT, ChangeWindowMessageFilterEx, CreateIconIndirect, CreateWindowExW,
+    DefWindowProcW, DestroyIcon, DestroyWindow, GWLP_USERDATA, GetWindowLongPtrW, HICON, ICONINFO,
+    MSGFLT_ALLOW, RegisterClassW, RegisterWindowMessageW, SetForegroundWindow, SetWindowLongPtrW,
     WM_LBUTTONUP, WM_NCCREATE, WM_RBUTTONUP, WNDCLASSW, WS_OVERLAPPEDWINDOW,
 };
 
@@ -358,7 +358,9 @@ impl NativeTrayIcon {
             };
             if ok == 0 {
                 let err = unsafe { GetLastError() };
-                warn!("ChangeWindowMessageFilterEx failed (error {err}); TaskbarCreated recovery may not work");
+                warn!(
+                    "ChangeWindowMessageFilterEx failed (error {err}); TaskbarCreated recovery may not work"
+                );
             }
         }
 
@@ -450,12 +452,15 @@ fn create_notify_icon_data(hwnd: HWND, hicon: HICON, tooltip: &str) -> NOTIFYICO
 /// Create an HICON from PNG data using CreateIconIndirect.
 fn create_hicon_from_png(png_data: &[u8]) -> Result<HICON> {
     // Decode PNG
-    let decoder = png::Decoder::new(png_data);
+    let decoder = png::Decoder::new(std::io::Cursor::new(png_data));
     let mut reader = decoder.read_info().map_err(|e| Error::TrayIconLoad {
         reason: e.to_string(),
     })?;
+    let size = reader
+        .output_buffer_size()
+        .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::OutOfMemory))?;
 
-    let mut buf = vec![0; reader.output_buffer_size()];
+    let mut buf = vec![0; size];
     let info = reader
         .next_frame(&mut buf)
         .map_err(|e| Error::TrayIconLoad {
@@ -619,7 +624,7 @@ fn wait_for_events(tray_exit_event: RawHandle, tray_wake_event: RawHandle) -> Wa
     use windows_sys::Win32::Foundation::WAIT_OBJECT_0;
     use windows_sys::Win32::System::Threading::INFINITE;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        MsgWaitForMultipleObjectsEx, MWMO_INPUTAVAILABLE, QS_ALLINPUT,
+        MWMO_INPUTAVAILABLE, MsgWaitForMultipleObjectsEx, QS_ALLINPUT,
     };
 
     let handles = [tray_exit_event.0, tray_wake_event.0];
@@ -646,7 +651,7 @@ fn wait_for_events(tray_exit_event: RawHandle, tray_wake_event: RawHandle) -> Wa
 /// Process all pending Windows messages.
 fn pump_windows_messages() {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        DispatchMessageW, PeekMessageW, TranslateMessage, MSG, PM_REMOVE,
+        DispatchMessageW, MSG, PM_REMOVE, PeekMessageW, TranslateMessage,
     };
 
     // Safety: MSG is a POD type, zeroing is valid initialization
@@ -715,7 +720,9 @@ fn run_tray_loop(
         unsafe { RegisterWindowMessageW(to_wide_string("TaskbarCreated").as_ptr()) };
     if taskbar_created_msg == 0 {
         let err = unsafe { GetLastError() };
-        warn!("RegisterWindowMessageW(TaskbarCreated) failed (error {err}); tray will not recover after Explorer restarts");
+        warn!(
+            "RegisterWindowMessageW(TaskbarCreated) failed (error {err}); tray will not recover after Explorer restarts"
+        );
     }
 
     // Build the context menu first (needed before creating the tray icon)

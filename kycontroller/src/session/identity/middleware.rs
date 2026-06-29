@@ -40,11 +40,11 @@
 use std::{future::Future, pin::Pin, rc::Rc};
 
 use actix_session::SessionExt;
-use actix_utils::future::{ready, Ready};
+use actix_utils::future::{Ready, ready};
 use actix_web::{
-    body::MessageBody,
-    dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform},
     Error, HttpMessage as _, Result,
+    body::MessageBody,
+    dev::{Service, ServiceRequest, ServiceResponse, Transform, forward_ready},
 };
 use time::OffsetDateTime;
 

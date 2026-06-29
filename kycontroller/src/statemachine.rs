@@ -25,8 +25,8 @@ use uuid::Uuid;
 
 use crate::avservices_manager::StreamId;
 use crate::utils::{Task, TypeConvert};
-use crate::{avservice, host_events};
 use crate::{Controller, HostEvent};
+use crate::{avservice, host_events};
 
 /// Route a stream event (PipelineEvent or Stopped) emitted by an
 /// AVServicesManager handler to exactly the sessions subscribed to that
@@ -176,10 +176,13 @@ impl StateMachine {
 
                                     async move {
                                         let mut services = services.lock().await;
-                                        if let Some(input) = &mut services.input {
-                                            if let Err(err) = input.update_host_config(host_config).await {
-                                                warn!("Failed to send HostConfig to InputServer: {err:?}");
-                                            }
+                                        if let Some(input) = &mut services.input
+                                            && let Err(err) =
+                                                input.update_host_config(host_config).await
+                                        {
+                                            warn!(
+                                                "Failed to send HostConfig to InputServer: {err:?}"
+                                            );
                                         }
                                     }
                                 })
@@ -191,10 +194,10 @@ impl StateMachine {
                         Some(sid) => {
                             if let Ok(services) = ctrl.session_services(&sid) {
                                 let mut services = services.lock().await;
-                                if let Some(input) = &mut services.input {
-                                    if let Err(err) = input.update_host_config(host_config).await {
-                                        warn!("Failed to send HostConfig to InputServer: {err:?}");
-                                    }
+                                if let Some(input) = &mut services.input
+                                    && let Err(err) = input.update_host_config(host_config).await
+                                {
+                                    warn!("Failed to send HostConfig to InputServer: {err:?}");
                                 }
                             }
                         }

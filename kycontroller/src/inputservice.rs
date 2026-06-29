@@ -24,8 +24,8 @@ use log::{debug, warn};
 
 use kynputservice_types::{Command, HostConfig, IpcApi, Response, ServiceConfig};
 use libkypc::{
-    process::{Process, ProcessFactory},
     Commander,
+    process::{Process, ProcessFactory},
 };
 
 use crate::error::Result;

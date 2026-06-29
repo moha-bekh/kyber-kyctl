@@ -97,15 +97,12 @@ pub(crate) async fn login(
         }
     })?;
 
-    if response.status() == StatusCode::UNAUTHORIZED {
-        if let Some(challenge) = response
-            .headers()
-            .get(reqwest::header::WWW_AUTHENTICATE)
-            .and_then(|v| v.to_str().ok())
-            .and_then(parse_oidc_challenge)
-        {
-            return Ok(LoginResult::OidcRequired(challenge));
-        }
+    if response.status() == StatusCode::UNAUTHORIZED
+        && let Some(value) = response.headers().get(reqwest::header::WWW_AUTHENTICATE)
+        && let Ok(value) = value.to_str()
+        && let Some(challenge) = parse_oidc_challenge(value)
+    {
+        return Ok(LoginResult::OidcRequired(challenge));
     }
 
     let response = response

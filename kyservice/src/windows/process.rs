@@ -31,7 +31,7 @@ use windows_sys::Win32::{
     System::{SystemServices::*, Threading::*},
 };
 
-use super::error::{check_win32_error, last_win32_error, Error, Result};
+use super::error::{Error, Result, check_win32_error, last_win32_error};
 use super::{Event, Handle};
 
 fn open_process_token() -> Result<Handle> {

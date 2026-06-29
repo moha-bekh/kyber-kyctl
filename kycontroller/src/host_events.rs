@@ -25,7 +25,7 @@ use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
-use crate::{utils::Task, Error, Result, StateMachineEvent, StateMachineProxy};
+use crate::{Error, Result, StateMachineEvent, StateMachineProxy, utils::Task};
 
 // Naming taken from man(7) tcp: TCP_KEEPCNT/TCP_KEEPINTVL
 pub(crate) const KEEPINTVL: Duration = Duration::from_secs(20);

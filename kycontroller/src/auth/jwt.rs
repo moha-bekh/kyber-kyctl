@@ -62,9 +62,8 @@ use crate::auth::Backend;
 
 use super::{Error, Session};
 use jsonwebtoken::{
-    decode,
+    Algorithm, DecodingKey, Validation, decode,
     errors::{Error as JWTError, ErrorKind},
-    Algorithm, DecodingKey, Validation,
 };
 use serde::Deserialize;
 use time::OffsetDateTime;
@@ -160,15 +159,15 @@ impl Backend for Jwt {
         // Special handling: Extract expiration timestamp from expired tokens
         // The jsonwebtoken library doesn't expose the exp claim in the error,
         // so we re-decode without expiration validation to get the timestamp.
-        if let Err(e) = &jwt {
-            if matches!(e.kind(), ErrorKind::ExpiredSignature) {
-                let mut validation = self.validation.clone();
-                validation.validate_exp = false;
-                let expired = decode::<Claims>(token, &self.key, &validation)?;
-                let at = OffsetDateTime::from_unix_timestamp(expired.claims.exp)
-                    .or(Err(Error::InvalidCredentialsFormat))?;
-                return Err(Error::Expired { at });
-            }
+        if let Err(e) = &jwt
+            && matches!(e.kind(), ErrorKind::ExpiredSignature)
+        {
+            let mut validation = self.validation.clone();
+            validation.validate_exp = false;
+            let expired = decode::<Claims>(token, &self.key, &validation)?;
+            let at = OffsetDateTime::from_unix_timestamp(expired.claims.exp)
+                .or(Err(Error::InvalidCredentialsFormat))?;
+            return Err(Error::Expired { at });
         }
 
         let jwt = jwt?;

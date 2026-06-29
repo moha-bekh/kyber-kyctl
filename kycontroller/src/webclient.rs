@@ -19,12 +19,12 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::{
-    future::{ready, Future, Ready},
+    future::{Future, Ready, ready},
     path::{Path, PathBuf},
     pin::Pin,
 };
 
-use actix_web::dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform};
+use actix_web::dev::{Service, ServiceRequest, ServiceResponse, Transform, forward_ready};
 use actix_web::http::header::{self, HeaderValue};
 use log::warn;
 

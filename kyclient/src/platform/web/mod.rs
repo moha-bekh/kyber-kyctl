@@ -33,7 +33,7 @@ use log::info;
 
 use crate::{AuthCredentials, Result, VideoCodec};
 pub(crate) use host_events::{WsClient, WsClientBuilder};
-pub(crate) use input_service::{get_cursor_format, InputError, InputMsgSink, InputPipeline};
+pub(crate) use input_service::{InputError, InputMsgSink, InputPipeline, get_cursor_format};
 pub(crate) use mainloop_engine::MainLoopEngine;
 pub(crate) use websocket::{WebSocket, WebSocketHandler};
 

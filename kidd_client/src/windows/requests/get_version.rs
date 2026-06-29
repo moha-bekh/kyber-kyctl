@@ -25,9 +25,9 @@ use std::time::Duration;
 use log::{info, warn};
 use windows_sys::Win32::{Foundation::*, System::IO::*};
 
-use crate::platform::error::{check_win32_error, last_win32_error};
 use crate::platform::Event;
 use crate::platform::IOCTL_KYBER_IDD_GET_VERSION;
+use crate::platform::error::{check_win32_error, last_win32_error};
 use crate::{Error, Result};
 
 #[repr(C)]

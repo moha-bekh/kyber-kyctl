@@ -21,9 +21,9 @@
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 
+use crate::Result;
 use crate::platform::get_cursor_format;
 use crate::ws_backend::WsBackendConfig;
-use crate::Result;
 use crate::{CursorFormat, VideoCodec};
 
 #[derive(Clone, Debug, Serialize)]

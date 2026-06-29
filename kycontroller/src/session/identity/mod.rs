@@ -18,11 +18,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use actix_utils::future::{ready, Ready};
+use actix_utils::future::{Ready, ready};
 use actix_web::{
+    Error, FromRequest, HttpMessage, HttpRequest, HttpResponse,
     dev::{Extensions, Payload},
     http::StatusCode,
-    Error, FromRequest, HttpMessage, HttpRequest, HttpResponse,
 };
 use time::OffsetDateTime;
 use uuid::Uuid;

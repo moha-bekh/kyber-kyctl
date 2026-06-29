@@ -31,12 +31,12 @@ mod utils;
 use std::env::current_exe;
 use std::ffi::OsString;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
-use log::{error, info, warn, LevelFilter};
+use log::{LevelFilter, error, info, warn};
 use log4rs::append::file::FileAppender;
 use windows_service::{
     service::{
@@ -50,7 +50,7 @@ use windows_sys::Win32::{
     System::{RemoteDesktop::*, Threading::*},
 };
 
-use error::{last_win32_error, Error, Result};
+use error::{Error, Result, last_win32_error};
 use event::Event;
 use handle::Handle;
 use process::Process;
@@ -92,7 +92,10 @@ impl ServiceContext {
             match monitors::start_kidd(&config) {
                 Ok(interface) => interface,
                 Err(e) => {
-                    error!("Failed to start Kidd: {:?}. Service will continue without virtual monitors.", e);
+                    error!(
+                        "Failed to start Kidd: {:?}. Service will continue without virtual monitors.",
+                        e
+                    );
                     None
                 }
             }
@@ -213,11 +216,15 @@ impl ServiceContext {
                     match self.active_session_id.take() {
                         Some(active_session_id) => {
                             if active_session_id != session_id {
-                                warn!("ConsoleDisconnect received on session {session_id} while we though that the active one was session {active_session_id}")
+                                warn!(
+                                    "ConsoleDisconnect received on session {session_id} while we though that the active one was session {active_session_id}"
+                                )
                             }
                         }
                         None => {
-                            warn!("ConsoleDisconnect received on session {session_id} while we though that no session was active")
+                            warn!(
+                                "ConsoleDisconnect received on session {session_id} while we though that no session was active"
+                            )
                         }
                     }
 
@@ -250,8 +257,12 @@ impl ServiceContext {
         let exit_code = self.process.as_ref().and_then(|p| p.exit_code().ok());
         info!("kycontroller.exe stopped (exit code: {exit_code:?})");
 
-        if exit_code.is_some_and(|c| Self::NO_RESTART_EXIT_CODES.contains(&c)) {
-            error!("kycontroller.exe exited with unrecoverable error (code {exit_code:?}), will not restart");
+        if let Some(code) = exit_code
+            && Self::NO_RESTART_EXIT_CODES.contains(&code)
+        {
+            error!(
+                "kycontroller.exe exited with unrecoverable error (code {exit_code:?}), will not restart"
+            );
             self.process = None;
             self.stop.store(true, Ordering::Relaxed);
             return Ok(());
@@ -510,7 +521,7 @@ pub fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
     // instead of one next to their own executable. Set while still
     // single-threaded, before the service dispatcher starts.
     match std::fs::canonicalize(config::config_path()) {
-        Ok(path) => std::env::set_var("KYBER_CONFIG", path),
+        Ok(path) => unsafe { std::env::set_var("KYBER_CONFIG", path) },
         Err(err) => info!("No config file to export to kycontroller: {err}"),
     }
 

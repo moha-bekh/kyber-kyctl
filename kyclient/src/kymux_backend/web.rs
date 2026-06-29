@@ -30,13 +30,13 @@ use kynput::bufferproxy::{BufferProxy, BufferProxyReceiver, BufferProxySender};
 use kynput::{InputNetworkStream, InputNetworkStreamMsg, InputNetworkStreamObserver};
 
 use super::{KymuxBackendConfig, PlatformEndpoints};
+use crate::platform::InputMsgSink;
 use crate::platform::message::{AudioMessageForwarder, VideoMessageForwarder};
 use crate::platform::player::packet::*;
 use crate::platform::player::{
     self, AudioPlayer, AudioPlayerCreationError, AudioPlayerHandle, AudioResumeState, PacketSink,
     VideoPlayer, VideoPlayerHandle,
 };
-use crate::platform::InputMsgSink;
 use crate::{BackendDriver, MessageSender};
 use crate::{Error, Result};
 

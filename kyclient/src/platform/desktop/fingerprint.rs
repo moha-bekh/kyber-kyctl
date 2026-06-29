@@ -49,11 +49,7 @@ pub fn parse(fingerprint: &str) -> Option<Vec<u8>> {
         .filter_map(|i| u8::from_str_radix(&hex_clean[i..i + 2], 16).ok())
         .collect();
 
-    if bytes.len() == 32 {
-        Some(bytes)
-    } else {
-        None
-    }
+    if bytes.len() == 32 { Some(bytes) } else { None }
 }
 
 #[cfg(test)]

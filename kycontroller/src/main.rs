@@ -25,13 +25,13 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use actix_session::storage::CookieSessionStore;
 use actix_session::SessionMiddleware;
+use actix_session::storage::CookieSessionStore;
 use actix_web::{
-    cookie, get, middleware, post, web, App, HttpMessage, HttpRequest, HttpResponse, HttpServer,
+    App, HttpMessage, HttpRequest, HttpResponse, HttpServer, cookie, get, middleware, post, web,
 };
 use clap::Parser;
-use log::{error, info, warn, LevelFilter};
+use log::{LevelFilter, error, info, warn};
 use serde::{Deserialize, Serialize};
 use session::identity::Identity;
 
@@ -730,7 +730,7 @@ async fn real_main(cli: cli::Cli) -> Result<()> {
         av_tasks_handle = ctrl.av_services_manager.lock().await.init(weak);
 
         // Configure watchdog
-        let watchdog = if ctrl.config.watchdog() {
+        if ctrl.config.watchdog() {
             info!("Starting watchdog");
             let (watchdog, displays) =
                 watchdog::Watchdog::new(&process_factory, ctrl.state_machine_proxy.clone()).await?;
@@ -741,9 +741,7 @@ async fn real_main(cli: cli::Cli) -> Result<()> {
         } else {
             warn!("Watchdog disabled in config! Audio and video disabled.");
             None
-        };
-
-        watchdog
+        }
     };
 
     let _session_exp_task = session::expiration::expiration_task(ctrl.clone());
@@ -870,7 +868,9 @@ async fn main() -> ExitCode {
     // file resolves, leave it unset: a missing default stays a soft fallback,
     // while a missing explicit pointer is reported by config::load.
     if let Ok(path) = std::fs::canonicalize(config::config_path(cli.config.as_deref())) {
-        std::env::set_var("KYBER_CONFIG", path);
+        unsafe {
+            std::env::set_var("KYBER_CONFIG", path);
+        }
     }
 
     match real_main(cli).await {

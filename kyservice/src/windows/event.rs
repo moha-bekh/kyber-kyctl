@@ -25,8 +25,8 @@ use std::sync::Arc;
 use log::warn;
 use windows_sys::Win32::{Foundation::*, Security::*, System::Threading::*};
 
-use super::error::{check_win32_error, last_win32_error, Result};
 use super::Handle;
+use super::error::{Result, check_win32_error, last_win32_error};
 
 #[derive(Clone, Debug)]
 pub struct Event {

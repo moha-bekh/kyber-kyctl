@@ -23,7 +23,7 @@ use std::future::Future;
 #[cfg(target_family = "wasm")]
 #[allow(unused)]
 pub use kywasmtime::{
-    interval, interval_at, sleep, sleep_until, timeout, timeout_at, Instant, SystemTime, UNIX_EPOCH,
+    Instant, SystemTime, UNIX_EPOCH, interval, interval_at, sleep, sleep_until, timeout, timeout_at,
 };
 #[cfg(target_family = "wasm")]
 #[allow(unused)]
@@ -34,7 +34,7 @@ pub use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(not(target_family = "wasm"))]
 #[allow(unused)]
 pub use tokio::time::{
-    interval, interval_at, sleep, sleep_until, timeout, timeout_at, Duration, Instant,
+    Duration, Instant, interval, interval_at, sleep, sleep_until, timeout, timeout_at,
 };
 
 #[cfg(not(target_family = "wasm"))]

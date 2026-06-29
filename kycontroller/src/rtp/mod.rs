@@ -27,7 +27,7 @@ use tokio::time;
 
 use crate::error::{Error, Result};
 use crate::utils::TypeConvert;
-use crate::{avservice, controller, inputservice, Controller, DataPlaneBackend};
+use crate::{Controller, DataPlaneBackend, avservice, controller, inputservice};
 
 pub async fn generate_video_sdp(
     ctrl: &Controller,

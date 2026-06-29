@@ -30,13 +30,13 @@ use std::io::BufReader;
 use kymux::kyproto;
 use kynput_rs::Pipeline;
 
+use crate::MetricsCallback;
+use crate::VideoCodec;
 use crate::metrics::{
     Metric, MetricsJSONProducer, NetworkPing, NetworkStats, VideoMetric, VideoMetricData,
 };
-use crate::platform::tls::get_resource_path;
 use crate::platform::VerifyMode;
-use crate::MetricsCallback;
-use crate::VideoCodec;
+use crate::platform::tls::get_resource_path;
 
 #[allow(non_camel_case_types)]
 pub type Display = super::Display;
@@ -93,7 +93,7 @@ fn result_to_c_int<T>(result: crate::Result<T>) -> c_int {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_init_crypto() {
     crate::init_crypto();
 }
@@ -202,7 +202,7 @@ impl log::Log for Logger {
     fn flush(&self) {}
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_set_log_cb(cb: LogCb, userdata: *mut c_void) {
     let userdata = std::sync::atomic::AtomicPtr::new(userdata);
     let logger = Box::new(Logger { cb, userdata });
@@ -215,7 +215,7 @@ pub unsafe extern "C" fn kyclient_set_log_cb(cb: LogCb, userdata: *mut c_void) {
 }
 
 #[cfg(target_os = "android")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_init_platform_verifier(
     env: std::ptr::NonNull<c_void>,
     context: std::ptr::NonNull<c_void>,
@@ -233,7 +233,7 @@ pub unsafe extern "C" fn kyclient_init_platform_verifier(
 }
 
 #[cfg(target_os = "android")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_set_android_logger() {
     android_logger::init_once(
         android_logger::Config::default()
@@ -244,7 +244,7 @@ pub unsafe extern "C" fn kyclient_set_android_logger() {
 
 /// Returns: (transfer full)
 #[cfg(target_os = "android")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_windowshandle_set_android_context(
     awindow_handler: *mut c_void,
 ) -> Box<kyclient_WindowHandle> {
@@ -259,7 +259,7 @@ pub unsafe extern "C" fn kyclient_windowshandle_set_android_context(
 
 /// Returns: (transfer full)
 #[cfg(target_os = "linux")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_windowshandle_from_x11(handle: u64) -> Box<kyclient_WindowHandle> {
     Box::new(kyclient_WindowHandle {
         handle: crate::platform::WindowHandle::Xlib(handle),
@@ -268,7 +268,7 @@ pub extern "C" fn kyclient_windowshandle_from_x11(handle: u64) -> Box<kyclient_W
 
 /// Returns: (transfer full)
 #[cfg(target_os = "macos")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_windowshandle_from_ns_view(
     handle: u64,
 ) -> Box<kyclient_WindowHandle> {
@@ -279,7 +279,7 @@ pub unsafe extern "C" fn kyclient_windowshandle_from_ns_view(
 
 /// Returns: (transfer full)
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_windowshandle_from_ui_view(
     handle: u64,
 ) -> Box<kyclient_WindowHandle> {
@@ -290,7 +290,7 @@ pub unsafe extern "C" fn kyclient_windowshandle_from_ui_view(
 
 /// Returns: (transfer full)
 #[cfg(target_os = "windows")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_windowshandle_from_hwnd(hwnd: u64) -> Box<kyclient_WindowHandle> {
     Box::new(kyclient_WindowHandle {
         handle: crate::platform::WindowHandle::Win32(hwnd),
@@ -298,88 +298,96 @@ pub unsafe extern "C" fn kyclient_windowshandle_from_hwnd(hwnd: u64) -> Box<kycl
 }
 
 /// Returns: (transfer full)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_auth_credentials_new_basic(
     username: *const c_char,
     password: *const c_char,
 ) -> Option<Box<kyclient_AuthCredentials>> {
-    let Ok(username) = CStr::from_ptr(username).to_str() else {
-        warn!("Fail to convert username");
-        return None;
-    };
-    let username = username.to_owned();
+    unsafe {
+        let Ok(username) = CStr::from_ptr(username).to_str() else {
+            warn!("Fail to convert username");
+            return None;
+        };
+        let username = username.to_owned();
 
-    let Ok(password) = CStr::from_ptr(password).to_str() else {
-        warn!("Fail to convert password");
-        return None;
-    };
-    let password = password.to_owned();
+        let Ok(password) = CStr::from_ptr(password).to_str() else {
+            warn!("Fail to convert password");
+            return None;
+        };
+        let password = password.to_owned();
 
-    Some(Box::new(kyclient_AuthCredentials {
-        inner: crate::AuthCredentials::Basic { username, password },
-    }))
+        Some(Box::new(kyclient_AuthCredentials {
+            inner: crate::AuthCredentials::Basic { username, password },
+        }))
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_auth_credentials_new_jwt(
     token: *const c_char,
 ) -> Option<Box<kyclient_AuthCredentials>> {
-    let Ok(token) = CStr::from_ptr(token).to_str() else {
-        warn!("Fail to convert token");
-        return None;
-    };
-    let token = token.to_owned();
+    unsafe {
+        let Ok(token) = CStr::from_ptr(token).to_str() else {
+            warn!("Fail to convert token");
+            return None;
+        };
+        let token = token.to_owned();
 
-    Some(Box::new(kyclient_AuthCredentials {
-        inner: crate::AuthCredentials::Jwt { token },
-    }))
+        Some(Box::new(kyclient_AuthCredentials {
+            inner: crate::AuthCredentials::Jwt { token },
+        }))
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// # Safety
 /// `token` must be a valid non-null null-terminated C string.
 pub unsafe extern "C" fn kyclient_auth_credentials_new_oidc(
     token: *const c_char,
 ) -> Option<Box<kyclient_AuthCredentials>> {
-    let Ok(token) = CStr::from_ptr(token).to_str() else {
-        warn!("Failed to convert OIDC token");
-        return None;
-    };
-    let token = token.to_owned();
+    unsafe {
+        let Ok(token) = CStr::from_ptr(token).to_str() else {
+            warn!("Failed to convert OIDC token");
+            return None;
+        };
+        let token = token.to_owned();
 
-    Some(Box::new(kyclient_AuthCredentials {
-        inner: crate::AuthCredentials::Oidc { token },
-    }))
+        Some(Box::new(kyclient_AuthCredentials {
+            inner: crate::AuthCredentials::Oidc { token },
+        }))
+    }
 }
 
 /// @credentials: (transfer full)
 /// @out_config: (out)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_connect_config_default(
     host: *const c_char,
     credentials: Box<kyclient_AuthCredentials>,
     out_config: *mut *mut kyclient_ConnectConfig,
 ) -> c_int {
-    let Ok(host) = CStr::from_ptr(host).to_str() else {
-        warn!("Fail to convert client Host");
-        return -1;
-    };
+    unsafe {
+        let Ok(host) = CStr::from_ptr(host).to_str() else {
+            warn!("Fail to convert client Host");
+            return -1;
+        };
 
-    let config = crate::ConnectConfig {
-        host: host.into(),
-        port: crate::STREAMER_PORT,
-        credentials: credentials.inner,
-        tls_host: None,
-        verify_mode: None,
-        auto_reconnection: false,
-    };
+        let config = crate::ConnectConfig {
+            host: host.into(),
+            port: crate::STREAMER_PORT,
+            credentials: credentials.inner,
+            tls_host: None,
+            verify_mode: None,
+            auto_reconnection: false,
+        };
 
-    *out_config = Box::into_raw(Box::new(kyclient_ConnectConfig { config }));
-    0
+        *out_config = Box::into_raw(Box::new(kyclient_ConnectConfig { config }));
+        0
+    }
 }
 
 /// @credentials: (transfer full)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_connect_config_set_credentials(
     config: &mut kyclient_ConnectConfig,
     credentials: Box<kyclient_AuthCredentials>,
@@ -389,28 +397,30 @@ pub extern "C" fn kyclient_connect_config_set_credentials(
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_connect_config_set_tls_host(
     config: &mut kyclient_ConnectConfig,
     tls_host: *const c_char,
 ) -> c_int {
-    let Ok(tls_host) = CStr::from_ptr(tls_host).to_str() else {
-        warn!("Fail to convert client TLS host");
-        return -1;
-    };
+    unsafe {
+        let Ok(tls_host) = CStr::from_ptr(tls_host).to_str() else {
+            warn!("Fail to convert client TLS host");
+            return -1;
+        };
 
-    config.config.tls_host = Some(tls_host.into());
+        config.config.tls_host = Some(tls_host.into());
 
-    0
+        0
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[deprecated = "use kyclient_connect_config_set_tls_root_cert_path"]
 pub unsafe extern "C" fn kyclient_connect_config_set_tls_root_cert(
     config: &mut kyclient_ConnectConfig,
     tls_root_cert: *const c_char,
 ) -> c_int {
-    kyclient_connect_config_set_tls_root_cert_path(config, tls_root_cert)
+    unsafe { kyclient_connect_config_set_tls_root_cert_path(config, tls_root_cert) }
 }
 
 /// Set TLS root certificate from a PEM file path.
@@ -420,47 +430,49 @@ pub unsafe extern "C" fn kyclient_connect_config_set_tls_root_cert(
 /// has been removed in favor of the unified `verify_mode` system.
 ///
 /// The path is resolved relative to the executable directory if it's a relative path.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_connect_config_set_tls_root_cert_path(
     config: &mut kyclient_ConnectConfig,
     path: *const c_char,
 ) -> c_int {
-    let Ok(path_str) = CStr::from_ptr(path).to_str() else {
-        warn!("Fail to convert Root TLS certificate path");
-        return -1;
-    };
-
-    let resolved_path = get_resource_path(path_str);
-
-    let Ok(file) = std::fs::File::open(&resolved_path) else {
-        warn!(
-            "Failed to open TLS root certificate file: {:?}",
-            resolved_path
-        );
-        return -1;
-    };
-
-    let mut reader = BufReader::new(file);
-
-    // Parse PEM and extract DER bytes
-    let root_certificate = match rustls_pemfile::read_one(&mut reader) {
-        Ok(Some(rustls_pemfile::Item::X509Certificate(cert))) => cert.to_vec(),
-        Ok(_) => {
-            error!("{:?} doesn't contain a X509 Certificate", resolved_path);
+    unsafe {
+        let Ok(path_str) = CStr::from_ptr(path).to_str() else {
+            warn!("Fail to convert Root TLS certificate path");
             return -1;
-        }
-        Err(e) => {
-            error!(
-                "Failed to parse TLS certificate {:?}: {:?}",
-                resolved_path, e
+        };
+
+        let resolved_path = get_resource_path(path_str);
+
+        let Ok(file) = std::fs::File::open(&resolved_path) else {
+            warn!(
+                "Failed to open TLS root certificate file: {:?}",
+                resolved_path
             );
             return -1;
-        }
-    };
+        };
 
-    config.config.verify_mode = Some(VerifyMode::RootCert { root_certificate });
+        let mut reader = BufReader::new(file);
 
-    0
+        // Parse PEM and extract DER bytes
+        let root_certificate = match rustls_pemfile::read_one(&mut reader) {
+            Ok(Some(rustls_pemfile::Item::X509Certificate(cert))) => cert.to_vec(),
+            Ok(_) => {
+                error!("{:?} doesn't contain a X509 Certificate", resolved_path);
+                return -1;
+            }
+            Err(e) => {
+                error!(
+                    "Failed to parse TLS certificate {:?}: {:?}",
+                    resolved_path, e
+                );
+                return -1;
+            }
+        };
+
+        config.config.verify_mode = Some(VerifyMode::RootCert { root_certificate });
+
+        0
+    }
 }
 
 /// Set TLS root certificate from raw PEM bytes.
@@ -468,33 +480,35 @@ pub unsafe extern "C" fn kyclient_connect_config_set_tls_root_cert_path(
 /// This C API is preserved for backward compatibility with Android and iOS clients.
 /// Internally converts to `VerifyMode::RootCert`.
 /// @bytes: (array length=len)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_connect_config_set_tls_root_cert_bytes(
     config: &mut kyclient_ConnectConfig,
     bytes: *const c_char,
     len: libc::size_t,
 ) -> c_int {
-    let bytes = std::slice::from_raw_parts(bytes as *const u8, len);
+    unsafe {
+        let bytes = std::slice::from_raw_parts(bytes as *const u8, len);
 
-    // Parse PEM and extract DER bytes
-    let root_certificate = match rustls_pemfile::read_one_from_slice(bytes) {
-        Ok(Some((rustls_pemfile::Item::X509Certificate(cert), _))) => cert.to_vec(),
-        Ok(_) => {
-            error!("Given bytes don't contain a X509 Certificate");
-            return -1;
-        }
-        Err(e) => {
-            error!("Failed to parse TLS certificate bytes: {:?}", e);
-            return -1;
-        }
-    };
+        // Parse PEM and extract DER bytes
+        let root_certificate = match rustls_pemfile::read_one_from_slice(bytes) {
+            Ok(Some((rustls_pemfile::Item::X509Certificate(cert), _))) => cert.to_vec(),
+            Ok(_) => {
+                error!("Given bytes don't contain a X509 Certificate");
+                return -1;
+            }
+            Err(e) => {
+                error!("Failed to parse TLS certificate bytes: {:?}", e);
+                return -1;
+            }
+        };
 
-    config.config.verify_mode = Some(VerifyMode::RootCert { root_certificate });
+        config.config.verify_mode = Some(VerifyMode::RootCert { root_certificate });
 
-    0
+        0
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_connect_config_set_streamer_port(
     config: &mut kyclient_ConnectConfig,
     port: u16,
@@ -502,7 +516,7 @@ pub extern "C" fn kyclient_connect_config_set_streamer_port(
     config.config.port = port;
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_connect_config_set_auto_reconnection(
     config: &mut kyclient_ConnectConfig,
     enabled: bool,
@@ -511,28 +525,30 @@ pub extern "C" fn kyclient_connect_config_set_auto_reconnection(
 }
 
 /// @cfg: (transfer full)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_connect_config_unref(cfg: Option<Box<kyclient_ConnectConfig>>) {
     drop(cfg);
 }
 
 /// Set TLS certificate fingerprint for pinning verification.
 /// The fingerprint should be in format "sha256:xx:xx:xx:..."
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_connect_config_set_tls_fingerprint(
     config: &mut kyclient_ConnectConfig,
     fingerprint: *const c_char,
 ) -> c_int {
-    let Ok(fingerprint) = CStr::from_ptr(fingerprint).to_str() else {
-        warn!("Fail to convert TLS fingerprint");
-        return -1;
-    };
+    unsafe {
+        let Ok(fingerprint) = CStr::from_ptr(fingerprint).to_str() else {
+            warn!("Fail to convert TLS fingerprint");
+            return -1;
+        };
 
-    result_to_c_int(config.config.set_tls_fingerprint(fingerprint))
+        result_to_c_int(config.config.set_tls_fingerprint(fingerprint))
+    }
 }
 
 /// Skip TLS verification (DANGER - for testing only)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_connect_config_skip_tls_verification(
     config: &mut kyclient_ConnectConfig,
 ) {
@@ -577,7 +593,7 @@ impl SendSyncPtr {
 }
 
 /// Enable TOFU (Trust-On-First-Use) verification with callback
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_connect_config_enable_tofu(
     config: &mut kyclient_ConnectConfig,
     callback: kyclient_TofuCallback,
@@ -646,7 +662,7 @@ pub unsafe extern "C" fn kyclient_connect_config_enable_tofu(
 }
 
 /// Enable TOFU with auto-accept for new hosts
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_connect_config_enable_tofu_auto_accept(
     config: &mut kyclient_ConnectConfig,
 ) -> c_int {
@@ -654,7 +670,7 @@ pub extern "C" fn kyclient_connect_config_enable_tofu_auto_accept(
 }
 
 /// Enable strict known_hosts mode (reject unknown hosts)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_connect_config_enable_known_hosts_strict(
     config: &mut kyclient_ConnectConfig,
 ) -> c_int {
@@ -662,41 +678,45 @@ pub extern "C" fn kyclient_connect_config_enable_known_hosts_strict(
 }
 
 /// Add a host to known_hosts file
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_known_hosts_add(
     hostname: *const c_char,
     fingerprint: *const c_char,
 ) -> c_int {
-    use crate::platform::known_hosts;
+    unsafe {
+        use crate::platform::known_hosts;
 
-    let Ok(hostname) = CStr::from_ptr(hostname).to_str() else {
-        warn!("Fail to convert hostname");
-        return -1;
-    };
+        let Ok(hostname) = CStr::from_ptr(hostname).to_str() else {
+            warn!("Fail to convert hostname");
+            return -1;
+        };
 
-    let Ok(fingerprint) = CStr::from_ptr(fingerprint).to_str() else {
-        warn!("Fail to convert fingerprint");
-        return -1;
-    };
+        let Ok(fingerprint) = CStr::from_ptr(fingerprint).to_str() else {
+            warn!("Fail to convert fingerprint");
+            return -1;
+        };
 
-    result_to_c_int(known_hosts::add_host(hostname, fingerprint))
+        result_to_c_int(known_hosts::add_host(hostname, fingerprint))
+    }
 }
 
 /// Remove a host from known_hosts file
 /// Returns 0 if removed, 1 if not found, -1 on error
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_known_hosts_remove(hostname: *const c_char) -> c_int {
-    use crate::platform::known_hosts;
+    unsafe {
+        use crate::platform::known_hosts;
 
-    let Ok(hostname) = CStr::from_ptr(hostname).to_str() else {
-        warn!("Fail to convert hostname");
-        return -1;
-    };
+        let Ok(hostname) = CStr::from_ptr(hostname).to_str() else {
+            warn!("Fail to convert hostname");
+            return -1;
+        };
 
-    match known_hosts::remove_host(hostname) {
-        Ok(true) => 0,
-        Ok(false) => 1,
-        Err(_) => -1,
+        match known_hosts::remove_host(hostname) {
+            Ok(true) => 0,
+            Ok(false) => 1,
+            Err(_) => -1,
+        }
     }
 }
 
@@ -712,71 +732,75 @@ pub struct kyclient_KnownHostEntry {
 /// Returns array of entries and count, caller must free with kyclient_known_hosts_list_free
 /// @out_entries: (out) (array length=out_count)
 /// @out_count: (out)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_known_hosts_list(
     out_entries: *mut *mut kyclient_KnownHostEntry,
     out_count: *mut usize,
 ) -> c_int {
-    use crate::platform::known_hosts;
+    unsafe {
+        use crate::platform::known_hosts;
 
-    let hosts = match known_hosts::list_hosts() {
-        Ok(h) => h,
-        Err(_) => return -1,
-    };
+        let hosts = match known_hosts::list_hosts() {
+            Ok(h) => h,
+            Err(_) => return -1,
+        };
 
-    let count = hosts.len();
-    if count == 0 {
-        *out_entries = std::ptr::null_mut();
-        *out_count = 0;
-        return 0;
+        let count = hosts.len();
+        if count == 0 {
+            *out_entries = std::ptr::null_mut();
+            *out_count = 0;
+            return 0;
+        }
+
+        let entries = libc::malloc(count * std::mem::size_of::<kyclient_KnownHostEntry>())
+            as *mut kyclient_KnownHostEntry;
+        if entries.is_null() {
+            return -1;
+        }
+
+        for (i, (hostname, fingerprint)) in hosts.into_iter().enumerate() {
+            let hostname_cstr = CString::new(hostname).unwrap_or_default();
+            let fingerprint_cstr = CString::new(fingerprint).unwrap_or_default();
+
+            (*entries.add(i)).hostname = hostname_cstr.into_raw();
+            (*entries.add(i)).fingerprint = fingerprint_cstr.into_raw();
+        }
+
+        *out_entries = entries;
+        *out_count = count;
+        0
     }
-
-    let entries = libc::malloc(count * std::mem::size_of::<kyclient_KnownHostEntry>())
-        as *mut kyclient_KnownHostEntry;
-    if entries.is_null() {
-        return -1;
-    }
-
-    for (i, (hostname, fingerprint)) in hosts.into_iter().enumerate() {
-        let hostname_cstr = CString::new(hostname).unwrap_or_default();
-        let fingerprint_cstr = CString::new(fingerprint).unwrap_or_default();
-
-        (*entries.add(i)).hostname = hostname_cstr.into_raw();
-        (*entries.add(i)).fingerprint = fingerprint_cstr.into_raw();
-    }
-
-    *out_entries = entries;
-    *out_count = count;
-    0
 }
 
 /// Free known hosts list returned by kyclient_known_hosts_list
 /// @entries: (transfer full) (array length=count)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_known_hosts_list_free(
     entries: *mut kyclient_KnownHostEntry,
     count: usize,
 ) {
-    if entries.is_null() {
-        return;
-    }
-
-    for i in 0..count {
-        let entry = &mut *entries.add(i);
-        if !entry.hostname.is_null() {
-            let _ = CString::from_raw(entry.hostname);
+    unsafe {
+        if entries.is_null() {
+            return;
         }
-        if !entry.fingerprint.is_null() {
-            let _ = CString::from_raw(entry.fingerprint);
-        }
-    }
 
-    libc::free(entries as *mut c_void);
+        for i in 0..count {
+            let entry = &mut *entries.add(i);
+            if !entry.hostname.is_null() {
+                let _ = CString::from_raw(entry.hostname);
+            }
+            if !entry.fingerprint.is_null() {
+                let _ = CString::from_raw(entry.fingerprint);
+            }
+        }
+
+        libc::free(entries as *mut c_void);
+    }
 }
 
 /// Returns: (transfer full)
 #[cfg(feature = "rtp")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_streaming_protocol_rtp() -> Box<kyclient_StreamingProtocol> {
     let protocol = crate::StreamingProtocol::Rtp;
 
@@ -785,7 +809,7 @@ pub extern "C" fn kyclient_streaming_protocol_rtp() -> Box<kyclient_StreamingPro
 
 /// Returns: (transfer full)
 #[cfg(feature = "kymux")]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_streaming_protocol_kymux(
     video_protocol: kyclient_KymuxVideoProtocol,
     audio_protocol: kyclient_KymuxAudioProtocol,
@@ -800,7 +824,7 @@ pub extern "C" fn kyclient_streaming_protocol_kymux(
 }
 
 /// @protocol: (transfer full)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_streaming_protocol_unref(
     protocol: Option<Box<kyclient_StreamingProtocol>>,
 ) {
@@ -808,53 +832,57 @@ pub extern "C" fn kyclient_streaming_protocol_unref(
 }
 
 /// @cfg: (transfer full)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_video_player_config_unref(cfg: Option<Box<kyclient_VideoPlayerConfig>>) {
     drop(cfg);
 }
 
 /// @window_handle: (transfer full)
 /// @out_config: (out)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_video_player_config_default(
     window_handle: Option<Box<kyclient_WindowHandle>>,
     out_config: *mut *mut kyclient_VideoPlayerConfig,
 ) -> c_int {
-    let Some(window_handle) = window_handle else {
-        return -1;
-    };
+    unsafe {
+        let Some(window_handle) = window_handle else {
+            return -1;
+        };
 
-    let config = crate::VideoPlayerConfig {
-        window_handle: window_handle.handle,
-        software_decode: false,
-        video_buffer: 0,
-    };
+        let config = crate::VideoPlayerConfig {
+            window_handle: window_handle.handle,
+            software_decode: false,
+            video_buffer: 0,
+        };
 
-    *out_config = Box::into_raw(Box::new(kyclient_VideoPlayerConfig { config }));
-    0
+        *out_config = Box::into_raw(Box::new(kyclient_VideoPlayerConfig { config }));
+        0
+    }
 }
 
 /// @player: (transfer none)
 /// @out_config: (out)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_video_session_config_default(
     display_id: u32,
     player: *mut kyclient_VideoPlayerConfig,
     out_config: *mut *mut kyclient_VideoSessionConfig,
 ) -> c_int {
-    let config = crate::VideoSessionConfig {
-        display_id,
-        codec: VideoCodec::H264,
-        yuv444: false,
-        intra_refresh: None,
-        player: (*player).config.clone(),
-    };
+    unsafe {
+        let config = crate::VideoSessionConfig {
+            display_id,
+            codec: VideoCodec::H264,
+            yuv444: false,
+            intra_refresh: None,
+            player: (*player).config.clone(),
+        };
 
-    *out_config = Box::into_raw(Box::new(kyclient_VideoSessionConfig { config }));
-    0
+        *out_config = Box::into_raw(Box::new(kyclient_VideoSessionConfig { config }));
+        0
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_video_player_config_set_software_decode(
     config: &mut kyclient_VideoPlayerConfig,
     software_decode: bool,
@@ -862,7 +890,7 @@ pub extern "C" fn kyclient_video_player_config_set_software_decode(
     config.config.software_decode = software_decode;
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_video_player_config_set_video_buffer(
     config: &mut kyclient_VideoPlayerConfig,
     video_buffer: u32,
@@ -871,14 +899,14 @@ pub extern "C" fn kyclient_video_player_config_set_video_buffer(
 }
 
 /// @cfg: (transfer full)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_video_session_config_unref(
     cfg: Option<Box<kyclient_VideoSessionConfig>>,
 ) {
     drop(cfg);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_video_session_config_set_yuv444(
     config: &mut kyclient_VideoSessionConfig,
     yuv444: bool,
@@ -886,7 +914,7 @@ pub extern "C" fn kyclient_video_session_config_set_yuv444(
     config.config.yuv444 = yuv444;
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_video_session_config_set_codec(
     config: &mut kyclient_VideoSessionConfig,
     codec: VideoCodec,
@@ -894,7 +922,7 @@ pub extern "C" fn kyclient_video_session_config_set_codec(
     config.config.codec = codec;
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_video_session_config_set_intra_refresh(
     config: &mut kyclient_VideoSessionConfig,
     intra_refresh: bool,
@@ -903,16 +931,18 @@ pub extern "C" fn kyclient_video_session_config_set_intra_refresh(
 }
 
 /// @out_config: (out)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_audio_session_config_default(
     out_config: *mut *mut kyclient_AudioSessionConfig,
 ) -> c_int {
-    let config = crate::AudioSessionConfig { audio_buffer: None };
-    *out_config = Box::into_raw(Box::new(kyclient_AudioSessionConfig { config }));
-    0
+    unsafe {
+        let config = crate::AudioSessionConfig { audio_buffer: None };
+        *out_config = Box::into_raw(Box::new(kyclient_AudioSessionConfig { config }));
+        0
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_audio_session_config_set_audio_buffer(
     config: &mut kyclient_AudioSessionConfig,
     audio_buffer: u32,
@@ -921,32 +951,34 @@ pub extern "C" fn kyclient_audio_session_config_set_audio_buffer(
 }
 
 /// @out_config: (out)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_input_session_config_default(
     pipeline: *mut kynput_sys::kynput_Pipeline,
     out_config: *mut *mut kyclient_InputSessionConfig,
 ) -> c_int {
-    let pipeline = Pipeline::from_ptr(pipeline);
+    unsafe {
+        let pipeline = Pipeline::from_ptr(pipeline);
 
-    let config = crate::InputSessionConfig {
-        pipeline,
-        gamepad_force_xbox360: None,
-        clipboard: true,
-    };
+        let config = crate::InputSessionConfig {
+            pipeline,
+            gamepad_force_xbox360: None,
+            clipboard: true,
+        };
 
-    *out_config = Box::into_raw(Box::new(kyclient_InputSessionConfig { config }));
-    0
+        *out_config = Box::into_raw(Box::new(kyclient_InputSessionConfig { config }));
+        0
+    }
 }
 
 /// @cfg: (transfer full)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_input_session_config_unref(
     cfg: Option<Box<kyclient_InputSessionConfig>>,
 ) {
     drop(cfg);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_input_session_config_gamepad_force_xbox360(
     cfg: &mut kyclient_InputSessionConfig,
     gamepad_force_xbox360: bool,
@@ -954,7 +986,7 @@ pub extern "C" fn kyclient_input_session_config_gamepad_force_xbox360(
     cfg.config.gamepad_force_xbox360 = Some(gamepad_force_xbox360);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_input_session_config_clipboard(
     cfg: &mut kyclient_InputSessionConfig,
     enable: bool,
@@ -963,32 +995,34 @@ pub extern "C" fn kyclient_input_session_config_clipboard(
 }
 
 /// @out_config: (out)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_streaming_session_config_default(
     protocol: &kyclient_StreamingProtocol,
     out_config: *mut *mut kyclient_StreamingSessionConfig,
 ) -> c_int {
-    let config = crate::StreamingSessionConfig {
-        protocol: protocol.protocol.clone(),
-        bitrate: 20_000_000,
-        video: vec![],
-        audio: None,
-        input: None,
-    };
+    unsafe {
+        let config = crate::StreamingSessionConfig {
+            protocol: protocol.protocol.clone(),
+            bitrate: 20_000_000,
+            video: vec![],
+            audio: None,
+            input: None,
+        };
 
-    *out_config = Box::into_raw(Box::new(kyclient_StreamingSessionConfig { config }));
-    0
+        *out_config = Box::into_raw(Box::new(kyclient_StreamingSessionConfig { config }));
+        0
+    }
 }
 
 /// @cfg: (transfer full)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_streaming_session_config_unref(
     cfg: Option<Box<kyclient_StreamingSessionConfig>>,
 ) {
     drop(cfg);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_streaming_session_config_set_bitrate(
     config: &mut kyclient_StreamingSessionConfig,
     bitrate: u32,
@@ -996,7 +1030,7 @@ pub extern "C" fn kyclient_streaming_session_config_set_bitrate(
     config.config.bitrate = bitrate;
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_streaming_session_config_get_bitrate(
     config: &mut kyclient_StreamingSessionConfig,
 ) -> u32 {
@@ -1004,7 +1038,7 @@ pub extern "C" fn kyclient_streaming_session_config_get_bitrate(
 }
 
 /// @audio: (transfer full)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_streaming_session_config_set_audio(
     config: &mut kyclient_StreamingSessionConfig,
     audio: Box<kyclient_AudioSessionConfig>,
@@ -1013,7 +1047,7 @@ pub extern "C" fn kyclient_streaming_session_config_set_audio(
 }
 
 /// @video: (transfer full)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_streaming_session_config_add_video(
     config: &mut kyclient_StreamingSessionConfig,
     video: Box<kyclient_VideoSessionConfig>,
@@ -1022,7 +1056,7 @@ pub extern "C" fn kyclient_streaming_session_config_add_video(
 }
 
 /// @input: (transfer full)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_streaming_session_config_set_input(
     config: &mut kyclient_StreamingSessionConfig,
     input: Box<kyclient_InputSessionConfig>,
@@ -1036,28 +1070,32 @@ pub struct kyclient_Client {
 }
 
 /// Returns: (transfer full)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_client_new(
     connect_config: *mut kyclient_ConnectConfig,
     metrics: bool,
 ) -> Option<Box<kyclient_Client>> {
-    let connect_config = (*connect_config).config.clone();
+    unsafe {
+        let connect_config = (*connect_config).config.clone();
 
-    let client = crate::Client::new(connect_config, metrics);
-    if let Ok(client) = client {
-        Some(Box::new(kyclient_Client { client }))
-    } else {
-        None
+        let client = crate::Client::new(connect_config, metrics);
+        if let Ok(client) = client {
+            Some(Box::new(kyclient_Client { client }))
+        } else {
+            None
+        }
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_client_stop(client: *mut kyclient_Client) -> c_int {
-    let ret = (&(*client)).client.stop();
-    result_to_c_int(ret)
+    unsafe {
+        let ret = (&(*client)).client.stop();
+        result_to_c_int(ret)
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// # Safety
 /// `client` must be a valid non-null pointer. `credentials` must be a pointer to a
 /// `kyclient_AuthCredentials` allocated by this library; ownership is transferred and
@@ -1066,11 +1104,13 @@ pub unsafe extern "C" fn kyclient_client_update_credentials(
     client: *mut kyclient_Client,
     credentials: Box<kyclient_AuthCredentials>,
 ) -> c_int {
-    let ret = (*client).client.update_credentials(credentials.inner);
-    result_to_c_int(ret)
+    unsafe {
+        let ret = (*client).client.update_credentials(credentials.inner);
+        result_to_c_int(ret)
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// # Safety
 /// `client` must be a valid non-null pointer. `credentials` must be a pointer to a
 /// `kyclient_AuthCredentials` allocated by this library; ownership is transferred and
@@ -1079,78 +1119,96 @@ pub unsafe extern "C" fn kyclient_client_renew_session(
     client: *mut kyclient_Client,
     credentials: Box<kyclient_AuthCredentials>,
 ) -> c_int {
-    let ret = (*client).client.renew_session(credentials.inner);
-    result_to_c_int(ret)
+    unsafe {
+        let ret = (*client).client.renew_session(credentials.inner);
+        result_to_c_int(ret)
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_client_disconnect_and_stop(
     client: *mut kyclient_Client,
     stop_session: bool,
 ) -> c_int {
-    let ret = (&(*client)).client.disconnect_and_stop(stop_session);
-    result_to_c_int(ret)
+    unsafe {
+        let ret = (&(*client)).client.disconnect_and_stop(stop_session);
+        result_to_c_int(ret)
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_client_connect(client: *mut kyclient_Client) -> c_int {
-    let ret = (&(*client)).client.connect();
-    result_to_c_int(ret)
+    unsafe {
+        let ret = (&(*client)).client.connect();
+        result_to_c_int(ret)
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_client_disconnect(client: *mut kyclient_Client) -> c_int {
-    let ret = (&(*client)).client.disconnect();
-    result_to_c_int(ret)
+    unsafe {
+        let ret = (&(*client)).client.disconnect();
+        result_to_c_int(ret)
+    }
 }
 
 /// @session_config: (transfer none)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_client_start_streaming(
     client: *mut kyclient_Client,
     session_config: *mut kyclient_StreamingSessionConfig,
 ) -> c_int {
-    let session_config = (*session_config).config.clone();
+    unsafe {
+        let session_config = (*session_config).config.clone();
 
-    let ret = (&(*client)).client.start_streaming(session_config);
-    result_to_c_int(ret)
+        let ret = (&(*client)).client.start_streaming(session_config);
+        result_to_c_int(ret)
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_client_stop_streaming(client: *mut kyclient_Client) -> c_int {
-    let ret = (&(*client)).client.stop_streaming();
-    result_to_c_int(ret)
+    unsafe {
+        let ret = (&(*client)).client.stop_streaming();
+        result_to_c_int(ret)
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_client_audio_set_volume(
     client: *mut kyclient_Client,
     volume: f32,
 ) -> c_int {
-    let ret = (&(*client)).client.audio_set_volume(volume);
-    result_to_c_int(ret)
+    unsafe {
+        let ret = (&(*client)).client.audio_set_volume(volume);
+        result_to_c_int(ret)
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_client_audio_set_mute(
     client: *mut kyclient_Client,
     mute: bool,
 ) -> c_int {
-    let ret = (&(*client)).client.audio_set_mute(mute);
-    result_to_c_int(ret)
+    unsafe {
+        let ret = (&(*client)).client.audio_set_mute(mute);
+        result_to_c_int(ret)
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_client_set_bitrate(
     client: *mut kyclient_Client,
     bitrate: u32,
 ) -> c_int {
-    let ret = (&(*client)).client.set_bitrate(bitrate);
-    result_to_c_int(ret)
+    unsafe {
+        let ret = (&(*client)).client.set_bitrate(bitrate);
+        result_to_c_int(ret)
+    }
 }
 
 /// @client: (transfer full)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_client_unref(client: Box<kyclient_Client>) {
     drop(client);
 }
@@ -1223,82 +1281,90 @@ pub enum kyclient_StreamerPipelineEventType {
     Error,
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_event_get_type(event: *const Event) -> kyclient_EventType {
-    match *event {
-        Event::ControlPlaneConnected { .. } => kyclient_EventType::ControlPlaneConnected,
-        Event::ControlPlaneConnectFailed { .. } => kyclient_EventType::ControlPlaneConnectFailed,
-        Event::AuthenticationRequired { .. } => kyclient_EventType::AuthenticationRequired,
-        Event::DataPlaneConnectFailed => kyclient_EventType::DataPlaneConnectFailed,
-        Event::DataPlaneClosed => kyclient_EventType::DataPlaneClosed,
-        Event::Reconnecting { .. } => kyclient_EventType::Reconnecting,
-        Event::Reconnected { .. } => kyclient_EventType::Reconnected,
-        Event::ReconnectionFailed => kyclient_EventType::ReconnectionFailed,
-        Event::Stopped { .. } => kyclient_EventType::Stopped,
-        Event::DisplayListUpdated { .. } => kyclient_EventType::DisplayListUpdated,
-        Event::InputServiceConnected => kyclient_EventType::InputServiceConnected,
-        Event::InputServiceDisconnected => kyclient_EventType::InputServiceDisconnected,
-        Event::StreamingStarted => kyclient_EventType::StreamingStarted,
-        Event::StreamingStartFailed => kyclient_EventType::StreamingStartFailed,
-        Event::StreamingStopped => kyclient_EventType::StreamingStopped,
-        Event::StreamerPipelineEvent { .. } => kyclient_EventType::StreamerPipelineEvent,
-        Event::AudioVolumeChanged { .. } => kyclient_EventType::AudioVolumeChanged,
-        Event::AudioMuteChanged { .. } => kyclient_EventType::AudioMuteChanged,
-        Event::BitrateChanged { .. } => kyclient_EventType::BitrateChanged,
+    unsafe {
+        match *event {
+            Event::ControlPlaneConnected { .. } => kyclient_EventType::ControlPlaneConnected,
+            Event::ControlPlaneConnectFailed { .. } => {
+                kyclient_EventType::ControlPlaneConnectFailed
+            }
+            Event::AuthenticationRequired { .. } => kyclient_EventType::AuthenticationRequired,
+            Event::DataPlaneConnectFailed => kyclient_EventType::DataPlaneConnectFailed,
+            Event::DataPlaneClosed => kyclient_EventType::DataPlaneClosed,
+            Event::Reconnecting { .. } => kyclient_EventType::Reconnecting,
+            Event::Reconnected { .. } => kyclient_EventType::Reconnected,
+            Event::ReconnectionFailed => kyclient_EventType::ReconnectionFailed,
+            Event::Stopped { .. } => kyclient_EventType::Stopped,
+            Event::DisplayListUpdated { .. } => kyclient_EventType::DisplayListUpdated,
+            Event::InputServiceConnected => kyclient_EventType::InputServiceConnected,
+            Event::InputServiceDisconnected => kyclient_EventType::InputServiceDisconnected,
+            Event::StreamingStarted => kyclient_EventType::StreamingStarted,
+            Event::StreamingStartFailed => kyclient_EventType::StreamingStartFailed,
+            Event::StreamingStopped => kyclient_EventType::StreamingStopped,
+            Event::StreamerPipelineEvent { .. } => kyclient_EventType::StreamerPipelineEvent,
+            Event::AudioVolumeChanged { .. } => kyclient_EventType::AudioVolumeChanged,
+            Event::AudioMuteChanged { .. } => kyclient_EventType::AudioMuteChanged,
+            Event::BitrateChanged { .. } => kyclient_EventType::BitrateChanged,
+        }
     }
 }
 
 /// @out_displays: (out) (array length=out_len)
 /// @out_len: (out)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_event_unpack_control_plane_connected(
     event: &Event,
     out_displays: *mut *mut Display,
     out_len: *mut u32,
 ) -> c_int {
-    if let Event::ControlPlaneConnected { displays } = event {
-        let mut displays = Box::new(displays.clone());
+    unsafe {
+        if let Event::ControlPlaneConnected { displays } = event {
+            let mut displays = Box::new(displays.clone());
 
-        *out_displays = displays.as_mut_ptr();
-        *out_len = displays.len() as u32;
+            *out_displays = displays.as_mut_ptr();
+            *out_len = displays.len() as u32;
 
-        std::mem::forget(displays);
+            std::mem::forget(displays);
 
-        0
-    } else {
-        -1
+            0
+        } else {
+            -1
+        }
     }
 }
 
 /// @out_reason: (out)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_event_unpack_connect_failed(
     event: &Event,
     out_reason: *mut kyclient_ConnectFailedReason,
 ) -> c_int {
-    let Event::ControlPlaneConnectFailed { reason } = event else {
-        return -1;
-    };
+    unsafe {
+        let Event::ControlPlaneConnectFailed { reason } = event else {
+            return -1;
+        };
 
-    *out_reason = match reason {
-        crate::ConnectFailedReason::NetworkError => kyclient_ConnectFailedReason::NetworkError,
-        crate::ConnectFailedReason::Timeout => kyclient_ConnectFailedReason::Timeout,
-        crate::ConnectFailedReason::Unauthorized => kyclient_ConnectFailedReason::Unauthorized,
-        crate::ConnectFailedReason::ServerError => kyclient_ConnectFailedReason::ServerError,
-        crate::ConnectFailedReason::TlsVerification => {
-            kyclient_ConnectFailedReason::TlsVerification
-        }
-        crate::ConnectFailedReason::TlsConfiguration => {
-            kyclient_ConnectFailedReason::TlsConfiguration
-        }
-        crate::ConnectFailedReason::WebSocket => kyclient_ConnectFailedReason::WebSocket,
-        crate::ConnectFailedReason::Protocol => kyclient_ConnectFailedReason::Protocol,
-    };
+        *out_reason = match reason {
+            crate::ConnectFailedReason::NetworkError => kyclient_ConnectFailedReason::NetworkError,
+            crate::ConnectFailedReason::Timeout => kyclient_ConnectFailedReason::Timeout,
+            crate::ConnectFailedReason::Unauthorized => kyclient_ConnectFailedReason::Unauthorized,
+            crate::ConnectFailedReason::ServerError => kyclient_ConnectFailedReason::ServerError,
+            crate::ConnectFailedReason::TlsVerification => {
+                kyclient_ConnectFailedReason::TlsVerification
+            }
+            crate::ConnectFailedReason::TlsConfiguration => {
+                kyclient_ConnectFailedReason::TlsConfiguration
+            }
+            crate::ConnectFailedReason::WebSocket => kyclient_ConnectFailedReason::WebSocket,
+            crate::ConnectFailedReason::Protocol => kyclient_ConnectFailedReason::Protocol,
+        };
 
-    0
+        0
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// # Safety
 /// `event` must be a valid `ControlPlaneAuthenticationRequired` event. On success,
 /// `out_issuer` and `out_client_id` receive freshly-allocated C strings that the
@@ -1308,24 +1374,26 @@ pub unsafe extern "C" fn kyclient_event_unpack_authentication_required(
     out_issuer: *mut *mut c_char,
     out_client_id: *mut *mut c_char,
 ) -> c_int {
-    let Event::AuthenticationRequired { issuer, client_id } = &*event else {
-        return -1;
-    };
+    unsafe {
+        let Event::AuthenticationRequired { issuer, client_id } = &*event else {
+            return -1;
+        };
 
-    let Ok(c_issuer) = CString::new(issuer.clone()) else {
-        return -1;
-    };
-    let Ok(c_client_id) = CString::new(client_id.clone()) else {
-        return -1;
-    };
+        let Ok(c_issuer) = CString::new(issuer.clone()) else {
+            return -1;
+        };
+        let Ok(c_client_id) = CString::new(client_id.clone()) else {
+            return -1;
+        };
 
-    *out_issuer = c_issuer.into_raw();
-    *out_client_id = c_client_id.into_raw();
+        *out_issuer = c_issuer.into_raw();
+        *out_client_id = c_client_id.into_raw();
 
-    0
+        0
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// # Safety
 /// `issuer` and `client_id` must be pointers returned by
 /// `kyclient_event_unpack_authentication_required`, and must not be freed more than once.
@@ -1333,98 +1401,108 @@ pub unsafe extern "C" fn kyclient_event_free_authentication_required(
     issuer: *mut c_char,
     client_id: *mut c_char,
 ) {
-    if !issuer.is_null() {
-        let _ = CString::from_raw(issuer);
-    }
-    if !client_id.is_null() {
-        let _ = CString::from_raw(client_id);
+    unsafe {
+        if !issuer.is_null() {
+            let _ = CString::from_raw(issuer);
+        }
+        if !client_id.is_null() {
+            let _ = CString::from_raw(client_id);
+        }
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_event_unpack_stopped(
     event: &Event,
     out_reason: *mut kyclient_StopReason,
 ) -> c_int {
-    let Event::Stopped { reason } = event else {
-        return -1;
-    };
+    unsafe {
+        let Event::Stopped { reason } = event else {
+            return -1;
+        };
 
-    *out_reason = match reason {
-        crate::StopReason::Requested => kyclient_StopReason::Requested,
-        crate::StopReason::ControlPlaneClosed => kyclient_StopReason::ControlPlaneClosed,
-        crate::StopReason::ControlPlaneIoError => kyclient_StopReason::ControlPlaneIoError,
-        crate::StopReason::ControlPlaneTimeout => kyclient_StopReason::ControlPlaneTimeout,
-        crate::StopReason::DecodeError => kyclient_StopReason::DecodeError,
-    };
+        *out_reason = match reason {
+            crate::StopReason::Requested => kyclient_StopReason::Requested,
+            crate::StopReason::ControlPlaneClosed => kyclient_StopReason::ControlPlaneClosed,
+            crate::StopReason::ControlPlaneIoError => kyclient_StopReason::ControlPlaneIoError,
+            crate::StopReason::ControlPlaneTimeout => kyclient_StopReason::ControlPlaneTimeout,
+            crate::StopReason::DecodeError => kyclient_StopReason::DecodeError,
+        };
 
-    0
+        0
+    }
 }
 
 /// @out_attempt: (out)
 /// @out_max_attempts: (out)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_event_unpack_reconnecting(
     event: &Event,
     out_attempt: *mut u32,
     out_max_attempts: *mut u32,
 ) -> c_int {
-    let Event::Reconnecting {
-        attempt,
-        max_attempts,
-    } = event
-    else {
-        return -1;
-    };
+    unsafe {
+        let Event::Reconnecting {
+            attempt,
+            max_attempts,
+        } = event
+        else {
+            return -1;
+        };
 
-    *out_attempt = *attempt;
-    *out_max_attempts = *max_attempts;
+        *out_attempt = *attempt;
+        *out_max_attempts = *max_attempts;
 
-    0
+        0
+    }
 }
 
 /// @out_should_restart_streaming: (out)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_event_unpack_reconnected(
     event: &Event,
     out_should_restart_streaming: *mut bool,
 ) -> c_int {
-    let Event::Reconnected {
-        should_restart_streaming,
-    } = event
-    else {
-        return -1;
-    };
+    unsafe {
+        let Event::Reconnected {
+            should_restart_streaming,
+        } = event
+        else {
+            return -1;
+        };
 
-    *out_should_restart_streaming = *should_restart_streaming;
+        *out_should_restart_streaming = *should_restart_streaming;
 
-    0
+        0
+    }
 }
 
 /// @out_displays: (out) (array length=out_len)
 /// @out_len: (out)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_event_unpack_display_list_updated(
     event: &Event,
     out_displays: *mut *mut Display,
     out_len: *mut u32,
 ) -> c_int {
-    if let Event::DisplayListUpdated { displays } = event {
-        let mut displays = Box::new(displays.clone());
+    unsafe {
+        if let Event::DisplayListUpdated { displays } = event {
+            let mut displays = Box::new(displays.clone());
 
-        *out_displays = displays.as_mut_ptr();
-        *out_len = displays.len() as u32;
+            *out_displays = displays.as_mut_ptr();
+            *out_len = displays.len() as u32;
 
-        std::mem::forget(displays);
+            std::mem::forget(displays);
 
-        0
-    } else {
-        -1
+            0
+        } else {
+            -1
+        }
     }
 }
 
 /// @displays: (transfer full)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_event_free_displays(displays: Box<Display>) {
     drop(displays);
 }
@@ -1432,94 +1510,106 @@ pub extern "C" fn kyclient_event_free_displays(displays: Box<Display>) {
 /// @out_type: (out)
 /// @out_stage: (out)
 /// @out_event: (out)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_event_unpack_streamer_pipeline_event(
     event: &Event,
     out_type: *mut kyclient_StreamerPipelineType,
     out_stage: *mut kyclient_StreamerPipelineStage,
     out_event: *mut kyclient_StreamerPipelineEventType,
 ) -> c_int {
-    let Event::StreamerPipelineEvent {
-        type_,
-        stage,
-        event,
-    } = event
-    else {
-        return -1;
-    };
+    unsafe {
+        let Event::StreamerPipelineEvent {
+            type_,
+            stage,
+            event,
+        } = event
+        else {
+            return -1;
+        };
 
-    if out_type.is_null() || out_stage.is_null() || out_event.is_null() {
-        return -1;
+        if out_type.is_null() || out_stage.is_null() || out_event.is_null() {
+            return -1;
+        }
+
+        *out_type = match type_ {
+            crate::StreamerPipelineType::EnumerateDisplays => {
+                kyclient_StreamerPipelineType::EnumerateDisplays
+            }
+            crate::StreamerPipelineType::Audio => kyclient_StreamerPipelineType::Audio,
+            crate::StreamerPipelineType::Video => kyclient_StreamerPipelineType::Video,
+        };
+
+        *out_stage = match stage {
+            crate::StreamerPipelineStage::Process => kyclient_StreamerPipelineStage::Process,
+            crate::StreamerPipelineStage::Initialization => {
+                kyclient_StreamerPipelineStage::Initialization
+            }
+            crate::StreamerPipelineStage::Acquisition => {
+                kyclient_StreamerPipelineStage::Acquisition
+            }
+            crate::StreamerPipelineStage::Encoder => kyclient_StreamerPipelineStage::Encoder,
+        };
+
+        *out_event = match event {
+            crate::StreamerPipelineEventType::Stopped => {
+                kyclient_StreamerPipelineEventType::Stopped
+            }
+            crate::StreamerPipelineEventType::Error => kyclient_StreamerPipelineEventType::Error,
+        };
+
+        0
     }
-
-    *out_type = match type_ {
-        crate::StreamerPipelineType::EnumerateDisplays => {
-            kyclient_StreamerPipelineType::EnumerateDisplays
-        }
-        crate::StreamerPipelineType::Audio => kyclient_StreamerPipelineType::Audio,
-        crate::StreamerPipelineType::Video => kyclient_StreamerPipelineType::Video,
-    };
-
-    *out_stage = match stage {
-        crate::StreamerPipelineStage::Process => kyclient_StreamerPipelineStage::Process,
-        crate::StreamerPipelineStage::Initialization => {
-            kyclient_StreamerPipelineStage::Initialization
-        }
-        crate::StreamerPipelineStage::Acquisition => kyclient_StreamerPipelineStage::Acquisition,
-        crate::StreamerPipelineStage::Encoder => kyclient_StreamerPipelineStage::Encoder,
-    };
-
-    *out_event = match event {
-        crate::StreamerPipelineEventType::Stopped => kyclient_StreamerPipelineEventType::Stopped,
-        crate::StreamerPipelineEventType::Error => kyclient_StreamerPipelineEventType::Error,
-    };
-
-    0
 }
 
 /// @out_volume: (out)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_event_unpack_audio_volume_changed(
     event: &Event,
     out_volume: *mut f32,
 ) -> c_int {
-    let Event::AudioVolumeChanged { volume } = event else {
-        return -1;
-    };
+    unsafe {
+        let Event::AudioVolumeChanged { volume } = event else {
+            return -1;
+        };
 
-    *out_volume = *volume;
+        *out_volume = *volume;
 
-    0
+        0
+    }
 }
 
 /// @out_mute: (out)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_event_unpack_audio_mute_changed(
     event: &Event,
     out_mute: *mut bool,
 ) -> c_int {
-    let Event::AudioMuteChanged { mute } = &event else {
-        return -1;
-    };
+    unsafe {
+        let Event::AudioMuteChanged { mute } = &event else {
+            return -1;
+        };
 
-    *out_mute = *mute;
+        *out_mute = *mute;
 
-    0
+        0
+    }
 }
 
 /// @out_bitrate: (out)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_event_unpack_bitrate_changed(
     event: &Event,
     out_bitrate: *mut u32,
 ) -> c_int {
-    let Event::BitrateChanged { bitrate } = event else {
-        return -1;
-    };
+    unsafe {
+        let Event::BitrateChanged { bitrate } = event else {
+            return -1;
+        };
 
-    *out_bitrate = *bitrate;
+        *out_bitrate = *bitrate;
 
-    0
+        0
+    }
 }
 
 #[repr(C)]
@@ -1540,17 +1630,19 @@ impl crate::event_manager::EventSink for kyclient_EventHandler {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_client_set_event_handler(
     client: *mut kyclient_Client,
     handler: kyclient_EventHandler,
 ) -> c_int {
-    (&(*client))
-        .client
-        .event_manager
-        .add_event_sink(Box::new(handler));
+    unsafe {
+        (&(*client))
+            .client
+            .event_manager
+            .add_event_sink(Box::new(handler));
 
-    0
+        0
+    }
 }
 
 #[allow(non_camel_case_types)]
@@ -1726,7 +1818,7 @@ impl From<Metric> for kyclient_Metric {
 pub type kyclient_metrics_cb =
     Option<extern "C" fn(metric: *const kyclient_Metric, userdata: *mut c_void)>;
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_client_set_metrics_callback(
     client: *mut kyclient_Client,
     metrics_cb: kyclient_metrics_cb,
@@ -1762,7 +1854,7 @@ pub struct kyclient_metrics_json {
 }
 
 /// Returns: (transfer full)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_metrics_json_producer_new() -> Box<kyclient_metrics_json_producer>
 {
     let producer = MetricsJSONProducer::new();
@@ -1770,7 +1862,7 @@ pub unsafe extern "C" fn kyclient_metrics_json_producer_new() -> Box<kyclient_me
 }
 
 /// @producer: (transfer full)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn kyclient_metrics_json_producer_unref(
     producer: Box<kyclient_metrics_json_producer>,
 ) {
@@ -1779,91 +1871,89 @@ pub extern "C" fn kyclient_metrics_json_producer_unref(
 
 /// @metric: (transfer none)
 /// Returns: (transfer full)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_metrics_json_producer_push(
     producer: &mut kyclient_metrics_json_producer,
     metric: &kyclient_Metric,
 ) -> Box<kyclient_metrics_json> {
-    let map_value = |v: i64| -> Option<u64> {
-        if v >= 0 {
-            Some(v as u64)
-        } else {
-            None
+    unsafe {
+        let map_value = |v: i64| -> Option<u64> { if v >= 0 { Some(v as u64) } else { None } };
+
+        let metric = match metric.type_ {
+            kyclient_MetricType::Video => {
+                let data = &metric.data.video;
+
+                Metric::Video(VideoMetric {
+                    source_id: data.source_id,
+                    pts: data.pts,
+                    ts: data.ts,
+                    data: data.data.into(),
+                })
+            }
+            kyclient_MetricType::NetworkLocal => {
+                let data = &metric.data.network_local;
+
+                Metric::NetworkLocal(NetworkStats {
+                    rtt_micros: map_value(data.rtt_micros),
+                    packets_lost: map_value(data.packets_lost),
+                    dropped_packets: map_value(data.dropped_packets),
+                })
+            }
+            kyclient_MetricType::NetworkPing => {
+                let data = &metric.data.network_ping;
+
+                Metric::NetworkPing(NetworkPing {
+                    offset_micros: data.offset_micros,
+                    delay_micros: data.delay_micros,
+                })
+            }
+            kyclient_MetricType::NetworkRemote => {
+                let data = &metric.data.network_remote;
+
+                Metric::NetworkRemote(NetworkStats {
+                    rtt_micros: map_value(data.rtt_micros),
+                    packets_lost: map_value(data.packets_lost),
+                    dropped_packets: map_value(data.dropped_packets),
+                })
+            }
+        };
+
+        let json = producer.producer.push(&metric);
+
+        let mut data = Vec::with_capacity(json.len());
+
+        for l in json {
+            let s = CString::from_vec_unchecked(l);
+            data.push(s);
         }
-    };
 
-    let metric = match metric.type_ {
-        kyclient_MetricType::Video => {
-            let data = &metric.data.video;
+        let c_data = data.iter().map(|s| s.as_ptr()).collect::<Vec<_>>();
 
-            Metric::Video(VideoMetric {
-                source_id: data.source_id,
-                pts: data.pts,
-                ts: data.ts,
-                data: data.data.into(),
-            })
-        }
-        kyclient_MetricType::NetworkLocal => {
-            let data = &metric.data.network_local;
-
-            Metric::NetworkLocal(NetworkStats {
-                rtt_micros: map_value(data.rtt_micros),
-                packets_lost: map_value(data.packets_lost),
-                dropped_packets: map_value(data.dropped_packets),
-            })
-        }
-        kyclient_MetricType::NetworkPing => {
-            let data = &metric.data.network_ping;
-
-            Metric::NetworkPing(NetworkPing {
-                offset_micros: data.offset_micros,
-                delay_micros: data.delay_micros,
-            })
-        }
-        kyclient_MetricType::NetworkRemote => {
-            let data = &metric.data.network_remote;
-
-            Metric::NetworkRemote(NetworkStats {
-                rtt_micros: map_value(data.rtt_micros),
-                packets_lost: map_value(data.packets_lost),
-                dropped_packets: map_value(data.dropped_packets),
-            })
-        }
-    };
-
-    let json = producer.producer.push(&metric);
-
-    let mut data = Vec::with_capacity(json.len());
-
-    for l in json {
-        let s = CString::from_vec_unchecked(l);
-        data.push(s);
+        Box::new(kyclient_metrics_json {
+            _data: data,
+            c_data,
+        })
     }
-
-    let c_data = data.iter().map(|s| s.as_ptr()).collect::<Vec<_>>();
-
-    Box::new(kyclient_metrics_json {
-        _data: data,
-        c_data,
-    })
 }
 
 /// @out_values: (out) (array length=out_count)
 /// @out_count: (out)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_metrics_json_values(
     json: *mut kyclient_metrics_json,
     out_values: *mut *const *const c_char,
     out_count: *mut libc::size_t,
 ) {
-    let json = &*json;
+    unsafe {
+        let json = &*json;
 
-    *out_values = json.c_data.as_ptr();
-    *out_count = json.c_data.len();
+        *out_values = json.c_data.as_ptr();
+        *out_count = json.c_data.len();
+    }
 }
 
 /// @json: (transfer full)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_metrics_json_unref(json: Box<kyclient_metrics_json>) {
     drop(json);
 }

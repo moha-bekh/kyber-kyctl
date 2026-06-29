@@ -20,13 +20,13 @@
 
 use std::collections::HashMap;
 use std::mem;
-use std::sync::{atomic, Arc, Mutex};
+use std::sync::{Arc, Mutex, atomic};
 
 use actix_web::web;
 use kymux::kyproto;
 use log::{info, warn};
 use time::OffsetDateTime;
-use tokio::sync::{oneshot, Mutex as AsyncMutex};
+use tokio::sync::{Mutex as AsyncMutex, oneshot};
 use uuid::Uuid;
 
 use kyavservice_types::Display;
@@ -293,10 +293,10 @@ impl Controller {
 
     async fn cleanup_removed_session(&self, no_sessions: bool) {
         if no_sessions {
-            if let Some(infra) = self.shared_kymux_infra.lock().await.take() {
-                if let Err(err) = infra.stop().await {
-                    warn!("Failed to stop shared Kymux infrastructure: {err:?}");
-                }
+            if let Some(infra) = self.shared_kymux_infra.lock().await.take()
+                && let Err(err) = infra.stop().await
+            {
+                warn!("Failed to stop shared Kymux infrastructure: {err:?}");
             }
 
             let no_streams = {

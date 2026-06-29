@@ -52,7 +52,7 @@ use kymux::types::{
     VideoServerProtocol,
 };
 use log::{debug, error, warn};
-use tokio::sync::{broadcast, Notify};
+use tokio::sync::{Notify, broadcast};
 
 use crate::utils::Task;
 

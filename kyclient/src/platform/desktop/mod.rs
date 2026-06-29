@@ -33,7 +33,7 @@ pub use kyvlcplayer as player;
 pub(crate) mod tls;
 
 pub(crate) use host_events::{WsClient, WsClientBuilder};
-pub(crate) use input_service::{get_cursor_format, InputClient, InputError, InputPipeline};
+pub(crate) use input_service::{InputClient, InputError, InputPipeline, get_cursor_format};
 pub(crate) use mainloop_engine::MainLoopEngine;
 pub(crate) use player::WindowHandle;
 

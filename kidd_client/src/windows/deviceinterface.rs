@@ -29,8 +29,8 @@ use std::time::Duration;
 use core::ffi::c_void;
 use log::{debug, info, warn};
 use windows_sys::{
-    core::*,
     Win32::{Devices::DeviceAndDriverInstallation::*, Foundation::*, Storage::FileSystem::*},
+    core::*,
 };
 
 use crate::platform::error::{check_win32_error, last_win32_error};
@@ -91,7 +91,7 @@ impl<'a> DeviceInterfaceListener<'a> {
         _eventdata: *const CM_NOTIFY_EVENT_DATA,
         _eventdatasize: u32,
     ) -> u32 {
-        let event = &*(userdata as *const Event);
+        let event = unsafe { &*(userdata as *const Event) };
 
         match action {
             CM_NOTIFY_ACTION_DEVICEINTERFACEARRIVAL => {

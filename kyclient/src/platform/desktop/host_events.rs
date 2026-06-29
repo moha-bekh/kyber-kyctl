@@ -22,9 +22,9 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use async_tungstenite::{
-    tokio::{client_async_tls_with_connector, connect_async, ClientStream},
-    tungstenite::Message as tungstenite_Message,
     WebSocketStream,
+    tokio::{ClientStream, client_async_tls_with_connector, connect_async},
+    tungstenite::Message as tungstenite_Message,
 };
 use futures::StreamExt;
 use log::{error, info, warn};

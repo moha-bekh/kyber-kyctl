@@ -25,9 +25,9 @@ use log::info;
 use wasm_bindgen::prelude::*;
 use web_sys::MessageEvent;
 
+use crate::Result;
 use crate::platform::player::{PacketSink, VideoPlayer};
 use crate::platform::{WebSocket, WebSocketHandler};
-use crate::Result;
 
 use super::packet::buffer_to_packet;
 

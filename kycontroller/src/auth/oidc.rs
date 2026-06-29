@@ -325,16 +325,16 @@ impl Backend for Oidc {
 
         let jwt = jsonwebtoken::decode::<Claims>(token, &decoding_key, &validation);
 
-        if let Err(e) = &jwt {
-            if matches!(e.kind(), ErrorKind::ExpiredSignature) {
-                let mut v = validation.clone();
-                v.validate_exp = false;
-                let expired = jsonwebtoken::decode::<Claims>(token, &decoding_key, &v)
-                    .map_err(|_| Error::InvalidCredentialsFormat)?;
-                let at = OffsetDateTime::from_unix_timestamp(expired.claims.exp)
-                    .map_err(|_| Error::InvalidCredentialsFormat)?;
-                return Err(Error::Expired { at });
-            }
+        if let Err(e) = &jwt
+            && matches!(e.kind(), ErrorKind::ExpiredSignature)
+        {
+            let mut v = validation.clone();
+            v.validate_exp = false;
+            let expired = jsonwebtoken::decode::<Claims>(token, &decoding_key, &v)
+                .map_err(|_| Error::InvalidCredentialsFormat)?;
+            let at = OffsetDateTime::from_unix_timestamp(expired.claims.exp)
+                .map_err(|_| Error::InvalidCredentialsFormat)?;
+            return Err(Error::Expired { at });
         }
 
         let claims = jwt.map_err(map_jwt_error)?.claims;
@@ -384,8 +384,8 @@ impl Backend for Oidc {
 fn infer_alg_from_kty(
     params: &jsonwebtoken::jwk::AlgorithmParameters,
 ) -> Option<jsonwebtoken::Algorithm> {
-    use jsonwebtoken::jwk::{AlgorithmParameters, EllipticCurve};
     use jsonwebtoken::Algorithm;
+    use jsonwebtoken::jwk::{AlgorithmParameters, EllipticCurve};
     match params {
         AlgorithmParameters::RSA(_) => Some(Algorithm::RS256),
         AlgorithmParameters::EllipticCurve(ec) => match ec.curve {

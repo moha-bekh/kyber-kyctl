@@ -332,12 +332,11 @@ impl Handler {
 
     async fn stop_backend(&mut self) {
         info!("Stop backend");
-        if let Some(conn) = &mut self.connection {
-            if let Some(mut backend) = conn.backend.take() {
-                if let Err(err) = backend.stop().await {
-                    warn!("Failed to stop backend: {err:?}");
-                }
-            }
+        if let Some(conn) = &mut self.connection
+            && let Some(mut backend) = conn.backend.take()
+            && let Err(err) = backend.stop().await
+        {
+            warn!("Failed to stop backend: {err:?}");
         }
     }
 
@@ -615,27 +614,27 @@ impl Handler {
                 self.event_manager.send_event(Event::StreamingStopped);
             }
             Message::AudioSetVolume { volume } => {
-                if let Some(conn) = &self.connection {
-                    if let Some(backend) = &conn.backend {
-                        backend.audio_set_volume(volume)?;
-                    }
+                if let Some(conn) = &self.connection
+                    && let Some(backend) = &conn.backend
+                {
+                    backend.audio_set_volume(volume)?;
                 }
             }
             Message::AudioSetMute { mute } => {
-                if let Some(conn) = &self.connection {
-                    if let Some(backend) = &conn.backend {
-                        backend.audio_set_mute(mute)?;
-                    }
+                if let Some(conn) = &self.connection
+                    && let Some(backend) = &conn.backend
+                {
+                    backend.audio_set_mute(mute)?;
                 }
             }
             #[cfg(feature = "js-player")]
             Message::AudioTryResume { respond } => {
                 let mut state = player::AudioResumeState::Absent;
 
-                if let Some(conn) = &self.connection {
-                    if let Some(backend) = &conn.backend {
-                        state = backend.audio_try_resume();
-                    }
+                if let Some(conn) = &self.connection
+                    && let Some(backend) = &conn.backend
+                {
+                    state = backend.audio_try_resume();
                 }
 
                 *respond.borrow_mut() = Some(state);
@@ -644,10 +643,10 @@ impl Handler {
             Message::AudioResume { respond } => {
                 let mut result = Ok(());
 
-                if let Some(conn) = &self.connection {
-                    if let Some(backend) = &conn.backend {
-                        result = backend.audio_resume().await;
-                    }
+                if let Some(conn) = &self.connection
+                    && let Some(backend) = &conn.backend
+                {
+                    result = backend.audio_resume().await;
                 }
 
                 *respond.borrow_mut() = Some(result);
@@ -683,10 +682,10 @@ impl Handler {
             Message::InputServiceConnected => {
                 info!("Input service connected");
 
-                if let Some(conn) = &mut self.connection {
-                    if let Some(backend) = &mut conn.backend {
-                        backend.input_service_connected()?;
-                    }
+                if let Some(conn) = &mut self.connection
+                    && let Some(backend) = &mut conn.backend
+                {
+                    backend.input_service_connected()?;
                 }
 
                 self.event_manager.send_event(Event::InputServiceConnected);
@@ -694,10 +693,10 @@ impl Handler {
             Message::InputServiceDisconnected => {
                 info!("Input service disconnected");
 
-                if let Some(conn) = &mut self.connection {
-                    if let Some(backend) = &mut conn.backend {
-                        backend.input_service_disconnected()?;
-                    }
+                if let Some(conn) = &mut self.connection
+                    && let Some(backend) = &mut conn.backend
+                {
+                    backend.input_service_disconnected()?;
                 }
 
                 self.event_manager

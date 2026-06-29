@@ -29,7 +29,7 @@ mod windows;
 mod stub;
 
 #[cfg(all(windows, feature = "win32-tray"))]
-pub use windows::{spawn, wait_service_shutdown, TrayHandle};
+pub use windows::{TrayHandle, spawn, wait_service_shutdown};
 
 #[cfg(not(all(windows, feature = "win32-tray")))]
-pub use stub::{spawn, wait_service_shutdown, TrayHandle};
+pub use stub::{TrayHandle, spawn, wait_service_shutdown};

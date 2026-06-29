@@ -60,7 +60,7 @@ mod status;
 
 // These are only used on Windows with win32-tray feature
 #[allow(unused_imports)]
-pub use platform::{spawn, wait_service_shutdown, TrayHandle};
+pub use platform::{TrayHandle, spawn, wait_service_shutdown};
 #[allow(unused_imports)]
 pub use status::{TrayCommand, TrayStatus};
 

@@ -20,7 +20,7 @@
 
 use super::{Backend, Error, Session};
 
-use base64::{prelude::BASE64_STANDARD, Engine};
+use base64::{Engine, prelude::BASE64_STANDARD};
 use serde::Deserialize;
 use sha2::Digest;
 
@@ -154,7 +154,7 @@ impl<'de> Deserialize<'de> for RFC7617String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::{prelude::BASE64_STANDARD, Engine};
+    use base64::{Engine, prelude::BASE64_STANDARD};
 
     fn encode(s: &str) -> String {
         BASE64_STANDARD.encode(s)
