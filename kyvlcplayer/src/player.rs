@@ -192,6 +192,12 @@ impl Player {
             options.push(format!("--audio-buffer={audio_buffer}"));
         }
 
+        if std::env::var("KYBER_VLC_VERBOSE")
+            .is_ok_and(|v| !matches!(v.trim(), "" | "0" | "false"))
+        {
+            options.push("-vv".to_string());
+        }
+
         let instance =
             vlc::Instance::with_args(Some(options)).ok_or(PlayerError::InstanceCreateFailed)?;
         #[cfg(not(target_os = "android"))]
