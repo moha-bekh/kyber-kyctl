@@ -196,12 +196,9 @@ fn kymux_closed_task(
 
 async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kyproto::Connection> {
     // Request remote Kymux start
-    let start_response = host_service::start_kymux(
-        backend_config.http_client,
-        backend_config.kymux_config.backend,
-        backend_config.conn_params.port,
-    )
-    .await?;
+    let start_response =
+        host_service::start_kymux(backend_config.http_client, backend_config.conn_params.port)
+            .await?;
 
     // Start Kymux connection
     let auth = kyproto::ClientAuth::new(&start_response.token).map_err(|_| {

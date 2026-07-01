@@ -22,7 +22,7 @@ use log::{info, warn};
 use serde::Serialize;
 
 use kyctl_common::kymux::{
-    StartKymuxResponse, StartRequestInput, StartRequestVideo, StartSessionResponse,
+    StartKymux, StartKymuxResponse, StartRequestInput, StartRequestVideo, StartSessionResponse,
 };
 
 use crate::CursorFormat;
@@ -30,26 +30,18 @@ use crate::error::Result;
 use crate::http::HttpClient;
 use crate::platform::get_cursor_format;
 
-use super::{KymuxBackendConfig, KymuxConfig, KymuxTransportBackend};
+use super::{KymuxBackendConfig, KymuxConfig};
 
 pub(crate) use kyctl_common::kymux::StartKymuxCertificateHash;
 
-#[derive(Debug, Serialize)]
-struct StartMuxRequest {
-    public_streamer_port: u16,
-    backend: KymuxTransportBackend,
-}
-
 pub(crate) async fn start_kymux(
     client: &HttpClient,
-    backend: KymuxTransportBackend,
     streamer_port: u16,
 ) -> Result<StartKymuxResponse> {
     let url = format!("{base_url}/kymux/start_mux", base_url = client.base_url());
 
-    let body = StartMuxRequest {
+    let body = StartKymux {
         public_streamer_port: streamer_port,
-        backend,
     };
 
     let response = client
