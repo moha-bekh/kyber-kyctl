@@ -94,4 +94,17 @@ impl Task {
     {
         Self(spawn(f))
     }
+
+    #[cfg(not(target_family = "wasm"))]
+    pub fn spawn_in<F>(rt: &tokio::runtime::Handle, f: F) -> Self
+    where
+        F: std::future::Future<Output = ()> + crate::util::KySend + 'static,
+    {
+        Self(rt.spawn(f))
+    }
+
+    #[allow(dead_code)]
+    pub fn abort(&self) {
+        self.0.abort();
+    }
 }

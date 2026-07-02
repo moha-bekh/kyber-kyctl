@@ -18,32 +18,52 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use crate::MainLoop;
+use crate::{MainLoop, runtime::Task};
 use std::sync::Mutex;
 
+struct State {
+    task: Task,
+    rt: Option<tokio::runtime::Runtime>,
+}
+
 pub(crate) struct MainLoopEngine {
-    rt: Mutex<Option<tokio::runtime::Runtime>>,
+    state: Mutex<State>,
 }
 
 impl MainLoopEngine {
     pub(crate) fn new(main_loop: MainLoop) -> Self {
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(1)
-            .thread_name("EventLoop")
-            .enable_io()
-            .enable_time()
-            .build()
-            .unwrap();
+        let mut rt = None;
+        let handle;
 
-        rt.spawn(main_loop.run());
+        let handle = match tokio::runtime::Handle::try_current() {
+            Ok(h) => {
+                handle = h;
+                &handle
+            }
+            Err(_) => {
+                let rt = rt.insert(
+                    tokio::runtime::Builder::new_multi_thread()
+                        .worker_threads(1)
+                        .thread_name("EventLoop")
+                        .enable_io()
+                        .enable_time()
+                        .build()
+                        .unwrap(),
+                );
+                rt.handle()
+            }
+        };
+
+        let task = Task::spawn_in(handle, main_loop.run());
 
         Self {
-            rt: Mutex::new(Some(rt)),
+            state: Mutex::new(State { task, rt }),
         }
     }
 
     pub(crate) fn stop(&self) {
-        // Dropping the runtime cancels its futures
-        *self.rt.lock().unwrap() = None;
+        let state = &mut *self.state.lock().unwrap();
+        state.task.abort();
+        state.rt = None;
     }
 }
