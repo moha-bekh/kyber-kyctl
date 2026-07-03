@@ -19,12 +19,11 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use actix_web::{HttpResponse, post, web};
-use kymux::kyproto;
 use log::{error, info, warn};
 use serde::Deserialize;
 
 pub(crate) use kyctl_common::kymux::{
-    StartKymux, StartKymuxCertificateHash, StartKymuxResponse, StartRequestInput,
+    KymuxConfig, StartKymux, StartKymuxCertificateHash, StartKymuxResponse, StartRequestInput,
     StartRequestVideo, StartSessionAudioResponse, StartSessionClockSyncResponse,
     StartSessionInputResponse, StartSessionMetricsResponse, StartSessionResponse,
     StartSessionVideoResponse,
@@ -60,12 +59,6 @@ pub(crate) async fn start_mux(
             HttpResponse::Forbidden().finish()
         }
     }
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct KymuxConfig {
-    pub(crate) video_protocol: Option<kyproto::VideoProtocol>,
-    pub(crate) audio_protocol: Option<kyproto::AudioProtocol>,
 }
 
 #[derive(Debug, Deserialize)]

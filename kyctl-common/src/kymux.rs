@@ -18,9 +18,18 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
+use kymux::kyproto;
 use serde::{Deserialize, Serialize};
 
 use crate::enums::{CursorFormat, VideoCodec};
+
+pub use kyproto::{AudioProtocol, VideoProtocol};
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct KymuxConfig {
+    pub video_protocol: Option<kyproto::VideoProtocol>,
+    pub audio_protocol: Option<kyproto::AudioProtocol>,
+}
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct StartKymux {

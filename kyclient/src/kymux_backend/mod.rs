@@ -27,7 +27,6 @@ mod web;
 use async_trait::async_trait;
 use kymux::{kynet, kyproto, types};
 use log::{error, info, warn};
-use serde::Serialize;
 use std::collections::HashMap;
 
 #[cfg(target_family = "wasm")]
@@ -47,14 +46,10 @@ use kyctl_common::kymux::StartSessionResponse;
 pub(crate) mod host_service;
 pub(crate) mod metrics;
 
+pub use kyctl_common::kymux::KymuxConfig;
+
 #[allow(dead_code)]
 const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(5);
-
-#[derive(Clone, Debug, Serialize)]
-pub struct KymuxConfig {
-    pub video_protocol: Option<kyproto::VideoProtocol>,
-    pub audio_protocol: Option<kyproto::AudioProtocol>,
-}
 
 pub(crate) struct KymuxBackendConfig<'a> {
     pub(crate) conn_params: &'a ConnectionParams,
