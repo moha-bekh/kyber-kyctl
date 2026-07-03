@@ -788,7 +788,7 @@ impl Handler {
 }
 
 #[cfg(feature = "kymux")]
-pub use kymux_backend::{KymuxConfig, KymuxTransportBackend};
+pub use kymux_backend::KymuxConfig;
 
 #[cfg(feature = "kymux")]
 pub use kymux::kyproto::{AudioProtocol, VideoProtocol};
@@ -887,7 +887,6 @@ impl StreamingSessionConfig {
             #[cfg(feature = "kymux")]
             StreamingProtocol::Kymux(ref config) => {
                 info!("\tprotocol: Kymux");
-                info!("\t\tbackend: {:?}", config.backend);
                 info!("\t\tvideo_protocol: {:?}", config.video_protocol);
                 info!("\t\taudio_protocol: {:?}", config.audio_protocol);
             }

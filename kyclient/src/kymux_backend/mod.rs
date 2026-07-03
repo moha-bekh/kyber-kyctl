@@ -50,17 +50,8 @@ pub(crate) mod metrics;
 #[allow(dead_code)]
 const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(5);
 
-#[derive(Clone, Copy, Debug, Serialize)]
-pub enum KymuxTransportBackend {
-    #[cfg(not(target_family = "wasm"))]
-    Quic,
-    #[cfg(target_family = "wasm")]
-    Webtransport,
-}
-
 #[derive(Clone, Debug, Serialize)]
 pub struct KymuxConfig {
-    pub backend: KymuxTransportBackend,
     pub video_protocol: Option<kyproto::VideoProtocol>,
     pub audio_protocol: Option<kyproto::AudioProtocol>,
 }
@@ -206,9 +197,9 @@ async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kyproto:
         Error::KymuxInvalidToken
     })?;
 
-    let kynet = match backend_config.kymux_config.backend {
+    let kynet = {
         #[cfg(not(target_family = "wasm"))]
-        KymuxTransportBackend::Quic => {
+        {
             info!(
                 "Connect using Quic backend. Port: {port}",
                 port = start_response.port
@@ -222,8 +213,9 @@ async fn start_kymux(backend_config: &KymuxBackendConfig<'_>) -> Result<kyproto:
             )
             .await
         }
+
         #[cfg(target_family = "wasm")]
-        KymuxTransportBackend::Webtransport => {
+        {
             info!(
                 "Connect using Webtransport backend. Port: {port}",
                 port = start_response.port

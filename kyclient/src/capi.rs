@@ -819,7 +819,6 @@ pub extern "C" fn kyclient_streaming_protocol_kymux(
     let protocol = crate::StreamingProtocol::Kymux(crate::kymux_backend::KymuxConfig {
         video_protocol: Some(video_protocol.into()),
         audio_protocol: Some(audio_protocol.into()),
-        backend: crate::kymux_backend::KymuxTransportBackend::Quic,
     });
 
     Box::new(kyclient_StreamingProtocol { protocol })
