@@ -25,6 +25,9 @@ use crate::platform;
 #[cfg(feature = "kymux")]
 use kymux::{kynet, kyproto};
 
+#[cfg(all(feature = "kymux", feature = "websocket"))]
+use kymux::kywebsocket;
+
 #[cfg(not(target_family = "wasm"))]
 use platform::player::PlayerError;
 
@@ -69,6 +72,9 @@ pub enum Error {
     #[cfg(feature = "kymux")]
     #[error("kynet connection error: {0}")]
     KynetConnectionError(#[from] kynet::ConnectionError),
+    #[cfg(all(feature = "kymux", feature = "websocket"))]
+    #[error("kywebsocket connection error: {0}")]
+    KyWebSocketConnectionError(#[from] kywebsocket::ConnectionError),
     #[cfg(feature = "kymux")]
     #[error("kynet decode hex error: {0}")]
     DecodeHexError(#[from] kynet::DecodeHexError),

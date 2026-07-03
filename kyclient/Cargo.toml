@@ -43,7 +43,7 @@ tokio = { version = "1.47.1", features = ["fs", "rt-multi-thread"] }
 [target.'cfg(target_family = "wasm")'.dependencies]
 bytes = "1.5.0"
 js-sys = "=0.3.77"
-kymux = { version = "0.1.0", features = ["backend-webtransport-js"], optional = true }
+kymux = { version = "0.1.0", features = ["backend-webtransport-js", "backend-websocket-js"], optional = true }
 kynput = "0.1.0"
 kywasmtime = { git = "https://github.com/rom1v/kywasmtime.git", tag = "0.1" }
 kywebplayer = { path = "../kywebplayer" }

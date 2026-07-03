@@ -18,24 +18,19 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-mod audio;
+mod forward;
 mod host_service;
-mod input;
-mod packet;
-mod video;
 
-use std::rc::Rc;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use log::{info, warn};
 
+use kymux::kywebsocket;
 use kynput::InputNetworkStream;
 use kynput::bufferproxy::BufferProxy;
 
-use audio::AudioWsSocketHandler;
-use input::InputWebSocketHandler;
-use video::VideoWsSocketHandler;
+use forward::WebSocketHandle;
 
 use crate::metrics::MetricsProducer;
 use crate::platform::InputMsgSink;
@@ -50,7 +45,7 @@ use crate::{BackendDriver, MessageSender, StreamingSessionConfig};
 use crate::{Error, Result};
 
 struct VideoService {
-    ws: Rc<VideoWsSocketHandler>,
+    websocket_handle: WebSocketHandle, // interrupts the receiver peer on drop
     player_handle: VideoPlayerHandle,
 }
 
@@ -58,17 +53,13 @@ impl VideoService {
     async fn stop(mut self) {
         info!("Stop video service");
 
-        let ret = self.ws.stop();
-        if let Err(err) = ret {
-            warn!("Video ws stop failed: {err:?}");
-        }
-
+        drop(self.websocket_handle);
         self.player_handle.stop().await;
     }
 }
 
 struct AudioService {
-    ws: Rc<AudioWsSocketHandler>,
+    websocket_handle: WebSocketHandle, // interrupts the receiver peer on drop
     player_handle: AudioPlayerHandle,
 }
 
@@ -76,17 +67,13 @@ impl AudioService {
     async fn stop(mut self) {
         info!("Stop audio service");
 
-        let ret = self.ws.stop();
-        if let Err(err) = ret {
-            warn!("Audio ws stop failed: {err:?}");
-        }
-
+        drop(self.websocket_handle);
         self.player_handle.stop().await;
     }
 }
 
 struct InputService {
-    websocket: Rc<InputWebSocketHandler>,
+    websocket_handle: WebSocketHandle, // interrupts on drop
     proxy: Arc<BufferProxy>,
     pipeline: Arc<kynput::InputPipeline>,
 }
@@ -94,11 +81,8 @@ struct InputService {
 impl InputService {
     fn stop(self) {
         info!("Stop input service");
-        let ret = self.websocket.stop();
-        if let Err(err) = ret {
-            warn!("Input ws stop failed: {err:?}");
-        }
 
+        drop(self.websocket_handle);
         let ret = self.pipeline.stop();
         if let Err(err) = ret {
             warn!("InputPipeline stop failed: {err:?}");
@@ -131,7 +115,7 @@ impl WsBackend {
         // Start services
         let video_service = Self::create_video_service(&backend_config, metrics).await?;
         let audio_service = Self::create_audio_service(&backend_config).await?;
-        let input_service = Self::create_input_service(&backend_config)?;
+        let input_service = Self::create_input_service(&backend_config).await?;
 
         Ok(Self {
             video_service,
@@ -171,9 +155,13 @@ impl WsBackend {
             "wss://{host}/websocket/video",
             host = backend_config.http_client.host()
         );
-        let ws = VideoWsSocketHandler::new(&url, player)?;
+        let conn = kywebsocket::Connection::websocket_js_connect(&url).await?;
+        let websocket_handle = forward::forward_video(conn, player);
 
-        Ok(Some(VideoService { ws, player_handle }))
+        Ok(Some(VideoService {
+            websocket_handle,
+            player_handle,
+        }))
     }
 
     async fn create_audio_service(
@@ -202,12 +190,18 @@ impl WsBackend {
             "wss://{host}/websocket/audio",
             host = backend_config.http_client.host()
         );
-        let ws = AudioWsSocketHandler::new(&url, player)?;
+        let conn = kywebsocket::Connection::websocket_js_connect(&url).await?;
+        let websocket_handle = forward::forward_audio(conn, player);
 
-        Ok(Some(AudioService { ws, player_handle }))
+        Ok(Some(AudioService {
+            websocket_handle,
+            player_handle,
+        }))
     }
 
-    fn create_input_service(backend_config: &WsBackendConfig<'_>) -> Result<Option<InputService>> {
+    async fn create_input_service(
+        backend_config: &WsBackendConfig<'_>,
+    ) -> Result<Option<InputService>> {
         let Some(input_config) = backend_config.streaming_config.input.as_ref() else {
             return Ok(None);
         };
@@ -228,11 +222,12 @@ impl WsBackend {
             "wss://{host}/websocket/inputs",
             host = backend_config.http_client.host()
         );
-        let input_websocket =
-            InputWebSocketHandler::new(&inputs_url, kynput_tx, kynput_rx, msg_sink)?;
+
+        let conn = kywebsocket::Connection::websocket_js_connect(&inputs_url).await?;
+        let websocket_handle = forward::forward_input(conn, kynput_tx, kynput_rx, msg_sink);
 
         Ok(Some(InputService {
-            websocket: input_websocket,
+            websocket_handle,
             proxy: input_proxy,
             pipeline: input_config.pipeline.clone(),
         }))
