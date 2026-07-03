@@ -29,7 +29,6 @@ use std::sync::atomic::AtomicPtr;
 use log::{error, warn};
 use std::io::BufReader;
 
-use kymux::kyproto;
 use kynput_rs::Pipeline;
 
 use crate::MetricsCallback;
@@ -111,7 +110,7 @@ pub enum kyclient_KymuxVideoProtocol {
 }
 
 #[cfg(feature = "kymux")]
-impl From<kyclient_KymuxVideoProtocol> for kyproto::VideoProtocol {
+impl From<kyclient_KymuxVideoProtocol> for kyctl_common::kymux::VideoProtocol {
     fn from(value: kyclient_KymuxVideoProtocol) -> Self {
         match value {
             kyclient_KymuxVideoProtocol::Reliable => Self::Reliable,
@@ -132,7 +131,7 @@ pub enum kyclient_KymuxAudioProtocol {
 }
 
 #[cfg(feature = "kymux")]
-impl From<kyclient_KymuxAudioProtocol> for kyproto::AudioProtocol {
+impl From<kyclient_KymuxAudioProtocol> for kyctl_common::kymux::AudioProtocol {
     fn from(value: kyclient_KymuxAudioProtocol) -> Self {
         match value {
             kyclient_KymuxAudioProtocol::Reliable => Self::Reliable,

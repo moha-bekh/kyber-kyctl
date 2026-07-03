@@ -46,7 +46,7 @@ use kyctl_common::kymux::StartSessionResponse;
 pub(crate) mod host_service;
 pub(crate) mod metrics;
 
-pub use kyctl_common::kymux::KymuxConfig;
+pub use kyctl_common::kymux::{AudioProtocol, KymuxConfig, VideoProtocol};
 
 #[allow(dead_code)]
 const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(5);
@@ -344,7 +344,7 @@ fn create_video_endpoints(
     let video_protocol = backend_config
         .kymux_config
         .video_protocol
-        .unwrap_or(kyproto::VideoProtocol::Reliable);
+        .unwrap_or(VideoProtocol::Reliable);
     info!("Using video protocol: {video_protocol:?}");
 
     let mut video_endpoints = vec![];
@@ -354,7 +354,7 @@ fn create_video_endpoints(
             Error::Rejected
         })?;
 
-        let endpoint = connection.connect_video_endpoint(endpoint_id, video_protocol)?;
+        let endpoint = connection.connect_video_endpoint(endpoint_id, video_protocol.into())?;
         video_endpoints.push(endpoint);
     }
 
@@ -378,10 +378,10 @@ fn create_audio_endpoint(
     let audio_protocol = backend_config
         .kymux_config
         .audio_protocol
-        .unwrap_or(kyproto::AudioProtocol::Reliable);
+        .unwrap_or(AudioProtocol::Reliable);
     info!("Using audio protocol: {audio_protocol:?}");
     let endpoint_id = host_config.endpoint;
-    let endpoint = connection.connect_audio_endpoint(endpoint_id, audio_protocol)?;
+    let endpoint = connection.connect_audio_endpoint(endpoint_id, audio_protocol.into())?;
     Ok(Some(endpoint))
 }
 

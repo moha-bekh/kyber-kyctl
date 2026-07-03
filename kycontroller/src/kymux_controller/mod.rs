@@ -32,6 +32,7 @@ use bytes::Bytes;
 use kymux::{kycom, kynet, kyproto, types};
 use log::{info, warn};
 
+use kyctl_common::kymux::{AudioProtocol, VideoProtocol};
 use libkypc::process::ProcessFactory;
 
 pub(crate) use server::{IncomingConnectionRouter, KymuxServer};
@@ -268,10 +269,11 @@ async fn start_video(
         let video_protocol = request
             .kymux_config
             .video_protocol
-            .unwrap_or(kyproto::VideoProtocol::Reliable);
+            .unwrap_or(VideoProtocol::Reliable);
 
-        let (endpoint_id, client_endpoint) =
-            connection.register_video_endpoint(video_protocol).await?;
+        let (endpoint_id, client_endpoint) = connection
+            .register_video_endpoint(video_protocol.into())
+            .await?;
         let display_id = stream_request.display_id;
 
         let config = crate::avservices_manager::VideoStreamConfig {
@@ -443,9 +445,11 @@ async fn start_audio(
     let audio_protocol = request
         .kymux_config
         .audio_protocol
-        .unwrap_or(kyproto::AudioProtocol::Reliable);
+        .unwrap_or(AudioProtocol::Reliable);
 
-    let (endpoint_id, client_endpoint) = connection.register_audio_endpoint(audio_protocol).await?;
+    let (endpoint_id, client_endpoint) = connection
+        .register_audio_endpoint(audio_protocol.into())
+        .await?;
 
     let (acquisition, output) = match mode {
         SessionMode::Multi => {

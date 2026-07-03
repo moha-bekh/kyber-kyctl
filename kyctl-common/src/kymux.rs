@@ -23,12 +23,25 @@ use serde::{Deserialize, Serialize};
 
 use crate::enums::{CursorFormat, VideoCodec};
 
-pub use kyproto::{AudioProtocol, VideoProtocol};
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
+pub enum VideoProtocol {
+    Reliable,
+    GopStream,
+    Unreliable,
+    UnreliableFec,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
+pub enum AudioProtocol {
+    Reliable,
+    Unreliable,
+    UnreliableFec,
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct KymuxConfig {
-    pub video_protocol: Option<kyproto::VideoProtocol>,
-    pub audio_protocol: Option<kyproto::AudioProtocol>,
+    pub video_protocol: Option<VideoProtocol>,
+    pub audio_protocol: Option<AudioProtocol>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -104,4 +117,46 @@ pub struct StartSessionResponse {
     pub input: Option<StartSessionInputResponse>,
     pub clock_sync: Option<StartSessionClockSyncResponse>,
     pub metrics: Option<StartSessionMetricsResponse>,
+}
+
+impl From<VideoProtocol> for kyproto::VideoProtocol {
+    fn from(protocol: VideoProtocol) -> Self {
+        match protocol {
+            VideoProtocol::Reliable => Self::Reliable,
+            VideoProtocol::GopStream => Self::GopStream,
+            VideoProtocol::Unreliable => Self::Unreliable,
+            VideoProtocol::UnreliableFec => Self::UnreliableFec,
+        }
+    }
+}
+
+impl From<kyproto::VideoProtocol> for VideoProtocol {
+    fn from(protocol: kyproto::VideoProtocol) -> Self {
+        match protocol {
+            kyproto::VideoProtocol::Reliable => Self::Reliable,
+            kyproto::VideoProtocol::GopStream => Self::GopStream,
+            kyproto::VideoProtocol::Unreliable => Self::Unreliable,
+            kyproto::VideoProtocol::UnreliableFec => Self::UnreliableFec,
+        }
+    }
+}
+
+impl From<AudioProtocol> for kyproto::AudioProtocol {
+    fn from(protocol: AudioProtocol) -> Self {
+        match protocol {
+            AudioProtocol::Reliable => Self::Reliable,
+            AudioProtocol::Unreliable => Self::Unreliable,
+            AudioProtocol::UnreliableFec => Self::UnreliableFec,
+        }
+    }
+}
+
+impl From<kyproto::AudioProtocol> for AudioProtocol {
+    fn from(protocol: kyproto::AudioProtocol) -> Self {
+        match protocol {
+            kyproto::AudioProtocol::Reliable => Self::Reliable,
+            kyproto::AudioProtocol::Unreliable => Self::Unreliable,
+            kyproto::AudioProtocol::UnreliableFec => Self::UnreliableFec,
+        }
+    }
 }
