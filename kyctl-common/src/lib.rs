@@ -21,7 +21,10 @@
 pub mod capabilities;
 pub mod enums;
 pub mod host_events;
+#[cfg(feature = "kymux")]
 pub mod kymux;
+#[cfg(feature = "rtp")]
 pub mod rtp;
 pub mod set_bitrate;
+#[cfg(feature = "websocket")]
 pub mod ws;

@@ -9,7 +9,7 @@ async-trait = "0.1.78"
 futures = "0.3.30"
 libc = "0.2.153"
 kyclient-common = { version = "0.1.0", path = "../kyclient-common" }
-kyctl-common = { version = "0.1.0", path = "../kyctl-common" }
+kyctl-common = { path = "../kyctl-common" }
 log = { version = "0.4.21", features = ["std"] }
 reqwest = { version = "0.13", default-features = false, features = ["json"] }
 rmp-serde = { version = "1.1.2", optional = true }
@@ -59,9 +59,13 @@ vergen = { version = "8.3.1", features = ["build", "git", "gix"] }
 
 [features]
 capi = []
-kymux = ["dep:kymux", "rmp-serde"]
-rtp = []
-websocket = []
+kymux = [
+    "dep:kymux",
+    "rmp-serde",
+    "kyctl-common/kymux",
+]
+rtp = ["kyctl-common/rtp"]
+websocket = ["kyctl-common/websocket"]
 
 [dev-dependencies]
 tempfile = "3"

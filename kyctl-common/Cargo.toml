@@ -25,3 +25,8 @@ edition = "2021"
 
 [dependencies]
 serde = { version = "1.0.197", features = ["derive"] }
+
+[features]
+kymux = []
+rtp = []
+websocket = []
