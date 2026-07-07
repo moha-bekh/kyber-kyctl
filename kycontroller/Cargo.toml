@@ -80,7 +80,7 @@ auth-jwt = ["dep:jsonwebtoken"]
 auth-oidc = ["dep:jsonwebtoken", "dep:awc", "dep:rustls-platform-verifier"]
 
 [build-dependencies]
-vergen = { version = "8.3.1", features = ["build", "git", "gix"] }
+vergen = { version = "8.3.1", features = ["build", "git", "gitcl"] }
 
 [[bin]]
 name = "jwt-gen"

@@ -55,7 +55,7 @@ web-sys = { version = "=0.3.77", features = [
 ] }
 
 [build-dependencies]
-vergen = { version = "8.3.1", features = ["build", "git", "gix"] }
+vergen = { version = "8.3.1", features = ["build", "git", "gitcl"] }
 
 [features]
 capi = []

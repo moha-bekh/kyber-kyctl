@@ -29,4 +29,4 @@ features = [
 ]
 
 [build-dependencies]
-vergen = { version = "8.1.1", features = ["build", "git", "gix"] }
+vergen = { version = "8.1.1", features = ["build", "git", "gitcl"] }
