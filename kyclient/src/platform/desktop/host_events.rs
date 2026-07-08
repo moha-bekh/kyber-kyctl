@@ -148,7 +148,7 @@ impl WsClient {
                         None => {
                             event_sink.push_msg(Message::ControlPlaneClosed {
                                 reason: ControlPlaneCloseReason::Eof,
-                            }).await;
+                            });
 
                             break;
                         },
@@ -161,7 +161,7 @@ impl WsClient {
                                     code: None,
                                     reason: None,
                                 },
-                            }).await;
+                            });
 
                             break;
                         }
@@ -185,7 +185,7 @@ impl WsClient {
 
                             event_sink.push_msg(Message::ControlPlaneClosed {
                                 reason
-                            }).await;
+                            });
 
                             break;
                         }
@@ -214,7 +214,7 @@ impl WsClient {
                             warn!("Unexpected Pong({id})");
                         }
                         Ok(HostEventFrame::Event { event }) => {
-                            event_sink.push(event).await;
+                            event_sink.push(event);
                         }
                         Err(err) => {
                             error!("Fail to parse {msg}: {err:?}");
@@ -224,7 +224,7 @@ impl WsClient {
                 _ = &mut timer => {
                     event_sink.push_msg(Message::ControlPlaneClosed {
                         reason: ControlPlaneCloseReason::Timeout,
-                    }).await;
+                    });
 
                     break;
                 }

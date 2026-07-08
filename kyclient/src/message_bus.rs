@@ -35,8 +35,14 @@ pub(crate) struct MessageWrapper {
     pub completion_cb: Option<MessageCompletionCb>,
 }
 
+impl std::fmt::Debug for MessageWrapper {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Message").field("msg", &self.msg).finish()
+    }
+}
+
 pub struct MessageReceiver {
-    receiver: tokio::sync::mpsc::Receiver<MessageWrapper>,
+    receiver: tokio::sync::mpsc::UnboundedReceiver<MessageWrapper>,
 }
 
 impl MessageReceiver {
@@ -47,26 +53,12 @@ impl MessageReceiver {
 
 #[derive(Clone)]
 pub struct MessageSender {
-    sender: tokio::sync::mpsc::Sender<MessageWrapper>,
+    sender: tokio::sync::mpsc::UnboundedSender<MessageWrapper>,
 }
 
 impl MessageSender {
     fn send_wrapper(&self, wrapper: MessageWrapper) -> Result<()> {
-        use tokio::sync::mpsc::error::TrySendError;
-
-        match self.sender.try_send(wrapper) {
-            Ok(_) => Ok(()),
-            Err(TrySendError::Closed(_)) => Err(Error::ChannelSend),
-            Err(TrySendError::Full(_)) => {
-                warn!("MessageBus: Channel full: message dropped");
-
-                Ok(())
-            }
-        }
-    }
-
-    async fn send_wrapper_async(&self, wrapper: MessageWrapper) -> Result<()> {
-        self.sender.send(wrapper).await?;
+        self.sender.send(wrapper).map_err(|_| Error::ChannelSend)?;
         Ok(())
     }
 
@@ -98,14 +90,6 @@ impl MessageSender {
         Ok(())
     }
 
-    pub(crate) async fn send_async(&self, msg: Message) -> Result<()> {
-        self.send_wrapper_async(MessageWrapper {
-            msg,
-            completion_cb: None,
-        })
-        .await
-    }
-
     pub(crate) async fn send_async_and_wait_completion(&self, msg: Message) -> Result<()> {
         let (tx, rx) = tokio::sync::oneshot::channel();
 
@@ -129,6 +113,6 @@ impl MessageSender {
 }
 
 pub(crate) fn create() -> (MessageSender, MessageReceiver) {
-    let (sender, receiver) = tokio::sync::mpsc::channel(32);
+    let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
     (MessageSender { sender }, MessageReceiver { receiver })
 }

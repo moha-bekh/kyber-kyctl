@@ -174,9 +174,7 @@ fn kymux_closed_task(
             Err(_) => DataPlaneCloseReason::Error,
         };
 
-        let _ = msg_sender
-            .send_async(Message::DataPlaneClosed { reason })
-            .await;
+        let _ = msg_sender.send(Message::DataPlaneClosed { reason });
     })
 }
 

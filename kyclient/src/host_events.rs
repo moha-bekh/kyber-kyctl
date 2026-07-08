@@ -67,15 +67,7 @@ impl HostEventSink {
     }
 
     #[allow(dead_code)]
-    pub(crate) async fn push_msg(&self, msg: Message) {
-        let ret = self.msg_sender.send_async(msg).await;
-        if let Err(err) = ret {
-            warn!("Fail to send HostEvent: {err:?}");
-        }
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn blocking_push_msg(&self, msg: Message) {
+    pub(crate) fn push_msg(&self, msg: Message) {
         let ret = self.msg_sender.send(msg);
         if let Err(err) = ret {
             warn!("Fail to send HostEvent: {err:?}");
@@ -83,15 +75,7 @@ impl HostEventSink {
     }
 
     #[allow(dead_code)]
-    pub(crate) async fn push(&self, event: HostEvent) {
-        let ret = self.msg_sender.send_async(Self::convert_event(event)).await;
-        if let Err(err) = ret {
-            warn!("Fail to send HostEvent: {err:?}");
-        }
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn blocking_push(&self, event: HostEvent) {
+    pub(crate) fn push(&self, event: HostEvent) {
         let ret = self.msg_sender.send(Self::convert_event(event));
         if let Err(err) = ret {
             warn!("Fail to send HostEvent: {err:?}");

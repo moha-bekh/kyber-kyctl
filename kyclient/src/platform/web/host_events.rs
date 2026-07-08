@@ -130,7 +130,7 @@ impl Inner {
         let event_sink = self.event_sink.clone();
 
         let ontimeout_cb = Closure::<dyn FnMut()>::new(move || {
-            event_sink.blocking_push_msg(Message::ControlPlaneClosed {
+            event_sink.push_msg(Message::ControlPlaneClosed {
                 reason: ControlPlaneCloseReason::Timeout,
             });
         });
@@ -170,7 +170,7 @@ impl Inner {
     fn handle_authentified_messages(&self, msg: String, state: &mut ConnectionState) -> Result<()> {
         match serde_json::from_str(&msg) {
             Ok(HostEventFrame::Event { event }) => {
-                self.event_sink.blocking_push(event);
+                self.event_sink.push(event);
             }
             Ok(HostEventFrame::Ping { id }) => {
                 let pong = HostEventFrame::Pong { id };
@@ -274,14 +274,13 @@ impl WebSocketHandler for Inner {
                 let _ = connected_tx.send(ConnectionResult::Failed);
             }
             ConnectionState::Authentified { .. } => {
-                self.event_sink
-                    .blocking_push_msg(Message::ControlPlaneClosed {
-                        reason: ControlPlaneCloseReason::Closed {
-                            was_clean: event.was_clean(),
-                            code: Some(event.code()),
-                            reason: Some(event.reason()),
-                        },
-                    });
+                self.event_sink.push_msg(Message::ControlPlaneClosed {
+                    reason: ControlPlaneCloseReason::Closed {
+                        was_clean: event.was_clean(),
+                        code: Some(event.code()),
+                        reason: Some(event.reason()),
+                    },
+                });
             }
             ConnectionState::Closed => (),
         }
