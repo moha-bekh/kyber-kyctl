@@ -105,8 +105,6 @@ libkypc = { path = "./kyutil/libkypc" }
 kynput = { path = "./kynput/kynput" }
 kynput-rs = { path = "./kynput/kynput-rs" }
 kynput-sys = { path = "./kynput/kynput-rs/kynput-sys" }
-keycode = { path = "./kynput/external/keycode/keycode" }
-keycode_macro = { path = "./kynput/external/keycode/keycode_macro" }
 EOF
 
     cd "$KYCTL_DIR"
