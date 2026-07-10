@@ -345,54 +345,114 @@ impl FrameTimestamps {
     }
 
     fn set_raw_acquired(&mut self, ts: i64) {
-        assert!(self.raw_acquired.is_none());
+        if let Some(prev) = self.raw_acquired {
+            log::warn!(
+                "Multiple 'acquired' timestamps for PTS {}: prev={prev} ts={ts}",
+                self.pts
+            );
+        }
         self.raw_acquired = Some(ts);
     }
 
     fn set_raw_encoding(&mut self, ts: i64) {
-        assert!(self.raw_encoding.is_none());
+        if let Some(prev) = self.raw_encoding {
+            log::warn!(
+                "Multiple 'encoding' timestamps for PTS {}: prev={prev} ts={ts}",
+                self.pts
+            );
+        }
         self.raw_encoding = Some(ts);
     }
 
     fn set_raw_encoded(&mut self, ts: i64) {
-        assert!(self.raw_encoded.is_none());
+        if let Some(prev) = self.raw_encoded {
+            log::warn!(
+                "Multiple 'encoded' timestamps for PTS {}: prev={prev} ts={ts}",
+                self.pts
+            );
+        }
         self.raw_encoded = Some(ts);
     }
 
     fn set_raw_sent(&mut self, ts: i64) {
-        assert!(self.raw_sent.is_none());
+        if let Some(prev) = self.raw_sent {
+            log::warn!(
+                "Multiple 'sent' timestamps for PTS {}: prev={prev} ts={ts}",
+                self.pts
+            );
+        }
         self.raw_sent = Some(ts);
     }
 
     fn set_received(&mut self, ts: i64) {
-        assert!(self.received.is_none());
+        if let Some(prev) = self.received {
+            log::warn!(
+                "Multiple 'received' timestamps for PTS {}: prev={prev} ts={ts}",
+                self.pts
+            );
+        }
         self.received = Some(ts);
     }
 
     fn set_decoding(&mut self, ts: i64) {
-        assert!(self.decoding.is_none());
+        if let Some(prev) = self.decoding {
+            log::warn!(
+                "Multiple 'decoding' timestamps for PTS {}: prev={prev} ts={ts}",
+                self.pts
+            );
+        }
         self.decoding = Some(ts);
     }
 
     fn set_decoded(&mut self, ts: i64) {
-        assert!(self.decoded.is_none());
+        if let Some(prev) = self.decoding {
+            log::warn!(
+                "Multiple 'decoded' timestamps for PTS {}: prev={prev} ts={ts}",
+                self.pts
+            );
+        }
         self.decoded = Some(ts);
     }
 
     fn set_skipped(&mut self, ts: i64) {
-        assert!(self.skipped.is_none());
-        assert!(self.displayed.is_none());
+        if let Some(prev) = self.skipped {
+            log::warn!(
+                "Multiple 'skipped' timestamps for PTS {}: prev={prev} ts={ts}",
+                self.pts
+            );
+        }
+        if let Some(prev) = self.displayed {
+            log::warn!(
+                "Incompatible 'skipped' and 'displayed' timestamps for PTS {}: displayed={prev} skipped={ts}",
+                self.pts
+            );
+        }
         self.skipped = Some(ts);
     }
 
     fn set_prepared(&mut self, ts: i64) {
-        assert!(self.prepared.is_none());
+        if let Some(prev) = self.prepared {
+            log::warn!(
+                "Multiple 'prepared' timestamps for PTS {}: prev={prev} ts={ts}",
+                self.pts
+            );
+        }
         self.prepared = Some(ts);
     }
 
     fn set_displayed(&mut self, ts: i64) {
-        assert!(self.skipped.is_none());
-        assert!(self.displayed.is_none());
+        if let Some(prev) = self.displayed {
+            log::warn!(
+                "Multiple 'displayed' timestamps for PTS {}: prev={prev} ts={ts}",
+                self.pts
+            );
+        }
+        if let Some(prev) = self.skipped {
+            log::warn!(
+                "Incompatible 'displayed' and 'skipped' timestamps for PTS {}: skipped={prev} displayed={ts}",
+                self.pts
+            );
+        }
         self.displayed = Some(ts);
     }
 
