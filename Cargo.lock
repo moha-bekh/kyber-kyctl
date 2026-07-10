@@ -2662,6 +2662,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "kymux-types",
+ "kymux-util",
  "log",
  "tokio",
  "url",
