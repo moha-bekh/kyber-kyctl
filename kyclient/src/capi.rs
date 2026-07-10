@@ -33,57 +33,45 @@ use kynput_rs::Pipeline;
 
 use crate::MetricsCallback;
 use crate::VideoCodec;
-use crate::metrics::{
-    Metric, MetricsJSONProducer, NetworkPing, NetworkStats, VideoMetric, VideoMetricData,
-};
+use crate::metrics;
 use crate::platform::VerifyMode;
 use crate::platform::tls::get_resource_path;
 
-#[allow(non_camel_case_types)]
 pub type Display = super::Display;
 
-#[allow(non_camel_case_types)]
-pub struct kyclient_WindowHandle {
+pub struct WindowHandle {
     handle: crate::platform::WindowHandle,
 }
 
-#[allow(non_camel_case_types)]
-pub struct kyclient_ConnectConfig {
+pub struct ConnectConfig {
     config: crate::ConnectConfig,
 }
 
-#[allow(non_camel_case_types)]
-pub struct kyclient_AuthCredentials {
+pub struct AuthCredentials {
     inner: crate::AuthCredentials,
 }
 
-#[allow(non_camel_case_types)]
-pub struct kyclient_StreamingProtocol {
+pub struct StreamingProtocol {
     protocol: crate::StreamingProtocol,
 }
 
-#[allow(non_camel_case_types)]
-pub struct kyclient_StreamingSessionConfig {
+pub struct StreamingSessionConfig {
     config: crate::StreamingSessionConfig,
 }
 
-#[allow(non_camel_case_types)]
-pub struct kyclient_VideoPlayerConfig {
+pub struct VideoPlayerConfig {
     config: crate::VideoPlayerConfig,
 }
 
-#[allow(non_camel_case_types)]
-pub struct kyclient_VideoSessionConfig {
+pub struct VideoSessionConfig {
     config: crate::VideoSessionConfig,
 }
 
-#[allow(non_camel_case_types)]
-pub struct kyclient_AudioSessionConfig {
+pub struct AudioSessionConfig {
     config: crate::AudioSessionConfig,
 }
 
-#[allow(non_camel_case_types)]
-pub struct kyclient_InputSessionConfig {
+pub struct InputSessionConfig {
     config: crate::InputSessionConfig,
 }
 
@@ -102,7 +90,7 @@ pub extern "C" fn kyclient_init_crypto() {
 #[cfg(feature = "kymux")]
 #[derive(Clone, Copy)]
 #[repr(C)]
-pub enum kyclient_KymuxVideoProtocol {
+pub enum KymuxVideoProtocol {
     Reliable,
     GopStream,
     Unreliable,
@@ -110,13 +98,13 @@ pub enum kyclient_KymuxVideoProtocol {
 }
 
 #[cfg(feature = "kymux")]
-impl From<kyclient_KymuxVideoProtocol> for kyctl_common::kymux::VideoProtocol {
-    fn from(value: kyclient_KymuxVideoProtocol) -> Self {
+impl From<KymuxVideoProtocol> for kyctl_common::kymux::VideoProtocol {
+    fn from(value: KymuxVideoProtocol) -> Self {
         match value {
-            kyclient_KymuxVideoProtocol::Reliable => Self::Reliable,
-            kyclient_KymuxVideoProtocol::GopStream => Self::GopStream,
-            kyclient_KymuxVideoProtocol::Unreliable => Self::Unreliable,
-            kyclient_KymuxVideoProtocol::UnreliableFec => Self::UnreliableFec,
+            KymuxVideoProtocol::Reliable => Self::Reliable,
+            KymuxVideoProtocol::GopStream => Self::GopStream,
+            KymuxVideoProtocol::Unreliable => Self::Unreliable,
+            KymuxVideoProtocol::UnreliableFec => Self::UnreliableFec,
         }
     }
 }
@@ -124,19 +112,19 @@ impl From<kyclient_KymuxVideoProtocol> for kyctl_common::kymux::VideoProtocol {
 #[cfg(feature = "kymux")]
 #[derive(Clone, Copy)]
 #[repr(C)]
-pub enum kyclient_KymuxAudioProtocol {
+pub enum KymuxAudioProtocol {
     Reliable,
     Unreliable,
     UnreliableFec,
 }
 
 #[cfg(feature = "kymux")]
-impl From<kyclient_KymuxAudioProtocol> for kyctl_common::kymux::AudioProtocol {
-    fn from(value: kyclient_KymuxAudioProtocol) -> Self {
+impl From<KymuxAudioProtocol> for kyctl_common::kymux::AudioProtocol {
+    fn from(value: KymuxAudioProtocol) -> Self {
         match value {
-            kyclient_KymuxAudioProtocol::Reliable => Self::Reliable,
-            kyclient_KymuxAudioProtocol::Unreliable => Self::Unreliable,
-            kyclient_KymuxAudioProtocol::UnreliableFec => Self::UnreliableFec,
+            KymuxAudioProtocol::Reliable => Self::Reliable,
+            KymuxAudioProtocol::Unreliable => Self::Unreliable,
+            KymuxAudioProtocol::UnreliableFec => Self::UnreliableFec,
         }
     }
 }
@@ -248,12 +236,12 @@ pub unsafe extern "C" fn kyclient_set_android_logger() {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_windowshandle_set_android_context(
     awindow_handler: *mut c_void,
-) -> Box<kyclient_WindowHandle> {
+) -> Box<WindowHandle> {
     log::info!(
         "kyclient_windowshandle_set_android_context {:?}",
         awindow_handler
     );
-    Box::new(kyclient_WindowHandle {
+    Box::new(WindowHandle {
         handle: crate::platform::WindowHandle::Android(awindow_handler as u64),
     })
 }
@@ -261,8 +249,8 @@ pub unsafe extern "C" fn kyclient_windowshandle_set_android_context(
 /// Returns: (transfer full)
 #[cfg(target_os = "linux")]
 #[unsafe(no_mangle)]
-pub extern "C" fn kyclient_windowshandle_from_x11(handle: u64) -> Box<kyclient_WindowHandle> {
-    Box::new(kyclient_WindowHandle {
+pub extern "C" fn kyclient_windowshandle_from_x11(handle: u64) -> Box<WindowHandle> {
+    Box::new(WindowHandle {
         handle: crate::platform::WindowHandle::Xlib(handle),
     })
 }
@@ -270,10 +258,8 @@ pub extern "C" fn kyclient_windowshandle_from_x11(handle: u64) -> Box<kyclient_W
 /// Returns: (transfer full)
 #[cfg(target_os = "macos")]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn kyclient_windowshandle_from_ns_view(
-    handle: u64,
-) -> Box<kyclient_WindowHandle> {
-    Box::new(kyclient_WindowHandle {
+pub unsafe extern "C" fn kyclient_windowshandle_from_ns_view(handle: u64) -> Box<WindowHandle> {
+    Box::new(WindowHandle {
         handle: crate::platform::WindowHandle::AppKit(handle),
     })
 }
@@ -281,10 +267,8 @@ pub unsafe extern "C" fn kyclient_windowshandle_from_ns_view(
 /// Returns: (transfer full)
 #[cfg(any(target_os = "ios", target_os = "tvos", target_os = "visionos"))]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn kyclient_windowshandle_from_ui_view(
-    handle: u64,
-) -> Box<kyclient_WindowHandle> {
-    Box::new(kyclient_WindowHandle {
+pub unsafe extern "C" fn kyclient_windowshandle_from_ui_view(handle: u64) -> Box<WindowHandle> {
+    Box::new(WindowHandle {
         handle: crate::platform::WindowHandle::UiKit(handle),
     })
 }
@@ -292,8 +276,8 @@ pub unsafe extern "C" fn kyclient_windowshandle_from_ui_view(
 /// Returns: (transfer full)
 #[cfg(target_os = "windows")]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn kyclient_windowshandle_from_hwnd(hwnd: u64) -> Box<kyclient_WindowHandle> {
-    Box::new(kyclient_WindowHandle {
+pub unsafe extern "C" fn kyclient_windowshandle_from_hwnd(hwnd: u64) -> Box<WindowHandle> {
+    Box::new(WindowHandle {
         handle: crate::platform::WindowHandle::Win32(hwnd),
     })
 }
@@ -303,7 +287,7 @@ pub unsafe extern "C" fn kyclient_windowshandle_from_hwnd(hwnd: u64) -> Box<kycl
 pub unsafe extern "C" fn kyclient_auth_credentials_new_basic(
     username: *const c_char,
     password: *const c_char,
-) -> Option<Box<kyclient_AuthCredentials>> {
+) -> Option<Box<AuthCredentials>> {
     unsafe {
         let Ok(username) = CStr::from_ptr(username).to_str() else {
             warn!("Fail to convert username");
@@ -317,7 +301,7 @@ pub unsafe extern "C" fn kyclient_auth_credentials_new_basic(
         };
         let password = password.to_owned();
 
-        Some(Box::new(kyclient_AuthCredentials {
+        Some(Box::new(AuthCredentials {
             inner: crate::AuthCredentials::Basic { username, password },
         }))
     }
@@ -326,7 +310,7 @@ pub unsafe extern "C" fn kyclient_auth_credentials_new_basic(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_auth_credentials_new_jwt(
     token: *const c_char,
-) -> Option<Box<kyclient_AuthCredentials>> {
+) -> Option<Box<AuthCredentials>> {
     unsafe {
         let Ok(token) = CStr::from_ptr(token).to_str() else {
             warn!("Fail to convert token");
@@ -334,7 +318,7 @@ pub unsafe extern "C" fn kyclient_auth_credentials_new_jwt(
         };
         let token = token.to_owned();
 
-        Some(Box::new(kyclient_AuthCredentials {
+        Some(Box::new(AuthCredentials {
             inner: crate::AuthCredentials::Jwt { token },
         }))
     }
@@ -345,7 +329,7 @@ pub unsafe extern "C" fn kyclient_auth_credentials_new_jwt(
 /// `token` must be a valid non-null null-terminated C string.
 pub unsafe extern "C" fn kyclient_auth_credentials_new_oidc(
     token: *const c_char,
-) -> Option<Box<kyclient_AuthCredentials>> {
+) -> Option<Box<AuthCredentials>> {
     unsafe {
         let Ok(token) = CStr::from_ptr(token).to_str() else {
             warn!("Failed to convert OIDC token");
@@ -353,7 +337,7 @@ pub unsafe extern "C" fn kyclient_auth_credentials_new_oidc(
         };
         let token = token.to_owned();
 
-        Some(Box::new(kyclient_AuthCredentials {
+        Some(Box::new(AuthCredentials {
             inner: crate::AuthCredentials::Oidc { token },
         }))
     }
@@ -364,8 +348,8 @@ pub unsafe extern "C" fn kyclient_auth_credentials_new_oidc(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_connect_config_default(
     host: *const c_char,
-    credentials: Box<kyclient_AuthCredentials>,
-    out_config: *mut *mut kyclient_ConnectConfig,
+    credentials: Box<AuthCredentials>,
+    out_config: *mut *mut ConnectConfig,
 ) -> c_int {
     unsafe {
         let Ok(host) = CStr::from_ptr(host).to_str() else {
@@ -382,7 +366,7 @@ pub unsafe extern "C" fn kyclient_connect_config_default(
             auto_reconnection: false,
         };
 
-        *out_config = Box::into_raw(Box::new(kyclient_ConnectConfig { config }));
+        *out_config = Box::into_raw(Box::new(ConnectConfig { config }));
         0
     }
 }
@@ -390,8 +374,8 @@ pub unsafe extern "C" fn kyclient_connect_config_default(
 /// @credentials: (transfer full)
 #[unsafe(no_mangle)]
 pub extern "C" fn kyclient_connect_config_set_credentials(
-    config: &mut kyclient_ConnectConfig,
-    credentials: Box<kyclient_AuthCredentials>,
+    config: &mut ConnectConfig,
+    credentials: Box<AuthCredentials>,
 ) -> c_int {
     config.config.credentials = credentials.inner;
 
@@ -400,7 +384,7 @@ pub extern "C" fn kyclient_connect_config_set_credentials(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_connect_config_set_tls_host(
-    config: &mut kyclient_ConnectConfig,
+    config: &mut ConnectConfig,
     tls_host: *const c_char,
 ) -> c_int {
     unsafe {
@@ -418,7 +402,7 @@ pub unsafe extern "C" fn kyclient_connect_config_set_tls_host(
 #[unsafe(no_mangle)]
 #[deprecated = "use kyclient_connect_config_set_tls_root_cert_path"]
 pub unsafe extern "C" fn kyclient_connect_config_set_tls_root_cert(
-    config: &mut kyclient_ConnectConfig,
+    config: &mut ConnectConfig,
     tls_root_cert: *const c_char,
 ) -> c_int {
     unsafe { kyclient_connect_config_set_tls_root_cert_path(config, tls_root_cert) }
@@ -433,7 +417,7 @@ pub unsafe extern "C" fn kyclient_connect_config_set_tls_root_cert(
 /// The path is resolved relative to the executable directory if it's a relative path.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_connect_config_set_tls_root_cert_path(
-    config: &mut kyclient_ConnectConfig,
+    config: &mut ConnectConfig,
     path: *const c_char,
 ) -> c_int {
     unsafe {
@@ -483,7 +467,7 @@ pub unsafe extern "C" fn kyclient_connect_config_set_tls_root_cert_path(
 /// @bytes: (array length=len)
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_connect_config_set_tls_root_cert_bytes(
-    config: &mut kyclient_ConnectConfig,
+    config: &mut ConnectConfig,
     bytes: *const c_char,
     len: libc::size_t,
 ) -> c_int {
@@ -510,16 +494,13 @@ pub unsafe extern "C" fn kyclient_connect_config_set_tls_root_cert_bytes(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn kyclient_connect_config_set_streamer_port(
-    config: &mut kyclient_ConnectConfig,
-    port: u16,
-) {
+pub extern "C" fn kyclient_connect_config_set_streamer_port(config: &mut ConnectConfig, port: u16) {
     config.config.port = port;
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn kyclient_connect_config_set_auto_reconnection(
-    config: &mut kyclient_ConnectConfig,
+    config: &mut ConnectConfig,
     enabled: bool,
 ) {
     config.config.auto_reconnection = enabled;
@@ -527,7 +508,7 @@ pub extern "C" fn kyclient_connect_config_set_auto_reconnection(
 
 /// @cfg: (transfer full)
 #[unsafe(no_mangle)]
-pub extern "C" fn kyclient_connect_config_unref(cfg: Option<Box<kyclient_ConnectConfig>>) {
+pub extern "C" fn kyclient_connect_config_unref(cfg: Option<Box<ConnectConfig>>) {
     drop(cfg);
 }
 
@@ -535,7 +516,7 @@ pub extern "C" fn kyclient_connect_config_unref(cfg: Option<Box<kyclient_Connect
 /// The fingerprint should be in format "sha256:xx:xx:xx:..."
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_connect_config_set_tls_fingerprint(
-    config: &mut kyclient_ConnectConfig,
+    config: &mut ConnectConfig,
     fingerprint: *const c_char,
 ) -> c_int {
     unsafe {
@@ -550,25 +531,21 @@ pub unsafe extern "C" fn kyclient_connect_config_set_tls_fingerprint(
 
 /// Skip TLS verification (DANGER - for testing only)
 #[unsafe(no_mangle)]
-pub extern "C" fn kyclient_connect_config_skip_tls_verification(
-    config: &mut kyclient_ConnectConfig,
-) {
+pub extern "C" fn kyclient_connect_config_skip_tls_verification(config: &mut ConnectConfig) {
     config.config.skip_tls_verification();
 }
 
 /// TOFU prompt type
 #[repr(C)]
-#[allow(non_camel_case_types)]
-pub enum kyclient_TofuPromptType {
+pub enum TofuPromptType {
     UnknownHost,
     CertificateChanged,
 }
 
 /// TOFU prompt data passed to callback
 #[repr(C)]
-#[allow(non_camel_case_types)]
-pub struct kyclient_TofuPrompt {
-    pub prompt_type: kyclient_TofuPromptType,
+pub struct TofuPrompt {
+    pub prompt_type: TofuPromptType,
     pub hostname: *const c_char,
     pub fingerprint: *const c_char,          // For UnknownHost
     pub expected_fingerprint: *const c_char, // For CertificateChanged
@@ -576,9 +553,8 @@ pub struct kyclient_TofuPrompt {
 }
 
 /// TOFU callback type - returns true to accept, false to reject
-#[allow(non_camel_case_types)]
-pub type kyclient_TofuCallback =
-    Option<unsafe extern "C" fn(prompt: *const kyclient_TofuPrompt, userdata: *mut c_void) -> bool>;
+pub type TofuCallback =
+    Option<unsafe extern "C" fn(prompt: *const TofuPrompt, userdata: *mut c_void) -> bool>;
 
 /// Wrapper for raw pointer to make it Send + Sync.
 /// SAFETY: The caller must ensure the pointer remains valid and thread-safe.
@@ -596,11 +572,11 @@ impl SendSyncPtr {
 /// Enable TOFU (Trust-On-First-Use) verification with callback
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_connect_config_enable_tofu(
-    config: &mut kyclient_ConnectConfig,
-    callback: kyclient_TofuCallback,
+    config: &mut ConnectConfig,
+    callback: TofuCallback,
     userdata: *mut c_void,
 ) -> c_int {
-    use crate::platform::tls::TofuPrompt;
+    use crate::platform::tls;
 
     let Some(callback) = callback else {
         warn!("TOFU callback is null");
@@ -610,26 +586,26 @@ pub unsafe extern "C" fn kyclient_connect_config_enable_tofu(
     // Wrap the C callback in a Rust closure
     // SAFETY: userdata must remain valid for the lifetime of the connection
     let userdata = SendSyncPtr(userdata);
-    let prompt_callback = move |prompt: TofuPrompt| -> bool {
+    let prompt_callback = move |prompt: tls::TofuPrompt| -> bool {
         let userdata = userdata.as_ptr();
 
         let (prompt_type, hostname_cstr, fingerprint_cstr, expected_cstr, actual_cstr) =
             match &prompt {
-                TofuPrompt::UnknownHost {
+                tls::TofuPrompt::UnknownHost {
                     hostname,
                     fingerprint,
                 } => {
                     let hostname_cstr = CString::new(hostname.as_str()).unwrap_or_default();
                     let fingerprint_cstr = CString::new(fingerprint.as_str()).unwrap_or_default();
                     (
-                        kyclient_TofuPromptType::UnknownHost,
+                        TofuPromptType::UnknownHost,
                         hostname_cstr,
                         fingerprint_cstr,
                         CString::default(),
                         CString::default(),
                     )
                 }
-                TofuPrompt::CertificateChanged {
+                tls::TofuPrompt::CertificateChanged {
                     hostname,
                     expected_fingerprint,
                     actual_fingerprint,
@@ -639,7 +615,7 @@ pub unsafe extern "C" fn kyclient_connect_config_enable_tofu(
                         CString::new(expected_fingerprint.as_str()).unwrap_or_default();
                     let actual_cstr = CString::new(actual_fingerprint.as_str()).unwrap_or_default();
                     (
-                        kyclient_TofuPromptType::CertificateChanged,
+                        TofuPromptType::CertificateChanged,
                         hostname_cstr,
                         CString::default(),
                         expected_cstr,
@@ -648,7 +624,7 @@ pub unsafe extern "C" fn kyclient_connect_config_enable_tofu(
                 }
             };
 
-        let c_prompt = kyclient_TofuPrompt {
+        let c_prompt = TofuPrompt {
             prompt_type,
             hostname: hostname_cstr.as_ptr(),
             fingerprint: fingerprint_cstr.as_ptr(),
@@ -665,7 +641,7 @@ pub unsafe extern "C" fn kyclient_connect_config_enable_tofu(
 /// Enable TOFU with auto-accept for new hosts
 #[unsafe(no_mangle)]
 pub extern "C" fn kyclient_connect_config_enable_tofu_auto_accept(
-    config: &mut kyclient_ConnectConfig,
+    config: &mut ConnectConfig,
 ) -> c_int {
     result_to_c_int(config.config.enable_tofu_auto_accept())
 }
@@ -673,7 +649,7 @@ pub extern "C" fn kyclient_connect_config_enable_tofu_auto_accept(
 /// Enable strict known_hosts mode (reject unknown hosts)
 #[unsafe(no_mangle)]
 pub extern "C" fn kyclient_connect_config_enable_known_hosts_strict(
-    config: &mut kyclient_ConnectConfig,
+    config: &mut ConnectConfig,
 ) -> c_int {
     result_to_c_int(config.config.enable_known_hosts_strict())
 }
@@ -723,8 +699,7 @@ pub unsafe extern "C" fn kyclient_known_hosts_remove(hostname: *const c_char) ->
 
 /// Known hosts entry for listing
 #[repr(C)]
-#[allow(non_camel_case_types)]
-pub struct kyclient_KnownHostEntry {
+pub struct KnownHostEntry {
     pub hostname: *mut c_char,
     pub fingerprint: *mut c_char,
 }
@@ -735,7 +710,7 @@ pub struct kyclient_KnownHostEntry {
 /// @out_count: (out)
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_known_hosts_list(
-    out_entries: *mut *mut kyclient_KnownHostEntry,
+    out_entries: *mut *mut KnownHostEntry,
     out_count: *mut usize,
 ) -> c_int {
     unsafe {
@@ -753,8 +728,8 @@ pub unsafe extern "C" fn kyclient_known_hosts_list(
             return 0;
         }
 
-        let entries = libc::malloc(count * std::mem::size_of::<kyclient_KnownHostEntry>())
-            as *mut kyclient_KnownHostEntry;
+        let entries =
+            libc::malloc(count * std::mem::size_of::<KnownHostEntry>()) as *mut KnownHostEntry;
         if entries.is_null() {
             return -1;
         }
@@ -777,7 +752,7 @@ pub unsafe extern "C" fn kyclient_known_hosts_list(
 /// @entries: (transfer full) (array length=count)
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_known_hosts_list_free(
-    entries: *mut kyclient_KnownHostEntry,
+    entries: *mut KnownHostEntry,
     count: usize,
 ) {
     unsafe {
@@ -802,38 +777,36 @@ pub unsafe extern "C" fn kyclient_known_hosts_list_free(
 /// Returns: (transfer full)
 #[cfg(feature = "rtp")]
 #[unsafe(no_mangle)]
-pub extern "C" fn kyclient_streaming_protocol_rtp() -> Box<kyclient_StreamingProtocol> {
+pub extern "C" fn kyclient_streaming_protocol_rtp() -> Box<StreamingProtocol> {
     let protocol = crate::StreamingProtocol::Rtp;
 
-    Box::new(kyclient_StreamingProtocol { protocol })
+    Box::new(StreamingProtocol { protocol })
 }
 
 /// Returns: (transfer full)
 #[cfg(feature = "kymux")]
 #[unsafe(no_mangle)]
 pub extern "C" fn kyclient_streaming_protocol_kymux(
-    video_protocol: kyclient_KymuxVideoProtocol,
-    audio_protocol: kyclient_KymuxAudioProtocol,
-) -> Box<kyclient_StreamingProtocol> {
+    video_protocol: KymuxVideoProtocol,
+    audio_protocol: KymuxAudioProtocol,
+) -> Box<StreamingProtocol> {
     let protocol = crate::StreamingProtocol::Kymux(crate::kymux_backend::KymuxConfig {
         video_protocol: Some(video_protocol.into()),
         audio_protocol: Some(audio_protocol.into()),
     });
 
-    Box::new(kyclient_StreamingProtocol { protocol })
+    Box::new(StreamingProtocol { protocol })
 }
 
 /// @protocol: (transfer full)
 #[unsafe(no_mangle)]
-pub extern "C" fn kyclient_streaming_protocol_unref(
-    protocol: Option<Box<kyclient_StreamingProtocol>>,
-) {
+pub extern "C" fn kyclient_streaming_protocol_unref(protocol: Option<Box<StreamingProtocol>>) {
     drop(protocol);
 }
 
 /// @cfg: (transfer full)
 #[unsafe(no_mangle)]
-pub extern "C" fn kyclient_video_player_config_unref(cfg: Option<Box<kyclient_VideoPlayerConfig>>) {
+pub extern "C" fn kyclient_video_player_config_unref(cfg: Option<Box<VideoPlayerConfig>>) {
     drop(cfg);
 }
 
@@ -841,8 +814,8 @@ pub extern "C" fn kyclient_video_player_config_unref(cfg: Option<Box<kyclient_Vi
 /// @out_config: (out)
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_video_player_config_default(
-    window_handle: Option<Box<kyclient_WindowHandle>>,
-    out_config: *mut *mut kyclient_VideoPlayerConfig,
+    window_handle: Option<Box<WindowHandle>>,
+    out_config: *mut *mut VideoPlayerConfig,
 ) -> c_int {
     unsafe {
         let Some(window_handle) = window_handle else {
@@ -855,7 +828,7 @@ pub unsafe extern "C" fn kyclient_video_player_config_default(
             video_buffer: 0,
         };
 
-        *out_config = Box::into_raw(Box::new(kyclient_VideoPlayerConfig { config }));
+        *out_config = Box::into_raw(Box::new(VideoPlayerConfig { config }));
         0
     }
 }
@@ -865,8 +838,8 @@ pub unsafe extern "C" fn kyclient_video_player_config_default(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_video_session_config_default(
     display_id: u32,
-    player: *mut kyclient_VideoPlayerConfig,
-    out_config: *mut *mut kyclient_VideoSessionConfig,
+    player: *mut VideoPlayerConfig,
+    out_config: *mut *mut VideoSessionConfig,
 ) -> c_int {
     unsafe {
         let config = crate::VideoSessionConfig {
@@ -877,14 +850,14 @@ pub unsafe extern "C" fn kyclient_video_session_config_default(
             player: (*player).config.clone(),
         };
 
-        *out_config = Box::into_raw(Box::new(kyclient_VideoSessionConfig { config }));
+        *out_config = Box::into_raw(Box::new(VideoSessionConfig { config }));
         0
     }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn kyclient_video_player_config_set_software_decode(
-    config: &mut kyclient_VideoPlayerConfig,
+    config: &mut VideoPlayerConfig,
     software_decode: bool,
 ) {
     config.config.software_decode = software_decode;
@@ -892,7 +865,7 @@ pub extern "C" fn kyclient_video_player_config_set_software_decode(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn kyclient_video_player_config_set_video_buffer(
-    config: &mut kyclient_VideoPlayerConfig,
+    config: &mut VideoPlayerConfig,
     video_buffer: u32,
 ) {
     config.config.video_buffer = video_buffer;
@@ -900,15 +873,13 @@ pub extern "C" fn kyclient_video_player_config_set_video_buffer(
 
 /// @cfg: (transfer full)
 #[unsafe(no_mangle)]
-pub extern "C" fn kyclient_video_session_config_unref(
-    cfg: Option<Box<kyclient_VideoSessionConfig>>,
-) {
+pub extern "C" fn kyclient_video_session_config_unref(cfg: Option<Box<VideoSessionConfig>>) {
     drop(cfg);
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn kyclient_video_session_config_set_yuv444(
-    config: &mut kyclient_VideoSessionConfig,
+    config: &mut VideoSessionConfig,
     yuv444: bool,
 ) {
     config.config.yuv444 = yuv444;
@@ -916,7 +887,7 @@ pub extern "C" fn kyclient_video_session_config_set_yuv444(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn kyclient_video_session_config_set_codec(
-    config: &mut kyclient_VideoSessionConfig,
+    config: &mut VideoSessionConfig,
     codec: VideoCodec,
 ) {
     config.config.codec = codec;
@@ -924,7 +895,7 @@ pub extern "C" fn kyclient_video_session_config_set_codec(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn kyclient_video_session_config_set_intra_refresh(
-    config: &mut kyclient_VideoSessionConfig,
+    config: &mut VideoSessionConfig,
     intra_refresh: bool,
 ) {
     config.config.intra_refresh = Some(intra_refresh);
@@ -933,18 +904,18 @@ pub extern "C" fn kyclient_video_session_config_set_intra_refresh(
 /// @out_config: (out)
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_audio_session_config_default(
-    out_config: *mut *mut kyclient_AudioSessionConfig,
+    out_config: *mut *mut AudioSessionConfig,
 ) -> c_int {
     unsafe {
         let config = crate::AudioSessionConfig { audio_buffer: None };
-        *out_config = Box::into_raw(Box::new(kyclient_AudioSessionConfig { config }));
+        *out_config = Box::into_raw(Box::new(AudioSessionConfig { config }));
         0
     }
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn kyclient_audio_session_config_set_audio_buffer(
-    config: &mut kyclient_AudioSessionConfig,
+    config: &mut AudioSessionConfig,
     audio_buffer: u32,
 ) {
     config.config.audio_buffer = (audio_buffer != 0).then_some(audio_buffer);
@@ -954,7 +925,7 @@ pub extern "C" fn kyclient_audio_session_config_set_audio_buffer(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_input_session_config_default(
     pipeline: *mut kynput_sys::kynput_Pipeline,
-    out_config: *mut *mut kyclient_InputSessionConfig,
+    out_config: *mut *mut InputSessionConfig,
 ) -> c_int {
     unsafe {
         let pipeline = Pipeline::from_ptr(pipeline);
@@ -965,22 +936,20 @@ pub unsafe extern "C" fn kyclient_input_session_config_default(
             clipboard: true,
         };
 
-        *out_config = Box::into_raw(Box::new(kyclient_InputSessionConfig { config }));
+        *out_config = Box::into_raw(Box::new(InputSessionConfig { config }));
         0
     }
 }
 
 /// @cfg: (transfer full)
 #[unsafe(no_mangle)]
-pub extern "C" fn kyclient_input_session_config_unref(
-    cfg: Option<Box<kyclient_InputSessionConfig>>,
-) {
+pub extern "C" fn kyclient_input_session_config_unref(cfg: Option<Box<InputSessionConfig>>) {
     drop(cfg);
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn kyclient_input_session_config_gamepad_force_xbox360(
-    cfg: &mut kyclient_InputSessionConfig,
+    cfg: &mut InputSessionConfig,
     gamepad_force_xbox360: bool,
 ) {
     cfg.config.gamepad_force_xbox360 = Some(gamepad_force_xbox360);
@@ -988,7 +957,7 @@ pub extern "C" fn kyclient_input_session_config_gamepad_force_xbox360(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn kyclient_input_session_config_clipboard(
-    cfg: &mut kyclient_InputSessionConfig,
+    cfg: &mut InputSessionConfig,
     enable: bool,
 ) {
     cfg.config.clipboard = enable;
@@ -997,8 +966,8 @@ pub extern "C" fn kyclient_input_session_config_clipboard(
 /// @out_config: (out)
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_streaming_session_config_default(
-    protocol: &kyclient_StreamingProtocol,
-    out_config: *mut *mut kyclient_StreamingSessionConfig,
+    protocol: &StreamingProtocol,
+    out_config: *mut *mut StreamingSessionConfig,
 ) -> c_int {
     unsafe {
         let config = crate::StreamingSessionConfig {
@@ -1009,7 +978,7 @@ pub unsafe extern "C" fn kyclient_streaming_session_config_default(
             input: None,
         };
 
-        *out_config = Box::into_raw(Box::new(kyclient_StreamingSessionConfig { config }));
+        *out_config = Box::into_raw(Box::new(StreamingSessionConfig { config }));
         0
     }
 }
@@ -1017,14 +986,14 @@ pub unsafe extern "C" fn kyclient_streaming_session_config_default(
 /// @cfg: (transfer full)
 #[unsafe(no_mangle)]
 pub extern "C" fn kyclient_streaming_session_config_unref(
-    cfg: Option<Box<kyclient_StreamingSessionConfig>>,
+    cfg: Option<Box<StreamingSessionConfig>>,
 ) {
     drop(cfg);
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn kyclient_streaming_session_config_set_bitrate(
-    config: &mut kyclient_StreamingSessionConfig,
+    config: &mut StreamingSessionConfig,
     bitrate: u32,
 ) {
     config.config.bitrate = bitrate;
@@ -1032,7 +1001,7 @@ pub extern "C" fn kyclient_streaming_session_config_set_bitrate(
 
 #[unsafe(no_mangle)]
 pub extern "C" fn kyclient_streaming_session_config_get_bitrate(
-    config: &mut kyclient_StreamingSessionConfig,
+    config: &mut StreamingSessionConfig,
 ) -> u32 {
     config.config.bitrate
 }
@@ -1040,8 +1009,8 @@ pub extern "C" fn kyclient_streaming_session_config_get_bitrate(
 /// @audio: (transfer full)
 #[unsafe(no_mangle)]
 pub extern "C" fn kyclient_streaming_session_config_set_audio(
-    config: &mut kyclient_StreamingSessionConfig,
-    audio: Box<kyclient_AudioSessionConfig>,
+    config: &mut StreamingSessionConfig,
+    audio: Box<AudioSessionConfig>,
 ) {
     config.config.audio = Some(audio.config);
 }
@@ -1049,8 +1018,8 @@ pub extern "C" fn kyclient_streaming_session_config_set_audio(
 /// @video: (transfer full)
 #[unsafe(no_mangle)]
 pub extern "C" fn kyclient_streaming_session_config_add_video(
-    config: &mut kyclient_StreamingSessionConfig,
-    video: Box<kyclient_VideoSessionConfig>,
+    config: &mut StreamingSessionConfig,
+    video: Box<VideoSessionConfig>,
 ) {
     config.config.video.push(video.config);
 }
@@ -1058,29 +1027,28 @@ pub extern "C" fn kyclient_streaming_session_config_add_video(
 /// @input: (transfer full)
 #[unsafe(no_mangle)]
 pub extern "C" fn kyclient_streaming_session_config_set_input(
-    config: &mut kyclient_StreamingSessionConfig,
-    input: Box<kyclient_InputSessionConfig>,
+    config: &mut StreamingSessionConfig,
+    input: Box<InputSessionConfig>,
 ) {
     config.config.input = Some(input.config);
 }
 
-#[allow(non_camel_case_types)]
-pub struct kyclient_Client {
+pub struct Client {
     client: crate::Client,
 }
 
 /// Returns: (transfer full)
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_client_new(
-    connect_config: *mut kyclient_ConnectConfig,
+    connect_config: *mut ConnectConfig,
     metrics: bool,
-) -> Option<Box<kyclient_Client>> {
+) -> Option<Box<Client>> {
     unsafe {
         let connect_config = (*connect_config).config.clone();
 
         let client = crate::Client::new(connect_config, metrics);
         if let Ok(client) = client {
-            Some(Box::new(kyclient_Client { client }))
+            Some(Box::new(Client { client }))
         } else {
             None
         }
@@ -1088,7 +1056,7 @@ pub unsafe extern "C" fn kyclient_client_new(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn kyclient_client_stop(client: *mut kyclient_Client) -> c_int {
+pub unsafe extern "C" fn kyclient_client_stop(client: *mut Client) -> c_int {
     unsafe {
         let ret = (&(*client)).client.stop();
         result_to_c_int(ret)
@@ -1098,11 +1066,11 @@ pub unsafe extern "C" fn kyclient_client_stop(client: *mut kyclient_Client) -> c
 #[unsafe(no_mangle)]
 /// # Safety
 /// `client` must be a valid non-null pointer. `credentials` must be a pointer to a
-/// `kyclient_AuthCredentials` allocated by this library; ownership is transferred and
+/// `AuthCredentials` allocated by this library; ownership is transferred and
 /// the caller must not use it after this call.
 pub unsafe extern "C" fn kyclient_client_update_credentials(
-    client: *mut kyclient_Client,
-    credentials: Box<kyclient_AuthCredentials>,
+    client: *mut Client,
+    credentials: Box<AuthCredentials>,
 ) -> c_int {
     unsafe {
         let ret = (*client).client.update_credentials(credentials.inner);
@@ -1113,11 +1081,11 @@ pub unsafe extern "C" fn kyclient_client_update_credentials(
 #[unsafe(no_mangle)]
 /// # Safety
 /// `client` must be a valid non-null pointer. `credentials` must be a pointer to a
-/// `kyclient_AuthCredentials` allocated by this library; ownership is transferred and
+/// `AuthCredentials` allocated by this library; ownership is transferred and
 /// the caller must not use it after this call.
 pub unsafe extern "C" fn kyclient_client_renew_session(
-    client: *mut kyclient_Client,
-    credentials: Box<kyclient_AuthCredentials>,
+    client: *mut Client,
+    credentials: Box<AuthCredentials>,
 ) -> c_int {
     unsafe {
         let ret = (*client).client.renew_session(credentials.inner);
@@ -1127,7 +1095,7 @@ pub unsafe extern "C" fn kyclient_client_renew_session(
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_client_disconnect_and_stop(
-    client: *mut kyclient_Client,
+    client: *mut Client,
     stop_session: bool,
 ) -> c_int {
     unsafe {
@@ -1137,7 +1105,7 @@ pub unsafe extern "C" fn kyclient_client_disconnect_and_stop(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn kyclient_client_connect(client: *mut kyclient_Client) -> c_int {
+pub unsafe extern "C" fn kyclient_client_connect(client: *mut Client) -> c_int {
     unsafe {
         let ret = (&(*client)).client.connect();
         result_to_c_int(ret)
@@ -1145,7 +1113,7 @@ pub unsafe extern "C" fn kyclient_client_connect(client: *mut kyclient_Client) -
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn kyclient_client_disconnect(client: *mut kyclient_Client) -> c_int {
+pub unsafe extern "C" fn kyclient_client_disconnect(client: *mut Client) -> c_int {
     unsafe {
         let ret = (&(*client)).client.disconnect();
         result_to_c_int(ret)
@@ -1155,8 +1123,8 @@ pub unsafe extern "C" fn kyclient_client_disconnect(client: *mut kyclient_Client
 /// @session_config: (transfer none)
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_client_start_streaming(
-    client: *mut kyclient_Client,
-    session_config: *mut kyclient_StreamingSessionConfig,
+    client: *mut Client,
+    session_config: *mut StreamingSessionConfig,
 ) -> c_int {
     unsafe {
         let session_config = (*session_config).config.clone();
@@ -1167,7 +1135,7 @@ pub unsafe extern "C" fn kyclient_client_start_streaming(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn kyclient_client_stop_streaming(client: *mut kyclient_Client) -> c_int {
+pub unsafe extern "C" fn kyclient_client_stop_streaming(client: *mut Client) -> c_int {
     unsafe {
         let ret = (&(*client)).client.stop_streaming();
         result_to_c_int(ret)
@@ -1176,7 +1144,7 @@ pub unsafe extern "C" fn kyclient_client_stop_streaming(client: *mut kyclient_Cl
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_client_audio_set_volume(
-    client: *mut kyclient_Client,
+    client: *mut Client,
     volume: f32,
 ) -> c_int {
     unsafe {
@@ -1186,10 +1154,7 @@ pub unsafe extern "C" fn kyclient_client_audio_set_volume(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn kyclient_client_audio_set_mute(
-    client: *mut kyclient_Client,
-    mute: bool,
-) -> c_int {
+pub unsafe extern "C" fn kyclient_client_audio_set_mute(client: *mut Client, mute: bool) -> c_int {
     unsafe {
         let ret = (&(*client)).client.audio_set_mute(mute);
         result_to_c_int(ret)
@@ -1197,10 +1162,7 @@ pub unsafe extern "C" fn kyclient_client_audio_set_mute(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn kyclient_client_set_bitrate(
-    client: *mut kyclient_Client,
-    bitrate: u32,
-) -> c_int {
+pub unsafe extern "C" fn kyclient_client_set_bitrate(client: *mut Client, bitrate: u32) -> c_int {
     unsafe {
         let ret = (&(*client)).client.set_bitrate(bitrate);
         result_to_c_int(ret)
@@ -1209,15 +1171,14 @@ pub unsafe extern "C" fn kyclient_client_set_bitrate(
 
 /// @client: (transfer full)
 #[unsafe(no_mangle)]
-pub extern "C" fn kyclient_client_unref(client: Box<kyclient_Client>) {
+pub extern "C" fn kyclient_client_unref(client: Box<Client>) {
     drop(client);
 }
 
-#[allow(non_camel_case_types)]
 pub type Event = super::Event;
 
 #[repr(C)]
-pub enum kyclient_EventType {
+pub enum EventType {
     ControlPlaneConnected,
     ControlPlaneConnectFailed,
     AuthenticationRequired,
@@ -1240,7 +1201,7 @@ pub enum kyclient_EventType {
 }
 
 #[repr(C)]
-pub enum kyclient_ConnectFailedReason {
+pub enum ConnectFailedReason {
     NetworkError,
     Timeout,
     Unauthorized,
@@ -1252,7 +1213,7 @@ pub enum kyclient_ConnectFailedReason {
 }
 
 #[repr(C)]
-pub enum kyclient_StopReason {
+pub enum StopReason {
     Requested,
     ControlPlaneClosed,
     ControlPlaneIoError,
@@ -1261,14 +1222,14 @@ pub enum kyclient_StopReason {
 }
 
 #[repr(C)]
-pub enum kyclient_StreamerPipelineType {
+pub enum StreamerPipelineType {
     EnumerateDisplays,
     Audio,
     Video,
 }
 
 #[repr(C)]
-pub enum kyclient_StreamerPipelineStage {
+pub enum StreamerPipelineStage {
     Process,
     Initialization,
     Acquisition,
@@ -1276,36 +1237,34 @@ pub enum kyclient_StreamerPipelineStage {
 }
 
 #[repr(C)]
-pub enum kyclient_StreamerPipelineEventType {
+pub enum StreamerPipelineEventType {
     Stopped,
     Error,
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn kyclient_event_get_type(event: *const Event) -> kyclient_EventType {
+pub unsafe extern "C" fn kyclient_event_get_type(event: *const Event) -> EventType {
     unsafe {
         match *event {
-            Event::ControlPlaneConnected { .. } => kyclient_EventType::ControlPlaneConnected,
-            Event::ControlPlaneConnectFailed { .. } => {
-                kyclient_EventType::ControlPlaneConnectFailed
-            }
-            Event::AuthenticationRequired { .. } => kyclient_EventType::AuthenticationRequired,
-            Event::DataPlaneConnectFailed => kyclient_EventType::DataPlaneConnectFailed,
-            Event::DataPlaneClosed => kyclient_EventType::DataPlaneClosed,
-            Event::Reconnecting { .. } => kyclient_EventType::Reconnecting,
-            Event::Reconnected { .. } => kyclient_EventType::Reconnected,
-            Event::ReconnectionFailed => kyclient_EventType::ReconnectionFailed,
-            Event::Stopped { .. } => kyclient_EventType::Stopped,
-            Event::DisplayListUpdated { .. } => kyclient_EventType::DisplayListUpdated,
-            Event::InputServiceConnected => kyclient_EventType::InputServiceConnected,
-            Event::InputServiceDisconnected => kyclient_EventType::InputServiceDisconnected,
-            Event::StreamingStarted => kyclient_EventType::StreamingStarted,
-            Event::StreamingStartFailed => kyclient_EventType::StreamingStartFailed,
-            Event::StreamingStopped => kyclient_EventType::StreamingStopped,
-            Event::StreamerPipelineEvent { .. } => kyclient_EventType::StreamerPipelineEvent,
-            Event::AudioVolumeChanged { .. } => kyclient_EventType::AudioVolumeChanged,
-            Event::AudioMuteChanged { .. } => kyclient_EventType::AudioMuteChanged,
-            Event::BitrateChanged { .. } => kyclient_EventType::BitrateChanged,
+            Event::ControlPlaneConnected { .. } => EventType::ControlPlaneConnected,
+            Event::ControlPlaneConnectFailed { .. } => EventType::ControlPlaneConnectFailed,
+            Event::AuthenticationRequired { .. } => EventType::AuthenticationRequired,
+            Event::DataPlaneConnectFailed => EventType::DataPlaneConnectFailed,
+            Event::DataPlaneClosed => EventType::DataPlaneClosed,
+            Event::Reconnecting { .. } => EventType::Reconnecting,
+            Event::Reconnected { .. } => EventType::Reconnected,
+            Event::ReconnectionFailed => EventType::ReconnectionFailed,
+            Event::Stopped { .. } => EventType::Stopped,
+            Event::DisplayListUpdated { .. } => EventType::DisplayListUpdated,
+            Event::InputServiceConnected => EventType::InputServiceConnected,
+            Event::InputServiceDisconnected => EventType::InputServiceDisconnected,
+            Event::StreamingStarted => EventType::StreamingStarted,
+            Event::StreamingStartFailed => EventType::StreamingStartFailed,
+            Event::StreamingStopped => EventType::StreamingStopped,
+            Event::StreamerPipelineEvent { .. } => EventType::StreamerPipelineEvent,
+            Event::AudioVolumeChanged { .. } => EventType::AudioVolumeChanged,
+            Event::AudioMuteChanged { .. } => EventType::AudioMuteChanged,
+            Event::BitrateChanged { .. } => EventType::BitrateChanged,
         }
     }
 }
@@ -1338,7 +1297,7 @@ pub unsafe extern "C" fn kyclient_event_unpack_control_plane_connected(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_event_unpack_connect_failed(
     event: &Event,
-    out_reason: *mut kyclient_ConnectFailedReason,
+    out_reason: *mut ConnectFailedReason,
 ) -> c_int {
     unsafe {
         let Event::ControlPlaneConnectFailed { reason } = event else {
@@ -1346,18 +1305,14 @@ pub unsafe extern "C" fn kyclient_event_unpack_connect_failed(
         };
 
         *out_reason = match reason {
-            crate::ConnectFailedReason::NetworkError => kyclient_ConnectFailedReason::NetworkError,
-            crate::ConnectFailedReason::Timeout => kyclient_ConnectFailedReason::Timeout,
-            crate::ConnectFailedReason::Unauthorized => kyclient_ConnectFailedReason::Unauthorized,
-            crate::ConnectFailedReason::ServerError => kyclient_ConnectFailedReason::ServerError,
-            crate::ConnectFailedReason::TlsVerification => {
-                kyclient_ConnectFailedReason::TlsVerification
-            }
-            crate::ConnectFailedReason::TlsConfiguration => {
-                kyclient_ConnectFailedReason::TlsConfiguration
-            }
-            crate::ConnectFailedReason::WebSocket => kyclient_ConnectFailedReason::WebSocket,
-            crate::ConnectFailedReason::Protocol => kyclient_ConnectFailedReason::Protocol,
+            crate::ConnectFailedReason::NetworkError => ConnectFailedReason::NetworkError,
+            crate::ConnectFailedReason::Timeout => ConnectFailedReason::Timeout,
+            crate::ConnectFailedReason::Unauthorized => ConnectFailedReason::Unauthorized,
+            crate::ConnectFailedReason::ServerError => ConnectFailedReason::ServerError,
+            crate::ConnectFailedReason::TlsVerification => ConnectFailedReason::TlsVerification,
+            crate::ConnectFailedReason::TlsConfiguration => ConnectFailedReason::TlsConfiguration,
+            crate::ConnectFailedReason::WebSocket => ConnectFailedReason::WebSocket,
+            crate::ConnectFailedReason::Protocol => ConnectFailedReason::Protocol,
         };
 
         0
@@ -1414,7 +1369,7 @@ pub unsafe extern "C" fn kyclient_event_free_authentication_required(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_event_unpack_stopped(
     event: &Event,
-    out_reason: *mut kyclient_StopReason,
+    out_reason: *mut StopReason,
 ) -> c_int {
     unsafe {
         let Event::Stopped { reason } = event else {
@@ -1422,11 +1377,11 @@ pub unsafe extern "C" fn kyclient_event_unpack_stopped(
         };
 
         *out_reason = match reason {
-            crate::StopReason::Requested => kyclient_StopReason::Requested,
-            crate::StopReason::ControlPlaneClosed => kyclient_StopReason::ControlPlaneClosed,
-            crate::StopReason::ControlPlaneIoError => kyclient_StopReason::ControlPlaneIoError,
-            crate::StopReason::ControlPlaneTimeout => kyclient_StopReason::ControlPlaneTimeout,
-            crate::StopReason::DecodeError => kyclient_StopReason::DecodeError,
+            crate::StopReason::Requested => StopReason::Requested,
+            crate::StopReason::ControlPlaneClosed => StopReason::ControlPlaneClosed,
+            crate::StopReason::ControlPlaneIoError => StopReason::ControlPlaneIoError,
+            crate::StopReason::ControlPlaneTimeout => StopReason::ControlPlaneTimeout,
+            crate::StopReason::DecodeError => StopReason::DecodeError,
         };
 
         0
@@ -1513,9 +1468,9 @@ pub extern "C" fn kyclient_event_free_displays(displays: Box<Display>) {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_event_unpack_streamer_pipeline_event(
     event: &Event,
-    out_type: *mut kyclient_StreamerPipelineType,
-    out_stage: *mut kyclient_StreamerPipelineStage,
-    out_event: *mut kyclient_StreamerPipelineEventType,
+    out_type: *mut StreamerPipelineType,
+    out_stage: *mut StreamerPipelineStage,
+    out_event: *mut StreamerPipelineEventType,
 ) -> c_int {
     unsafe {
         let Event::StreamerPipelineEvent {
@@ -1533,28 +1488,22 @@ pub unsafe extern "C" fn kyclient_event_unpack_streamer_pipeline_event(
 
         *out_type = match type_ {
             crate::StreamerPipelineType::EnumerateDisplays => {
-                kyclient_StreamerPipelineType::EnumerateDisplays
+                StreamerPipelineType::EnumerateDisplays
             }
-            crate::StreamerPipelineType::Audio => kyclient_StreamerPipelineType::Audio,
-            crate::StreamerPipelineType::Video => kyclient_StreamerPipelineType::Video,
+            crate::StreamerPipelineType::Audio => StreamerPipelineType::Audio,
+            crate::StreamerPipelineType::Video => StreamerPipelineType::Video,
         };
 
         *out_stage = match stage {
-            crate::StreamerPipelineStage::Process => kyclient_StreamerPipelineStage::Process,
-            crate::StreamerPipelineStage::Initialization => {
-                kyclient_StreamerPipelineStage::Initialization
-            }
-            crate::StreamerPipelineStage::Acquisition => {
-                kyclient_StreamerPipelineStage::Acquisition
-            }
-            crate::StreamerPipelineStage::Encoder => kyclient_StreamerPipelineStage::Encoder,
+            crate::StreamerPipelineStage::Process => StreamerPipelineStage::Process,
+            crate::StreamerPipelineStage::Initialization => StreamerPipelineStage::Initialization,
+            crate::StreamerPipelineStage::Acquisition => StreamerPipelineStage::Acquisition,
+            crate::StreamerPipelineStage::Encoder => StreamerPipelineStage::Encoder,
         };
 
         *out_event = match event {
-            crate::StreamerPipelineEventType::Stopped => {
-                kyclient_StreamerPipelineEventType::Stopped
-            }
-            crate::StreamerPipelineEventType::Error => kyclient_StreamerPipelineEventType::Error,
+            crate::StreamerPipelineEventType::Stopped => StreamerPipelineEventType::Stopped,
+            crate::StreamerPipelineEventType::Error => StreamerPipelineEventType::Error,
         };
 
         0
@@ -1614,15 +1563,15 @@ pub unsafe extern "C" fn kyclient_event_unpack_bitrate_changed(
 
 #[repr(C)]
 #[derive(Clone, Copy)]
-pub struct kyclient_EventHandler {
+pub struct EventHandler {
     on_event: Option<extern "C" fn(event: *const Event, userdata: *mut c_void)>,
     userdata: *mut c_void,
 }
 
-unsafe impl Send for kyclient_EventHandler {}
-unsafe impl Sync for kyclient_EventHandler {}
+unsafe impl Send for EventHandler {}
+unsafe impl Sync for EventHandler {}
 
-impl crate::event_manager::EventSink for kyclient_EventHandler {
+impl crate::event_manager::EventSink for EventHandler {
     fn on_event(&self, event: &crate::Event) {
         if let Some(on_event) = self.on_event {
             on_event(event, self.userdata);
@@ -1632,8 +1581,8 @@ impl crate::event_manager::EventSink for kyclient_EventHandler {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_client_set_event_handler(
-    client: *mut kyclient_Client,
-    handler: kyclient_EventHandler,
+    client: *mut Client,
+    handler: EventHandler,
 ) -> c_int {
     unsafe {
         (&(*client))
@@ -1645,28 +1594,26 @@ pub unsafe extern "C" fn kyclient_client_set_event_handler(
     }
 }
 
-#[allow(non_camel_case_types)]
 #[repr(C)]
 #[derive(Copy, Clone)]
-pub enum kyclient_MetricType {
+pub enum MetricType {
     Video,
     NetworkLocal,
     NetworkPing,
     NetworkRemote,
 }
 
-#[allow(non_camel_case_types)]
 #[repr(C)]
 #[derive(Copy, Clone)]
-pub struct kyclient_VideoMetric {
+pub struct VideoMetric {
     pub source_id: u32,
     pub pts: u64,
     pub ts: i64,
-    pub data: kyclient_VideoMetricData,
+    pub data: VideoMetricData,
 }
 
-impl From<VideoMetric> for kyclient_VideoMetric {
-    fn from(video_metric: VideoMetric) -> Self {
+impl From<metrics::VideoMetric> for VideoMetric {
+    fn from(video_metric: metrics::VideoMetric) -> Self {
         Self {
             source_id: video_metric.source_id,
             pts: video_metric.pts,
@@ -1676,10 +1623,9 @@ impl From<VideoMetric> for kyclient_VideoMetric {
     }
 }
 
-#[allow(non_camel_case_types)]
 #[repr(C)]
 #[derive(Copy, Clone)]
-pub enum kyclient_VideoMetricData {
+pub enum VideoMetricData {
     FrameAcquired,
     FrameEncoding,
     FrameEncoded,
@@ -1692,51 +1638,50 @@ pub enum kyclient_VideoMetricData {
     FrameSkipped,
 }
 
-impl From<VideoMetricData> for kyclient_VideoMetricData {
-    fn from(video_metric_data: VideoMetricData) -> Self {
-        match video_metric_data {
-            VideoMetricData::FrameAcquired => kyclient_VideoMetricData::FrameAcquired,
-            VideoMetricData::FrameEncoding => kyclient_VideoMetricData::FrameEncoding,
-            VideoMetricData::FrameEncoded => kyclient_VideoMetricData::FrameEncoded,
-            VideoMetricData::FrameSent => kyclient_VideoMetricData::FrameSent,
-            VideoMetricData::FrameReceived => kyclient_VideoMetricData::FrameReceived,
-            VideoMetricData::FrameDecoding => kyclient_VideoMetricData::FrameDecoding,
-            VideoMetricData::FrameDecoded => kyclient_VideoMetricData::FrameDecoded,
-            VideoMetricData::FramePrepared => kyclient_VideoMetricData::FramePrepared,
-            VideoMetricData::FrameDisplayed => kyclient_VideoMetricData::FrameDisplayed,
-            VideoMetricData::FrameSkipped => kyclient_VideoMetricData::FrameSkipped,
-        }
-    }
-}
-
-impl From<kyclient_VideoMetricData> for VideoMetricData {
-    fn from(data: kyclient_VideoMetricData) -> Self {
+impl From<metrics::VideoMetricData> for VideoMetricData {
+    fn from(data: metrics::VideoMetricData) -> Self {
         match data {
-            kyclient_VideoMetricData::FrameAcquired => VideoMetricData::FrameAcquired,
-            kyclient_VideoMetricData::FrameEncoding => VideoMetricData::FrameEncoding,
-            kyclient_VideoMetricData::FrameEncoded => VideoMetricData::FrameEncoded,
-            kyclient_VideoMetricData::FrameSent => VideoMetricData::FrameSent,
-            kyclient_VideoMetricData::FrameReceived => VideoMetricData::FrameReceived,
-            kyclient_VideoMetricData::FrameDecoding => VideoMetricData::FrameDecoding,
-            kyclient_VideoMetricData::FrameDecoded => VideoMetricData::FrameDecoded,
-            kyclient_VideoMetricData::FramePrepared => VideoMetricData::FramePrepared,
-            kyclient_VideoMetricData::FrameDisplayed => VideoMetricData::FrameDisplayed,
-            kyclient_VideoMetricData::FrameSkipped => VideoMetricData::FrameSkipped,
+            metrics::VideoMetricData::FrameAcquired => Self::FrameAcquired,
+            metrics::VideoMetricData::FrameEncoding => Self::FrameEncoding,
+            metrics::VideoMetricData::FrameEncoded => Self::FrameEncoded,
+            metrics::VideoMetricData::FrameSent => Self::FrameSent,
+            metrics::VideoMetricData::FrameReceived => Self::FrameReceived,
+            metrics::VideoMetricData::FrameDecoding => Self::FrameDecoding,
+            metrics::VideoMetricData::FrameDecoded => Self::FrameDecoded,
+            metrics::VideoMetricData::FramePrepared => Self::FramePrepared,
+            metrics::VideoMetricData::FrameDisplayed => Self::FrameDisplayed,
+            metrics::VideoMetricData::FrameSkipped => Self::FrameSkipped,
         }
     }
 }
 
-#[allow(non_camel_case_types)]
+impl From<VideoMetricData> for metrics::VideoMetricData {
+    fn from(data: VideoMetricData) -> Self {
+        match data {
+            VideoMetricData::FrameAcquired => Self::FrameAcquired,
+            VideoMetricData::FrameEncoding => Self::FrameEncoding,
+            VideoMetricData::FrameEncoded => Self::FrameEncoded,
+            VideoMetricData::FrameSent => Self::FrameSent,
+            VideoMetricData::FrameReceived => Self::FrameReceived,
+            VideoMetricData::FrameDecoding => Self::FrameDecoding,
+            VideoMetricData::FrameDecoded => Self::FrameDecoded,
+            VideoMetricData::FramePrepared => Self::FramePrepared,
+            VideoMetricData::FrameDisplayed => Self::FrameDisplayed,
+            VideoMetricData::FrameSkipped => Self::FrameSkipped,
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Copy, Clone)]
-pub struct kyclient_NetworkStats {
+pub struct NetworkStats {
     pub rtt_micros: i64,
     pub packets_lost: i64,
     pub dropped_packets: i64,
 }
 
-impl From<NetworkStats> for kyclient_NetworkStats {
-    fn from(network_stats: NetworkStats) -> Self {
+impl From<metrics::NetworkStats> for NetworkStats {
+    fn from(network_stats: metrics::NetworkStats) -> Self {
         Self {
             rtt_micros: network_stats.rtt_micros.map(|v| v as i64).unwrap_or(-1),
             packets_lost: network_stats.packets_lost.map(|v| v as i64).unwrap_or(-1),
@@ -1748,16 +1693,15 @@ impl From<NetworkStats> for kyclient_NetworkStats {
     }
 }
 
-#[allow(non_camel_case_types)]
 #[repr(C)]
 #[derive(Copy, Clone)]
-pub struct kyclient_NetworkPing {
+pub struct NetworkPing {
     pub offset_micros: i64,
     pub delay_micros: i64,
 }
 
-impl From<NetworkPing> for kyclient_NetworkPing {
-    fn from(network_ping: NetworkPing) -> Self {
+impl From<metrics::NetworkPing> for NetworkPing {
+    fn from(network_ping: metrics::NetworkPing) -> Self {
         Self {
             offset_micros: network_ping.offset_micros,
             delay_micros: network_ping.delay_micros,
@@ -1765,48 +1709,46 @@ impl From<NetworkPing> for kyclient_NetworkPing {
     }
 }
 
-#[allow(non_camel_case_types)]
 #[repr(C)]
 #[derive(Copy, Clone)]
-pub union kyclient_MetricData {
-    pub video: kyclient_VideoMetric,
-    pub network_local: kyclient_NetworkStats,
-    pub network_ping: kyclient_NetworkPing,
-    pub network_remote: kyclient_NetworkStats,
+pub union MetricData {
+    pub video: VideoMetric,
+    pub network_local: NetworkStats,
+    pub network_ping: NetworkPing,
+    pub network_remote: NetworkStats,
 }
 
-#[allow(non_camel_case_types)]
 #[repr(C)]
 #[derive(Copy, Clone)]
-pub struct kyclient_Metric {
-    pub type_: kyclient_MetricType,
-    pub data: kyclient_MetricData,
+pub struct Metric {
+    pub type_: MetricType,
+    pub data: MetricData,
 }
 
-impl From<Metric> for kyclient_Metric {
-    fn from(metric: Metric) -> Self {
+impl From<metrics::Metric> for Metric {
+    fn from(metric: metrics::Metric) -> Self {
         match metric {
-            Metric::Video(video_metric) => Self {
-                type_: kyclient_MetricType::Video,
-                data: kyclient_MetricData {
+            metrics::Metric::Video(video_metric) => Self {
+                type_: MetricType::Video,
+                data: MetricData {
                     video: video_metric.into(),
                 },
             },
-            Metric::NetworkLocal(network_stats) => Self {
-                type_: kyclient_MetricType::NetworkLocal,
-                data: kyclient_MetricData {
+            metrics::Metric::NetworkLocal(network_stats) => Self {
+                type_: MetricType::NetworkLocal,
+                data: MetricData {
                     network_local: network_stats.into(),
                 },
             },
-            Metric::NetworkPing(network_ping) => Self {
-                type_: kyclient_MetricType::NetworkPing,
-                data: kyclient_MetricData {
+            metrics::Metric::NetworkPing(network_ping) => Self {
+                type_: MetricType::NetworkPing,
+                data: MetricData {
                     network_ping: network_ping.into(),
                 },
             },
-            Metric::NetworkRemote(network_stats) => Self {
-                type_: kyclient_MetricType::NetworkRemote,
-                data: kyclient_MetricData {
+            metrics::Metric::NetworkRemote(network_stats) => Self {
+                type_: MetricType::NetworkRemote,
+                data: MetricData {
                     network_remote: network_stats.into(),
                 },
             },
@@ -1815,21 +1757,20 @@ impl From<Metric> for kyclient_Metric {
 }
 
 #[allow(non_camel_case_types)]
-pub type kyclient_metrics_cb =
-    Option<extern "C" fn(metric: *const kyclient_Metric, userdata: *mut c_void)>;
+pub type metrics_cb = Option<extern "C" fn(metric: *const Metric, userdata: *mut c_void)>;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_client_set_metrics_callback(
-    client: *mut kyclient_Client,
-    metrics_cb: kyclient_metrics_cb,
+    client: *mut Client,
+    metrics_cb: metrics_cb,
     userdata: *mut c_void,
 ) {
     let cb: Option<Box<MetricsCallback>> = if let Some(metrics_cb) = metrics_cb {
         let metrics_cb = Arc::new(metrics_cb);
         let userdata = Arc::new(AtomicPtr::new(userdata));
-        let cb = move |metric: Metric| unsafe {
+        let cb = move |metric: metrics::Metric| unsafe {
             let userdata = *userdata.as_ptr();
-            let kyclient_metric: kyclient_Metric = metric.into();
+            let kyclient_metric: Metric = metric.into();
             metrics_cb(std::ptr::from_ref(&kyclient_metric), userdata);
         };
 
@@ -1843,29 +1784,26 @@ pub unsafe extern "C" fn kyclient_client_set_metrics_callback(
 }
 
 #[allow(non_camel_case_types)]
-pub struct kyclient_metrics_json_producer {
-    producer: MetricsJSONProducer,
+pub struct metrics_json_producer {
+    producer: metrics::MetricsJSONProducer,
 }
 
 #[allow(non_camel_case_types)]
-pub struct kyclient_metrics_json {
+pub struct metrics_json {
     _data: Vec<CString>,
     c_data: Vec<*const c_char>,
 }
 
 /// Returns: (transfer full)
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn kyclient_metrics_json_producer_new() -> Box<kyclient_metrics_json_producer>
-{
-    let producer = MetricsJSONProducer::new();
-    Box::new(kyclient_metrics_json_producer { producer })
+pub unsafe extern "C" fn kyclient_metrics_json_producer_new() -> Box<metrics_json_producer> {
+    let producer = metrics::MetricsJSONProducer::new();
+    Box::new(metrics_json_producer { producer })
 }
 
 /// @producer: (transfer full)
 #[unsafe(no_mangle)]
-pub extern "C" fn kyclient_metrics_json_producer_unref(
-    producer: Box<kyclient_metrics_json_producer>,
-) {
+pub extern "C" fn kyclient_metrics_json_producer_unref(producer: Box<metrics_json_producer>) {
     drop(producer);
 }
 
@@ -1873,44 +1811,44 @@ pub extern "C" fn kyclient_metrics_json_producer_unref(
 /// Returns: (transfer full)
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_metrics_json_producer_push(
-    producer: &mut kyclient_metrics_json_producer,
-    metric: &kyclient_Metric,
-) -> Box<kyclient_metrics_json> {
+    producer: &mut metrics_json_producer,
+    metric: &Metric,
+) -> Box<metrics_json> {
     unsafe {
         let map_value = |v: i64| -> Option<u64> { if v >= 0 { Some(v as u64) } else { None } };
 
         let metric = match metric.type_ {
-            kyclient_MetricType::Video => {
+            MetricType::Video => {
                 let data = &metric.data.video;
 
-                Metric::Video(VideoMetric {
+                metrics::Metric::Video(metrics::VideoMetric {
                     source_id: data.source_id,
                     pts: data.pts,
                     ts: data.ts,
                     data: data.data.into(),
                 })
             }
-            kyclient_MetricType::NetworkLocal => {
+            MetricType::NetworkLocal => {
                 let data = &metric.data.network_local;
 
-                Metric::NetworkLocal(NetworkStats {
+                metrics::Metric::NetworkLocal(metrics::NetworkStats {
                     rtt_micros: map_value(data.rtt_micros),
                     packets_lost: map_value(data.packets_lost),
                     dropped_packets: map_value(data.dropped_packets),
                 })
             }
-            kyclient_MetricType::NetworkPing => {
+            MetricType::NetworkPing => {
                 let data = &metric.data.network_ping;
 
-                Metric::NetworkPing(NetworkPing {
+                metrics::Metric::NetworkPing(metrics::NetworkPing {
                     offset_micros: data.offset_micros,
                     delay_micros: data.delay_micros,
                 })
             }
-            kyclient_MetricType::NetworkRemote => {
+            MetricType::NetworkRemote => {
                 let data = &metric.data.network_remote;
 
-                Metric::NetworkRemote(NetworkStats {
+                metrics::Metric::NetworkRemote(metrics::NetworkStats {
                     rtt_micros: map_value(data.rtt_micros),
                     packets_lost: map_value(data.packets_lost),
                     dropped_packets: map_value(data.dropped_packets),
@@ -1929,7 +1867,7 @@ pub unsafe extern "C" fn kyclient_metrics_json_producer_push(
 
         let c_data = data.iter().map(|s| s.as_ptr()).collect::<Vec<_>>();
 
-        Box::new(kyclient_metrics_json {
+        Box::new(metrics_json {
             _data: data,
             c_data,
         })
@@ -1940,7 +1878,7 @@ pub unsafe extern "C" fn kyclient_metrics_json_producer_push(
 /// @out_count: (out)
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_metrics_json_values(
-    json: *mut kyclient_metrics_json,
+    json: *mut metrics_json,
     out_values: *mut *const *const c_char,
     out_count: *mut libc::size_t,
 ) {
@@ -1954,6 +1892,6 @@ pub unsafe extern "C" fn kyclient_metrics_json_values(
 
 /// @json: (transfer full)
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn kyclient_metrics_json_unref(json: Box<kyclient_metrics_json>) {
+pub unsafe extern "C" fn kyclient_metrics_json_unref(json: Box<metrics_json>) {
     drop(json);
 }

@@ -8,15 +8,13 @@ language = "C"
 cpp_compat = true
 
 [export]
+prefix = "kyclient_"
 item_types = ["enums", "structs", "unions", "typedefs", "opaque", "functions"]
+renaming_overrides_prefixing = true
 
 [enum]
 rename_variants = "ScreamingSnakeCase"
 prefix_with_name = true
 
 [export.rename]
-"Display" = "kyclient_Display"
-"Event" = "kyclient_Event"
-"LogCb" = "kyclient_LogCb"
-"LogLevel" = "kyclient_LogLevel"
-"VideoCodec" = "kyclient_VideoCodec"
+"kynput_Pipeline" = "kynput_Pipeline"
