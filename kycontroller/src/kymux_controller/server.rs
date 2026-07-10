@@ -186,9 +186,19 @@ impl KymuxServer {
 
         loop {
             while set.len() < Self::ACCEPT_POOL_SIZE {
-                let server = server.clone();
+                let kynet = match server.accept().await {
+                    Ok(Some(kynet)) => kynet,
+                    Ok(None) => {
+                        info!("Kynet server closed");
+                        return Ok(());
+                    }
+                    Err(err) => {
+                        warn!("Kynet accept failed: {err}");
+                        continue;
+                    }
+                };
                 let router = router.clone();
-                set.spawn(Self::handle_connection(server, router));
+                set.spawn(Self::handle_connection(kynet, router));
             }
 
             match set.join_next().await {
@@ -202,16 +212,9 @@ impl KymuxServer {
     }
 
     async fn handle_connection(
-        server: Arc<dyn kynet::Server>,
+        kynet: kynet::Connection,
         router: Arc<Mutex<IncomingConnectionRouter>>,
     ) {
-        let kynet = match server.accept().await {
-            Ok(kynet) => kynet,
-            Err(err) => {
-                warn!("Kynet accept failed: {err}");
-                return;
-            }
-        };
         let unauth_connection = match kyproto::Connection::accept_with_auth(kynet).await {
             Ok(unauth_connection) => unauth_connection,
             Err(err) => {
