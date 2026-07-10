@@ -1756,13 +1756,12 @@ impl From<metrics::Metric> for Metric {
     }
 }
 
-#[allow(non_camel_case_types)]
-pub type metrics_cb = Option<extern "C" fn(metric: *const Metric, userdata: *mut c_void)>;
+pub type MetricsCb = Option<extern "C" fn(metric: *const Metric, userdata: *mut c_void)>;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_client_set_metrics_callback(
     client: *mut Client,
-    metrics_cb: metrics_cb,
+    metrics_cb: MetricsCb,
     userdata: *mut c_void,
 ) {
     let cb: Option<Box<MetricsCallback>> = if let Some(metrics_cb) = metrics_cb {
@@ -1783,27 +1782,25 @@ pub unsafe extern "C" fn kyclient_client_set_metrics_callback(
     client.set_metrics_callback(cb);
 }
 
-#[allow(non_camel_case_types)]
-pub struct metrics_json_producer {
+pub struct MetricsJsonProducer {
     producer: metrics::MetricsJSONProducer,
 }
 
-#[allow(non_camel_case_types)]
-pub struct metrics_json {
+pub struct MetricsJson {
     _data: Vec<CString>,
     c_data: Vec<*const c_char>,
 }
 
 /// Returns: (transfer full)
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn kyclient_metrics_json_producer_new() -> Box<metrics_json_producer> {
+pub unsafe extern "C" fn kyclient_metrics_json_producer_new() -> Box<MetricsJsonProducer> {
     let producer = metrics::MetricsJSONProducer::new();
-    Box::new(metrics_json_producer { producer })
+    Box::new(MetricsJsonProducer { producer })
 }
 
 /// @producer: (transfer full)
 #[unsafe(no_mangle)]
-pub extern "C" fn kyclient_metrics_json_producer_unref(producer: Box<metrics_json_producer>) {
+pub extern "C" fn kyclient_metrics_json_producer_unref(producer: Box<MetricsJsonProducer>) {
     drop(producer);
 }
 
@@ -1811,9 +1808,9 @@ pub extern "C" fn kyclient_metrics_json_producer_unref(producer: Box<metrics_jso
 /// Returns: (transfer full)
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_metrics_json_producer_push(
-    producer: &mut metrics_json_producer,
+    producer: &mut MetricsJsonProducer,
     metric: &Metric,
-) -> Box<metrics_json> {
+) -> Box<MetricsJson> {
     unsafe {
         let map_value = |v: i64| -> Option<u64> { if v >= 0 { Some(v as u64) } else { None } };
 
@@ -1867,7 +1864,7 @@ pub unsafe extern "C" fn kyclient_metrics_json_producer_push(
 
         let c_data = data.iter().map(|s| s.as_ptr()).collect::<Vec<_>>();
 
-        Box::new(metrics_json {
+        Box::new(MetricsJson {
             _data: data,
             c_data,
         })
@@ -1878,7 +1875,7 @@ pub unsafe extern "C" fn kyclient_metrics_json_producer_push(
 /// @out_count: (out)
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_metrics_json_values(
-    json: *mut metrics_json,
+    json: *mut MetricsJson,
     out_values: *mut *const *const c_char,
     out_count: *mut libc::size_t,
 ) {
@@ -1892,6 +1889,6 @@ pub unsafe extern "C" fn kyclient_metrics_json_values(
 
 /// @json: (transfer full)
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn kyclient_metrics_json_unref(json: Box<metrics_json>) {
+pub unsafe extern "C" fn kyclient_metrics_json_unref(json: Box<MetricsJson>) {
     drop(json);
 }

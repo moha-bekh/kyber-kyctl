@@ -1399,7 +1399,7 @@ extern "C" fn metrics_cb(metric: *const sys::kyclient_Metric, userdata: *mut c_v
 }
 
 pub struct MetricsJSONProducer {
-    ptr: AtomicPtr<sys::kyclient_metrics_json_producer>,
+    ptr: AtomicPtr<sys::kyclient_MetricsJsonProducer>,
 }
 
 impl Default for MetricsJSONProducer {
