@@ -144,7 +144,7 @@ async fn run_metrics_receiver(
     mut protocol: types::MetricsClientProtocol,
     metrics: MetricsProducer,
 ) -> Result<()> {
-    while let Some(packet) = protocol.recv.recv().await? {
+    while let Some(packet) = protocol.recv().await? {
         let network_stats =
             rmp_serde::from_slice(&packet.payload).map_err(|_| Error::DeserializationFailed)?;
         let metric = Metric::NetworkRemote(network_stats);
@@ -168,7 +168,7 @@ async fn run_remote_video_metrics_receiver(
     mut protocol: types::MetricsClientProtocol,
     metrics: MetricsProducer,
 ) -> Result<()> {
-    while let Some(packet) = protocol.recv.recv().await? {
+    while let Some(packet) = protocol.recv().await? {
         let m: Vec<RemoteVideoMetrics> = rmp_serde::from_slice(&packet.payload).unwrap();
         let m: HashMap<&str, i64> = m.iter().map(|m| (m.key.as_str(), m.value)).collect();
 

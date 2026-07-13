@@ -189,12 +189,7 @@ async fn create_videoplayer(
             .map_err(|err| Error::KymuxReadyFailed { reason: err.0 })?;
 
         let cr = close_requested.clone();
-        wasm_bindgen_futures::spawn_local(player_forward_task(
-            "video",
-            protocol.recv,
-            video_player,
-            cr,
-        ));
+        wasm_bindgen_futures::spawn_local(player_forward_task("video", protocol, video_player, cr));
 
         player_list.push(video_player_handle);
     }
@@ -236,12 +231,7 @@ async fn create_audioplayer(
         .map_err(|err| Error::KymuxReadyFailed { reason: err.0 })?;
 
     let cr = close_requested.clone();
-    wasm_bindgen_futures::spawn_local(player_forward_task(
-        "audio",
-        protocol.recv,
-        audio_player,
-        cr,
-    ));
+    wasm_bindgen_futures::spawn_local(player_forward_task("audio", protocol, audio_player, cr));
 
     Ok(Some(audio_player_handle))
 }
@@ -329,11 +319,10 @@ async fn start_input(
         .expect("called without input config");
 
     // Open endpoint
-    let protocol = endpoint
+    let (endpoint_tx, endpoint_rx) = endpoint
         .ready()
         .await
         .map_err(|err| Error::KymuxReadyFailed { reason: err.0 })?;
-    let (endpoint_tx, endpoint_rx) = (protocol.send, protocol.recv);
 
     // Configure pipeline
     let mut input_proxy = BufferProxy::new();

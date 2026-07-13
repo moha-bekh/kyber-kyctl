@@ -188,7 +188,7 @@ impl KydupVideo {
             Arc::clone(&self.notify),
             SyncMode::Keyframe,
             Arc::clone(&self.lag_handler),
-            async move { ready_with_timeout(endpoint).await.map(|p| p.send) },
+            ready_with_timeout(endpoint),
             on_subscribed,
         )
     }
@@ -230,9 +230,10 @@ impl ProtocolEndpointDriver for KydupVideoUpstreamDriver {
             .tx
             .take()
             .expect("KydupVideoUpstreamDriver::ready_boxed called twice");
-        Ok(VideoServerProtocol {
-            send: ProtocolSend::new(KydupBroadcastSendDriver::new(tx, Arc::clone(&self.notify))),
-        })
+        Ok(ProtocolSend::new(KydupBroadcastSendDriver::new(
+            tx,
+            Arc::clone(&self.notify),
+        )))
     }
 }
 
@@ -287,7 +288,7 @@ impl KydupAudio {
             Arc::clone(&self.notify),
             SyncMode::Immediate,
             Arc::clone(&self.lag_handler),
-            async move { ready_with_timeout(endpoint).await.map(|p| p.send) },
+            ready_with_timeout(endpoint),
             || {},
         )
     }
@@ -325,9 +326,10 @@ impl ProtocolEndpointDriver for KydupAudioUpstreamDriver {
             .tx
             .take()
             .expect("KydupAudioUpstreamDriver::ready_boxed called twice");
-        Ok(AudioServerProtocol {
-            send: ProtocolSend::new(KydupBroadcastSendDriver::new(tx, Arc::clone(&self.notify))),
-        })
+        Ok(ProtocolSend::new(KydupBroadcastSendDriver::new(
+            tx,
+            Arc::clone(&self.notify),
+        )))
     }
 }
 
@@ -757,35 +759,15 @@ mod tests {
     /// Drives the upstream of a kydup as if it were behind a kycom forwarder:
     /// awaits `ready` on the upstream endpoint, then `send`s each packet from
     /// `pkts` into the resulting `ProtocolSend`.
-    async fn pump<P>(
-        endpoint: ProtocolEndpoint<P>,
+    async fn pump(
+        endpoint: ProtocolEndpoint<ProtocolSend<AVPacket>>,
         pkts: Vec<AVPacket>,
-    ) -> Result<(), ProtocolError>
-    where
-        P: HasAVSend + Send + 'static,
-    {
-        let mut proto = endpoint.ready().await?;
-        let send = proto.av_send_mut();
+    ) -> Result<(), ProtocolError> {
+        let mut send = endpoint.ready().await?;
         for p in pkts {
             send.send(p).await?;
         }
         Ok(())
-    }
-
-    /// Helper trait so tests can pump packets into either Video or Audio
-    /// server protocols through a single API.
-    trait HasAVSend {
-        fn av_send_mut(&mut self) -> &mut ProtocolSend<AVPacket>;
-    }
-    impl HasAVSend for VideoServerProtocol {
-        fn av_send_mut(&mut self) -> &mut ProtocolSend<AVPacket> {
-            &mut self.send
-        }
-    }
-    impl HasAVSend for AudioServerProtocol {
-        fn av_send_mut(&mut self) -> &mut ProtocolSend<AVPacket> {
-            &mut self.send
-        }
     }
 
     struct CollectSend(Arc<Mutex<Vec<AVPacket>>>);
@@ -888,18 +870,17 @@ mod tests {
         // all consumed by the broadcast and dropped because nothing is
         // subscribed yet.
         let mut proto = upstream.ready().await.unwrap();
-        let send = &mut proto.send;
-        send.send(codec(1)).await.unwrap();
-        send.send(config(b"sps")).await.unwrap();
-        send.send(keyframe(0, b"idr0")).await.unwrap();
-        send.send(media(33, b"p1")).await.unwrap();
+        proto.send(codec(1)).await.unwrap();
+        proto.send(config(b"sps")).await.unwrap();
+        proto.send(keyframe(0, b"idr0")).await.unwrap();
+        proto.send(media(33, b"p1")).await.unwrap();
 
         let (collect, pkts) = collect_output();
         let oh = kydup.add_output(collect);
 
         // Second batch: new keyframe; output picks up from there.
-        send.send(keyframe(100, b"idr1")).await.unwrap();
-        send.send(media(133, b"p2")).await.unwrap();
+        proto.send(keyframe(100, b"idr1")).await.unwrap();
+        proto.send(media(133, b"p2")).await.unwrap();
         drop(proto);
         oh.await;
 
@@ -915,14 +896,13 @@ mod tests {
         let (kydup, upstream) = KydupAudio::new(|| LagAction::Continue);
 
         let mut proto = upstream.ready().await.unwrap();
-        let send = &mut proto.send;
-        send.send(codec(1)).await.unwrap();
-        send.send(config(b"cfg")).await.unwrap();
+        proto.send(codec(1)).await.unwrap();
+        proto.send(config(b"cfg")).await.unwrap();
 
         let (collect, pkts) = collect_output();
         let oh = kydup.add_output(collect);
 
-        send.send(media(10, b"a1")).await.unwrap();
+        proto.send(media(10, b"a1")).await.unwrap();
         drop(proto);
         oh.await;
 
@@ -1015,12 +995,11 @@ mod tests {
         total_media: usize,
     ) -> tokio::task::JoinHandle<VideoServerProtocol> {
         tokio::spawn(async move {
-            let send = &mut proto.send;
-            send.send(codec(1)).await.unwrap();
-            send.send(config(b"sps")).await.unwrap();
-            send.send(keyframe(0, b"idr")).await.unwrap();
+            proto.send(codec(1)).await.unwrap();
+            proto.send(config(b"sps")).await.unwrap();
+            proto.send(keyframe(0, b"idr")).await.unwrap();
             for i in 0..total_media {
-                send.send(media(i as u64, b"p")).await.unwrap();
+                proto.send(media(i as u64, b"p")).await.unwrap();
             }
             proto
         })

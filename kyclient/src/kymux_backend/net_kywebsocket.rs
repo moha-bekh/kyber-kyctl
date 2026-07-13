@@ -42,7 +42,7 @@ async fn create_platform_endpoints(
         if !backend_config.streaming_config.video.is_empty() {
             let url = format!("wss://{host}/websocket/video");
             let conn = kywebsocket::Connection::websocket_js_connect(&url).await?;
-            let endpoint = conn.into_channel().into_video_client_endpoint();
+            let endpoint = conn.into_channel().into_endpoint();
             vec.push(endpoint);
         }
         vec
@@ -50,7 +50,7 @@ async fn create_platform_endpoints(
     let audio = if backend_config.streaming_config.audio.is_some() {
         let url = format!("wss://{host}/websocket/audio");
         let conn = kywebsocket::Connection::websocket_js_connect(&url).await?;
-        let endpoint = conn.into_channel().into_audio_client_endpoint();
+        let endpoint = conn.into_channel().into_endpoint();
         Some(endpoint)
     } else {
         None
@@ -58,7 +58,7 @@ async fn create_platform_endpoints(
     let input = if backend_config.streaming_config.input.is_some() {
         let url = format!("wss://{host}/websocket/inputs");
         let conn = kywebsocket::Connection::websocket_js_connect(&url).await?;
-        let endpoint = conn.into_channel().into_input_endpoint();
+        let endpoint = conn.into_channel().into_endpoint();
         Some(endpoint)
     } else {
         None

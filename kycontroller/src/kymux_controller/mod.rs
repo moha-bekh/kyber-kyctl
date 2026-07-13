@@ -356,8 +356,7 @@ async fn start_video(
             }
             KyTransport::KyWebSocket => {
                 let (connection_tx, connection_rx) = oneshot::channel();
-                let endpoint =
-                    kywebsocket::Channel::new(connection_rx).into_video_server_endpoint();
+                let endpoint = kywebsocket::Channel::new(connection_rx).into_endpoint();
                 (
                     None,
                     endpoint,
@@ -465,7 +464,7 @@ async fn start_video(
                                 return;
                             }
                         };
-                        claim.claim(protocol.send);
+                        claim.claim(protocol);
                     });
                     (Some(meid), Some(task))
                 }
@@ -535,7 +534,7 @@ async fn start_audio(
         }
         KyTransport::KyWebSocket => {
             let (connection_tx, connection_rx) = oneshot::channel();
-            let endpoint = kywebsocket::Channel::new(connection_rx).into_audio_server_endpoint();
+            let endpoint = kywebsocket::Channel::new(connection_rx).into_endpoint();
             (None, endpoint, Some(connection_tx))
         }
     };
@@ -590,7 +589,7 @@ async fn start_input(
         }
         KyTransport::KyWebSocket => {
             let (connection_tx, connection_rx) = oneshot::channel();
-            let endpoint = kywebsocket::Channel::new(connection_rx).into_input_endpoint();
+            let endpoint = kywebsocket::Channel::new(connection_rx).into_endpoint();
             (None, endpoint, Some(connection_tx))
         }
     };
@@ -867,7 +866,7 @@ async fn run_stats_poller(
         };
         let payload = Bytes::from(rmp_serde::to_vec(&network_stats).unwrap());
         let packet = types::MetricsPacket { payload };
-        protocol.send.send(packet).await?;
+        protocol.send(packet).await?;
     }
 }
 

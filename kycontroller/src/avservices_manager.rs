@@ -655,12 +655,8 @@ impl AVServicesManager {
 
             let (upgrade_tx, upgrade_rx) = tokio::sync::oneshot::channel();
             let _forwarder_task = Task::spawn(async move {
-                let recv = match metrics_kycom_channel
-                    .into_metrics_client_endpoint()
-                    .ready()
-                    .await
-                {
-                    Ok(ipc) => ipc.recv,
+                let recv = match metrics_kycom_channel.into_endpoint().ready().await {
+                    Ok(ipc) => ipc,
                     Err(e) => {
                         error!("Metrics IPC ready failed: {e}");
                         return;
