@@ -27,7 +27,7 @@ use serde::Serialize;
 const DEFAULT_DEV_KEY: &[u8] = b"kyber-authentication-development-key";
 
 #[derive(Parser)]
-#[command(version, about, long_about = None)]
+#[command(version = env!("VERGEN_GIT_DESCRIBE"), about, long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,

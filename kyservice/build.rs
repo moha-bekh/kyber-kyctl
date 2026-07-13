@@ -18,11 +18,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use vergen::EmitBuilder;
+include!("../build_version.rs");
 
 fn main() {
-    EmitBuilder::builder()
-        .git_describe(false, true, None)
-        .emit()
-        .unwrap();
+    emit_git_version();
 }

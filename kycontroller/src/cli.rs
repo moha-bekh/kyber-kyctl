@@ -23,7 +23,7 @@ use std::path::PathBuf;
 use clap::Parser;
 
 #[derive(Debug, Parser)]
-#[command(version, about = "Kyber controller daemon")]
+#[command(version = env!("VERGEN_GIT_DESCRIBE"), about = "Kyber controller daemon")]
 pub(crate) struct Cli {
     /// Path to the configuration file. When omitted, the default
     /// executable-relative location is used.
