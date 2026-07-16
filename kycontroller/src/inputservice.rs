@@ -60,8 +60,7 @@ impl Handler {
                 host_config,
                 service_config,
             })
-            .await?
-            .unwrap();
+            .await??;
 
         Ok((this, res))
     }
@@ -81,8 +80,7 @@ impl Handler {
                 service_config,
                 uri,
             })
-            .await?
-            .unwrap();
+            .await??;
 
         Ok((this, res))
     }
