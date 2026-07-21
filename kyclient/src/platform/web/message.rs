@@ -6,13 +6,6 @@ use crate::{Message, MessageSender};
 
 use log::warn;
 
-fn send(message_sender: &MessageSender, msg: Message) {
-    let ret = message_sender.send(msg.clone());
-    if let Err(err) = ret {
-        warn!("Failed to send {msg:?}: {err:?}");
-    }
-}
-
 pub(crate) struct VideoMessageForwarder {
     pub message_sender: MessageSender,
     pub source_id: u32,
@@ -20,7 +13,10 @@ pub(crate) struct VideoMessageForwarder {
 
 impl VideoMessageForwarder {
     fn send(&self, msg: Message) {
-        send(&self.message_sender, msg);
+        let ret = self.message_sender.send(msg.clone());
+        if let Err(err) = ret {
+            warn!("Failed to send {msg:?}: {err:?}");
+        }
     }
 }
 
@@ -82,7 +78,10 @@ pub(crate) struct AudioMessageForwarder {
 
 impl AudioMessageForwarder {
     fn send(&self, msg: Message) {
-        send(&self.message_sender, msg);
+        let ret = self.message_sender.send(msg.clone());
+        if let Err(err) = ret {
+            warn!("Failed to send {msg:?}: {err:?}");
+        }
     }
 }
 

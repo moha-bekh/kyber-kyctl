@@ -4,20 +4,16 @@ use crate::{Message, MessageSender};
 
 use log::warn;
 
-fn send(message_sender: &MessageSender, msg: Message) {
-    let ret = message_sender.send(msg.clone());
-    if let Err(err) = ret {
-        warn!("Failed to send {msg:?}: {err:?}");
-    }
-}
-
 pub(crate) struct MessageForwarder {
     pub message_sender: MessageSender,
 }
 
 impl MessageForwarder {
     fn send(&self, msg: Message) {
-        send(&self.message_sender, msg);
+        let ret = self.message_sender.send(msg.clone());
+        if let Err(err) = ret {
+            warn!("Failed to send {msg:?}: {err:?}");
+        }
     }
 }
 
