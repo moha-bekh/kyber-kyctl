@@ -49,7 +49,7 @@ pub(crate) struct IncomingConnectionRouter {
     pending_auth: HashMap<String, (Uuid, Instant)>,
 
     /// Maps session_id → oneshot Sender to deliver the connection
-    session_channels: HashMap<Uuid, oneshot::Sender<Arc<kyproto::Connection>>>,
+    session_channels: HashMap<Uuid, oneshot::Sender<kyproto::Connection>>,
 }
 
 impl IncomingConnectionRouter {
@@ -66,7 +66,7 @@ impl IncomingConnectionRouter {
         &mut self,
         token: String,
         session_id: Uuid,
-    ) -> oneshot::Receiver<Arc<kyproto::Connection>> {
+    ) -> oneshot::Receiver<kyproto::Connection> {
         self.cleanup_expired();
 
         // Add pending auth
@@ -114,7 +114,7 @@ impl IncomingConnectionRouter {
     }
 
     /// Routes a connection to the appropriate session based on the token.
-    fn route_connection(&mut self, connection: Arc<kyproto::Connection>, token: &str) -> bool {
+    fn route_connection(&mut self, connection: kyproto::Connection, token: &str) -> bool {
         // Validate token and get session_id
         let Some(session_id) = self.take_pending_auth(token) else {
             warn!("Unknown or expired token, cannot route connection");
@@ -237,7 +237,7 @@ impl KymuxServer {
 
         // Accept connection
         let connection = match unauth_connection.accept_authentication().await {
-            Ok(conn) => Arc::new(conn),
+            Ok(conn) => conn,
             Err(err) => {
                 warn!("Accept authentication failed: {err}");
                 return;

@@ -61,7 +61,7 @@ pub(crate) struct StreamingSession {
     /// Pending Kymux connection receiver (between start_mux and start_session).
     /// This field holds the oneshot receiver while waiting for the client to connect.
     /// Once the connection is established, this is consumed and a KymuxBackend is created.
-    pub(crate) pending_kymux_rx: Option<oneshot::Receiver<Arc<kyproto::Connection>>>,
+    pub(crate) pending_kymux_rx: Option<oneshot::Receiver<kyproto::Connection>>,
 }
 
 impl StreamingSession {

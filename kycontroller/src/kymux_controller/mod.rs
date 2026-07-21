@@ -52,7 +52,7 @@ const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(5);
 const MAX_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 
 fn run_connection_task(
-    connection: Arc<kyproto::Connection>,
+    connection: kyproto::Connection,
     statemachine_proxy: StateMachineProxy,
     session_id: uuid::Uuid,
 ) -> Task {
