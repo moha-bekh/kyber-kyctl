@@ -23,7 +23,6 @@ use serde::{Deserialize, Serialize};
 use kyclient_common::auth::AuthCredentials;
 
 use crate::host_events;
-use crate::metrics::Metric;
 use crate::{
     Error, StreamerPipelineEventType, StreamerPipelineStage, StreamerPipelineType,
     StreamingSessionConfig,
@@ -154,8 +153,6 @@ pub(crate) enum Message {
         frame_coded_width: i32,
         frame_coded_height: i32,
     },
-
-    Metric(Metric),
 
     UpdateCredentials(AuthCredentials),
     RenewSession(AuthCredentials),

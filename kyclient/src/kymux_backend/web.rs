@@ -30,6 +30,7 @@ use kynput::bufferproxy::{BufferProxy, BufferProxyReceiver, BufferProxySender};
 use kynput::{InputNetworkStream, InputNetworkStreamMsg, InputNetworkStreamObserver};
 
 use super::{KymuxBackendConfig, PlatformEndpoints};
+use crate::metrics::MetricsProducer;
 use crate::platform::InputMsgSink;
 use crate::platform::message::{AudioMessageForwarder, VideoMessageForwarder};
 use crate::platform::player::packet::*;
@@ -142,7 +143,7 @@ async fn player_forward_task<Player>(
 async fn create_videoplayer(
     backend_config: &KymuxBackendConfig<'_>,
     close_requested: &CloseRequestState,
-    metrics: bool,
+    metrics: Option<&MetricsProducer>,
     endpoints: Vec<types::VideoClientEndpoint>,
 ) -> Result<Option<Vec<VideoPlayerHandle>>> {
     if endpoints.is_empty() {
@@ -166,6 +167,7 @@ async fn create_videoplayer(
     for (config, endpoint) in video_config.iter().zip(endpoints.into_iter()) {
         let listener = Box::new(VideoMessageForwarder {
             message_sender: backend_config.msg_sender.clone(),
+            metrics: metrics.cloned(),
             source_id: config.display_id,
         });
         let player_config = player::VideoPlayerConfig {
@@ -177,7 +179,7 @@ async fn create_videoplayer(
             yuv444: config.yuv444,
         };
         let (video_player, video_player_handle) =
-            VideoPlayer::create(listener, &player_config, metrics).await?;
+            VideoPlayer::create(listener, &player_config, metrics.is_some()).await?;
 
         info!("Start video");
 
@@ -247,7 +249,7 @@ async fn create_audioplayer(
 async fn create_player(
     backend_config: &KymuxBackendConfig<'_>,
     close_requested: &CloseRequestState,
-    metrics: bool,
+    metrics: Option<&MetricsProducer>,
     video_endpoints: Vec<types::VideoClientEndpoint>,
     audio_endpoint: Option<types::AudioClientEndpoint>,
 ) -> Result<Option<Player>> {
@@ -372,7 +374,7 @@ impl KymuxWeb {
     pub(super) async fn new(
         backend_config: &KymuxBackendConfig<'_>,
         mut endpoints: PlatformEndpoints,
-        has_metrics: bool,
+        metrics: Option<MetricsProducer>,
     ) -> Result<Self> {
         // Tweak configuration in function of local capabilities
         if !AudioPlayer::available() {
@@ -386,7 +388,7 @@ impl KymuxWeb {
         let player = create_player(
             backend_config,
             &close_requested,
-            has_metrics,
+            metrics.as_ref(),
             endpoints.video,
             endpoints.audio,
         )

@@ -1,4 +1,4 @@
-use crate::metrics::{Metric, VideoMetric, VideoMetricData};
+use crate::metrics::{Metric, MetricsProducer, VideoMetric, VideoMetricData};
 use crate::platform::player::{
     AudioPlayerEvent, AudioPlayerListener, VideoPlayerEvent, VideoPlayerListener, VideoPlayerMetric,
 };
@@ -8,6 +8,7 @@ use log::warn;
 
 pub(crate) struct VideoMessageForwarder {
     pub message_sender: MessageSender,
+    pub metrics: Option<MetricsProducer>,
     pub source_id: u32,
 }
 
@@ -16,6 +17,17 @@ impl VideoMessageForwarder {
         let ret = self.message_sender.send(msg.clone());
         if let Err(err) = ret {
             warn!("Failed to send {msg:?}: {err:?}");
+        }
+    }
+
+    fn send_metric(&self, metric: Metric) {
+        let metrics = self
+            .metrics
+            .as_ref()
+            .expect("Metric received but metrics disabled");
+        let ret = metrics.send(metric);
+        if let Err(err) = ret {
+            warn!("Failed to send {metrics:?}: {err:?}");
         }
     }
 }
@@ -48,19 +60,19 @@ impl VideoPlayerListener for VideoMessageForwarder {
                 if data == VideoPlayerMetric::FrameDisplayed {
                     // Generate a fake "prepared" event for consistency with the
                     // desktop version using VLC
-                    self.send(Message::Metric(Metric::Video(VideoMetric {
+                    self.send_metric(Metric::Video(VideoMetric {
                         source_id: self.source_id,
                         ts,
                         pts,
                         data: VideoMetricData::FramePrepared,
-                    })));
+                    }));
                 }
-                self.send(Message::Metric(Metric::Video(VideoMetric {
+                self.send_metric(Metric::Video(VideoMetric {
                     source_id: self.source_id,
                     ts,
                     pts,
                     data: to_metric_data(data),
-                })));
+                }));
             }
             VideoPlayerEvent::FrameDecoded { pts } => {
                 self.send(Message::ImageDecoded { pts });

@@ -165,6 +165,7 @@ impl RtpBackend {
 
             let listener = Box::new(MessageForwarder {
                 message_sender: backend_config.msg_sender.clone(),
+                metrics: None,
             });
             let mut player = player::Player::new(listener, video_buffer, audio_buffer, metrics)?;
             player.play(vlc_videoconfig, vlc_audioconfig)?;

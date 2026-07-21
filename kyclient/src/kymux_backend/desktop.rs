@@ -24,6 +24,7 @@ use log::info;
 use kymux::{kycom, types};
 
 use super::{KymuxBackendConfig, PlatformEndpoints};
+use crate::metrics::MetricsProducer;
 use crate::platform::message::MessageForwarder;
 use crate::platform::player;
 use crate::platform::{InputClient, InputPipeline};
@@ -109,7 +110,7 @@ fn create_audio_config(
 async fn create_player(
     kycom: &mut kycom::KyCom,
     backend_config: &KymuxBackendConfig<'_>,
-    metrics: bool,
+    metrics: Option<&MetricsProducer>,
     video_endpoints: Vec<types::VideoClientEndpoint>,
     audio_endpoint: Option<types::AudioClientEndpoint>,
 ) -> Result<Option<Player>> {
@@ -133,8 +134,10 @@ async fn create_player(
 
         let listener = Box::new(MessageForwarder {
             message_sender: backend_config.msg_sender.clone(),
+            metrics: metrics.cloned(),
         });
-        let mut player = player::Player::new(listener, video_buffer, audio_buffer, metrics)?;
+        let mut player =
+            player::Player::new(listener, video_buffer, audio_buffer, metrics.is_some())?;
         player.play(video_config, audio_config)?;
 
         Some(Player(player))
@@ -195,7 +198,7 @@ impl KymuxDesktop {
     pub(super) async fn new(
         backend_config: &KymuxBackendConfig<'_>,
         endpoints: PlatformEndpoints,
-        has_metrics: bool,
+        metrics: Option<MetricsProducer>,
     ) -> Result<Self> {
         const IPC_PORTS: std::ops::Range<u16> = 9090..9100;
         let mut kycom = kycom::KyCom::start_on_any_port(IPC_PORTS).await?;
@@ -204,7 +207,7 @@ impl KymuxDesktop {
         let player = create_player(
             &mut kycom,
             backend_config,
-            has_metrics,
+            metrics.as_ref(),
             endpoints.video,
             endpoints.audio,
         )

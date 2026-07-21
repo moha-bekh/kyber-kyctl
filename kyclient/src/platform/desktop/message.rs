@@ -1,4 +1,4 @@
-use crate::metrics::{Metric, VideoMetric, VideoMetricData};
+use crate::metrics::{Metric, MetricsProducer, VideoMetric, VideoMetricData};
 use crate::platform::player::{PlayerEvent, PlayerListener, PlayerMetric};
 use crate::{Message, MessageSender};
 
@@ -6,6 +6,7 @@ use log::warn;
 
 pub(crate) struct MessageForwarder {
     pub message_sender: MessageSender,
+    pub metrics: Option<MetricsProducer>,
 }
 
 impl MessageForwarder {
@@ -13,6 +14,17 @@ impl MessageForwarder {
         let ret = self.message_sender.send(msg.clone());
         if let Err(err) = ret {
             warn!("Failed to send {msg:?}: {err:?}");
+        }
+    }
+
+    fn send_metric(&self, metric: Metric) {
+        let metrics = self
+            .metrics
+            .as_ref()
+            .expect("Metric received but metrics disabled");
+        let ret = metrics.send(metric);
+        if let Err(err) = ret {
+            warn!("Failed to send {metrics:?}: {err:?}");
         }
     }
 }
@@ -49,12 +61,12 @@ impl PlayerListener for MessageForwarder {
                 pts,
                 data,
             } => {
-                self.send(Message::Metric(Metric::Video(VideoMetric {
+                self.send_metric(Metric::Video(VideoMetric {
                     source_id,
                     ts,
                     pts,
                     data: to_metric_data(data),
-                })));
+                }));
             }
         }
     }

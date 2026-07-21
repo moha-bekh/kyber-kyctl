@@ -66,7 +66,7 @@ pub(crate) struct KymuxBackendConfig<'a> {
 async fn new_platform_backend(
     backend_config: &KymuxBackendConfig<'_>,
     endpoints: PlatformEndpoints,
-    metrics: bool,
+    metrics: Option<MetricsProducer>,
 ) -> Result<Box<dyn BackendDriver>> {
     let backend = desktop::KymuxDesktop::new(backend_config, endpoints, metrics).await?;
     Ok(Box::new(backend))
@@ -76,7 +76,7 @@ async fn new_platform_backend(
 async fn new_platform_backend(
     backend_config: &KymuxBackendConfig<'_>,
     endpoints: PlatformEndpoints,
-    metrics: bool,
+    metrics: Option<MetricsProducer>,
 ) -> Result<Box<dyn BackendDriver>> {
     let backend = web::KymuxWeb::new(backend_config, endpoints, metrics).await?;
     Ok(Box::new(backend))
@@ -97,7 +97,7 @@ pub(crate) struct KymuxBackend {
 impl KymuxBackend {
     pub(crate) async fn new(
         backend_config: KymuxBackendConfig<'_>,
-        metrics: Option<MetricsProducer>,
+        metrics: Option<&MetricsProducer>,
     ) -> Result<Self> {
         let connection = start_kymux(&backend_config).await?;
         let connection = KyArc::new(connection);
@@ -108,13 +108,13 @@ impl KymuxBackend {
         let host_config = host_service::start_stream(&backend_config, has_metrics).await?;
 
         if let Some(metrics) = metrics {
-            start_metrics(&connection, &host_config, metrics).await?;
+            start_metrics(&connection, &host_config, metrics.clone()).await?;
         }
 
         let msg_sender = backend_config.msg_sender.clone();
 
         let endpoints = create_platform_endpoints(&connection, &backend_config, &host_config)?;
-        let platform = new_platform_backend(&backend_config, endpoints, has_metrics).await?;
+        let platform = new_platform_backend(&backend_config, endpoints, metrics.cloned()).await?;
 
         // Monitor connection closed
         let closed_task = kymux_closed_task(connection.clone(), msg_sender);

@@ -374,8 +374,7 @@ impl Handler {
                     msg_sender,
                 };
 
-                let backend =
-                    Box::new(ws_backend::WsBackend::new(config, self.metrics.is_some()).await?);
+                let backend = Box::new(ws_backend::WsBackend::new(config, &self.metrics).await?);
                 conn.backend = Some(backend);
             }
             #[cfg(feature = "kymux")]
@@ -389,8 +388,9 @@ impl Handler {
                     msg_sender,
                 };
 
-                let backend =
-                    Box::new(kymux_backend::KymuxBackend::new(config, self.metrics.clone()).await?);
+                let backend = Box::new(
+                    kymux_backend::KymuxBackend::new(config, self.metrics.as_ref()).await?,
+                );
                 conn.backend = Some(backend);
             }
             #[cfg(feature = "rtp")]
@@ -733,15 +733,6 @@ impl Handler {
                     frame_coded_width,
                     frame_coded_height,
                 });
-            }
-            Message::Metric(metric) => {
-                let metrics = self
-                    .metrics
-                    .as_ref()
-                    .expect("Received a metric while metrics are disabled");
-                if let Err(err) = metrics.send(metric) {
-                    warn!("Metric discarded: {err}");
-                }
             }
             Message::UpdateCredentials(credentials) => {
                 info!("Credentials updated");

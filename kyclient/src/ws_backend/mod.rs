@@ -37,6 +37,7 @@ use audio::AudioWsSocketHandler;
 use input::InputWebSocketHandler;
 use video::VideoWsSocketHandler;
 
+use crate::metrics::MetricsProducer;
 use crate::platform::InputMsgSink;
 use crate::platform::message::{AudioMessageForwarder, VideoMessageForwarder};
 use crate::platform::player::{
@@ -118,7 +119,10 @@ pub(crate) struct WsBackend {
 }
 
 impl WsBackend {
-    pub(crate) async fn new(backend_config: WsBackendConfig<'_>, metrics: bool) -> Result<Self> {
+    pub(crate) async fn new(
+        backend_config: WsBackendConfig<'_>,
+        metrics: &Option<MetricsProducer>,
+    ) -> Result<Self> {
         info!("Start websocket session");
 
         // Start Websocket service
@@ -138,7 +142,7 @@ impl WsBackend {
 
     async fn create_video_service(
         backend_config: &WsBackendConfig<'_>,
-        metrics: bool,
+        metrics: &Option<MetricsProducer>,
     ) -> Result<Option<VideoService>> {
         let video_config = &backend_config.streaming_config.video;
         if video_config.is_empty() {
@@ -149,6 +153,7 @@ impl WsBackend {
 
         let listener = Box::new(VideoMessageForwarder {
             message_sender: backend_config.msg_sender.clone(),
+            metrics: metrics.clone(),
             source_id: video_config.display_id,
         });
         let player_config = player::VideoPlayerConfig {
@@ -160,7 +165,7 @@ impl WsBackend {
             yuv444: video_config.yuv444,
         };
         let (player, player_handle) =
-            VideoPlayer::create(listener, &player_config, metrics).await?;
+            VideoPlayer::create(listener, &player_config, metrics.is_some()).await?;
 
         let url = format!(
             "wss://{host}/websocket/video",
