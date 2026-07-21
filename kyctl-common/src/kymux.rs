@@ -39,10 +39,12 @@ pub enum AudioProtocol {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct KymuxConfig {
+pub struct KyProtoConfig {
     pub video_protocol: Option<VideoProtocol>,
     pub audio_protocol: Option<AudioProtocol>,
 }
+
+pub type KymuxConfig = KyProtoConfig;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct StartKymux {
