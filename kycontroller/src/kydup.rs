@@ -27,17 +27,17 @@
 //! The API mirrors `kycom`:
 //!
 //! ```ignore
-//! // Mono (no fan-out, no kydup): the avservice writes to the client
+//! // Mono (no fan-out, no kydup): the producer writes to the client
 //! // endpoint directly via kycom.
 //! let (_id, endpoint) = connection.register_video_endpoint(proto).await?;
 //! let uri = kycom.register_and_forward(endpoint)?.url();
 //!
-//! // Multi (with kydup fan-out): the avservice writes to a kydup upstream
+//! // Multi (with kydup fan-out): the producer writes to a kydup upstream
 //! // endpoint via kycom; kydup broadcasts to N client endpoints.
 //! let (kydup, upstream) = KydupVideo::new(|| LagAction::Continue);
 //! let uri = kycom.register_and_forward(upstream)?.url();
 //! for client_endpoint in clients {
-//!     kydup.register_and_forward(client_endpoint, || { /* force a keyframe */ });
+//!     kydup.register_and_forward(client_endpoint, || { /* runs once subscribed */ });
 //! }
 //! ```
 
@@ -56,52 +56,38 @@ use tokio::sync::{Notify, broadcast};
 
 use crate::utils::Task;
 
-/// Capacity of the `tokio::sync::broadcast` ring buffer, in retained packets.
-/// This is the hard backlog at which an output that has fallen this far behind
-/// is evicted by the broadcast (a `Lagged` error → forced keyframe resync). It
-/// is deliberately larger than [`BACKPRESSURE_THRESHOLD`] (20): the backpressure
-/// gate normally throttles the upstream before any output reaches this point, so
-/// the extra headroom only absorbs the brief window between a backlog spike and
-/// the gate taking effect. 32 keeps the buffer small and bounded so a transient
-/// stall is ridden out without unbounded memory growth.
+/// Broadcast ring capacity, in retained packets: the hard backlog at which an
+/// output is dropped by the broadcast (a `Lagged` error and a re-sync). Kept
+/// above [`BACKPRESSURE_THRESHOLD`] so the gate always acts first, and small
+/// so a transient stall is ridden out without unbounded memory growth.
 const DEFAULT_CAPACITY: usize = 32;
 
-/// Backpressure threshold, in queued packets. Once the slowest output's backlog
-/// reaches this many packets, the upstream `send()` blocks until that output
-/// drains, pausing the whole shared stream. This is global backpressure: every
-/// client runs at the pace of the slowest. Kept below [`DEFAULT_CAPACITY`] so
-/// active outputs never reach the broadcast's lag/eviction point.
+/// Backpressure threshold: the slowest output's backlog, in packets, at which
+/// the upstream `send()` blocks until it drains, pausing the whole shared
+/// stream. Kept below [`DEFAULT_CAPACITY`] so active outputs never reach the
+/// broadcast's lag point.
 const BACKPRESSURE_THRESHOLD: usize = 20;
 
-/// Defense-in-depth upper bound on how long the backpressure gate sleeps
-/// between backlog re-checks. The gate is normally woken immediately by
-/// [`GatedReceiver`] when an output consumes a packet or disconnects; this
-/// guards against a missed wakeup so the stream can never stall indefinitely on
-/// a gate bug.
+/// Fallback wakeup for the backpressure gate: it is normally woken by
+/// [`GatedReceiver`], this only guards against a missed wakeup.
 const BACKPRESSURE_GATE_FALLBACK: Duration = Duration::from_secs(1);
 
-/// Time budget for an output's endpoint readiness handshake. After this, the
-/// output task gives up and the joining client is left to retry.
+/// Time budget for an output's endpoint readiness handshake.
 const OUTPUT_READY_TIMEOUT: Duration = Duration::from_secs(5);
 
 // ===========================================================================
 // Public types
 // ===========================================================================
 
-/// Returned by the lag handler to tell the output what to do when the
-/// broadcast lags.
+/// What an output should do when the broadcast lags.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LagAction {
-    /// Re-sync: skip the backlog and wait for the next keyframe. Under
-    /// intra-refresh no keyframe arrives unless one is forced, so the caller's
-    /// lag handler must also request an IDR (else the output waits forever).
+    /// Re-sync: skip the backlog and wait for the next keyframe (kydup never
+    /// requests one itself).
     Continue,
-    /// Terminate the output. The peer's stream stops; reconnection is
-    /// the application's responsibility.
+    /// Terminate the output.
     //
-    // Production callers currently always return `Continue`. Variant kept
-    // because it's part of the public design; flipping a backend's policy
-    // to disconnect on lag becomes a one-line change at the call site.
+    // Unused today; kept so both policies stay expressible.
     #[allow(dead_code)]
     Stop,
 }
@@ -109,13 +95,10 @@ pub enum LagAction {
 /// Whether a fresh output must wait for a keyframe before forwarding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SyncMode {
-    /// Wait for a keyframe (an IDR) before forwarding. Video. Beware: under
-    /// intra-refresh (the default video config) the encoder emits no periodic
-    /// keyframes, so this mode never resolves on its own — the joining or
-    /// re-syncing output relies on the caller forcing an IDR (see the
-    /// IDR-forcing paths in `avservices_manager`).
+    /// Wait for a keyframe before forwarding (video). Kydup never requests
+    /// one itself.
     Keyframe,
-    /// Send cached headers then forward immediately. Audio.
+    /// Send cached headers then forward immediately (audio).
     Immediate,
 }
 
@@ -128,24 +111,17 @@ enum SyncMode {
 pub struct KydupVideo {
     tx: broadcast::Sender<AVBroadcast>,
     lag_handler: Arc<dyn Fn() -> LagAction + Send + Sync>,
-    /// Shared with the upstream send driver and every output: outputs notify it
-    /// when they drain or disconnect, waking the backpressure gate.
+    /// Shared with the upstream send driver and every output; wakes the
+    /// backpressure gate.
     notify: Arc<Notify>,
 }
 
 impl KydupVideo {
-    /// Create a new kydup video instance.
+    /// Returns the kydup handle and the **upstream endpoint** that absorbs the
+    /// stream to broadcast.
     ///
-    /// Returns the kydup handle and the **upstream endpoint** that absorbs
-    /// the avservice's stream. Pass the endpoint to
-    /// `kycom.register_and_forward(...)` to wire kycom IPC into the kydup
-    /// broadcast.
-    ///
-    /// `lag_handler` is invoked whenever a downstream output cannot
-    /// keep up with the broadcast; see [`LagAction`] for the available
-    /// responses. The handler is **not** called at first sync; joining
-    /// outputs that need a fresh keyframe must request one via the caller's
-    /// own IDR-forcing path.
+    /// `lag_handler`: called when an output lags, never at first sync; see
+    /// [`LagAction`].
     pub fn new(
         lag_handler: impl Fn() -> LagAction + Send + Sync + 'static,
     ) -> (Self, VideoServerEndpoint) {
@@ -165,19 +141,14 @@ impl KydupVideo {
 
     /// Wire a client endpoint as an output of this kydup.
     ///
-    /// Mirror of `kycom.register_and_forward(endpoint)`; spawns a task that
-    /// awaits the endpoint's readiness handshake, **then** subscribes to the
-    /// broadcast and forwards packets to it (keyframe-sync at start, lag
-    /// handling at runtime). Subscribing only after the handshake keeps a
-    /// joining client off the broadcast backlog while it connects, so it can't
-    /// trip the backpressure gate and freeze the shared stream for everyone
-    /// else (see [`spawn_output_lazy`]). The returned [`Task`] aborts
-    /// the task on drop, so the caller must store it for as long as the output
-    /// should live.
+    /// Subscribes to the broadcast only after the endpoint's readiness
+    /// handshake, so a connecting output never holds the gate (see
+    /// [`spawn_output_lazy`]). The returned [`Task`] aborts the output on
+    /// drop: store it for as long as the output should live.
     ///
-    /// `on_subscribed` runs right after the post-handshake subscribe; pass a
-    /// closure that forces a keyframe so this client (which drops every packet
-    /// until the next keyframe) gets one it cannot miss.
+    /// `on_subscribed` runs right after the subscribe: from that point this
+    /// output sees every broadcast packet, so a keyframe triggered from there
+    /// cannot be missed.
     pub fn register_and_forward(
         &self,
         endpoint: VideoServerEndpoint,
@@ -193,7 +164,8 @@ impl KydupVideo {
         )
     }
 
-    /// Add an output from an already-ready `ProtocolSend`.
+    /// Add an output from an already-ready `ProtocolSend`: subscribes (and
+    /// counts toward the gate) immediately.
     #[cfg(test)]
     pub fn add_output(&self, send: ProtocolSend<AVPacket>) -> Task {
         spawn_output(
@@ -212,11 +184,9 @@ impl KydupVideo {
 }
 
 struct KydupVideoUpstreamDriver {
-    /// `Some` until `ready_boxed` is called; `take`n there and moved into the
-    /// `KydupBroadcastSendDriver`. The [`Drop`] impl uses this to tell apart
-    /// the two cases: normal teardown (already ready'd, Shutdown will come
-    /// from the send driver later) vs early drop (never ready'd, must signal
-    /// Shutdown ourselves so subscribers don't block forever).
+    /// `take`n by `ready_boxed`. Still `Some` in [`Drop`] means the endpoint
+    /// was never ready'd, so `Shutdown` must be sent from there or subscribers
+    /// would wait forever.
     tx: Option<broadcast::Sender<AVBroadcast>>,
     notify: Arc<Notify>,
 }
@@ -240,9 +210,6 @@ impl ProtocolEndpointDriver for KydupVideoUpstreamDriver {
 impl Drop for KydupVideoUpstreamDriver {
     fn drop(&mut self) {
         if let Some(tx) = self.tx.take() {
-            // Endpoint dropped without being ready'd; signal subscribers so
-            // they can exit instead of waiting forever (kydup's own `tx`
-            // clone keeps the broadcast open otherwise).
             let _ = tx.send(AVBroadcast::Shutdown);
         }
     }
@@ -262,7 +229,7 @@ pub struct KydupAudio {
 }
 
 impl KydupAudio {
-    /// Create a new kydup audio instance. See [`KydupVideo::new`].
+    /// See [`KydupVideo::new`].
     pub fn new(
         lag_handler: impl Fn() -> LagAction + Send + Sync + 'static,
     ) -> (Self, AudioServerEndpoint) {
@@ -280,8 +247,8 @@ impl KydupAudio {
         (kydup, endpoint)
     }
 
-    /// See [`KydupVideo::register_and_forward`]. Audio has no keyframe to force,
-    /// so there is no post-subscribe hook.
+    /// See [`KydupVideo::register_and_forward`]; audio needs no post-subscribe
+    /// hook.
     pub fn register_and_forward(&self, endpoint: AudioServerEndpoint) -> Task {
         spawn_output_lazy(
             self.tx.clone(),
@@ -345,16 +312,10 @@ impl Drop for KydupAudioUpstreamDriver {
 // Upstream send driver: receives packets, caches headers, broadcasts
 // ===========================================================================
 
-/// Receives packets from the upstream (typically pumped by a `kycom`
-/// `ChannelForwarder`), caches header packets, and broadcasts each packet
-/// together with a snapshot of the headers that were active at production
-/// time.
-///
-/// Binding the snapshot to the broadcast item (rather than reading a shared
-/// `Mutex` from each output) avoids the race where an output, after
-/// receiving a media packet, reads headers that have since been updated by
-/// a concurrent header packet, and ends up sending mismatched
-/// (headers, media) to its peer.
+/// Receives upstream packets, caches header packets, and broadcasts each
+/// packet with a snapshot of the headers active at that moment. The snapshot
+/// (instead of a shared mutable cache) prevents an output from pairing a
+/// packet with headers updated after it was produced.
 struct KydupBroadcastSendDriver {
     tx: broadcast::Sender<AVBroadcast>,
     headers: Arc<HeaderPackets>,
@@ -370,14 +331,9 @@ impl KydupBroadcastSendDriver {
         }
     }
 
-    /// Block the upstream push until the slowest output's backlog drops below
-    /// [`BACKPRESSURE_THRESHOLD`], so a lagging client throttles the whole
-    /// shared stream instead of silently dropping packets.
-    ///
-    /// `broadcast::Sender::len()` reports the number of values not yet seen by
-    /// every live receiver, i.e. the backlog of the slowest output, evaluated
-    /// live. Outputs wake us through [`GatedReceiver`] as soon as they consume
-    /// a packet or disconnect; the timed fallback is only a safety net.
+    /// Block the upstream push until the slowest output's backlog
+    /// (`broadcast::Sender::len()`) drops below [`BACKPRESSURE_THRESHOLD`]: a
+    /// lagging output throttles the whole shared stream.
     async fn await_backpressure(&self) {
         loop {
             if self.tx.len() < BACKPRESSURE_THRESHOLD {
@@ -385,8 +341,8 @@ impl KydupBroadcastSendDriver {
             }
             let notified = self.notify.notified();
             tokio::pin!(notified);
-            // Arm before re-reading the backlog so a wakeup racing in right now
-            // is captured rather than lost between the check and the await.
+            // Arm before re-reading so a wakeup racing in right now is
+            // captured rather than lost between the check and the await.
             notified.as_mut().enable();
             if self.tx.len() < BACKPRESSURE_THRESHOLD {
                 return;
@@ -419,10 +375,8 @@ impl ProtocolSendDriver for KydupBroadcastSendDriver {
 
 impl Drop for KydupBroadcastSendDriver {
     fn drop(&mut self) {
-        // Signal end-of-stream to subscribers. Without this, outputs would
-        // sit idle until the kydup itself is dropped (which may happen only
-        // after the avservice cleanup task runs). Best-effort: ignored if
-        // no subscribers are listening.
+        // End-of-stream signal; without it outputs would idle until the kydup
+        // itself drops.
         let _ = self.tx.send(AVBroadcast::Shutdown);
     }
 }
@@ -431,10 +385,8 @@ impl Drop for KydupBroadcastSendDriver {
 // AV internals: shared between video and audio outputs
 // ===========================================================================
 
-/// Broadcast item carrying the packet together with a snapshot of the headers
-/// that were cached at the moment the packet was broadcast (i.e. when
-/// [`KydupBroadcastSendDriver::send`] forwarded it). See
-/// [`KydupBroadcastSendDriver`] for the race that motivates the snapshot.
+/// Broadcast item: packet + snapshot of the headers cached when it was sent.
+/// See [`KydupBroadcastSendDriver`] for the race the snapshot avoids.
 #[derive(Clone)]
 enum AVBroadcast {
     Data(AVPacket, Arc<HeaderPackets>),
@@ -479,13 +431,9 @@ async fn ready_with_timeout<P: Send + 'static>(
     }
 }
 
-/// Broadcast receiver wrapper that drives the upstream backpressure gate.
-///
-/// Every successful (or failed) `recv()` means this output advanced, so the
-/// slowest backlog may have shrunk; and the `Drop` means the output went away
-/// and no longer holds the broadcast back. Both wake the gated upstream
-/// `send()` via the shared [`Notify`]. The wrapped `recv()` returns the exact
-/// same type as the underlying receiver, so call sites are unchanged.
+/// Broadcast receiver wrapper: every `recv()` wakes the gated upstream
+/// `send()`; `Drop` wakes it too, so a departed output no longer holds the
+/// stream back.
 struct GatedReceiver {
     rx: broadcast::Receiver<AVBroadcast>,
     notify: Arc<Notify>,
@@ -505,21 +453,13 @@ impl GatedReceiver {
 
 impl Drop for GatedReceiver {
     fn drop(&mut self) {
-        // This receiver is going away, so it no longer pins the broadcast
-        // backlog; wake a possibly-gated sender to re-evaluate.
         self.notify.notify_one();
     }
 }
 
-/// Spawn a driving task for one **already-subscribed** output. The task awaits
-/// `ready_send` (which produces the `ProtocolSend` to push packets into), then
-/// runs the sync / forward / lag-handling loop until either the broadcast is
-/// closed, the peer's send errors out, or the lag handler returns
-/// [`LagAction::Stop`].
-///
-/// Used by `add_output`, whose sink is ready immediately, so there is no
-/// handshake window during which the idle receiver could hold the broadcast
-/// backlog. Handshaking outputs must use [`spawn_output_lazy`] instead.
+/// Drive one **already-subscribed** output: await `ready_send`, then run the
+/// sync/forward/lag loop until shutdown, send error, or [`LagAction::Stop`].
+/// Handshaking outputs must use [`spawn_output_lazy`] instead.
 #[cfg(test)]
 fn spawn_output(
     rx: broadcast::Receiver<AVBroadcast>,
@@ -543,21 +483,12 @@ fn spawn_output(
     })
 }
 
-/// Like [`spawn_output`], but subscribes to the broadcast only **after** the
-/// readiness handshake succeeds. Used by the `register_and_forward` paths,
-/// whose endpoints complete a network handshake (up to [`OUTPUT_READY_TIMEOUT`])
-/// before they can receive.
+/// Like [`spawn_output`], but subscribes only **after** the readiness
+/// handshake: a still-connecting output would otherwise count toward the gate
+/// and could freeze the shared stream for the whole handshake.
 ///
-/// Subscribing eagerly would make the not-yet-consuming receiver count toward
-/// the broadcast backlog ([`broadcast::Sender::len`]) for the whole handshake,
-/// tripping the backpressure gate and freezing the shared stream for every
-/// other client until the handshake resolved (or timed out). Subscribing
-/// afterwards keeps a joining client off the backlog entirely.
-///
-/// `on_subscribed` runs immediately after the (post-ready) subscribe. Callers
-/// use it to force a keyframe; doing so *after* the subscribe guarantees the
-/// keyframe is produced while this receiver is already listening, so a client
-/// in keyframe-sync mode cannot miss it.
+/// `on_subscribed` runs right after the subscribe: from that point the output
+/// sees every broadcast packet.
 fn spawn_output_lazy(
     tx: broadcast::Sender<AVBroadcast>,
     notify: Arc<Notify>,
@@ -570,19 +501,12 @@ fn spawn_output_lazy(
         let send = match ready_send.await {
             Ok(s) => s,
             Err(e) => {
-                // Handshake failed before we subscribed: nothing is holding the
-                // broadcast backlog, so there is no gate to wake.
                 error!("Kydup AV output ready failed: {e}");
                 return;
             }
         };
-        // Subscribe now that the sink is live, then drop our `Sender` clone.
-        // The drop is hygiene, not load-bearing: outputs terminate on the
-        // explicit `AVBroadcast::Shutdown` message (the upstream send driver's
-        // Drop sends it), not on channel closure — and the kydup keeps its own
-        // `tx` clone alive for the stream's lifetime regardless. Dropping ours
-        // just releases a Sender promptly instead of holding it for the whole
-        // `run_av_output`.
+        // Dropping our `Sender` clone is hygiene only: outputs terminate on
+        // the explicit `Shutdown` message, not on channel closure.
         let mut rx = GatedReceiver::new(tx.subscribe(), notify);
         drop(tx);
         on_subscribed();
@@ -604,12 +528,9 @@ enum DesyncReason {
     Shutdown,
 }
 
-/// Drive an AV output end-to-end: initial sync (per `sync_mode`), then forward
-/// packets until desync. On lag, `lag_handler` decides whether to terminate
-/// the output ([`LagAction::Stop`]) or re-sync ([`LagAction::Continue`]).
-/// `last_headers_version` is used by the Immediate path to skip re-sending
-/// unchanged headers across re-syncs; the Keyframe path always re-sends the
-/// cached headers in front of every keyframe (and updates the version).
+/// Drive an output: initial sync per `sync_mode`, then forward until desync;
+/// on lag, `lag_handler` picks the [`LagAction`]. Keyframe sync re-sends the
+/// cached headers before every keyframe; Immediate skips them when unchanged.
 async fn run_av_output(
     rx: &mut GatedReceiver,
     mut send: ProtocolSend<AVPacket>,
@@ -673,10 +594,8 @@ async fn wait_for_keyframe(
     }
 }
 
-/// Immediate-mode sync: wait for the first data packet, emit its attached
-/// headers (if changed) and the packet itself. Using the snapshot that
-/// travels with the packet, rather than re-reading a shared cache, guards
-/// against sending headers from a version produced after the packet.
+/// Immediate-mode sync: emit the first data packet, preceded by its attached
+/// headers if they changed.
 async fn wait_for_first_packet(
     rx: &mut GatedReceiver,
     send: &mut ProtocolSend<AVPacket>,
