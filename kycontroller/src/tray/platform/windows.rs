@@ -34,7 +34,7 @@ use super::super::status::{TrayCommand, TrayStatus};
 use crate::error::{Error, Result};
 
 use log::{error, info, warn};
-use muda::{ContextMenu, Menu, MenuEvent, MenuId, MenuItem};
+use muda::{ContextMenu, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use std::thread;
@@ -199,6 +199,7 @@ impl Drop for TrayHandle {
 const ICON_BYTES: &[u8] = include_bytes!("../../../res/kyber_tray.png");
 
 /// Menu item IDs
+const MENU_VERSION_ID: &str = "version";
 const MENU_STOP_ID: &str = "stop";
 const MENU_RESTART_ID: &str = "restart";
 
@@ -590,9 +591,18 @@ fn create_hicon_from_png(png_data: &[u8]) -> Result<HICON> {
 fn build_menu() -> Result<Menu> {
     let menu = Menu::new();
 
+    let version_label = format!("Kyber v{}", env!("VERGEN_GIT_DESCRIBE"));
+    let version_item = MenuItem::with_id(MENU_VERSION_ID, &version_label, false, None);
     let stop_item = MenuItem::with_id(MENU_STOP_ID, "Stop Kyber", true, None);
     let restart_item = MenuItem::with_id(MENU_RESTART_ID, "Restart Kyber", true, None);
 
+    menu.append(&version_item).map_err(|e| Error::TrayInit {
+        reason: e.to_string(),
+    })?;
+    menu.append(&PredefinedMenuItem::separator())
+        .map_err(|e| Error::TrayInit {
+            reason: e.to_string(),
+        })?;
     menu.append(&restart_item).map_err(|e| Error::TrayInit {
         reason: e.to_string(),
     })?;
