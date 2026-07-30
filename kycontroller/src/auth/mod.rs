@@ -79,19 +79,17 @@ impl<'hdr> AuthorizationHeader<'hdr> {
             return None;
         };
 
+        #[allow(unused)]
         if let Some(creds) = header.strip_prefix("Bearer").map(str::trim) {
             let kind = match auth_hint {
                 #[cfg(feature = "auth-oidc")]
                 Some("oidc") => Method::Oidc,
                 _ => {
-                    #[cfg(feature = "auth-jwt")]
-                    {
-                        Method::Jwt
-                    }
                     #[cfg(not(feature = "auth-jwt"))]
-                    {
-                        return None;
-                    }
+                    return None;
+
+                    #[cfg(feature = "auth-jwt")]
+                    Method::Jwt
                 }
             };
             return Some(AuthorizationHeader { kind, creds });
@@ -171,6 +169,7 @@ static BACKEND_REGISTRY: OnceLock<registry::BackendRegistry> = OnceLock::new();
 
 /// Authentication errors returned by backend validation.
 #[derive(Debug, thiserror::Error)]
+#[allow(dead_code)]
 pub enum Error {
     /// Credential has expired
     #[error("Expired at {at}")]
