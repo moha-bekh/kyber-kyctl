@@ -136,7 +136,7 @@ build_deps() {
 
     # Build kymedia
     cd ../kymedia
-    ./build-macos.sh -a $HOST_ARCH -o $OUT_DIR
+    KYBER_BUILD_CLIENT_DEPS=1 ./build-macos.sh -a $HOST_ARCH -o $OUT_DIR
     cd -
 
     # Build kynput
