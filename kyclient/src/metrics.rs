@@ -405,7 +405,7 @@ impl FrameTimestamps {
     }
 
     fn set_decoded(&mut self, ts: i64) {
-        if let Some(prev) = self.decoding {
+        if let Some(prev) = self.decoded {
             log::warn!(
                 "Multiple 'decoded' timestamps for PTS {}: prev={prev} ts={ts}",
                 self.pts
