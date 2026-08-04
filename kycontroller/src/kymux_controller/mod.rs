@@ -276,11 +276,26 @@ async fn start_video(
             .await?;
         let display_id = stream_request.display_id;
 
+        // Intra-refresh disables IDR frames, which GopStream uses to mark
+        // GOP boundaries. Force it off so GopStream isn't just Reliable.
+        let intra_refresh = if video_protocol == VideoProtocol::GopStream {
+            if stream_request.intra_refresh != Some(false) {
+                warn!(
+                    "GopStream requested with intra_refresh {:?}: forcing intra_refresh off, \
+                     GopStream requires periodic IDR frames as GOP boundaries",
+                    stream_request.intra_refresh
+                );
+            }
+            Some(false)
+        } else {
+            stream_request.intra_refresh
+        };
+
         let config = crate::avservices_manager::VideoStreamConfig {
             bitrate: request.bitrate,
             codec: stream_request.codec.convert(),
             yuv444: stream_request.yuv444,
-            intra_refresh: stream_request.intra_refresh,
+            intra_refresh,
             video_stream_count,
         };
 
