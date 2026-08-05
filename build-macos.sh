@@ -134,10 +134,23 @@ get_cargo_target() {
 }
 
 build_deps() {
+    local kymedia_action
+
+    case "$ACTION" in
+        build-kyclient|clippy-kyclient)
+            kymedia_action="build-client"
+            ;;
+        build-kycontroller|clippy-kycontroller)
+            kymedia_action="build-server"
+            ;;
+        *)
+            kymedia_action="build"
+            ;;
+    esac
 
     # Build kymedia
     cd ../kymedia
-    KYBER_BUILD_CLIENT_DEPS=1 ./build-macos.sh -a $HOST_ARCH -o $OUT_DIR
+    ./build-macos.sh -a "$HOST_ARCH" -o "$OUT_DIR" "$kymedia_action"
     cd -
 
     # Build kynput
