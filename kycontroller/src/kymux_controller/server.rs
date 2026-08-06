@@ -147,7 +147,7 @@ pub(crate) struct KymuxServer {
 }
 
 impl KymuxServer {
-    pub(crate) async fn new(
+    pub(crate) fn new(
         server: Box<dyn kynet::Server>,
         router: Arc<Mutex<IncomingConnectionRouter>>,
     ) -> Self {

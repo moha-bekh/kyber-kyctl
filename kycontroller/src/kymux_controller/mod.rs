@@ -91,7 +91,7 @@ pub(crate) struct SharedKymuxInfra {
 
 impl SharedKymuxInfra {
     /// Start the infrastructure.
-    pub(crate) async fn start(config: KymuxInfraConfig) -> Result<Self> {
+    pub(crate) fn start(config: KymuxInfraConfig) -> Result<Self> {
         let ip_addr = match config.listen_mode {
             ListenMode::Ipv4 => IpAddr::V4(Ipv4Addr::UNSPECIFIED),
             // Enable dual-stack: accept both IPv4 and IPv6 on this socket.
@@ -139,7 +139,7 @@ impl SharedKymuxInfra {
         let router = Arc::new(std::sync::Mutex::new(IncomingConnectionRouter::new()));
 
         // Create the server with the router
-        let server = KymuxServer::new(server, router.clone()).await;
+        let server = KymuxServer::new(server, router.clone());
 
         Ok(Self {
             server,
@@ -264,7 +264,7 @@ async fn start_kymux(
     // Start infrastructure if not running
     let kymux = match &mut *shared_kymux_infra {
         Some(kymux) => kymux,
-        kymux @ None => kymux.insert(SharedKymuxInfra::start(infra_config).await?),
+        kymux @ None => kymux.insert(SharedKymuxInfra::start(infra_config)?),
     };
 
     // Register session: creates pending_auth + oneshot channel
@@ -876,7 +876,7 @@ async fn run_stats_poller(
 /// Handles the common WebSocket setup pattern:
 /// 1. Validate client/streaming/backend sessions exist
 /// 2. Call service-specific routing function
-pub(super) async fn start_websocket_handler(
+pub(super) fn start_websocket_handler(
     ctrl: web::Data<Controller>,
     session_id: uuid::Uuid,
     session: actix_ws::Session,

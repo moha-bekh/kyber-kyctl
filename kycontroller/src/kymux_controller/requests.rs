@@ -181,7 +181,7 @@ pub(crate) async fn start_session(
     }
 }
 
-async fn ws_service_handler(
+fn ws_service_handler(
     ctrl: web::Data<Controller>,
     request: HttpRequest,
     stream: web::Payload,
@@ -202,8 +202,7 @@ async fn ws_service_handler(
         }
     };
 
-    match super::start_websocket_handler(ctrl, session_id, session, msg_stream, service_type).await
-    {
+    match super::start_websocket_handler(ctrl, session_id, session, msg_stream, service_type) {
         Ok(()) => {
             info!("Websocket {label} started");
             res
@@ -230,7 +229,6 @@ async fn ws_video(
         super::ServiceType::Video,
         "video",
     )
-    .await
 }
 
 #[get("/audio")]
@@ -248,7 +246,6 @@ async fn ws_audio(
         super::ServiceType::Audio,
         "audio",
     )
-    .await
 }
 
 #[get("/inputs")]
@@ -266,5 +263,4 @@ async fn ws_inputs(
         super::ServiceType::Input,
         "inputs",
     )
-    .await
 }
