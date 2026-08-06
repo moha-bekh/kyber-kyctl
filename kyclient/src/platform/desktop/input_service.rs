@@ -85,7 +85,7 @@ impl InputClient {
         self.stream.clone_consumer()
     }
 
-    pub async fn stop(&mut self) -> Result<()> {
+    pub fn stop(&mut self) -> Result<()> {
         self.stream.stop()?;
 
         Ok(())

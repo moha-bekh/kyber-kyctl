@@ -1028,6 +1028,8 @@ impl Client {
         })
     }
 
+    // Kept async for backward compatibility for now
+    #[allow(clippy::unused_async)]
     #[cfg(target_arch = "wasm32")]
     pub async fn stop(self) -> Result<()> {
         self.mainloop_engine.stop();

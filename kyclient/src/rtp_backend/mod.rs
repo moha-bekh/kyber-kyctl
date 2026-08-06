@@ -134,7 +134,7 @@ impl RtpBackend {
 
         // Prepare audio config
         let (host_audioconfig, vlc_audioconfig) =
-            Self::create_audio_config(&backend_config, &local_ip).await?;
+            Self::create_audio_config(&backend_config, &local_ip)?;
 
         // Start stream
         host_service::start_stream(
@@ -223,7 +223,7 @@ impl RtpBackend {
         Ok((Some(host_videoconfig), Some(vlc_videoconfig)))
     }
 
-    async fn create_audio_config(
+    fn create_audio_config(
         backend_config: &RtpBackendConfig<'_>,
         local_ip: &str,
     ) -> Result<(Option<HostAudioConfig>, Option<player::AudioConfig>)> {
@@ -312,7 +312,7 @@ impl BackendDriver for RtpBackend {
 
         if let Some(mut input_service) = self.input_service.take() {
             info!("Stop input service");
-            input_service.client.stop().await?;
+            input_service.client.stop()?;
             info!("Input service stopped");
         }
 

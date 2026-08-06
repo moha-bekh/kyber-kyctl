@@ -47,7 +47,7 @@ fn send_metric(metrics: &MetricsProducer, metric: Metric) -> bool {
     true
 }
 
-pub(crate) async fn start_connection_stats_poller(
+pub(crate) fn start_connection_stats_poller(
     connection: &kyproto::Connection,
     metrics: MetricsProducer,
     interval: Duration,

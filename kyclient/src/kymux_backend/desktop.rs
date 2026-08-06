@@ -107,7 +107,7 @@ fn create_audio_config(
     Ok(Some(player_config))
 }
 
-async fn create_player(
+fn create_player(
     kycom: &mut kycom::KyCom,
     backend_config: &KymuxBackendConfig<'_>,
     metrics: Option<&MetricsProducer>,
@@ -148,7 +148,7 @@ async fn create_player(
     Ok(player)
 }
 
-async fn start_input(
+fn start_input(
     kycom: &mut kycom::KyCom,
     backend_config: &KymuxBackendConfig<'_>,
     msg_sender: MessageSender,
@@ -210,8 +210,7 @@ impl KymuxDesktop {
             metrics.as_ref(),
             endpoints.video,
             endpoints.audio,
-        )
-        .await?;
+        )?;
 
         // Start input
         let input_service = start_input(
@@ -219,8 +218,7 @@ impl KymuxDesktop {
             backend_config,
             backend_config.msg_sender.clone(),
             endpoints.input,
-        )
-        .await?;
+        )?;
 
         Ok(Self {
             _kycom: kycom,

@@ -216,10 +216,11 @@ async fn start_metrics(
 
     let mut tasks = Vec::new();
 
-    tasks.push(
-        metrics::start_connection_stats_poller(connection, metrics.clone(), Duration::from_secs(5))
-            .await,
-    );
+    tasks.push(metrics::start_connection_stats_poller(
+        connection,
+        metrics.clone(),
+        Duration::from_secs(5),
+    ));
 
     let clock_sync_id = host_config
         .clock_sync
