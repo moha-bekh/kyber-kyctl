@@ -7,6 +7,11 @@ style = "Type"
 language = "C"
 cpp_compat = true
 
+[parse]
+# LogLevel and LogCb live in log4ky, not here.
+parse_deps = true
+include = ["log4ky"]
+
 [export]
 prefix = "kyclient_"
 item_types = ["enums", "structs", "unions", "typedefs", "opaque", "functions"]

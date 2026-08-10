@@ -129,72 +129,19 @@ impl From<KymuxAudioProtocol> for kyctl_common::kymux::AudioProtocol {
     }
 }
 
-#[repr(C)]
-pub enum LogLevel {
-    Error,
-    Warn,
-    Info,
-    Debug,
-    Trace,
-}
+pub use log4ky::capi::{LogCb, LogLevel};
 
-impl From<log::Level> for LogLevel {
-    fn from(t: log::Level) -> Self {
-        match t {
-            log::Level::Error => Self::Error,
-            log::Level::Warn => Self::Warn,
-            log::Level::Info => Self::Info,
-            log::Level::Debug => Self::Debug,
-            log::Level::Trace => Self::Trace,
-        }
-    }
-}
-
-type LogCb = extern "C" fn(
-    level: LogLevel,
-    target: *const c_char,
-    line: *const c_char,
-    userdata: *mut c_void,
-);
-
-struct Logger {
-    cb: LogCb,
-    userdata: std::sync::atomic::AtomicPtr<c_void>,
-}
-
-impl log::Log for Logger {
-    fn enabled(&self, _metadata: &log::Metadata) -> bool {
-        true
-    }
-
-    fn log(&self, record: &log::Record) {
-        let line = if let Ok(line) = CString::new(format!("{}", record.args())) {
-            line
-        } else {
-            return;
-        };
-
-        let target = if let Ok(target) = CString::new(record.target()) {
-            target
-        } else {
-            return;
-        };
-
-        (self.cb)(
-            record.level().into(),
-            target.as_ptr(),
-            line.as_ptr(),
-            self.userdata.load(std::sync::atomic::Ordering::Relaxed),
-        );
-    }
-
-    fn flush(&self) {}
-}
-
+/// # Safety
+///
+/// `cb` runs on any thread that logs, for as long as the process lives, so
+/// `userdata` must stay valid and usable from several threads at once.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_set_log_cb(cb: LogCb, userdata: *mut c_void) {
-    let userdata = std::sync::atomic::AtomicPtr::new(userdata);
-    let logger = Box::new(Logger { cb, userdata });
+    let Some(logger) = (unsafe { log4ky::capi::CbLogger::new(cb, userdata) }) else {
+        eprintln!("kyclient_set_log_cb: callback cannot be NULL");
+        return;
+    };
+    let logger = Box::new(logger);
 
     if log::set_boxed_logger(logger).is_err() {
         return;

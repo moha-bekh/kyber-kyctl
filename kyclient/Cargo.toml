@@ -11,6 +11,9 @@ libc = "0.2.153"
 kyclient-common = { version = "0.1.0", path = "../kyclient-common" }
 kyctl-common = { path = "../kyctl-common" }
 log = { version = "0.4.21", features = ["std"] }
+log4ky = { version = "0.1.0", default-features = false, features = [
+    "capi",
+], optional = true }
 reqwest = { version = "0.13", default-features = false, features = ["json"] }
 rmp-serde = { version = "1.1.2", optional = true }
 serde = { version = "1.0.197", features = ["derive"] }
@@ -58,7 +61,7 @@ web-sys = { version = "=0.3.77", features = [
 vergen = { version = "8.3.1", features = ["build", "git", "gitcl"] }
 
 [features]
-capi = []
+capi = ["dep:log4ky"]
 kymux = [
     "dep:kymux",
     "rmp-serde",
