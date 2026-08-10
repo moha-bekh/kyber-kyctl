@@ -21,7 +21,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use log::{error, info};
+use log::error;
 use serde::Deserialize;
 
 use kidd_client::MonitorMode;
@@ -94,12 +94,6 @@ pub(crate) struct Config {
     pub(crate) kidd: KiddConfig,
 }
 
-#[derive(Debug, Default, Deserialize)]
-struct Root {
-    #[serde(default)]
-    kyservice: Config,
-}
-
 /// The config file this process reads when no explicit path is given:
 /// KYBER_CONFIG if set, otherwise one next to our own executable.
 pub(crate) fn config_path() -> PathBuf {
@@ -109,8 +103,11 @@ pub(crate) fn config_path() -> PathBuf {
     }
 }
 
-pub(crate) fn load(override_path: Option<&Path>) -> Result<Config> {
-    // An explicit pointer must resolve to a readable file: --config, or
+// No logging here: the logger is configured from the table this returns, so it
+// is not yet initialized. Diagnostics travel in the error and are logged by the
+// caller once the logger is up.
+pub(crate) fn parse(override_path: Option<&Path>) -> Result<Option<toml::Table>> {
+    // An explicit pointer must resolve to a readable file: the given path, or
     // KYBER_CONFIG when set. With neither, a missing executable-relative
     // default falls back to the built-in defaults.
     let required = override_path.is_some() || std::env::var_os("KYBER_CONFIG").is_some();
@@ -120,29 +117,35 @@ pub(crate) fn load(override_path: Option<&Path>) -> Result<Config> {
     };
 
     let content = match fs::read(&path) {
-        Ok(content) => content,
-        Err(err) if required => {
-            error!("Cannot read configuration file {path:?}: {err}");
-            return Err(Error::ConfigParseFail);
-        }
-        Err(_) => {
-            info!("Use default configuration");
-            return Ok(Config::default());
-        }
+        Ok(c) => c,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound && !required => return Ok(None),
+        Err(reason) => return Err(Error::ConfigReadFail { reason }),
     };
 
-    info!("Using configuration file {path:?}");
-    let content = String::from_utf8(content).map_err(|err| {
-        error!("Configuration file isn't a valid UTF8 file: {err:?}");
-        Error::ConfigParseFail
-    })?;
+    let content =
+        String::from_utf8(content).map_err(|reason| Error::ConfigInvalidUtf8 { reason })?;
 
-    let config: Root = toml::from_str(&content).map_err(|err| {
-        error!("Configuration file parsing failed: {err:?}");
-        Error::ConfigParseFail
-    })?;
+    toml::from_str::<toml::Table>(&content)
+        .map(Some)
+        .map_err(|reason| Error::ConfigParseFail { reason })
+}
 
-    Ok(config.kyservice)
+pub(crate) fn from_table(table: &toml::Table) -> Result<Config> {
+    let Some(svc_conf) = table.get("kyservice") else {
+        return Ok(Config::default());
+    };
+
+    svc_conf.clone().try_into().map_err(|reason| {
+        error!("kyservice config section parse failed: {reason:?}");
+        Error::ConfigLoadFail { reason }
+    })
+}
+
+pub(crate) fn load(override_path: Option<&Path>) -> Result<Config> {
+    parse(override_path)?
+        .as_ref()
+        .map(from_table)
+        .unwrap_or(Ok(Config::default()))
 }
 
 pub(crate) const DEFAULT_MONITOR_MODES: &[MonitorMode] = &[

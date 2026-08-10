@@ -36,8 +36,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
-use log::{LevelFilter, error, info, warn};
-use log4rs::append::file::FileAppender;
+use log::{error, info, warn};
+use log4ky::notice;
 use windows_service::{
     service::{
         ServiceControl, ServiceControlAccept, ServiceExitCode, ServiceState, ServiceStatus,
@@ -494,22 +494,40 @@ fn service_handler_wrapper(arguments: Vec<OsString>) {
 }
 
 pub fn run() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    let mut exe_path = current_exe().unwrap();
-    exe_path.pop();
-    let logpath = Path::new(&exe_path).join("log").join("kyservice.log");
+    let path = config::config_path();
+    let parsed = config::parse(None);
 
-    let logfile = FileAppender::builder().append(true).build(logpath).unwrap();
+    // Initialize the logger before reporting parse status. A service has no
+    // console, so a parse failure must reach the log file, not stderr. When the
+    // file can't be parsed its log section is unreachable anyway, so fall back
+    // to the env-derived base config.
+    let empty_table = toml::Table::new();
+    let table_ref = match &parsed {
+        Ok(Some(table)) => table,
+        _ => &empty_table,
+    };
+    let _log_handle = match log4ky::LoggerBuilder::new("kyservice")
+        .toml(table_ref)
+        .console(!cfg!(feature = "win32-hide-console"))
+        .init()
+    {
+        Ok(handle) => handle,
+        // Config-key warnings already went to stderr and the log file; a
+        // hard install failure (no log file exists yet) has not.
+        Err(e) => {
+            notice!("Failed to initialize logger: {e}");
+            return Err(e.into());
+        }
+    };
 
-    let config = log4rs::config::Config::builder()
-        .appender(log4rs::config::Appender::builder().build("logfile", Box::new(logfile)))
-        .build(
-            log4rs::config::Root::builder()
-                .appender("logfile")
-                .build(LevelFilter::Trace),
-        )
-        .unwrap();
-
-    log4rs::init_config(config).unwrap();
+    match parsed {
+        Ok(Some(_)) => info!("Using configuration file {path:?}"),
+        Ok(None) => info!("No configuration file found, using defaults"),
+        Err(e) => {
+            error!("Failed to load configuration: {e:?}");
+            return Err(format!("{e:?}").into());
+        }
+    }
 
     info!(
         "Kyber Windows service. Revision {}",

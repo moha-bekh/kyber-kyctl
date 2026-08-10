@@ -135,7 +135,9 @@ pub enum Error {
     MpscChannelClosed { channel_name: String },
     MpscChannelEmpty,
 
-    ConfigParseFail,
+    ConfigReadFail { reason: std::io::Error },
+    ConfigInvalidUtf8 { reason: std::string::FromUtf8Error },
+    ConfigParseFail { reason: toml::de::Error },
     ConfigLoadFail { reason: toml::de::Error },
 
     Win32(Win32Error),
