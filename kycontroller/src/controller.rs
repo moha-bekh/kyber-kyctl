@@ -157,7 +157,7 @@ pub struct Controller {
     tray_handle: Mutex<Option<TrayHandle>>,
 
     // Shared kycom instance for all backends (IPC bridge to avserver/inputserver processes)
-    pub(crate) kycom: AsyncMutex<kymux::kycom::KyCom>,
+    pub(crate) kycom: kymux::kycom::KyCom,
 
     // Shared AV services: avservers and duplicators shared across clients
     /// Must always be taken after `kycom`.
@@ -182,7 +182,7 @@ impl Controller {
             state_machine_proxy: StateMachineProxy::new(events_tx),
             shared_kymux_infra: Default::default(),
             tray_handle: Mutex::new(None),
-            kycom: AsyncMutex::new(kycom),
+            kycom,
             av_services_manager: Default::default(),
         });
         let state_machine = statemachine::run(this.clone(), events_rx);

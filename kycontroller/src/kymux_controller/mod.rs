@@ -249,7 +249,7 @@ async fn start_kymux(
 #[allow(clippy::too_many_arguments)]
 async fn start_video(
     request: &requests::StartRequest,
-    kycom: &mut kymux::kycom::KyCom,
+    kycom: &kymux::kycom::KyCom,
     connection: &kyproto::Connection,
     process_factory: &Arc<ProcessFactory>,
     session_id: uuid::Uuid,
@@ -444,7 +444,7 @@ async fn start_video(
 #[allow(clippy::too_many_arguments)]
 async fn start_audio(
     request: &requests::StartRequest,
-    kycom: &mut kymux::kycom::KyCom,
+    kycom: &kymux::kycom::KyCom,
     connection: &kyproto::Connection,
     process_factory: &Arc<ProcessFactory>,
     session_id: uuid::Uuid,
@@ -503,7 +503,7 @@ async fn start_audio(
 
 async fn start_input(
     request: &requests::StartRequest,
-    kycom: &mut kycom::KyCom,
+    kycom: &kycom::KyCom,
     connection: &kyproto::Connection,
     process_factory: &Arc<ProcessFactory>,
     host_config: kynputservice_types::HostConfig,
@@ -640,15 +640,13 @@ async fn start_session(
 
     // Start services (using shared kycom and av_services_manager from Controller)
 
-    let mut kycom = ctrl.kycom.lock().await;
-
     let mode = ctrl.config.session_mode();
 
     let av_services_manager = &mut ctrl.av_services_manager.lock().await;
 
     let video = start_video(
         &request,
-        &mut kycom,
+        &ctrl.kycom,
         &connection,
         &ctrl.process_factory,
         session_id,
@@ -660,7 +658,7 @@ async fn start_session(
 
     let audio = start_audio(
         &request,
-        &mut kycom,
+        &ctrl.kycom,
         &connection,
         &ctrl.process_factory,
         session_id,
@@ -674,14 +672,12 @@ async fn start_session(
     let display_list = ctrl.displays.lock().unwrap().convert();
     let input = start_input(
         &request,
-        &mut kycom,
+        &ctrl.kycom,
         &connection,
         &ctrl.process_factory,
         kynputservice_types::HostConfig { display_list },
     )
     .await?;
-
-    drop(kycom);
 
     let clock_sync = if request.metrics {
         let (endpoint_id, endpoint) = connection.register_clock_sync_endpoint().await?;

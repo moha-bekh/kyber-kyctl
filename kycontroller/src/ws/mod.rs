@@ -25,7 +25,6 @@ pub(crate) mod requests;
 use std::sync::Arc;
 
 use actix_web::web;
-use kymux::kycom::KyCom;
 use tokio::sync::oneshot;
 
 use crate::config::SessionMode;
@@ -188,7 +187,6 @@ struct AudioSetup {
 /// stalls until `/websocket/video` arrives).
 async fn setup_video(
     ctrl: &Controller,
-    kycom: &mut KyCom,
     session_id: uuid::Uuid,
     request: &requests::StartRequest,
     video_request: &requests::StartRequestVideo,
@@ -211,7 +209,7 @@ async fn setup_video(
             let topology = crate::avservices_manager::VideoTopology::Shared { display_id };
             let acq = av_services_manager
                 .acquire_video(
-                    kycom,
+                    &ctrl.kycom,
                     topology,
                     config,
                     false,
@@ -229,7 +227,8 @@ async fn setup_video(
         SessionMode::Mono => {
             let (endpoint, connection_tx) =
                 av::AVWebSocketEndpoint::<kymux::types::VideoServerProtocol>::new();
-            let kycom_uri = kycom
+            let kycom_uri = ctrl
+                .kycom
                 .register_and_forward(endpoint.into())
                 .map_err(|e| Error::IO { source: e })?
                 .url();
@@ -240,7 +239,7 @@ async fn setup_video(
             };
             let acq = av_services_manager
                 .acquire_video(
-                    kycom,
+                    &ctrl.kycom,
                     topology,
                     config,
                     false,
@@ -261,7 +260,6 @@ async fn setup_video(
 /// Audio counterpart of [`setup_video`].
 async fn setup_audio(
     ctrl: &Controller,
-    kycom: &mut KyCom,
     session_id: uuid::Uuid,
     process_factory: &Arc<libkypc::process::ProcessFactory>,
     mode: SessionMode,
@@ -274,7 +272,7 @@ async fn setup_audio(
         SessionMode::Multi => {
             let topology = crate::avservices_manager::AudioTopology::Shared;
             let acq = av_services_manager
-                .acquire_audio(kycom, topology, process_factory, statemachine_proxy)
+                .acquire_audio(&ctrl.kycom, topology, process_factory, statemachine_proxy)
                 .await?;
             let dup = acq.dup.expect("Shared topology guarantees Some(dup)");
             Ok(AudioSetup {
@@ -285,7 +283,8 @@ async fn setup_audio(
         SessionMode::Mono => {
             let (endpoint, connection_tx) =
                 av::AVWebSocketEndpoint::<kymux::types::AudioServerProtocol>::new();
-            let kycom_uri = kycom
+            let kycom_uri = ctrl
+                .kycom
                 .register_and_forward(endpoint.into())
                 .map_err(|e| Error::IO { source: e })?
                 .url();
@@ -294,7 +293,7 @@ async fn setup_audio(
                 kycom_uri,
             };
             let acq = av_services_manager
-                .acquire_audio(kycom, topology, process_factory, statemachine_proxy)
+                .acquire_audio(&ctrl.kycom, topology, process_factory, statemachine_proxy)
                 .await?;
             debug_assert!(acq.dup.is_none());
             Ok(AudioSetup {
@@ -315,9 +314,6 @@ async fn start_handler(
         return Err(Error::DataPlaneAlreadyOpened);
     }
 
-    // Ensure shared kycom is running
-    let mut kycom = ctrl.kycom.lock().await;
-
     // Extract values before borrows
     let process_factory = ctrl.process_factory.clone();
     let mode = ctrl.config.session_mode();
@@ -326,7 +322,6 @@ async fn start_handler(
         Some(
             setup_video(
                 &ctrl,
-                &mut kycom,
                 session_id,
                 request,
                 video_request,
@@ -340,7 +335,7 @@ async fn start_handler(
     };
 
     let audio_setup = if request.audio {
-        Some(setup_audio(&ctrl, &mut kycom, session_id, &process_factory, mode).await?)
+        Some(setup_audio(&ctrl, session_id, &process_factory, mode).await?)
     } else {
         None
     };
@@ -357,7 +352,8 @@ async fn start_handler(
         };
 
         let (endpoint, connection_tx) = input::InputWebSocketEndpoint::new();
-        let addr = kycom
+        let addr = ctrl
+            .kycom
             .register_and_forward(endpoint.into())
             .map_err(|e| Error::IO { source: e })?;
 
@@ -373,9 +369,6 @@ async fn start_handler(
     } else {
         (None, None)
     };
-
-    // It is no longer needed, let's release it
-    drop(kycom);
 
     // Split slot/subscription and store both. Slots go into the backend so the
     // /websocket/video|audio handler can dispatch on connect; subscriptions go into

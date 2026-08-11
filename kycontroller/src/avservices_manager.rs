@@ -571,7 +571,7 @@ impl AVServicesManager {
     /// "first client wins" trade-off for now.
     async fn get_or_create_video(
         &mut self,
-        kycom: &mut kymux::kycom::KyCom,
+        kycom: &kymux::kycom::KyCom,
         topology: VideoTopology,
         config: VideoStreamConfig,
         metrics_requested: bool,
@@ -726,7 +726,7 @@ impl AVServicesManager {
 
     async fn get_or_create_audio(
         &mut self,
-        kycom: &mut kymux::kycom::KyCom,
+        kycom: &kymux::kycom::KyCom,
         topology: AudioTopology,
         process_factory: &Arc<ProcessFactory>,
         statemachine_proxy: StateMachineProxy,
@@ -792,7 +792,7 @@ impl AVServicesManager {
     /// cleans up automatically.
     pub(crate) async fn acquire_video(
         &mut self,
-        kycom: &mut kymux::kycom::KyCom,
+        kycom: &kymux::kycom::KyCom,
         topology: VideoTopology,
         config: VideoStreamConfig,
         metrics_requested: bool,
@@ -825,7 +825,7 @@ impl AVServicesManager {
     /// Acquire an audio subscription atomically. See `acquire_video`.
     pub(crate) async fn acquire_audio(
         &mut self,
-        kycom: &mut kymux::kycom::KyCom,
+        kycom: &kymux::kycom::KyCom,
         topology: AudioTopology,
         process_factory: &Arc<ProcessFactory>,
         statemachine_proxy: StateMachineProxy,
