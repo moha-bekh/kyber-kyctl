@@ -19,15 +19,12 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::time::Duration;
 
 use kyavservice_types::VideoCodec;
-use libkypc::process::ProcessFactory;
 use log::{error, info, warn};
 use uuid::Uuid;
 
-use crate::StateMachineProxy;
 use crate::avservice;
 use crate::controller::Controller;
 use crate::error::Result;
@@ -571,12 +568,10 @@ impl AVServicesManager {
     /// "first client wins" trade-off for now.
     async fn get_or_create_video(
         &mut self,
-        kycom: &kymux::kycom::KyCom,
+        ctrl: &Controller,
         topology: VideoTopology,
         config: VideoStreamConfig,
         metrics_requested: bool,
-        process_factory: &Arc<ProcessFactory>,
-        statemachine_proxy: StateMachineProxy,
     ) -> Result<(
         VideoStreamKey,
         Option<kydup::KydupVideo>,
@@ -630,7 +625,7 @@ impl AVServicesManager {
                 // from the avservice into kydup's broadcast send driver. No
                 // task to track on our side; kycom's Runner owns it and
                 // aborts on stop().
-                let uri = kycom.register_and_forward(upstream)?.url();
+                let uri = ctrl.kycom.register_and_forward(upstream)?.url();
                 (Some(dup), uri)
             }
             VideoTopology::Exclusive { kycom_uri, .. } => {
@@ -655,7 +650,7 @@ impl AVServicesManager {
         // `Exclusive` the single client is always the claimant, so this is
         // trivially "1st client only" in both modes.
         let (_metrics, metrics_claim, metrics_uri) = if metrics_requested {
-            let metrics_kycom_channel = kycom.register_channel()?;
+            let metrics_kycom_channel = ctrl.kycom.register_channel()?;
             let metrics_uri = metrics_kycom_channel.addr().url();
 
             let (upgrade_tx, upgrade_rx) = tokio::sync::oneshot::channel();
@@ -691,8 +686,8 @@ impl AVServicesManager {
         // longer cross-talk.
         let avservice = avservice::Handler::kymux_start_video(
             StreamId::Video(key.clone()),
-            process_factory,
-            statemachine_proxy,
+            &ctrl.process_factory,
+            ctrl.state_machine_proxy.clone(),
             display_id,
             kycom_uri,
             metrics_uri,
@@ -726,10 +721,8 @@ impl AVServicesManager {
 
     async fn get_or_create_audio(
         &mut self,
-        kycom: &kymux::kycom::KyCom,
+        ctrl: &Controller,
         topology: AudioTopology,
-        process_factory: &Arc<ProcessFactory>,
-        statemachine_proxy: StateMachineProxy,
     ) -> Result<(AudioStreamKey, Option<kydup::KydupAudio>)> {
         let key = topology.key();
 
@@ -739,7 +732,7 @@ impl AVServicesManager {
                     return Ok((key, stream.dup.clone()));
                 }
                 let (dup, upstream) = kydup::KydupAudio::new(|| kydup::LagAction::Continue);
-                let uri = kycom.register_and_forward(upstream)?.url();
+                let uri = ctrl.kycom.register_and_forward(upstream)?.url();
                 (Some(dup), uri)
             }
             AudioTopology::Exclusive { kycom_uri, .. } => {
@@ -757,8 +750,8 @@ impl AVServicesManager {
         // session instead of every audio subscriber as display-less routing did.
         let avservice = avservice::Handler::kymux_start_audio(
             StreamId::Audio(key.clone()),
-            process_factory,
-            statemachine_proxy,
+            &ctrl.process_factory,
+            ctrl.state_machine_proxy.clone(),
             kycom_uri,
         )
         .await?;
@@ -792,12 +785,10 @@ impl AVServicesManager {
     /// cleans up automatically.
     pub(crate) async fn acquire_video(
         &mut self,
-        kycom: &kymux::kycom::KyCom,
+        ctrl: &Controller,
         topology: VideoTopology,
         config: VideoStreamConfig,
         metrics_requested: bool,
-        process_factory: &Arc<ProcessFactory>,
-        statemachine_proxy: StateMachineProxy,
     ) -> Result<VideoAcquisition> {
         debug_assert!(
             self.reaper_rx.is_none(),
@@ -805,14 +796,7 @@ impl AVServicesManager {
         );
         let tx = self.reaper_tx.clone();
         let (key, dup, metrics_claim) = self
-            .get_or_create_video(
-                kycom,
-                topology,
-                config,
-                metrics_requested,
-                process_factory,
-                statemachine_proxy,
-            )
+            .get_or_create_video(ctrl, topology, config, metrics_requested)
             .await?;
         self.subscribe_video(&key);
         Ok(VideoAcquisition {
@@ -825,19 +809,15 @@ impl AVServicesManager {
     /// Acquire an audio subscription atomically. See `acquire_video`.
     pub(crate) async fn acquire_audio(
         &mut self,
-        kycom: &kymux::kycom::KyCom,
+        ctrl: &Controller,
         topology: AudioTopology,
-        process_factory: &Arc<ProcessFactory>,
-        statemachine_proxy: StateMachineProxy,
     ) -> Result<AudioAcquisition> {
         debug_assert!(
             self.reaper_rx.is_none(),
             "AVServicesManager::init must be called before acquire_audio"
         );
         let tx = self.reaper_tx.clone();
-        let (key, dup) = self
-            .get_or_create_audio(kycom, topology, process_factory, statemachine_proxy)
-            .await?;
+        let (key, dup) = self.get_or_create_audio(ctrl, topology).await?;
         self.subscribe_audio(&key);
         Ok(AudioAcquisition {
             dup,

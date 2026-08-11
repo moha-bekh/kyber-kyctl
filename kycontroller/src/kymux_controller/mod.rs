@@ -29,11 +29,10 @@ use std::time::Duration;
 
 use actix_web::web;
 use bytes::Bytes;
-use kymux::{kycom, kynet, kyproto, types};
+use kymux::{kynet, kyproto, types};
 use log::{info, warn};
 
 use kyctl_common::kymux::{AudioProtocol, VideoProtocol};
-use libkypc::process::ProcessFactory;
 
 pub(crate) use server::{IncomingConnectionRouter, KymuxServer};
 
@@ -246,14 +245,11 @@ async fn start_kymux(
 /// (which determines whether kydup is in the path). Everything else
 /// (metrics wiring, IDR force, subscription teardown) uses the same code
 /// in both modes.
-#[allow(clippy::too_many_arguments)]
 async fn start_video(
+    ctrl: &Controller,
     request: &requests::StartRequest,
-    kycom: &kymux::kycom::KyCom,
     connection: &kyproto::Connection,
-    process_factory: &Arc<ProcessFactory>,
     session_id: uuid::Uuid,
-    statemachine_proxy: &StateMachineProxy,
     av_services_manager: &mut crate::avservices_manager::AVServicesManager,
     mode: SessionMode,
 ) -> Result<Option<Vec<StartSessionVideoResponse>>> {
@@ -308,14 +304,7 @@ async fn start_video(
             SessionMode::Multi => {
                 let topology = crate::avservices_manager::VideoTopology::Shared { display_id };
                 let acq = av_services_manager
-                    .acquire_video(
-                        kycom,
-                        topology,
-                        config,
-                        request.metrics,
-                        process_factory,
-                        statemachine_proxy.clone(),
-                    )
+                    .acquire_video(ctrl, topology, config, request.metrics)
                     .await?;
                 let dup = acq
                     .dup
@@ -345,21 +334,14 @@ async fn start_video(
                 (acq, Some(out))
             }
             SessionMode::Mono => {
-                let kycom_uri = kycom.register_and_forward(client_endpoint)?.url();
+                let kycom_uri = ctrl.kycom.register_and_forward(client_endpoint)?.url();
                 let topology = crate::avservices_manager::VideoTopology::Exclusive {
                     session_id,
                     display_id,
                     kycom_uri,
                 };
                 let acq = av_services_manager
-                    .acquire_video(
-                        kycom,
-                        topology,
-                        config,
-                        request.metrics,
-                        process_factory,
-                        statemachine_proxy.clone(),
-                    )
+                    .acquire_video(ctrl, topology, config, request.metrics)
                     .await?;
                 debug_assert!(acq.dup.is_none());
                 (acq, None)
@@ -441,14 +423,11 @@ async fn start_video(
 }
 
 /// Audio counterpart of [`start_video`]. Same mode-agnostic structure.
-#[allow(clippy::too_many_arguments)]
 async fn start_audio(
+    ctrl: &Controller,
     request: &requests::StartRequest,
-    kycom: &kymux::kycom::KyCom,
     connection: &kyproto::Connection,
-    process_factory: &Arc<ProcessFactory>,
     session_id: uuid::Uuid,
-    statemachine_proxy: StateMachineProxy,
     av_services_manager: &mut crate::avservices_manager::AVServicesManager,
     mode: SessionMode,
 ) -> Result<Option<StartSessionAudioResponse>> {
@@ -469,9 +448,7 @@ async fn start_audio(
     let (acquisition, output) = match mode {
         SessionMode::Multi => {
             let topology = crate::avservices_manager::AudioTopology::Shared;
-            let acq = av_services_manager
-                .acquire_audio(kycom, topology, process_factory, statemachine_proxy)
-                .await?;
+            let acq = av_services_manager.acquire_audio(ctrl, topology).await?;
             let dup = acq
                 .dup
                 .as_ref()
@@ -481,14 +458,12 @@ async fn start_audio(
             (acq, Some(out))
         }
         SessionMode::Mono => {
-            let kycom_uri = kycom.register_and_forward(client_endpoint)?.url();
+            let kycom_uri = ctrl.kycom.register_and_forward(client_endpoint)?.url();
             let topology = crate::avservices_manager::AudioTopology::Exclusive {
                 session_id,
                 kycom_uri,
             };
-            let acq = av_services_manager
-                .acquire_audio(kycom, topology, process_factory, statemachine_proxy)
-                .await?;
+            let acq = av_services_manager.acquire_audio(ctrl, topology).await?;
             debug_assert!(acq.dup.is_none());
             (acq, None)
         }
@@ -502,10 +477,9 @@ async fn start_audio(
 }
 
 async fn start_input(
+    ctrl: &Controller,
     request: &requests::StartRequest,
-    kycom: &kycom::KyCom,
     connection: &kyproto::Connection,
-    process_factory: &Arc<ProcessFactory>,
     host_config: kynputservice_types::HostConfig,
 ) -> Result<Option<StartSessionInputResponse>> {
     let Some(inputs_request) = &request.inputs else {
@@ -515,7 +489,7 @@ async fn start_input(
 
     let (endpoint_id, endpoint) = connection.register_input_endpoint().await?;
 
-    let uri = kycom.register_and_forward(endpoint)?.url();
+    let uri = ctrl.kycom.register_and_forward(endpoint)?.url();
 
     info!("Start Inputservice. Endpoint: {endpoint_id:X}");
 
@@ -526,7 +500,7 @@ async fn start_input(
     };
 
     let (inputservice, response) =
-        inputservice::Handler::start_kymux(process_factory, host_config, service_config, uri)
+        inputservice::Handler::start_kymux(&ctrl.process_factory, host_config, service_config, uri)
             .await?;
 
     let clipboard = match response {
@@ -645,24 +619,20 @@ async fn start_session(
     let av_services_manager = &mut ctrl.av_services_manager.lock().await;
 
     let video = start_video(
+        ctrl,
         &request,
-        &ctrl.kycom,
         &connection,
-        &ctrl.process_factory,
         session_id,
-        &ctrl.state_machine_proxy,
         av_services_manager,
         mode,
     )
     .await?;
 
     let audio = start_audio(
+        ctrl,
         &request,
-        &ctrl.kycom,
         &connection,
-        &ctrl.process_factory,
         session_id,
-        ctrl.state_machine_proxy.clone(),
         av_services_manager,
         mode,
     )
@@ -671,10 +641,9 @@ async fn start_session(
     // Input still uses register_and_forward (1:1, not shared via kydup)
     let display_list = ctrl.displays.lock().unwrap().convert();
     let input = start_input(
+        ctrl,
         &request,
-        &ctrl.kycom,
         &connection,
-        &ctrl.process_factory,
         kynputservice_types::HostConfig { display_list },
     )
     .await?;

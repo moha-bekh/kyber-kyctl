@@ -22,8 +22,6 @@ mod av;
 mod input;
 pub(crate) mod requests;
 
-use std::sync::Arc;
-
 use actix_web::web;
 use tokio::sync::oneshot;
 
@@ -190,7 +188,6 @@ async fn setup_video(
     session_id: uuid::Uuid,
     request: &requests::StartRequest,
     video_request: &requests::StartRequestVideo,
-    process_factory: &Arc<libkypc::process::ProcessFactory>,
     mode: SessionMode,
 ) -> Result<VideoSetup> {
     let config = crate::avservices_manager::VideoStreamConfig {
@@ -208,14 +205,7 @@ async fn setup_video(
         SessionMode::Multi => {
             let topology = crate::avservices_manager::VideoTopology::Shared { display_id };
             let acq = av_services_manager
-                .acquire_video(
-                    &ctrl.kycom,
-                    topology,
-                    config,
-                    false,
-                    process_factory,
-                    ctrl.state_machine_proxy.clone(),
-                )
+                .acquire_video(ctrl, topology, config, false)
                 .await?;
             let dup = acq.dup.expect("Shared topology guarantees Some(dup)");
             Ok(VideoSetup {
@@ -238,14 +228,7 @@ async fn setup_video(
                 kycom_uri,
             };
             let acq = av_services_manager
-                .acquire_video(
-                    &ctrl.kycom,
-                    topology,
-                    config,
-                    false,
-                    process_factory,
-                    ctrl.state_machine_proxy.clone(),
-                )
+                .acquire_video(ctrl, topology, config, false)
                 .await?;
             debug_assert!(acq.dup.is_none());
             Ok(VideoSetup {
@@ -261,19 +244,14 @@ async fn setup_video(
 async fn setup_audio(
     ctrl: &Controller,
     session_id: uuid::Uuid,
-    process_factory: &Arc<libkypc::process::ProcessFactory>,
     mode: SessionMode,
 ) -> Result<AudioSetup> {
-    let statemachine_proxy = ctrl.state_machine_proxy.clone();
-
     let mut av_services_manager = ctrl.av_services_manager.lock().await;
 
     match mode {
         SessionMode::Multi => {
             let topology = crate::avservices_manager::AudioTopology::Shared;
-            let acq = av_services_manager
-                .acquire_audio(&ctrl.kycom, topology, process_factory, statemachine_proxy)
-                .await?;
+            let acq = av_services_manager.acquire_audio(ctrl, topology).await?;
             let dup = acq.dup.expect("Shared topology guarantees Some(dup)");
             Ok(AudioSetup {
                 slot: AvSlot::Multi(dup),
@@ -292,9 +270,7 @@ async fn setup_audio(
                 session_id,
                 kycom_uri,
             };
-            let acq = av_services_manager
-                .acquire_audio(&ctrl.kycom, topology, process_factory, statemachine_proxy)
-                .await?;
+            let acq = av_services_manager.acquire_audio(ctrl, topology).await?;
             debug_assert!(acq.dup.is_none());
             Ok(AudioSetup {
                 slot: AvSlot::Mono(connection_tx),
@@ -319,23 +295,13 @@ async fn start_handler(
     let mode = ctrl.config.session_mode();
 
     let video_setup = if let Some(video_request) = request.video.as_ref() {
-        Some(
-            setup_video(
-                &ctrl,
-                session_id,
-                request,
-                video_request,
-                &process_factory,
-                mode,
-            )
-            .await?,
-        )
+        Some(setup_video(&ctrl, session_id, request, video_request, mode).await?)
     } else {
         None
     };
 
     let audio_setup = if request.audio {
-        Some(setup_audio(&ctrl, session_id, &process_factory, mode).await?)
+        Some(setup_audio(&ctrl, session_id, mode).await?)
     } else {
         None
     };
