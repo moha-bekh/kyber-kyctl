@@ -157,7 +157,7 @@ pub struct Controller {
     tray_handle: Mutex<Option<TrayHandle>>,
 
     // Shared kycom instance for all backends (IPC bridge to avserver/inputserver processes)
-    pub(crate) kycom: AsyncMutex<Option<kymux::kycom::KyCom>>,
+    pub(crate) kycom: AsyncMutex<kymux::kycom::KyCom>,
 
     // Shared AV services: avservers and duplicators shared across clients
     /// Must always be taken after `kycom`.
@@ -169,6 +169,7 @@ impl Controller {
         process_factory: Arc<ProcessFactory>,
         config: config::Config,
         tls_config: tls::Config,
+        kycom: kymux::kycom::KyCom,
     ) -> (web::Data<Self>, Task) {
         let (events_tx, events_rx) = tokio::sync::mpsc::channel(32);
 
@@ -181,7 +182,7 @@ impl Controller {
             state_machine_proxy: StateMachineProxy::new(events_tx),
             shared_kymux_infra: Default::default(),
             tray_handle: Mutex::new(None),
-            kycom: Default::default(),
+            kycom: AsyncMutex::new(kycom),
             av_services_manager: Default::default(),
         });
         let state_machine = statemachine::run(this.clone(), events_rx);
@@ -228,31 +229,6 @@ impl Controller {
     /// Ports for the shared kycom instance.
     pub(crate) const KYCOM_PORTS: std::ops::Range<u16> = 9091..9110;
 
-    /// Take ownership of the shared kycom iff no sessions and no AV streams
-    /// remain; the moment kycom can no longer be in use. The caller stops
-    /// it outside the Controller lock.
-    ///
-    /// Called from two sites:
-    ///   * the AV reaper, right after `AVCleanup::run()` has fully stopped
-    ///     the last avservers via libkypc; the normal path when a session
-    ///     drops its subscriptions;
-    ///   * `take_session`, for the path where the session never had (or
-    ///     already lost) its subscriptions, so the reaper wouldn't otherwise
-    ///     be woken to clean up kycom.
-    pub(crate) async fn try_take_idle_kycom(&self) -> Option<kymux::kycom::KyCom> {
-        let no_session = self.sessions.lock().unwrap().is_empty();
-        let no_streams = {
-            let av_services_manager = self.av_services_manager.lock().await;
-            av_services_manager.video_streams.is_empty()
-                && av_services_manager.audio_streams.is_empty()
-        };
-        if no_session && no_streams {
-            self.kycom.lock().await.take()
-        } else {
-            None
-        }
-    }
-
     pub fn session_services(&self, uid: &uuid::Uuid) -> Result<Arc<AsyncMutex<StreamingServices>>> {
         let mut sessions = self.sessions.lock().unwrap();
         let client_session = sessions
@@ -283,21 +259,11 @@ impl Controller {
     }
 
     async fn cleanup_removed_session(&self, no_sessions: bool) {
-        if no_sessions {
-            if let Some(infra) = self.shared_kymux_infra.lock().await.take()
-                && let Err(err) = infra.stop().await
-            {
-                warn!("Failed to stop shared Kymux infrastructure: {err:?}");
-            }
-
-            let no_streams = {
-                let av_services_manager = self.av_services_manager.lock().await;
-                av_services_manager.video_streams.is_empty()
-                    && av_services_manager.audio_streams.is_empty()
-            };
-            if no_streams {
-                *self.kycom.lock().await = None;
-            }
+        if no_sessions
+            && let Some(infra) = self.shared_kymux_infra.lock().await.take()
+            && let Err(err) = infra.stop().await
+        {
+            warn!("Failed to stop shared Kymux infrastructure: {err:?}");
         }
 
         self.update_tray_status();

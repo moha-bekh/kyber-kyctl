@@ -649,7 +649,9 @@ async fn real_main(config: config::Config) -> Result<()> {
     let listener = create_listening_socket(&config)?;
     let webclient_override = config.webclient().map(PathBuf::from);
 
-    let (ctrl, _state_machine) = Controller::new(process_factory.clone(), config, tls_config);
+    let kycom = kymux::kycom::KyCom::start_on_any_port(Controller::KYCOM_PORTS).await?;
+    let (ctrl, _state_machine) =
+        Controller::new(process_factory.clone(), config, tls_config, kycom);
 
     // Spawn the AVServicesManager background tasks (IDR dispatcher, AV reaper).
     // Must run before any session opens. The returned handle carries the

@@ -641,12 +641,6 @@ async fn start_session(
     // Start services (using shared kycom and av_services_manager from Controller)
 
     let mut kycom = ctrl.kycom.lock().await;
-    let kycom = match &mut *kycom {
-        Some(kycom) => kycom,
-        None => {
-            kycom.insert(kymux::kycom::KyCom::start_on_any_port(Controller::KYCOM_PORTS).await?)
-        }
-    };
 
     let mode = ctrl.config.session_mode();
 
@@ -654,7 +648,7 @@ async fn start_session(
 
     let video = start_video(
         &request,
-        kycom,
+        &mut kycom,
         &connection,
         &ctrl.process_factory,
         session_id,
@@ -666,7 +660,7 @@ async fn start_session(
 
     let audio = start_audio(
         &request,
-        kycom,
+        &mut kycom,
         &connection,
         &ctrl.process_factory,
         session_id,
@@ -680,12 +674,14 @@ async fn start_session(
     let display_list = ctrl.displays.lock().unwrap().convert();
     let input = start_input(
         &request,
-        kycom,
+        &mut kycom,
         &connection,
         &ctrl.process_factory,
         kynputservice_types::HostConfig { display_list },
     )
     .await?;
+
+    drop(kycom);
 
     let clock_sync = if request.metrics {
         let (endpoint_id, endpoint) = connection.register_clock_sync_endpoint().await?;

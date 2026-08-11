@@ -317,10 +317,6 @@ async fn start_handler(
 
     // Ensure shared kycom is running
     let mut kycom = ctrl.kycom.lock().await;
-    let kycom = match &mut *kycom {
-        Some(kycom) => kycom,
-        None => kycom.insert(KyCom::start_on_any_port(Controller::KYCOM_PORTS).await?),
-    };
 
     // Extract values before borrows
     let process_factory = ctrl.process_factory.clone();
@@ -330,7 +326,7 @@ async fn start_handler(
         Some(
             setup_video(
                 &ctrl,
-                kycom,
+                &mut kycom,
                 session_id,
                 request,
                 video_request,
@@ -344,7 +340,7 @@ async fn start_handler(
     };
 
     let audio_setup = if request.audio {
-        Some(setup_audio(&ctrl, kycom, session_id, &process_factory, mode).await?)
+        Some(setup_audio(&ctrl, &mut kycom, session_id, &process_factory, mode).await?)
     } else {
         None
     };
@@ -377,6 +373,9 @@ async fn start_handler(
     } else {
         (None, None)
     };
+
+    // It is no longer needed, let's release it
+    drop(kycom);
 
     // Split slot/subscription and store both. Slots go into the backend so the
     // /websocket/video|audio handler can dispatch on connect; subscriptions go into

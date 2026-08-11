@@ -554,23 +554,10 @@ impl AVServicesManager {
                 {
                     // The per-stream stops are still running detached (dropping
                     // their join handles only detaches them) and will finish
-                    // killing the children; we just stop waiting so the kycom
-                    // teardown and later batches aren't blocked.
-                    warn!(
-                        "AV cleanup exceeded {AV_CLEANUP_TIMEOUT:?}; \
-                         proceeding with kycom teardown"
-                    );
+                    // killing the children; we just stop waiting so that later
+                    // batches aren't blocked.
+                    warn!("AV cleanup exceeded {AV_CLEANUP_TIMEOUT:?}");
                 }
-
-                // Now that the last avservers have been stopped via libkypc,
-                // it is safe to tear down the shared kycom; closing its IPC
-                // TCP sockets before the avservers received their Stop would
-                // have produced spurious broken-pipe errors on the host.
-                let kycom_to_stop = ctrl.try_take_idle_kycom().await;
-                if kycom_to_stop.is_some() {
-                    info!("Last AV stream torn down, stopping shared kycom");
-                }
-                drop(kycom_to_stop);
             }
         });
     }
