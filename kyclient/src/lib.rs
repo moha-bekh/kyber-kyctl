@@ -69,10 +69,10 @@ use http::HttpClient;
 pub use kyclient_common::{auth::AuthCredentials, metrics::Metric};
 pub(crate) use message_bus::{MessageReceiver, MessageSender};
 use metrics::{MetricsCollector, MetricsProducer};
-#[cfg(not(target_family = "wasm"))]
-pub use platform::VerifyMode;
 pub use platform::{ConnectConfig, VideoPlayerConfig};
 pub(crate) use platform::{ConnectionParams, InputPipeline, MainLoopEngine};
+#[cfg(not(target_family = "wasm"))]
+pub use platform::{KnownHosts, VerifyMode, get_resource_path};
 
 #[cfg(target_family = "wasm")]
 pub use platform::player;

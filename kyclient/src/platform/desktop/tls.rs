@@ -37,7 +37,7 @@ use crate::Result;
 ///
 /// If the path is relative, it's resolved relative to the directory containing
 /// the executable. This allows clients to bundle resources next to the binary.
-pub(crate) fn get_resource_path(resource_name: &str) -> PathBuf {
+pub fn get_resource_path(resource_name: &str) -> PathBuf {
     if let Ok(mut path) = std::env::current_exe() {
         path.pop();
         path.push(resource_name);

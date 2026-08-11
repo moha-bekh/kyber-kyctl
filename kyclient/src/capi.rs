@@ -33,9 +33,9 @@ use kynput_rs::Pipeline;
 
 use crate::MetricsCallback;
 use crate::VideoCodec;
+use crate::get_resource_path;
 use crate::metrics;
 use crate::platform::VerifyMode;
-use crate::platform::tls::get_resource_path;
 
 pub type Display = super::Display;
 
@@ -608,7 +608,7 @@ pub unsafe extern "C" fn kyclient_known_hosts_add(
     fingerprint: *const c_char,
 ) -> c_int {
     unsafe {
-        use crate::platform::known_hosts;
+        use crate::KnownHosts;
 
         let Ok(hostname) = CStr::from_ptr(hostname).to_str() else {
             warn!("Fail to convert hostname");
@@ -620,7 +620,12 @@ pub unsafe extern "C" fn kyclient_known_hosts_add(
             return -1;
         };
 
-        result_to_c_int(known_hosts::add_host(hostname, fingerprint))
+        let result = KnownHosts::load().and_then(|known_hosts| {
+            known_hosts.insert(hostname, fingerprint)?;
+            known_hosts.save()
+        });
+
+        result_to_c_int(result)
     }
 }
 
@@ -629,14 +634,22 @@ pub unsafe extern "C" fn kyclient_known_hosts_add(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kyclient_known_hosts_remove(hostname: *const c_char) -> c_int {
     unsafe {
-        use crate::platform::known_hosts;
+        use crate::KnownHosts;
 
         let Ok(hostname) = CStr::from_ptr(hostname).to_str() else {
             warn!("Fail to convert hostname");
             return -1;
         };
 
-        match known_hosts::remove_host(hostname) {
+        let result = KnownHosts::load().and_then(|known_hosts| {
+            let removed = known_hosts.remove(hostname)?;
+            if removed {
+                known_hosts.save()?;
+            }
+            Ok(removed)
+        });
+
+        match result {
             Ok(true) => 0,
             Ok(false) => 1,
             Err(_) => -1,
@@ -661,9 +674,9 @@ pub unsafe extern "C" fn kyclient_known_hosts_list(
     out_count: *mut usize,
 ) -> c_int {
     unsafe {
-        use crate::platform::known_hosts;
+        use crate::KnownHosts;
 
-        let hosts = match known_hosts::list_hosts() {
+        let hosts = match KnownHosts::load().and_then(|known_hosts| known_hosts.list()) {
             Ok(h) => h,
             Err(_) => return -1,
         };

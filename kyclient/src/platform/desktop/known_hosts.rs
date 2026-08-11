@@ -245,33 +245,12 @@ impl KnownHosts {
             .map(|h| h.contains_key(hostname))
             .unwrap_or(false)
     }
-}
 
-/// Add a host to the known_hosts file (public API for CLI tools).
-pub fn add_host(hostname: &str, fingerprint: &str) -> Result<()> {
-    let known_hosts = KnownHosts::load()?;
-    known_hosts.insert(hostname, fingerprint)?;
-    known_hosts.save()
-}
-
-/// Remove a host from the known_hosts file (public API for CLI tools).
-pub fn remove_host(hostname: &str) -> Result<bool> {
-    let known_hosts = KnownHosts::load()?;
-    let removed = known_hosts.remove(hostname)?;
-    if removed {
-        known_hosts.save()?;
+    /// List all hosts as (hostname, fingerprint) pairs.
+    pub fn list(&self) -> Result<Vec<(String, String)>> {
+        let hosts = self.hosts.read().map_err(|_| Error::ThreadPanicked)?;
+        Ok(hosts.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
     }
-    Ok(removed)
-}
-
-/// List all hosts in the known_hosts file (public API for CLI tools).
-pub fn list_hosts() -> Result<Vec<(String, String)>> {
-    let known_hosts = KnownHosts::load()?;
-    let hosts = known_hosts
-        .hosts
-        .read()
-        .map_err(|_| Error::ThreadPanicked)?;
-    Ok(hosts.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
 }
 
 #[cfg(test)]

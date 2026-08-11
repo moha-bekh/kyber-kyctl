@@ -39,8 +39,9 @@ pub(crate) use player::WindowHandle;
 
 use crate::{AuthCredentials, Error, Result};
 
-// Re-export TOFU types for public API
-pub use tls::{TofuPrompt, TofuVerifier, VerifyMode};
+// Re-export TOFU and known-hosts types for public API
+pub use known_hosts::KnownHosts;
+pub use tls::{TofuPrompt, TofuVerifier, VerifyMode, get_resource_path};
 
 #[derive(Clone, Debug)]
 pub struct ConnectConfig {
