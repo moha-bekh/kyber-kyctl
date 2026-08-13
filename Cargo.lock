@@ -2660,6 +2660,7 @@ dependencies = [
  "kywebplayer",
  "libc",
  "log",
+ "log4ky",
  "reqwest 0.13.2",
  "rmp-serde",
  "rustls",
@@ -2779,15 +2780,10 @@ dependencies = [
 name = "kymux"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "kycom",
  "kymux-types",
  "kynet",
  "kyproto",
- "log",
- "rustls",
- "thiserror 1.0.69",
- "tokio",
 ]
 
 [[package]]
@@ -2918,7 +2914,6 @@ dependencies = [
  "log",
  "raptorq",
  "rmp-serde",
- "rustls",
  "serde",
  "thiserror 2.0.18",
  "tokio",
@@ -2929,10 +2924,9 @@ dependencies = [
 name = "kyservice"
 version = "0.1.0"
 dependencies = [
- "env_logger",
  "kidd_client",
  "log",
- "log4rs",
+ "log4ky",
  "serde",
  "toml 1.1.2+spec-1.1.0",
  "vergen",
@@ -3105,6 +3099,9 @@ name = "log"
 version = "0.4.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
+dependencies = [
+ "serde_core",
+]
 
 [[package]]
 name = "log-mdc"
@@ -3118,6 +3115,9 @@ version = "0.1.0"
 dependencies = [
  "log",
  "log4rs",
+ "serde",
+ "thiserror 2.0.18",
+ "toml 1.1.2+spec-1.1.0",
 ]
 
 [[package]]
