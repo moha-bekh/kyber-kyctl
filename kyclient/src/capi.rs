@@ -1190,29 +1190,27 @@ pub enum StreamerPipelineEventType {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn kyclient_event_get_type(event: *const Event) -> EventType {
-    unsafe {
-        match *event {
-            Event::ControlPlaneConnected { .. } => EventType::ControlPlaneConnected,
-            Event::ControlPlaneConnectFailed { .. } => EventType::ControlPlaneConnectFailed,
-            Event::AuthenticationRequired { .. } => EventType::AuthenticationRequired,
-            Event::DataPlaneConnectFailed => EventType::DataPlaneConnectFailed,
-            Event::DataPlaneClosed => EventType::DataPlaneClosed,
-            Event::Reconnecting { .. } => EventType::Reconnecting,
-            Event::Reconnected { .. } => EventType::Reconnected,
-            Event::ReconnectionFailed => EventType::ReconnectionFailed,
-            Event::Stopped { .. } => EventType::Stopped,
-            Event::DisplayListUpdated { .. } => EventType::DisplayListUpdated,
-            Event::InputServiceConnected => EventType::InputServiceConnected,
-            Event::InputServiceDisconnected => EventType::InputServiceDisconnected,
-            Event::StreamingStarted => EventType::StreamingStarted,
-            Event::StreamingStartFailed => EventType::StreamingStartFailed,
-            Event::StreamingStopped => EventType::StreamingStopped,
-            Event::StreamerPipelineEvent { .. } => EventType::StreamerPipelineEvent,
-            Event::AudioVolumeChanged { .. } => EventType::AudioVolumeChanged,
-            Event::AudioMuteChanged { .. } => EventType::AudioMuteChanged,
-            Event::BitrateChanged { .. } => EventType::BitrateChanged,
-        }
+pub extern "C" fn kyclient_event_get_type(event: &Event) -> EventType {
+    match event {
+        Event::ControlPlaneConnected { .. } => EventType::ControlPlaneConnected,
+        Event::ControlPlaneConnectFailed { .. } => EventType::ControlPlaneConnectFailed,
+        Event::AuthenticationRequired { .. } => EventType::AuthenticationRequired,
+        Event::DataPlaneConnectFailed => EventType::DataPlaneConnectFailed,
+        Event::DataPlaneClosed => EventType::DataPlaneClosed,
+        Event::Reconnecting { .. } => EventType::Reconnecting,
+        Event::Reconnected { .. } => EventType::Reconnected,
+        Event::ReconnectionFailed => EventType::ReconnectionFailed,
+        Event::Stopped { .. } => EventType::Stopped,
+        Event::DisplayListUpdated { .. } => EventType::DisplayListUpdated,
+        Event::InputServiceConnected => EventType::InputServiceConnected,
+        Event::InputServiceDisconnected => EventType::InputServiceDisconnected,
+        Event::StreamingStarted => EventType::StreamingStarted,
+        Event::StreamingStartFailed => EventType::StreamingStartFailed,
+        Event::StreamingStopped => EventType::StreamingStopped,
+        Event::StreamerPipelineEvent { .. } => EventType::StreamerPipelineEvent,
+        Event::AudioVolumeChanged { .. } => EventType::AudioVolumeChanged,
+        Event::AudioMuteChanged { .. } => EventType::AudioMuteChanged,
+        Event::BitrateChanged { .. } => EventType::BitrateChanged,
     }
 }
 
