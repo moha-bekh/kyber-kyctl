@@ -180,13 +180,13 @@ impl WindowHandle {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ConnectFailedReason {
     NetworkError,
-    Timeout,
+    TimedOut,
     Unauthorized,
     ServerError,
-    TlsVerification,
-    TlsConfiguration,
-    WebSocket,
-    Protocol,
+    TlsVerificationFailed,
+    TlsConfigurationFailed,
+    WebSocketFailed,
+    ProtocolFailed,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -324,8 +324,8 @@ impl EventSinkData {
                     sys::kyclient_ConnectFailedReason_KYCLIENT_CONNECT_FAILED_REASON_NETWORK_ERROR => {
                         ConnectFailedReason::NetworkError
                     }
-                    sys::kyclient_ConnectFailedReason_KYCLIENT_CONNECT_FAILED_REASON_TIMEOUT => {
-                        ConnectFailedReason::Timeout
+                    sys::kyclient_ConnectFailedReason_KYCLIENT_CONNECT_FAILED_REASON_TIMED_OUT => {
+                        ConnectFailedReason::TimedOut
                     }
                     sys::kyclient_ConnectFailedReason_KYCLIENT_CONNECT_FAILED_REASON_UNAUTHORIZED => {
                         ConnectFailedReason::Unauthorized
@@ -333,17 +333,17 @@ impl EventSinkData {
                     sys::kyclient_ConnectFailedReason_KYCLIENT_CONNECT_FAILED_REASON_SERVER_ERROR => {
                         ConnectFailedReason::ServerError
                     }
-                    sys::kyclient_ConnectFailedReason_KYCLIENT_CONNECT_FAILED_REASON_TLS_VERIFICATION => {
-                        ConnectFailedReason::TlsVerification
+                    sys::kyclient_ConnectFailedReason_KYCLIENT_CONNECT_FAILED_REASON_TLS_VERIFICATION_FAILED => {
+                        ConnectFailedReason::TlsVerificationFailed
                     }
-                    sys::kyclient_ConnectFailedReason_KYCLIENT_CONNECT_FAILED_REASON_TLS_CONFIGURATION => {
-                        ConnectFailedReason::TlsConfiguration
+                    sys::kyclient_ConnectFailedReason_KYCLIENT_CONNECT_FAILED_REASON_TLS_CONFIGURATION_FAILED => {
+                        ConnectFailedReason::TlsConfigurationFailed
                     }
-                    sys::kyclient_ConnectFailedReason_KYCLIENT_CONNECT_FAILED_REASON_WEB_SOCKET => {
-                        ConnectFailedReason::WebSocket
+                    sys::kyclient_ConnectFailedReason_KYCLIENT_CONNECT_FAILED_REASON_WEB_SOCKET_FAILED => {
+                        ConnectFailedReason::WebSocketFailed
                     }
-                    sys::kyclient_ConnectFailedReason_KYCLIENT_CONNECT_FAILED_REASON_PROTOCOL => {
-                        ConnectFailedReason::Protocol
+                    sys::kyclient_ConnectFailedReason_KYCLIENT_CONNECT_FAILED_REASON_PROTOCOL_FAILED => {
+                        ConnectFailedReason::ProtocolFailed
                     }
                     _ => {
                         warn!("Fail to convert ConnectFailedReason {c_reason}");

@@ -174,20 +174,20 @@ pub enum StopReason {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ConnectFailedReason {
     NetworkError,
-    Timeout,
+    TimedOut,
     Unauthorized,
     ServerError,
-    TlsVerification,
-    TlsConfiguration,
-    WebSocket,
-    Protocol,
+    TlsVerificationFailed,
+    TlsConfigurationFailed,
+    WebSocketFailed,
+    ProtocolFailed,
 }
 
 impl From<Error> for ConnectFailedReason {
     fn from(err: Error) -> Self {
         match err {
-            Error::Timeout => Self::Timeout,
-            Error::Http(err) if err.is_timeout() => Self::Timeout,
+            Error::Timeout => Self::TimedOut,
+            Error::Http(err) if err.is_timeout() => Self::TimedOut,
             Error::Http(err) => match err.status() {
                 Some(reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN) => {
                     Self::Unauthorized
@@ -195,9 +195,9 @@ impl From<Error> for ConnectFailedReason {
                 Some(s) if s.is_server_error() => Self::ServerError,
                 _ => Self::NetworkError,
             },
-            Error::TlsVerificationFailed => Self::TlsVerification,
-            Error::WsConnectFailed => Self::WebSocket,
-            Error::DeserializationFailed => Self::Protocol,
+            Error::TlsVerificationFailed => Self::TlsVerificationFailed,
+            Error::WsConnectFailed => Self::WebSocketFailed,
+            Error::DeserializationFailed => Self::ProtocolFailed,
             _ => Self::NetworkError,
         }
     }
