@@ -160,7 +160,8 @@ pub(crate) enum Message {
     RenewSession(AuthCredentials),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StopReason {
     Requested,
     ControlPlaneClosed,
@@ -169,7 +170,8 @@ pub enum StopReason {
     DecodeError,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ConnectFailedReason {
     NetworkError,
     Timeout,

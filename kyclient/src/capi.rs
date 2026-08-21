@@ -1162,26 +1162,7 @@ pub enum EventType {
     BitrateChanged,
 }
 
-#[repr(C)]
-pub enum ConnectFailedReason {
-    NetworkError,
-    Timeout,
-    Unauthorized,
-    ServerError,
-    TlsVerification,
-    TlsConfiguration,
-    WebSocket,
-    Protocol,
-}
-
-#[repr(C)]
-pub enum StopReason {
-    Requested,
-    ControlPlaneClosed,
-    ControlPlaneIoError,
-    ControlPlaneTimeout,
-    DecodeError,
-}
+pub use super::{ConnectFailedReason, StopReason};
 
 #[repr(C)]
 pub enum StreamerPipelineType {
@@ -1260,16 +1241,7 @@ pub unsafe extern "C" fn kyclient_event_unpack_connect_failed(
             return -1;
         };
 
-        *out_reason = match reason {
-            crate::ConnectFailedReason::NetworkError => ConnectFailedReason::NetworkError,
-            crate::ConnectFailedReason::Timeout => ConnectFailedReason::Timeout,
-            crate::ConnectFailedReason::Unauthorized => ConnectFailedReason::Unauthorized,
-            crate::ConnectFailedReason::ServerError => ConnectFailedReason::ServerError,
-            crate::ConnectFailedReason::TlsVerification => ConnectFailedReason::TlsVerification,
-            crate::ConnectFailedReason::TlsConfiguration => ConnectFailedReason::TlsConfiguration,
-            crate::ConnectFailedReason::WebSocket => ConnectFailedReason::WebSocket,
-            crate::ConnectFailedReason::Protocol => ConnectFailedReason::Protocol,
-        };
+        *out_reason = *reason;
 
         0
     }
@@ -1332,13 +1304,7 @@ pub unsafe extern "C" fn kyclient_event_unpack_stopped(
             return -1;
         };
 
-        *out_reason = match reason {
-            crate::StopReason::Requested => StopReason::Requested,
-            crate::StopReason::ControlPlaneClosed => StopReason::ControlPlaneClosed,
-            crate::StopReason::ControlPlaneIoError => StopReason::ControlPlaneIoError,
-            crate::StopReason::ControlPlaneTimeout => StopReason::ControlPlaneTimeout,
-            crate::StopReason::DecodeError => StopReason::DecodeError,
-        };
+        *out_reason = *reason;
 
         0
     }
