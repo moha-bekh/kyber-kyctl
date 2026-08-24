@@ -34,7 +34,9 @@ use libkypc::process::ProcessFactory;
 
 use crate::auth;
 use crate::avservice;
-use crate::avservices_manager::{AVServicesManager, AudioSubscription, VideoSubscription};
+use crate::avservices_manager::{
+    AV_CLEANUP_TIMEOUT, AVServicesManager, AudioSubscription, VideoSubscription,
+};
 use crate::config;
 use crate::error::{Error, Result};
 use crate::host_events;
@@ -158,7 +160,6 @@ pub struct Controller {
     pub(crate) kycom: kymux::kycom::KyCom,
 
     // Shared AV services: avservers and duplicators shared across clients
-    /// Must always be taken after `kycom`.
     pub(crate) av_services_manager: AsyncMutex<AVServicesManager>,
 }
 
@@ -256,9 +257,20 @@ impl Controller {
         self.update_tray_status();
     }
 
-    async fn cleanup_removed_session(&self, no_sessions: bool) {
-        if no_sessions
-            && let Some(infra) = self.shared_kymux_infra.lock().await.take()
+    /// Tear down the shared infra once the last session is gone. Sessions are
+    /// re-read under the infra guard rather than snapshotted by the caller:
+    /// `start_mux` creates/reuses the infra under this same lock.
+    async fn cleanup_removed_session(&self) {
+        let infra = {
+            let mut infra_guard = self.shared_kymux_infra.lock().await;
+            if self.sessions.lock().unwrap().is_empty() {
+                infra_guard.take()
+            } else {
+                None
+            }
+        };
+
+        if let Some(infra) = infra
             && let Err(err) = infra.stop().await
         {
             warn!("Failed to stop shared Kymux infrastructure: {err:?}");
@@ -267,32 +279,83 @@ impl Controller {
         self.update_tray_status();
     }
 
+    /// Drain and decrement the AV subscriptions of `services`: entries reaching
+    /// zero leave the maps before this returns, so a fast reconnect never
+    /// joins a doomed entry. The stops themselves run detached.
+    async fn release_av_services(&self, services: &Arc<AsyncMutex<StreamingServices>>) {
+        let (videos, audio) = {
+            let mut services = services.lock().await;
+            (
+                mem::take(&mut services.video_subscriptions),
+                services.audio_subscription.take(),
+            )
+        };
+        if videos.is_empty() && audio.is_none() {
+            return;
+        }
+
+        // Lock order: services then av_services_manager, same as set_bitrate.
+        let cleanup = self
+            .av_services_manager
+            .lock()
+            .await
+            .release_all(videos, audio);
+        if cleanup.is_empty() {
+            // Every released stream still has other subscribers: nothing to stop.
+            return;
+        }
+        tokio::spawn(async move {
+            if tokio::time::timeout(AV_CLEANUP_TIMEOUT, cleanup.run())
+                .await
+                .is_err()
+            {
+                warn!(
+                    "AV release cleanup exceeded {AV_CLEANUP_TIMEOUT:?}; stops continue detached"
+                );
+            }
+        });
+    }
+
     /// Remove a session.
     pub(crate) async fn remove_session(&self, session_id: Uuid) -> Result<()> {
-        let no_sessions = {
-            let mut sessions = self.sessions.lock().unwrap();
+        let removed = self
+            .sessions
+            .lock()
+            .unwrap()
+            .remove(&session_id)
+            .ok_or(Error::InvalidSession { uid: session_id })?;
 
-            sessions
-                .remove(&session_id)
-                .ok_or(Error::InvalidSession { uid: session_id })?;
-            sessions.is_empty()
-        };
+        // release_all empties the manager maps synchronously; the session
+        // itself drops outside the sessions lock.
+        self.release_av_services(&removed.services).await;
+        drop(removed);
 
-        self.cleanup_removed_session(no_sessions).await;
+        self.cleanup_removed_session().await;
 
         Ok(())
     }
 
     /// Remove multiple sessions.
     pub(crate) async fn remove_sessions_if(&self, mut f: impl FnMut(&ClientSession) -> bool) {
-        let no_sessions = {
+        let removed = {
             let mut sessions = self.sessions.lock().unwrap();
 
-            sessions.retain(|_, session| !f(session));
-            sessions.is_empty()
+            let uids: Vec<Uuid> = sessions
+                .iter()
+                .filter(|(_, session)| f(session))
+                .map(|(uid, _)| *uid)
+                .collect();
+            uids.iter()
+                .filter_map(|uid| sessions.remove(uid))
+                .collect::<Vec<ClientSession>>()
         };
 
-        self.cleanup_removed_session(no_sessions).await;
+        for session in &removed {
+            self.release_av_services(&session.services).await;
+        }
+        drop(removed);
+
+        self.cleanup_removed_session().await;
     }
 
     /// Extract streaming resources for cleanup outside the lock.
@@ -308,6 +371,8 @@ impl Controller {
 
             Ok(s.services.clone())
         })?;
+
+        self.release_av_services(&services).await;
 
         if let Err(err) = mem::take(&mut *services.lock().await).stop().await {
             warn!("Failed to stop streaming services: {err:?}");

@@ -354,6 +354,18 @@ impl SharedHandler {
         self.type_
     }
 
+    /// Test-only stub: no child process, no actor task. `stop()` returns
+    /// immediately because the command receiver is already dropped.
+    #[cfg(test)]
+    pub(crate) fn stub(type_: HandlerType) -> Self {
+        let (cmd_tx, _cmd_rx) = mpsc::unbounded_channel();
+        Self {
+            type_,
+            cmd_tx,
+            actor_join: None,
+        }
+    }
+
     pub(crate) fn video_force_idr(&self) -> Result<()> {
         self.cmd_tx
             .send(SharedCmd::VideoForceIdr)

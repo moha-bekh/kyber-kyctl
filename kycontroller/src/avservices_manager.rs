@@ -37,7 +37,7 @@ use crate::utils::Task;
 /// the batch normally finishes in ~one per-stream budget. If it ever elapses
 /// anyway we log and move on to the kycom teardown rather than letting one
 /// pathological stream freeze the reaper — and every later teardown behind it.
-const AV_CLEANUP_TIMEOUT: Duration = Duration::from_secs(30);
+pub(crate) const AV_CLEANUP_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// AV streams (Shared or Exclusive) whose last subscriber just dropped and
 /// that need async teardown. The reaper holds the Controller lock only to
@@ -62,6 +62,10 @@ impl AVCleanup {
         if let Some(stream) = stream {
             self.audios.push(stream);
         }
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.videos.is_empty() && self.audios.is_empty()
     }
 
     pub(crate) async fn run(self) {
@@ -330,9 +334,22 @@ pub(crate) enum AvReaperMsg {
 pub(crate) struct VideoSubscription {
     key: VideoStreamKey,
     tx: tokio::sync::mpsc::UnboundedSender<AvReaperMsg>,
+    /// Set once `release_all` has applied the decrement; Drop then stays
+    /// silent so each subscription decrements exactly once.
+    released: bool,
 }
 
 impl VideoSubscription {
+    /// The only way to build a subscription: `released` always starts false
+    /// so every handle decrements exactly once (via Drop or `release_all`).
+    fn new(key: VideoStreamKey, tx: tokio::sync::mpsc::UnboundedSender<AvReaperMsg>) -> Self {
+        Self {
+            key,
+            tx,
+            released: false,
+        }
+    }
+
     pub(crate) fn key(&self) -> &VideoStreamKey {
         &self.key
     }
@@ -340,7 +357,9 @@ impl VideoSubscription {
 
 impl Drop for VideoSubscription {
     fn drop(&mut self) {
-        let _ = self.tx.send(AvReaperMsg::VideoDropped(self.key.clone()));
+        if !self.released {
+            let _ = self.tx.send(AvReaperMsg::VideoDropped(self.key.clone()));
+        }
     }
 }
 
@@ -348,9 +367,20 @@ impl Drop for VideoSubscription {
 pub(crate) struct AudioSubscription {
     key: AudioStreamKey,
     tx: tokio::sync::mpsc::UnboundedSender<AvReaperMsg>,
+    /// See `VideoSubscription::released`.
+    released: bool,
 }
 
 impl AudioSubscription {
+    /// See [`VideoSubscription::new`].
+    fn new(key: AudioStreamKey, tx: tokio::sync::mpsc::UnboundedSender<AvReaperMsg>) -> Self {
+        Self {
+            key,
+            tx,
+            released: false,
+        }
+    }
+
     pub(crate) fn key(&self) -> &AudioStreamKey {
         &self.key
     }
@@ -358,7 +388,9 @@ impl AudioSubscription {
 
 impl Drop for AudioSubscription {
     fn drop(&mut self) {
-        let _ = self.tx.send(AvReaperMsg::AudioDropped(self.key.clone()));
+        if !self.released {
+            let _ = self.tx.send(AvReaperMsg::AudioDropped(self.key.clone()));
+        }
     }
 }
 
@@ -798,7 +830,7 @@ impl AVServicesManager {
         Ok(VideoAcquisition {
             dup,
             metrics_claim,
-            subscription: VideoSubscription { key, tx },
+            subscription: VideoSubscription::new(key, tx),
         })
     }
 
@@ -817,7 +849,7 @@ impl AVServicesManager {
         self.subscribe_audio(&key);
         Ok(AudioAcquisition {
             dup,
-            subscription: AudioSubscription { key, tx },
+            subscription: AudioSubscription::new(key, tx),
         })
     }
 
@@ -843,6 +875,26 @@ impl AVServicesManager {
         }
         info!("Last client left audio {key:?}, stopping avservice");
         self.audio_streams.remove(key)
+    }
+
+    /// Decrement each subscription synchronously and defuse its Drop so the
+    /// reaper never replays it. Entries reaching zero are removed on the spot,
+    /// returned for teardown outside the Controller lock.
+    pub(crate) fn release_all(
+        &mut self,
+        videos: Vec<VideoSubscription>,
+        audio: Option<AudioSubscription>,
+    ) -> AVCleanup {
+        let mut cleanup = AVCleanup::default();
+        for mut sub in videos {
+            sub.released = true;
+            cleanup.push_video(self.take_video_if_last(&sub.key));
+        }
+        if let Some(mut sub) = audio {
+            sub.released = true;
+            cleanup.push_audio(self.take_audio_if_last(&sub.key));
+        }
+        cleanup
     }
 
     /// An owned handle that requests a fresh IDR for `key` when invoked, usable
@@ -874,10 +926,7 @@ mod tests {
     #[test]
     fn video_subscription_signals_reaper_on_drop() {
         let (tx, mut rx) = unbounded_channel::<AvReaperMsg>();
-        let sub = VideoSubscription {
-            key: shared_key(42),
-            tx,
-        };
+        let sub = VideoSubscription::new(shared_key(42), tx);
         assert_eq!(rx.try_recv().unwrap_err(), TryRecvError::Empty);
         drop(sub);
         match rx.try_recv() {
@@ -889,10 +938,7 @@ mod tests {
     #[test]
     fn audio_subscription_signals_reaper_on_drop() {
         let (tx, mut rx) = unbounded_channel::<AvReaperMsg>();
-        let sub = AudioSubscription {
-            key: AudioStreamKey::Shared,
-            tx,
-        };
+        let sub = AudioSubscription::new(AudioStreamKey::Shared, tx);
         drop(sub);
         match rx.try_recv() {
             Ok(AvReaperMsg::AudioDropped(AudioStreamKey::Shared)) => (),
@@ -906,14 +952,8 @@ mod tests {
     #[test]
     fn two_video_subscriptions_signal_twice_independently() {
         let (tx, mut rx) = unbounded_channel::<AvReaperMsg>();
-        let sub1 = VideoSubscription {
-            key: shared_key(1),
-            tx: tx.clone(),
-        };
-        let sub2 = VideoSubscription {
-            key: shared_key(2),
-            tx,
-        };
+        let sub1 = VideoSubscription::new(shared_key(1), tx.clone());
+        let sub2 = VideoSubscription::new(shared_key(2), tx);
         drop(sub1);
         drop(sub2);
 
@@ -935,10 +975,7 @@ mod tests {
         let (tx, mut rx) = unbounded_channel::<AvReaperMsg>();
 
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let _sub = VideoSubscription {
-                key: shared_key(7),
-                tx,
-            };
+            let _sub = VideoSubscription::new(shared_key(7), tx);
             panic!("simulated partial-failure mid start_session");
         }));
         assert!(result.is_err(), "panic should have been caught");
@@ -957,11 +994,208 @@ mod tests {
     fn video_subscription_drop_is_silent_when_receiver_gone() {
         let (tx, rx) = unbounded_channel::<AvReaperMsg>();
         drop(rx);
-        let sub = VideoSubscription {
-            key: shared_key(99),
-            tx,
-        };
+        let sub = VideoSubscription::new(shared_key(99), tx);
         drop(sub); // must not panic
+    }
+
+    fn video_config() -> VideoStreamConfig {
+        VideoStreamConfig {
+            bitrate: 8_000_000,
+            codec: VideoCodec::H264,
+            yuv444: false,
+            intra_refresh: None,
+            video_stream_count: 1,
+        }
+    }
+
+    fn insert_video(manager: &mut AVServicesManager, key: VideoStreamKey, client_count: usize) {
+        manager.video_streams.insert(
+            key,
+            VideoStream {
+                avservice: avservice::SharedHandler::stub(avservice::HandlerType::Video),
+                dup: None,
+                _metrics: None,
+                config: video_config(),
+                client_count,
+            },
+        );
+    }
+
+    fn insert_audio(manager: &mut AVServicesManager, key: AudioStreamKey, client_count: usize) {
+        manager.audio_streams.insert(
+            key,
+            AudioStream {
+                avservice: avservice::SharedHandler::stub(avservice::HandlerType::Audio),
+                dup: None,
+                client_count,
+            },
+        );
+    }
+
+    fn video_sub(manager: &AVServicesManager, key: VideoStreamKey) -> VideoSubscription {
+        VideoSubscription::new(key, manager.reaper_tx.clone())
+    }
+
+    fn audio_sub(manager: &AVServicesManager, key: AudioStreamKey) -> AudioSubscription {
+        AudioSubscription::new(key, manager.reaper_tx.clone())
+    }
+
+    /// The last video client leaving: the entry must be gone from the map
+    /// before `release_all` returns (that is the whole point of the sync
+    /// path) and be handed to the caller for teardown.
+    #[test]
+    fn release_all_removes_video_entry_on_last_client() {
+        let mut manager = AVServicesManager::default();
+        let mut rx = manager.reaper_rx.take().unwrap();
+        let key = shared_key(1);
+        insert_video(&mut manager, key.clone(), 1);
+        let sub = video_sub(&manager, key.clone());
+
+        let cleanup = manager.release_all(vec![sub], None);
+
+        assert!(
+            !manager.video_streams.contains_key(&key),
+            "entry must be removed synchronously, not left for the reaper"
+        );
+        assert_eq!(
+            cleanup.videos.len(),
+            1,
+            "stream must be handed to AVCleanup"
+        );
+        assert!(cleanup.audios.is_empty());
+        assert_eq!(rx.try_recv().unwrap_err(), TryRecvError::Empty);
+    }
+
+    /// A shared entry with another session still on it must survive with an
+    /// exact count of 1, and must NOT be pushed into the cleanup.
+    #[test]
+    fn release_all_keeps_video_entry_with_remaining_client() {
+        let mut manager = AVServicesManager::default();
+        let mut rx = manager.reaper_rx.take().unwrap();
+        let key = shared_key(1);
+        insert_video(&mut manager, key.clone(), 2);
+        let sub = video_sub(&manager, key.clone());
+
+        let cleanup = manager.release_all(vec![sub], None);
+
+        assert_eq!(
+            manager.video_streams.get(&key).unwrap().client_count,
+            1,
+            "exactly one decrement must be applied"
+        );
+        assert!(
+            cleanup.videos.is_empty(),
+            "a stream with a surviving client must not be torn down"
+        );
+        assert_eq!(rx.try_recv().unwrap_err(), TryRecvError::Empty);
+    }
+
+    #[test]
+    fn release_all_removes_audio_entry_on_last_client() {
+        let mut manager = AVServicesManager::default();
+        let mut rx = manager.reaper_rx.take().unwrap();
+        insert_audio(&mut manager, AudioStreamKey::Shared, 1);
+        let sub = audio_sub(&manager, AudioStreamKey::Shared);
+
+        let cleanup = manager.release_all(vec![], Some(sub));
+
+        assert!(!manager.audio_streams.contains_key(&AudioStreamKey::Shared));
+        assert_eq!(cleanup.audios.len(), 1);
+        assert!(cleanup.videos.is_empty());
+        assert_eq!(rx.try_recv().unwrap_err(), TryRecvError::Empty);
+    }
+
+    #[test]
+    fn release_all_keeps_audio_entry_with_remaining_client() {
+        let mut manager = AVServicesManager::default();
+        let mut rx = manager.reaper_rx.take().unwrap();
+        insert_audio(&mut manager, AudioStreamKey::Shared, 2);
+        let sub = audio_sub(&manager, AudioStreamKey::Shared);
+
+        let cleanup = manager.release_all(vec![], Some(sub));
+
+        assert_eq!(
+            manager
+                .audio_streams
+                .get(&AudioStreamKey::Shared)
+                .unwrap()
+                .client_count,
+            1
+        );
+        assert!(cleanup.audios.is_empty());
+        assert_eq!(rx.try_recv().unwrap_err(), TryRecvError::Empty);
+    }
+
+    /// A realistic teardown: one session holding a surviving shared display,
+    /// a dying shared display, its own exclusive stream, and shared audio
+    /// another client is still on.
+    #[test]
+    fn release_all_applies_a_mixed_batch() {
+        let mut manager = AVServicesManager::default();
+        let mut rx = manager.reaper_rx.take().unwrap();
+        let exclusive = VideoStreamKey::Exclusive {
+            session_id: Uuid::new_v4(),
+            display_id: 0,
+        };
+        insert_video(&mut manager, shared_key(0), 2);
+        insert_video(&mut manager, shared_key(1), 1);
+        insert_video(&mut manager, exclusive.clone(), 1);
+        insert_audio(&mut manager, AudioStreamKey::Shared, 2);
+
+        let cleanup = manager.release_all(
+            vec![
+                video_sub(&manager, shared_key(0)),
+                video_sub(&manager, shared_key(1)),
+                video_sub(&manager, exclusive.clone()),
+            ],
+            Some(audio_sub(&manager, AudioStreamKey::Shared)),
+        );
+
+        assert_eq!(
+            manager
+                .video_streams
+                .get(&shared_key(0))
+                .unwrap()
+                .client_count,
+            1
+        );
+        assert!(!manager.video_streams.contains_key(&shared_key(1)));
+        assert!(!manager.video_streams.contains_key(&exclusive));
+        assert_eq!(
+            manager
+                .audio_streams
+                .get(&AudioStreamKey::Shared)
+                .unwrap()
+                .client_count,
+            1
+        );
+        assert_eq!(
+            cleanup.videos.len(),
+            2,
+            "both dead videos must be torn down"
+        );
+        assert!(cleanup.audios.is_empty());
+        assert_eq!(rx.try_recv().unwrap_err(), TryRecvError::Empty);
+    }
+
+    /// Two subscriptions on the same key in one call must decrement twice,
+    /// collapsing the entry exactly once.
+    #[test]
+    fn release_all_decrements_per_subscription_not_per_key() {
+        let mut manager = AVServicesManager::default();
+        let key = shared_key(3);
+        insert_video(&mut manager, key.clone(), 2);
+
+        let cleanup = manager.release_all(
+            vec![
+                video_sub(&manager, key.clone()),
+                video_sub(&manager, key.clone()),
+            ],
+            None,
+        );
+
+        assert!(!manager.video_streams.contains_key(&key));
+        assert_eq!(cleanup.videos.len(), 1);
     }
 
     /// Exclusive keys with different session_ids are distinct entries:
