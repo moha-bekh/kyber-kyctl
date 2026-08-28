@@ -33,7 +33,7 @@
 use super::super::status::{TrayCommand, TrayStatus};
 use crate::error::{Error, Result};
 
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use muda::{ContextMenu, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
@@ -135,8 +135,16 @@ impl TrayHandle {
 
     /// Update the tray icon status (tooltip and potentially icon).
     pub fn set_status(&self, status: TrayStatus) {
-        if let Err(e) = self.status_tx.send(status) {
-            warn!("Failed to send status to tray: {e}");
+        // Callers refresh the status on every session check, not only when a
+        // session changed. Keep the tray thread asleep when nothing moved.
+        let changed = self.status_tx.send_if_modified(|current| {
+            if *current == status {
+                return false;
+            }
+            *current = status;
+            true
+        });
+        if !changed {
             return;
         }
 
@@ -701,7 +709,7 @@ fn update_tooltip(tray: &NativeTrayIcon, status: &TrayStatus) {
         return;
     }
     let tooltip = status.tooltip();
-    info!("Tray status: {tooltip}");
+    debug!("Tray status: {tooltip}");
     tray.set_tooltip(&tooltip);
 }
 

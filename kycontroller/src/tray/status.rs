@@ -25,7 +25,7 @@
 #![allow(dead_code)]
 
 /// Status of the Kyber controller for display in the system tray.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrayStatus {
     /// List of connected usernames.
     pub clients: Vec<String>,
