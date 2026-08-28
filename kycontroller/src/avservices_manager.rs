@@ -849,26 +849,6 @@ impl AVServicesManager {
         self.audio_streams.remove(key)
     }
 
-    /// Request a fresh keyframe (IDR) on the single video stream identified by
-    /// `key`. Unlike the previous display-scoped request, this targets exactly
-    /// one stream, so the other streams sharing its display are untouched.
-    ///
-    /// Used by backends right after wiring a fresh output to give the joining
-    /// client a sync point. Under intra-refresh (the default) the encoder emits
-    /// no periodic keyframes, so this forced IDR is the only frame a client in
-    /// keyframe-sync mode can sync on; with intra-refresh off it merely avoids
-    /// waiting for the next periodic keyframe.
-    ///
-    /// The dispatcher batches requests and forwards them to the avservice
-    /// out-of-band, so this method never awaits IPC and is safe to call
-    /// while holding the Controller lock. Duplicate requests for the same
-    /// stream are collapsed by the dispatcher.
-    pub(crate) fn request_idr(&self, key: VideoStreamKey) {
-        if let Err(e) = self.idr_tx.try_send(key.clone()) {
-            warn!("IDR request dropped for {key:?}: {e}");
-        }
-    }
-
     /// An owned handle that requests a fresh IDR for `key` when invoked, usable
     /// from a spawned task (e.g. a kydup post-subscribe hook). Same semantics as
     /// [`request_idr`](Self::request_idr); cloning the dispatcher sender keeps it

@@ -27,7 +27,7 @@ use kymux::kywebsocket;
 pub async fn new(backend_config: &KymuxBackendConfig<'_>) -> Result<PlatformEndpoints> {
     let host = backend_config.http_client.host();
 
-    host_service::start_websocket_stream(backend_config).await?;
+    host_service::start_stream(backend_config, false).await?;
 
     let endpoints = create_platform_endpoints(host, backend_config).await?;
     Ok(endpoints)

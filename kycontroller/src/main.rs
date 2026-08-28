@@ -57,7 +57,6 @@ mod tray;
 mod utils;
 mod watchdog;
 mod webclient;
-mod ws;
 
 use libkypc::process::ProcessFactory;
 
@@ -734,10 +733,9 @@ async fn real_main(config: config::Config) -> Result<()> {
                 // Websocket
                 .service(
                     web::scope("/websocket")
-                        .service(ws::requests::start_handler)
-                        .service(ws::requests::inputs)
-                        .service(ws::requests::video)
-                        .service(ws::requests::audio),
+                        .service(kymux_controller::requests::ws_inputs)
+                        .service(kymux_controller::requests::ws_video)
+                        .service(kymux_controller::requests::ws_audio),
                 )
                 .service(
                     web::scope("/session")

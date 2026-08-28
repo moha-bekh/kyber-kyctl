@@ -44,7 +44,6 @@ use crate::session::ClientAuthTokens;
 use crate::statemachine::{self, StateMachineProxy};
 use crate::tls;
 use crate::utils::Task;
-use crate::ws::WebsocketBackend;
 
 use crate::tray::{TrayHandle, TrayStatus};
 
@@ -52,7 +51,6 @@ use crate::tray::{TrayHandle, TrayStatus};
 pub(crate) enum DataPlaneBackend {
     Rtp,
     Kymux(KymuxBackend),
-    Websocket(WebsocketBackend),
 }
 
 pub(crate) struct StreamingSession {

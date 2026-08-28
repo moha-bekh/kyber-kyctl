@@ -23,16 +23,18 @@ pub(crate) mod requests;
 mod server;
 mod webtransport;
 
+use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
 use actix_web::web;
 use bytes::Bytes;
-use kymux::{kynet, kyproto, types};
+use kymux::{kynet, kyproto, kywebsocket, types};
 use log::{info, warn};
+use tokio::sync::oneshot;
 
-use kyctl_common::kymux::{AudioProtocol, VideoProtocol};
+use kyctl_common::kymux::{AudioProtocol, KymuxConfig, VideoProtocol};
 
 pub(crate) use server::{IncomingConnectionRouter, KymuxServer};
 
@@ -49,6 +51,11 @@ const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(5);
 // Must be greater than KEEP_ALIVE_INTERVAL, otherwise healthy connections
 // get killed between pings.
 const MAX_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+
+enum KyTransport {
+    KyProto(kyproto::Connection),
+    KyWebSocket,
+}
 
 fn run_connection_task(
     connection: kyproto::Connection,
@@ -162,8 +169,58 @@ impl SharedKymuxInfra {
 /// This struct is only created after the client has successfully connected and authenticated.
 /// The pending connection state (between start_mux and start_session) is stored in
 /// `StreamingSession.pending_kymux_rx` instead.
-pub(crate) struct KymuxBackend {
-    _connection_task: Task,
+pub(crate) enum KymuxBackend {
+    KyProto {
+        _connection_task: Task,
+    },
+    KyWebSocket {
+        video_connection_tx: Option<oneshot::Sender<io::Result<kywebsocket::Connection>>>,
+        audio_connection_tx: Option<oneshot::Sender<io::Result<kywebsocket::Connection>>>,
+        input_connection_tx: Option<oneshot::Sender<io::Result<kywebsocket::Connection>>>,
+    },
+}
+
+#[derive(Debug)]
+pub(super) enum ServiceType {
+    Video,
+    Audio,
+    Input,
+}
+
+impl KymuxBackend {
+    pub(crate) fn connect_websocket_service(
+        &mut self,
+        service: &ServiceType,
+        ws_session: actix_ws::Session,
+        ws_stream: actix_ws::MessageStream,
+    ) -> Result<()> {
+        let KymuxBackend::KyWebSocket {
+            video_connection_tx,
+            audio_connection_tx,
+            input_connection_tx,
+        } = self
+        else {
+            return Err(Error::InvalidConfig {
+                reason: "Not a websocket backend".to_string(),
+            });
+        };
+        let conn = kywebsocket::Connection::actix_ws_new(ws_session, ws_stream);
+        let connection_tx = match service {
+            ServiceType::Video => video_connection_tx,
+            ServiceType::Audio => audio_connection_tx,
+            ServiceType::Input => input_connection_tx,
+        };
+
+        if let Some(connection_tx) = connection_tx.take() {
+            connection_tx
+                .send(Ok(conn))
+                .map_err(|_| Error::WsComponentNotReady {
+                    component: format!("{service:?}"),
+                })?;
+        }
+
+        Ok(())
+    }
 }
 
 async fn start_kymux(
@@ -248,7 +305,7 @@ async fn start_kymux(
 async fn start_video(
     ctrl: &Controller,
     request: &requests::StartRequest,
-    connection: &kyproto::Connection,
+    transport: &KyTransport,
     session_id: uuid::Uuid,
     av_services_manager: &mut crate::avservices_manager::AVServicesManager,
     mode: SessionMode,
@@ -259,34 +316,57 @@ async fn start_video(
 
     let video_stream_count = video_request.len() as u32;
 
+    if video_stream_count > 1 && matches!(transport, KyTransport::KyWebSocket) {
+        return Err(Error::InvalidConfig {
+            reason: "WebSockets implementation currently does not support more than 1 video stream"
+                .to_string(),
+        });
+    }
+
     let mut video_streams = vec![];
 
     for stream_request in video_request {
-        let video_protocol = request
-            .kymux_config
-            .kyproto_config()
-            .video_protocol
-            .unwrap_or(VideoProtocol::Reliable);
+        let (endpoint_id, client_endpoint, connection_tx, intra_refresh) = match &transport {
+            KyTransport::KyProto(connection) => {
+                let video_protocol = request
+                    .kymux_config
+                    .kyproto_config()
+                    .video_protocol
+                    .unwrap_or(VideoProtocol::Reliable);
+                let (endpoint_id, endpoint) = connection
+                    .register_video_endpoint(video_protocol.into())
+                    .await?;
 
-        let (endpoint_id, client_endpoint) = connection
-            .register_video_endpoint(video_protocol.into())
-            .await?;
-        let display_id = stream_request.display_id;
-
-        // Intra-refresh disables IDR frames, which GopStream uses to mark
-        // GOP boundaries. Force it off so GopStream isn't just Reliable.
-        let intra_refresh = if video_protocol == VideoProtocol::GopStream {
-            if stream_request.intra_refresh != Some(false) {
-                warn!(
-                    "GopStream requested with intra_refresh {:?}: forcing intra_refresh off, \
-                     GopStream requires periodic IDR frames as GOP boundaries",
+                // Intra-refresh disables IDR frames, which GopStream uses to mark
+                // GOP boundaries. Force it off so GopStream isn't just Reliable.
+                let intra_refresh = if video_protocol == VideoProtocol::GopStream {
+                    if stream_request.intra_refresh != Some(false) {
+                        warn!(
+                            "GopStream requested with intra_refresh {:?}: forcing intra_refresh off, \
+                             GopStream requires periodic IDR frames as GOP boundaries",
+                            stream_request.intra_refresh
+                        );
+                    }
+                    Some(false)
+                } else {
                     stream_request.intra_refresh
-                );
+                };
+
+                (Some(endpoint_id), endpoint, None, intra_refresh)
             }
-            Some(false)
-        } else {
-            stream_request.intra_refresh
+            KyTransport::KyWebSocket => {
+                let (connection_tx, connection_rx) = oneshot::channel();
+                let endpoint =
+                    kywebsocket::Channel::new(connection_rx).into_video_server_endpoint();
+                (
+                    None,
+                    endpoint,
+                    Some(connection_tx),
+                    stream_request.intra_refresh,
+                )
+            }
         };
+        let display_id = stream_request.display_id;
 
         let config = crate::avservices_manager::VideoStreamConfig {
             bitrate: request.bitrate,
@@ -359,48 +439,50 @@ async fn start_video(
             subscription,
             ..
         } = acquisition;
-        let (metrics_endpoint_id, metrics_output) = match (request.metrics, metrics_claim) {
-            (true, Some(claim)) => {
-                let (meid, metrics_endpoint) = connection.register_metrics_endpoint().await?;
-                // Spawn a task that awaits the kyproto ready handshake then
-                // hands the `ProtocolSend` to the metrics forwarder via the
-                // one-shot upgrade channel. Wrapped in OutputHandle so it's
-                // aborted with the rest of the per-session outputs.
-                let task = Task::spawn(async move {
-                    let protocol = match tokio::time::timeout(
-                        Duration::from_secs(5),
-                        metrics_endpoint.ready(),
-                    )
-                    .await
-                    {
-                        Ok(Ok(p)) => p,
-                        Ok(Err(e)) => {
-                            warn!("Metrics endpoint ready failed: {e}");
-                            return;
-                        }
-                        Err(_) => {
-                            warn!("Metrics endpoint ready timed out");
-                            return;
-                        }
-                    };
-                    claim.claim(protocol.send);
-                });
-                (Some(meid), Some(task))
-            }
-            (true, None) => {
-                // Only reachable for `Shared` topology when the stream was
-                // already created without metrics by an earlier client, or
-                // when the one-shot slot is already claimed. `Exclusive`
-                // entries always have a fresh slot for the single client.
-                warn!(
-                    "Client requested metrics for display {display_id} but the shared stream's \
+
+        let (metrics_endpoint_id, metrics_output) =
+            match (request.metrics, &transport, metrics_claim) {
+                (true, KyTransport::KyProto(connection), Some(claim)) => {
+                    let (meid, metrics_endpoint) = connection.register_metrics_endpoint().await?;
+                    // Spawn a task that awaits the kyproto ready handshake then
+                    // hands the `ProtocolSend` to the metrics forwarder via the
+                    // one-shot upgrade channel. Wrapped in OutputHandle so it's
+                    // aborted with the rest of the per-session outputs.
+                    let task = Task::spawn(async move {
+                        let protocol = match tokio::time::timeout(
+                            Duration::from_secs(5),
+                            metrics_endpoint.ready(),
+                        )
+                        .await
+                        {
+                            Ok(Ok(p)) => p,
+                            Ok(Err(e)) => {
+                                warn!("Metrics endpoint ready failed: {e}");
+                                return;
+                            }
+                            Err(_) => {
+                                warn!("Metrics endpoint ready timed out");
+                                return;
+                            }
+                        };
+                        claim.claim(protocol.send);
+                    });
+                    (Some(meid), Some(task))
+                }
+                (true, _, None) => {
+                    // Only reachable for `Shared` topology when the stream was
+                    // already created without metrics by an earlier client, or
+                    // when the one-shot slot is already claimed. `Exclusive`
+                    // entries always have a fresh slot for the single client.
+                    warn!(
+                        "Client requested metrics for display {display_id} but the shared stream's \
                      metrics slot is unavailable (created without metrics, or already claimed); \
                      ignoring",
-                );
-                (None, None)
-            }
-            (false, _) => (None, None),
-        };
+                    );
+                    (None, None)
+                }
+                (_, _, _) => (None, None),
+            };
 
         // Note: the joining keyframe is forced from the kydup post-subscribe
         // hook above (Multi mode), so it lands only once this client is ready
@@ -417,6 +499,7 @@ async fn start_video(
             output,
             metrics_output,
             subscription,
+            connection_tx,
         });
     }
 
@@ -427,7 +510,7 @@ async fn start_video(
 async fn start_audio(
     ctrl: &Controller,
     request: &requests::StartRequest,
-    connection: &kyproto::Connection,
+    transport: &KyTransport,
     session_id: uuid::Uuid,
     av_services_manager: &mut crate::avservices_manager::AVServicesManager,
     mode: SessionMode,
@@ -437,15 +520,25 @@ async fn start_audio(
         return Ok(None);
     }
 
-    let audio_protocol = request
-        .kymux_config
-        .kyproto_config()
-        .audio_protocol
-        .unwrap_or(AudioProtocol::Reliable);
+    let (endpoint_id, client_endpoint, connection_tx) = match &transport {
+        KyTransport::KyProto(connection) => {
+            let audio_protocol = request
+                .kymux_config
+                .kyproto_config()
+                .audio_protocol
+                .unwrap_or(AudioProtocol::Reliable);
 
-    let (endpoint_id, client_endpoint) = connection
-        .register_audio_endpoint(audio_protocol.into())
-        .await?;
+            let (endpoint_id, endpoint) = connection
+                .register_audio_endpoint(audio_protocol.into())
+                .await?;
+            (Some(endpoint_id), endpoint, None)
+        }
+        KyTransport::KyWebSocket => {
+            let (connection_tx, connection_rx) = oneshot::channel();
+            let endpoint = kywebsocket::Channel::new(connection_rx).into_audio_server_endpoint();
+            (None, endpoint, Some(connection_tx))
+        }
+    };
 
     let (acquisition, output) = match mode {
         SessionMode::Multi => {
@@ -475,13 +568,14 @@ async fn start_audio(
         endpoint: endpoint_id,
         output,
         subscription: acquisition.subscription,
+        connection_tx,
     }))
 }
 
 async fn start_input(
     ctrl: &Controller,
     request: &requests::StartRequest,
-    connection: &kyproto::Connection,
+    transport: &KyTransport,
     host_config: kynputservice_types::HostConfig,
 ) -> Result<Option<StartSessionInputResponse>> {
     let Some(inputs_request) = &request.inputs else {
@@ -489,11 +583,25 @@ async fn start_input(
         return Ok(None);
     };
 
-    let (endpoint_id, endpoint) = connection.register_input_endpoint().await?;
+    let (endpoint_id, endpoint, connection_tx) = match &transport {
+        KyTransport::KyProto(connection) => {
+            let (endpoint_id, endpoint) = connection.register_input_endpoint().await?;
+            (Some(endpoint_id), endpoint, None)
+        }
+        KyTransport::KyWebSocket => {
+            let (connection_tx, connection_rx) = oneshot::channel();
+            let endpoint = kywebsocket::Channel::new(connection_rx).into_input_endpoint();
+            (None, endpoint, Some(connection_tx))
+        }
+    };
 
     let uri = ctrl.kycom.register_and_forward(endpoint)?.url();
 
-    info!("Start Inputservice. Endpoint: {endpoint_id:X}");
+    if let Some(endpoint_id) = &endpoint_id {
+        info!("Start Inputservice. Endpoint: {endpoint_id:X}");
+    } else {
+        info!("Start Inputservice.");
+    }
 
     let service_config = kynputservice_types::ServiceConfig {
         cursor_format: inputs_request.cursor_format.convert(),
@@ -514,12 +622,13 @@ async fn start_input(
         inputservice,
         endpoint: endpoint_id,
         clipboard,
+        connection_tx,
     }))
 }
 
 pub(crate) struct StartSessionVideoResponse {
     pub(crate) display_id: u32,
-    pub(crate) endpoint: u16,
+    pub(crate) endpoint: Option<u16>,
     pub(crate) metrics_endpoint: Option<u16>,
     /// `Some` when the entry is a `Shared` kydup output (multi mode), `None`
     /// when the avservice writes directly to the client endpoint via kycom
@@ -528,19 +637,22 @@ pub(crate) struct StartSessionVideoResponse {
     /// `Some` when the kyproto metrics endpoint task was spawned.
     pub(crate) metrics_output: Option<Task>,
     pub(crate) subscription: crate::avservices_manager::VideoSubscription,
+    pub(crate) connection_tx: Option<oneshot::Sender<io::Result<kywebsocket::Connection>>>,
 }
 
 pub(crate) struct StartSessionAudioResponse {
-    pub(crate) endpoint: u16,
+    pub(crate) endpoint: Option<u16>,
     /// See [`StartSessionVideoResponse::output`].
     pub(crate) output: Option<Task>,
     pub(crate) subscription: crate::avservices_manager::AudioSubscription,
+    pub(crate) connection_tx: Option<oneshot::Sender<io::Result<kywebsocket::Connection>>>,
 }
 
 pub(crate) struct StartSessionInputResponse {
     inputservice: inputservice::Handler,
-    endpoint: u16,
+    endpoint: Option<u16>,
     clipboard: bool,
+    connection_tx: Option<oneshot::Sender<io::Result<kywebsocket::Connection>>>,
 }
 
 pub(crate) struct StartSessionClockSyncResponse {
@@ -582,37 +694,48 @@ async fn start_session(
     session_id: uuid::Uuid,
     request: requests::StartRequest,
 ) -> Result<StartSessionResponse> {
-    // Get the pending connection receiver (was created in start_mux)
-    let connection_rx = {
-        let mut sessions = ctrl.sessions.lock().unwrap();
-        sessions
-            .get_mut(&session_id)
-            .ok_or(Error::InvalidSession { uid: session_id })?
-            .session
-            .as_mut()
-            .ok_or(Error::ControlPlaneNotOpened)?
-            .pending_kymux_rx
-            .take()
-            .ok_or(Error::KymuxNotListening)?
-    };
+    if ctrl.has_data_plane(&session_id)? {
+        return Err(Error::DataPlaneAlreadyOpened);
+    }
 
-    // Wait for the connection (server sends it when client connects with valid token)
-    let connection = match tokio::time::timeout(Duration::from_millis(500), connection_rx).await {
-        Ok(Ok(conn)) => conn,
-        Ok(Err(_)) => {
-            warn!("Connection channel closed for session {}", session_id);
-            return Err(Error::ChannelClosedRx);
-        }
-        Err(_) => {
-            warn!(
-                "Timeout waiting for Kymux connection for session {}",
-                session_id
-            );
-            return Err(Error::KymuxAcceptTimeout);
-        }
-    };
+    let transport = if let KymuxConfig::KyProto(_) = &request.kymux_config {
+        // Get the pending connection receiver (was created in start_mux)
+        let connection_rx = {
+            let mut sessions = ctrl.sessions.lock().unwrap();
+            sessions
+                .get_mut(&session_id)
+                .ok_or(Error::InvalidSession { uid: session_id })?
+                .session
+                .as_mut()
+                .ok_or(Error::ControlPlaneNotOpened)?
+                .pending_kymux_rx
+                .take()
+                .ok_or(Error::KymuxNotListening)?
+        };
 
-    info!("Connection received for session {}", session_id);
+        // Wait for the connection (server sends it when client connects with valid token)
+        let connection = match tokio::time::timeout(Duration::from_millis(500), connection_rx).await
+        {
+            Ok(Ok(conn)) => conn,
+            Ok(Err(_)) => {
+                warn!("Connection channel closed for session {}", session_id);
+                return Err(Error::ChannelClosedRx);
+            }
+            Err(_) => {
+                warn!(
+                    "Timeout waiting for Kymux connection for session {}",
+                    session_id
+                );
+                return Err(Error::KymuxAcceptTimeout);
+            }
+        };
+
+        info!("Connection received for session {}", session_id);
+
+        KyTransport::KyProto(connection)
+    } else {
+        KyTransport::KyWebSocket
+    };
 
     // Start services (using shared kycom and av_services_manager from Controller)
 
@@ -620,20 +743,20 @@ async fn start_session(
 
     let av_services_manager = &mut ctrl.av_services_manager.lock().await;
 
-    let video = start_video(
+    let mut video = start_video(
         ctrl,
         &request,
-        &connection,
+        &transport,
         session_id,
         av_services_manager,
         mode,
     )
     .await?;
 
-    let audio = start_audio(
+    let mut audio = start_audio(
         ctrl,
         &request,
-        &connection,
+        &transport,
         session_id,
         av_services_manager,
         mode,
@@ -642,15 +765,17 @@ async fn start_session(
 
     // Input still uses register_and_forward (1:1, not shared via kydup)
     let display_list = ctrl.displays.lock().unwrap().convert();
-    let input = start_input(
+    let mut input = start_input(
         ctrl,
         &request,
-        &connection,
+        &transport,
         kynputservice_types::HostConfig { display_list },
     )
     .await?;
 
-    let clock_sync = if request.metrics {
+    let clock_sync = if request.metrics
+        && let KyTransport::KyProto(connection) = &transport
+    {
         let (endpoint_id, endpoint) = connection.register_clock_sync_endpoint().await?;
         info!("Start clock sync. Endpoint: {endpoint_id:X}");
 
@@ -663,7 +788,9 @@ async fn start_session(
         None
     };
 
-    let metrics = if request.metrics {
+    let metrics = if request.metrics
+        && let KyTransport::KyProto(connection) = &transport
+    {
         let (endpoint_id, endpoint) = connection.register_metrics_endpoint().await?;
         info!("Start metrics server. Endpoint: {endpoint_id:X}");
 
@@ -678,6 +805,17 @@ async fn start_session(
         None
     };
 
+    let video_connection_tx = video
+        .as_mut()
+        .and_then(|vec| vec.first_mut())
+        .and_then(|response| response.connection_tx.take());
+    let audio_connection_tx = audio
+        .as_mut()
+        .and_then(|response| response.connection_tx.take());
+    let input_connection_tx = input
+        .as_mut()
+        .and_then(|response| response.connection_tx.take());
+
     // Create KymuxBackend now that connection is established
     let proxy = ctrl.state_machine_proxy.clone();
 
@@ -686,8 +824,17 @@ async fn start_session(
             return Err(Error::ControlPlaneNotOpened);
         };
 
-        let _connection_task = run_connection_task(connection, proxy, session_id);
-        let backend = KymuxBackend { _connection_task };
+        let backend = match transport {
+            KyTransport::KyProto(connection) => {
+                let _connection_task = run_connection_task(connection, proxy, session_id);
+                KymuxBackend::KyProto { _connection_task }
+            }
+            KyTransport::KyWebSocket => KymuxBackend::KyWebSocket {
+                video_connection_tx,
+                audio_connection_tx,
+                input_connection_tx,
+            },
+        };
         streaming_session.data_plane = Some(DataPlaneBackend::Kymux(backend));
         Ok(())
     })?;
@@ -723,4 +870,35 @@ async fn run_stats_poller(
         let packet = types::MetricsPacket { payload };
         protocol.send.send(packet).await?;
     }
+}
+
+/// Generic WebSocket handler for video, audio, and input services.
+///
+/// Handles the common WebSocket setup pattern:
+/// 1. Validate client/streaming/backend sessions exist
+/// 2. Call service-specific routing function
+pub(super) async fn start_websocket_handler(
+    ctrl: web::Data<Controller>,
+    session_id: uuid::Uuid,
+    session: actix_ws::Session,
+    msg_stream: actix_ws::MessageStream,
+    service: ServiceType,
+) -> Result<()> {
+    // Phase 1: under the per-session mutable borrow, run connect_service
+    // and capture (if Video) the stream key so we can request a fresh IDR
+    // afterwards on `av_services_manager`.
+    ctrl.with_session(&session_id, |client_session| {
+        let Some(streaming_session) = &mut client_session.session else {
+            return Err(Error::ControlPlaneNotOpened);
+        };
+        let backend = match &mut streaming_session.data_plane {
+            Some(DataPlaneBackend::Kymux(b)) => b,
+            _ => return Err(Error::WsNoRouter),
+        };
+        backend.connect_websocket_service(&service, session, msg_stream)?;
+
+        Ok(())
+    })?;
+
+    Ok(())
 }

@@ -221,12 +221,22 @@ async fn start_metrics(
             .await,
     );
 
-    let clock_sync_id = host_config.clock_sync.as_ref().unwrap().endpoint;
+    let clock_sync_id = host_config
+        .clock_sync
+        .as_ref()
+        .unwrap()
+        .endpoint
+        .expect("No clock sync id");
     tasks.push(
         metrics::start_pinger(connection, clock_sync_id, metrics2, Duration::from_secs(10)).await?,
     );
 
-    let remote_network_stats_id = host_config.metrics.as_ref().unwrap().endpoint;
+    let remote_network_stats_id = host_config
+        .metrics
+        .as_ref()
+        .unwrap()
+        .endpoint
+        .expect("No remote network stats id");
     tasks.push(
         metrics::start_remote_metrics_receiver(connection, remote_network_stats_id, metrics3)
             .await?,
@@ -269,7 +279,12 @@ fn create_video_endpoints(
 
     let endpoint_list: HashMap<u32, u16> = host_config
         .iter()
-        .map(|video| (video.display_id, video.endpoint))
+        .map(|video| {
+            (
+                video.display_id,
+                video.endpoint.expect("No video endpoint id"),
+            )
+        })
         .collect();
 
     let video_protocol = backend_config
@@ -313,7 +328,7 @@ fn create_audio_endpoint(
         .audio_protocol
         .unwrap_or(AudioProtocol::Reliable);
     info!("Using audio protocol: {audio_protocol:?}");
-    let endpoint_id = host_config.endpoint;
+    let endpoint_id = host_config.endpoint.expect("No audio endpoint id");
     let endpoint = connection.connect_audio_endpoint(endpoint_id, audio_protocol.into())?;
     Ok(Some(endpoint))
 }
@@ -332,7 +347,8 @@ fn create_input_endpoint(
         return Err(Error::InvalidState);
     };
 
-    let endpoint = connection.connect_input_endpoint(host_config.endpoint)?;
+    let endpoint_id = host_config.endpoint.expect("No input endpoint id");
+    let endpoint = connection.connect_input_endpoint(endpoint_id)?;
     Ok(Some(endpoint))
 }
 

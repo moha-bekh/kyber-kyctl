@@ -26,5 +26,3 @@ pub mod kymux;
 #[cfg(feature = "rtp")]
 pub mod rtp;
 pub mod set_bitrate;
-#[cfg(feature = "websocket")]
-pub mod ws;

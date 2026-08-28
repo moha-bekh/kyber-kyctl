@@ -18,7 +18,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use actix_web::{HttpResponse, post, web};
+use actix_web::{HttpRequest, HttpResponse, get, post, web};
 use log::{error, info, warn};
 
 pub(crate) use kyctl_common::kymux::{
@@ -141,7 +141,7 @@ pub(crate) async fn start_session(
                 services.clock_sync = Some(clock_sync.task);
 
                 Some(StartSessionClockSyncResponse {
-                    endpoint: clock_sync.endpoint,
+                    endpoint: Some(clock_sync.endpoint),
                 })
             } else {
                 None
@@ -151,7 +151,7 @@ pub(crate) async fn start_session(
                 services.metrics = Some(metrics.task);
 
                 Some(StartSessionMetricsResponse {
-                    endpoint: metrics.endpoint,
+                    endpoint: Some(metrics.endpoint),
                 })
             } else {
                 None
@@ -179,4 +179,92 @@ pub(crate) async fn start_session(
             HttpResponse::Forbidden().finish()
         }
     }
+}
+
+async fn ws_service_handler(
+    ctrl: web::Data<Controller>,
+    request: HttpRequest,
+    stream: web::Payload,
+    user: Identity,
+    service_type: super::ServiceType,
+    label: &str,
+) -> HttpResponse {
+    let session_id = match user.uid() {
+        Ok(uid) => uid,
+        Err(_) => return HttpResponse::Unauthorized().finish(),
+    };
+
+    let (res, session, msg_stream) = match actix_ws::handle(&request, stream) {
+        Ok(v) => v,
+        Err(err) => {
+            info!("Websocket {label} upgrade failed: {err}");
+            return HttpResponse::Forbidden().finish();
+        }
+    };
+
+    match super::start_websocket_handler(ctrl, session_id, session, msg_stream, service_type).await
+    {
+        Ok(()) => {
+            info!("Websocket {label} started");
+            res
+        }
+        Err(err) => {
+            info!("Websocket {label} start rejected: {err}");
+            HttpResponse::Forbidden().finish()
+        }
+    }
+}
+
+#[get("/video")]
+async fn ws_video(
+    ctrl: web::Data<Controller>,
+    request: HttpRequest,
+    stream: web::Payload,
+    user: Identity,
+) -> HttpResponse {
+    ws_service_handler(
+        ctrl,
+        request,
+        stream,
+        user,
+        super::ServiceType::Video,
+        "video",
+    )
+    .await
+}
+
+#[get("/audio")]
+async fn ws_audio(
+    ctrl: web::Data<Controller>,
+    request: HttpRequest,
+    stream: web::Payload,
+    user: Identity,
+) -> HttpResponse {
+    ws_service_handler(
+        ctrl,
+        request,
+        stream,
+        user,
+        super::ServiceType::Audio,
+        "audio",
+    )
+    .await
+}
+
+#[get("/inputs")]
+async fn ws_inputs(
+    ctrl: web::Data<Controller>,
+    request: HttpRequest,
+    stream: web::Payload,
+    user: Identity,
+) -> HttpResponse {
+    ws_service_handler(
+        ctrl,
+        request,
+        stream,
+        user,
+        super::ServiceType::Input,
+        "inputs",
+    )
+    .await
 }

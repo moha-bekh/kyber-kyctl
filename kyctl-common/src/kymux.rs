@@ -107,33 +107,36 @@ pub struct StartKymuxResponse {
     pub token: String,
 }
 
+// Endpoints are Some(endpoint_id) for kyproto, but None for kywebsockets
+// (websockets have no endpoint id).
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct StartSessionVideoResponse {
     pub display_id: u32,
-    pub endpoint: u16,
+    pub endpoint: Option<u16>,
     pub metrics_endpoint: Option<u16>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct StartSessionAudioResponse {
-    pub endpoint: u16,
+    pub endpoint: Option<u16>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct StartSessionInputResponse {
-    pub endpoint: u16,
+    pub endpoint: Option<u16>,
     #[serde(default)]
     pub clipboard: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct StartSessionClockSyncResponse {
-    pub endpoint: u16,
+    pub endpoint: Option<u16>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct StartSessionMetricsResponse {
-    pub endpoint: u16,
+    pub endpoint: Option<u16>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

@@ -194,6 +194,7 @@ impl KydupVideo {
     }
 
     /// Add an output from an already-ready `ProtocolSend`.
+    #[cfg(test)]
     pub fn add_output(&self, send: ProtocolSend<AVPacket>) -> Task {
         spawn_output(
             self.tx.subscribe(),
@@ -292,6 +293,7 @@ impl KydupAudio {
     }
 
     /// See [`KydupVideo::add_output`].
+    #[cfg(test)]
     pub fn add_output(&self, send: ProtocolSend<AVPacket>) -> Task {
         spawn_output(
             self.tx.subscribe(),
@@ -516,6 +518,7 @@ impl Drop for GatedReceiver {
 /// Used by `add_output`, whose sink is ready immediately, so there is no
 /// handshake window during which the idle receiver could hold the broadcast
 /// backlog. Handshaking outputs must use [`spawn_output_lazy`] instead.
+#[cfg(test)]
 fn spawn_output(
     rx: broadcast::Receiver<AVBroadcast>,
     notify: Arc<Notify>,

@@ -24,8 +24,6 @@ use kyctl_common::kymux::{
     StartKymux, StartKymuxResponse, StartRequest, StartRequestInput, StartRequestVideo,
     StartSessionResponse,
 };
-#[cfg(feature = "websocket")]
-use kyctl_common::ws;
 
 use crate::CursorFormat;
 use crate::error::Result;
@@ -135,62 +133,4 @@ pub(crate) async fn start_stream(
     }
 
     Ok(response)
-}
-
-#[cfg(feature = "websocket")]
-pub(crate) async fn start_websocket_stream(backend_config: &KymuxBackendConfig<'_>) -> Result<()> {
-    let base_url = backend_config.http_client.base_url();
-    let url = format!("{base_url}/websocket/start");
-
-    let video = &backend_config.streaming_config.video;
-    let video = if !video.is_empty() {
-        let video = &video[0];
-
-        Some(ws::StartRequestVideo {
-            display_id: video.display_id,
-            codec: video.codec.into(),
-            yuv444: video.yuv444,
-            intra_refresh: video.intra_refresh,
-        })
-    } else {
-        None
-    };
-
-    let inputs = if let Some(input_config) = &backend_config.streaming_config.input {
-        let cursor_format = get_cursor_format(&input_config.pipeline);
-        cursor_format.map(|cursor_format| ws::StartRequestInput {
-            cursor_format: cursor_format.into(),
-            gamepad_force_xbox360: input_config.gamepad_force_xbox360,
-            clipboard: input_config.clipboard,
-        })
-    } else {
-        None
-    };
-
-    let body = ws::StartRequest {
-        bitrate: backend_config.streaming_config.bitrate,
-        video: video.clone(),
-        audio: backend_config.streaming_config.audio.is_some(),
-        inputs,
-    };
-
-    let response = backend_config
-        .http_client
-        .post(&url)
-        .json(&body)
-        .send()
-        .await?
-        .error_for_status()
-        .inspect_err(|err| warn!("POST failed: {err}"))?;
-
-    let response = response.json::<ws::StartResponse>().await?;
-    info!(
-        "Session started. SessionId: {}",
-        response
-            .session_id
-            .map(|v| v.to_string())
-            .unwrap_or("None".to_string())
-    );
-
-    Ok(())
 }
