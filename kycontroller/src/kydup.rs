@@ -194,11 +194,6 @@ impl KydupVideo {
     }
 
     /// Add an output from an already-ready `ProtocolSend`.
-    ///
-    /// Used by the WebSocket backend where the sink is an `actix_ws::Session`
-    /// wrapped in [`ProtocolSend`]; no readiness handshake needed. Callers
-    /// driving a kyproto endpoint should prefer
-    /// [`register_and_forward`](Self::register_and_forward).
     pub fn add_output(&self, send: ProtocolSend<AVPacket>) -> Task {
         spawn_output(
             self.tx.subscribe(),

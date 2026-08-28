@@ -18,11 +18,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-mod av;
-mod input;
 pub(crate) mod requests;
 
+use std::io;
+
 use actix_web::web;
+use futures_util::FutureExt;
+use kymux::kywebsocket;
 use tokio::sync::oneshot;
 
 use crate::config::SessionMode;
@@ -33,8 +35,6 @@ use crate::utils::Task;
 use crate::utils::TypeConvert;
 use crate::{Controller, DataPlaneBackend};
 use crate::{Error, Result};
-
-use input::InputConnection;
 
 /// Per-service AV wiring state, picked at start_handler time based on
 /// [`SessionMode`].
@@ -48,7 +48,7 @@ use input::InputConnection;
 /// avservice's TCP send buffer absorbs the warm-up; no kydup task is spawned.
 enum AvSlot<Dup> {
     Multi(Dup),
-    Mono(oneshot::Sender<actix_ws::Session>),
+    Mono(oneshot::Sender<io::Result<kywebsocket::Connection>>),
 }
 
 pub(crate) struct WebsocketBackend {
@@ -65,9 +65,7 @@ pub(crate) struct WebsocketBackend {
     audio: Option<AvSlot<kydup::KydupAudio>>,
     /// Oneshot to deliver [`InputConnection`] to the input endpoint when a client connects.
     /// `None` if input was not requested or already connected.
-    input: Option<oneshot::Sender<InputConnection>>,
-    /// Join handle for the input WS→channel forwarding task.
-    input_forward_handle: Option<Task>,
+    input: Option<oneshot::Sender<io::Result<kywebsocket::Connection>>>,
 }
 
 impl WebsocketBackend {
@@ -92,8 +90,9 @@ impl WebsocketBackend {
         &mut self,
         service: &ServiceType,
         ws_session: actix_ws::Session,
-        ws_rx: actix_ws::MessageStream,
+        ws_stream: actix_ws::MessageStream,
     ) -> Result<Option<Task>> {
+        let conn = kywebsocket::Connection::actix_ws_new(ws_session, ws_stream);
         // KydupVideo and KydupAudio are distinct types (one per sync mode),
         // so the match arms can't be folded together; each must take its
         // own slot and dispatch.
@@ -105,19 +104,22 @@ impl WebsocketBackend {
                     .ok_or_else(|| Error::WsComponentNotReady {
                         component: "video".into(),
                     })?;
-                drop(ws_rx);
                 match slot {
                     AvSlot::Multi(dup) => {
-                        let send = kymux::types::ProtocolSend::new(av::AVWebSocketSendDriver::new(
-                            ws_session,
-                        ));
-                        Ok(Some(dup.add_output(send)))
+                        // The channel is created from the connection, so the
+                        // resulting endpoint is immediately ready
+                        let protocol = conn
+                            .into_channel()
+                            .into_video_server_endpoint()
+                            .ready()
+                            .now_or_never()
+                            .expect("Endpoint should be immediately ready")?;
+                        Ok(Some(dup.add_output(protocol.send)))
                     }
                     AvSlot::Mono(tx) => {
-                        tx.send(ws_session)
-                            .map_err(|_| Error::WsComponentNotReady {
-                                component: "video".into(),
-                            })?;
+                        tx.send(Ok(conn)).map_err(|_| Error::WsComponentNotReady {
+                            component: "video".into(),
+                        })?;
                         Ok(None)
                     }
                 }
@@ -129,32 +131,36 @@ impl WebsocketBackend {
                     .ok_or_else(|| Error::WsComponentNotReady {
                         component: "audio".into(),
                     })?;
-                drop(ws_rx);
                 match slot {
                     AvSlot::Multi(dup) => {
-                        let send = kymux::types::ProtocolSend::new(av::AVWebSocketSendDriver::new(
-                            ws_session,
-                        ));
-                        Ok(Some(dup.add_output(send)))
+                        // The channel is created from the connection, so the
+                        // resulting endpoint is immediately ready
+                        let protocol = conn
+                            .into_channel()
+                            .into_audio_server_endpoint()
+                            .ready()
+                            .now_or_never()
+                            .expect("Endpoint should be immediately ready")?;
+                        Ok(Some(dup.add_output(protocol.send)))
                     }
                     AvSlot::Mono(tx) => {
-                        tx.send(ws_session)
-                            .map_err(|_| Error::WsComponentNotReady {
-                                component: "audio".into(),
-                            })?;
+                        tx.send(Ok(conn)).map_err(|_| Error::WsComponentNotReady {
+                            component: "audio".into(),
+                        })?;
                         Ok(None)
                     }
                 }
             }
             ServiceType::Input => {
-                let connection_sender =
-                    self.input
-                        .take()
-                        .ok_or_else(|| Error::WsComponentNotReady {
-                            component: "input".into(),
-                        })?;
-                let handle = input::connect(connection_sender, ws_session, ws_rx)?;
-                self.input_forward_handle = Some(handle);
+                let tx = self
+                    .input
+                    .take()
+                    .ok_or_else(|| Error::WsComponentNotReady {
+                        component: "input".into(),
+                    })?;
+                tx.send(Ok(conn)).map_err(|_| Error::WsComponentNotReady {
+                    component: "input".into(),
+                })?;
                 Ok(None)
             }
         }
@@ -215,11 +221,11 @@ async fn setup_video(
             })
         }
         SessionMode::Mono => {
-            let (endpoint, connection_tx) =
-                av::AVWebSocketEndpoint::<kymux::types::VideoServerProtocol>::new();
+            let (connection_tx, connection_rx) = oneshot::channel();
+            let endpoint = kywebsocket::Channel::new(connection_rx).into_video_server_endpoint();
             let kycom_uri = ctrl
                 .kycom
-                .register_and_forward(endpoint.into())
+                .register_and_forward(endpoint)
                 .map_err(|e| Error::IO { source: e })?
                 .url();
             let topology = crate::avservices_manager::VideoTopology::Exclusive {
@@ -259,11 +265,11 @@ async fn setup_audio(
             })
         }
         SessionMode::Mono => {
-            let (endpoint, connection_tx) =
-                av::AVWebSocketEndpoint::<kymux::types::AudioServerProtocol>::new();
+            let (connection_tx, connection_rx) = oneshot::channel();
+            let endpoint = kywebsocket::Channel::new(connection_rx).into_audio_server_endpoint();
             let kycom_uri = ctrl
                 .kycom
-                .register_and_forward(endpoint.into())
+                .register_and_forward(endpoint)
                 .map_err(|e| Error::IO { source: e })?
                 .url();
             let topology = crate::avservices_manager::AudioTopology::Exclusive {
@@ -317,10 +323,11 @@ async fn start_handler(
             clipboard: inputs_request.clipboard,
         };
 
-        let (endpoint, connection_tx) = input::InputWebSocketEndpoint::new();
+        let (connection_tx, connection_rx) = oneshot::channel();
+        let endpoint = kywebsocket::Channel::new(connection_rx).into_input_endpoint();
         let addr = ctrl
             .kycom
-            .register_and_forward(endpoint.into())
+            .register_and_forward(endpoint)
             .map_err(|e| Error::IO { source: e })?;
 
         let (inputservice, _) = inputservice::Handler::start_kymux(
@@ -360,7 +367,6 @@ async fn start_handler(
             video_stream_key,
             audio: audio_slot,
             input: input_sender,
-            input_forward_handle: None,
         };
         stream.data_plane = Some(DataPlaneBackend::Websocket(backend));
 
