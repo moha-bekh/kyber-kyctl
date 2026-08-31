@@ -205,7 +205,8 @@ pub(crate) async fn enumerate_displays(client: &HttpClient) -> Result<Vec<Displa
         .error_for_status()
         .inspect_err(|err| warn!("GET failed: {err}"))?;
 
-    Ok(response.json().await?)
+    let displays: Vec<kyctl_common::host_events::Display> = response.json().await?;
+    Ok(displays.into_iter().map(Display::from).collect())
 }
 
 pub(crate) async fn stop_streaming(client: &HttpClient) -> Result<()> {

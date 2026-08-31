@@ -18,8 +18,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-use serde::{Deserialize, Serialize};
-
 use kyclient_common::auth::AuthCredentials;
 
 use crate::host_events;
@@ -28,7 +26,7 @@ use crate::{
     StreamingSessionConfig,
 };
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[repr(C)]
 pub struct Display {
     pub id: u32,
