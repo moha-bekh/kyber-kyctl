@@ -22,8 +22,8 @@ use std::net::SocketAddr;
 
 use log::{error, warn};
 use reqwest::{self, StatusCode};
-use serde::Deserialize;
 
+use kyctl_common::session::LoginResponse;
 use kyctl_common::set_bitrate::SetBitrate;
 
 use crate::error::Result;
@@ -45,12 +45,6 @@ pub(crate) async fn capabilities(
     let peer_addr = client.peer_addr_from_response(&response);
 
     Ok((response.json::<_>().await?, peer_addr))
-}
-
-#[derive(Deserialize)]
-pub(crate) struct LoginResponse {
-    pub(crate) uid: String,
-    pub(crate) websocket: String,
 }
 
 pub(crate) struct OidcChallenge {

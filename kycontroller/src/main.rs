@@ -187,10 +187,10 @@ async fn login(
     info!("Logging in \"{}\"...", auth_session.username);
     let uuid = Identity::login(auth_session.expiration, &req.extensions()).unwrap();
     let client_session = ClientSession::new(uuid, auth_session);
-    let body = serde_json::json!({
-        "uid": uuid,
-        "websocket": client_session.auth_tokens.websocket,
-    });
+    let body = kyctl_common::session::LoginResponse {
+        uid: uuid.to_string(),
+        websocket: client_session.auth_tokens.websocket.clone(),
+    };
 
     ctrl.insert_session(client_session);
 

@@ -25,4 +25,5 @@ pub mod host_events;
 pub mod kymux;
 #[cfg(feature = "rtp")]
 pub mod rtp;
+pub mod session;
 pub mod set_bitrate;
