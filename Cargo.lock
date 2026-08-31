@@ -2784,6 +2784,7 @@ dependencies = [
  "kymux-types",
  "kynet",
  "kyproto",
+ "kywebsocket",
 ]
 
 [[package]]
@@ -2964,6 +2965,24 @@ dependencies = [
  "kyaudioreg",
  "kywasmtime",
  "log",
+ "tokio",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
+name = "kywebsocket"
+version = "0.1.0"
+dependencies = [
+ "actix-ws",
+ "async-trait",
+ "bytes",
+ "js-sys",
+ "kymux-types",
+ "kymux-util",
+ "log",
+ "thiserror 1.0.69",
  "tokio",
  "wasm-bindgen",
  "wasm-bindgen-futures",
