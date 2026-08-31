@@ -19,10 +19,10 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use log::{info, warn};
-use serde::Serialize;
 
 use kyctl_common::kymux::{
-    StartKymux, StartKymuxResponse, StartRequestInput, StartRequestVideo, StartSessionResponse,
+    StartKymux, StartKymuxResponse, StartRequest, StartRequestInput, StartRequestVideo,
+    StartSessionResponse,
 };
 
 use crate::CursorFormat;
@@ -30,7 +30,7 @@ use crate::error::Result;
 use crate::http::HttpClient;
 use crate::platform::get_cursor_format;
 
-use super::{KymuxBackendConfig, KymuxConfig};
+use super::KymuxBackendConfig;
 
 pub(crate) use kyctl_common::kymux::StartKymuxCertificateHash;
 
@@ -53,18 +53,6 @@ pub(crate) async fn start_kymux(
         .inspect_err(|err| warn!("POST failed: {err}"))?;
 
     Ok(response.json().await?)
-}
-
-#[derive(Debug, Serialize)]
-struct StartRequest {
-    // Global bitrate for the whole Quic connection. Unit: bits/sec
-    bitrate: u32,
-
-    kymux_config: KymuxConfig,
-    video: Option<Vec<StartRequestVideo>>,
-    audio: bool,
-    inputs: Option<StartRequestInput>,
-    metrics: bool,
 }
 
 pub(crate) async fn start_stream(

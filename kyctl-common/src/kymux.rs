@@ -50,6 +50,18 @@ pub struct StartKymux {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+pub struct StartRequest {
+    // Global bitrate for the whole Quic connection. Unit: bits/sec
+    pub bitrate: u32,
+
+    pub kymux_config: KymuxConfig,
+    pub video: Option<Vec<StartRequestVideo>>,
+    pub audio: bool,
+    pub inputs: Option<StartRequestInput>,
+    pub metrics: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct StartRequestVideo {
     pub display_id: u32,
     pub codec: VideoCodec,
