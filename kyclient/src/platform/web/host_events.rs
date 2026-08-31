@@ -23,6 +23,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use kyctl_common::host_events::WsAuth;
 use log::{error, info, warn};
 use tokio::sync::oneshot;
 use wasm_bindgen::prelude::*;
@@ -205,7 +206,10 @@ impl Inner {
         let ConnectionState::Connecting { ref token, .. } = *state else {
             return Ok(());
         };
-        let token = format!("{{\"token\":\"{token}\"}}");
+        let token = serde_json::to_string(&WsAuth {
+            token: token.to_owned(),
+        })
+        .expect("Malformed JSON");
         self.arm_timeout(self.timer_duration, &mut state)?;
         Ok(self.ws.ws.send_with_str(&token)?)
     }

@@ -22,14 +22,13 @@ use std::time::Duration;
 
 use actix_ws::{CloseCode, CloseReason};
 use log::{error, info, warn};
-use serde::Deserialize;
 use tokio::sync::mpsc;
 
 use crate::{Error, Result, StateMachineEvent, StateMachineProxy, utils::Task};
 
 pub(crate) use kyctl_common::host_events::{
     Display, HostEvent, HostEventFrame, StreamerPipelineEvent, StreamerPipelineEventType,
-    StreamerPipelineStage, StreamerPipelineType,
+    StreamerPipelineStage, StreamerPipelineType, WsAuth,
 };
 
 // Naming taken from man(7) tcp: TCP_KEEPCNT/TCP_KEEPINTVL
@@ -336,16 +335,12 @@ pub(crate) async fn wait_authentication(
         }
     };
 
-    #[derive(Deserialize)]
-    struct Token {
-        token: String,
-    }
-    let Ok(token_holder) = serde_json::from_str::<Token>(&msg) else {
+    let Ok(auth) = serde_json::from_str::<WsAuth>(&msg) else {
         pending_sender.reject().await;
         return Err(Error::WsInvalidAuthMessage);
     };
 
-    Ok((token_holder.token, pending_sender))
+    Ok((auth.token, pending_sender))
 }
 
 /// A WebSocket connection in the authentication pending state.

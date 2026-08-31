@@ -28,6 +28,7 @@ use async_tungstenite::{
     tungstenite::Message as tungstenite_Message,
 };
 use futures::StreamExt;
+use kyctl_common::host_events::WsAuth;
 use log::{error, info, warn};
 use tokio::net::TcpStream;
 
@@ -64,7 +65,10 @@ impl WsClient {
         };
 
         info!("Waiting for control plane authentication...");
-        let token = format!("{{\"token\":\"{auth_token}\"}}");
+        let token = serde_json::to_string(&WsAuth {
+            token: auth_token.to_owned(),
+        })
+        .expect("Malformed JSON");
         let Ok(_) = stream.send(tungstenite_Message::Text(token.into())).await else {
             return Err(Error::ChannelSend);
         };

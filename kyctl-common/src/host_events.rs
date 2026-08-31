@@ -20,6 +20,13 @@
 
 use serde::{Deserialize, Serialize};
 
+// Control-plane WebSocket authentication frame, sent by the client as the first
+// message after the connection is accepted.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct WsAuth {
+    pub token: String,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Display {
     pub id: u32,
