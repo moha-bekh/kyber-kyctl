@@ -68,7 +68,10 @@ kymux = [
     "kyctl-common/kymux",
 ]
 rtp = ["kyctl-common/rtp"]
-websocket = ["kyctl-common/websocket"]
+websocket = [
+    "kymux",
+    "kyctl-common/websocket",
+]
 
 [dev-dependencies]
 tempfile = "3"

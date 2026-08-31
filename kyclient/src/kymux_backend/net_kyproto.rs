@@ -274,6 +274,7 @@ fn create_video_endpoints(
 
     let video_protocol = backend_config
         .kymux_config
+        .kyproto_config()
         .video_protocol
         .unwrap_or(VideoProtocol::Reliable);
     info!("Using video protocol: {video_protocol:?}");
@@ -308,6 +309,7 @@ fn create_audio_endpoint(
 
     let audio_protocol = backend_config
         .kymux_config
+        .kyproto_config()
         .audio_protocol
         .unwrap_or(AudioProtocol::Reliable);
     info!("Using audio protocol: {audio_protocol:?}");

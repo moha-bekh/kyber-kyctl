@@ -42,9 +42,6 @@ mod kymux_backend;
 #[cfg(feature = "rtp")]
 mod rtp_backend;
 
-#[cfg(feature = "websocket")]
-mod ws_backend;
-
 #[cfg(not(target_family = "wasm"))]
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
@@ -366,17 +363,6 @@ impl Handler {
         streaming_config.print();
 
         match streaming_config.protocol.clone() {
-            #[cfg(feature = "websocket")]
-            StreamingProtocol::Websocket => {
-                let config = ws_backend::WsBackendConfig {
-                    http_client: &self.http_client,
-                    streaming_config,
-                    msg_sender,
-                };
-
-                let backend = Box::new(ws_backend::WsBackend::new(config, &self.metrics).await?);
-                conn.backend = Some(backend);
-            }
             #[cfg(feature = "kymux")]
             StreamingProtocol::Kymux(kymux_config) => {
                 let config = kymux_backend::KymuxBackendConfig {
@@ -779,7 +765,7 @@ impl Handler {
 }
 
 #[cfg(feature = "kymux")]
-pub use kyctl_common::kymux::{AudioProtocol, KymuxConfig, VideoProtocol};
+pub use kyctl_common::kymux::{AudioProtocol, KyProtoConfig, KymuxConfig, VideoProtocol};
 
 #[derive(Clone, Debug)]
 pub enum StreamingProtocol {
@@ -787,8 +773,6 @@ pub enum StreamingProtocol {
     Rtp,
     #[cfg(feature = "kymux")]
     Kymux(KymuxConfig),
-    #[cfg(feature = "websocket")]
-    Websocket,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq)]
@@ -875,12 +859,15 @@ impl StreamingSessionConfig {
             #[cfg(feature = "kymux")]
             StreamingProtocol::Kymux(ref config) => {
                 info!("\tprotocol: Kymux");
-                info!("\t\tvideo_protocol: {:?}", config.video_protocol);
-                info!("\t\taudio_protocol: {:?}", config.audio_protocol);
-            }
-            #[cfg(feature = "websocket")]
-            StreamingProtocol::Websocket => {
-                info!("\tprotocol: Websocket");
+                match config {
+                    KymuxConfig::KyProto(config) => {
+                        info!("\t\tvideo_protocol: {:?}", config.video_protocol);
+                        info!("\t\taudio_protocol: {:?}", config.audio_protocol);
+                    }
+                    KymuxConfig::KyWebSocket => {
+                        info!("\t\tbackend: kywebsocket");
+                    }
+                }
             }
         }
 

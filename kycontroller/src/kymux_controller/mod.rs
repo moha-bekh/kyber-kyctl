@@ -264,6 +264,7 @@ async fn start_video(
     for stream_request in video_request {
         let video_protocol = request
             .kymux_config
+            .kyproto_config()
             .video_protocol
             .unwrap_or(VideoProtocol::Reliable);
 
@@ -438,6 +439,7 @@ async fn start_audio(
 
     let audio_protocol = request
         .kymux_config
+        .kyproto_config()
         .audio_protocol
         .unwrap_or(AudioProtocol::Reliable);
 

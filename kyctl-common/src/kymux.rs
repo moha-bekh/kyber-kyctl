@@ -44,7 +44,20 @@ pub struct KyProtoConfig {
     pub audio_protocol: Option<AudioProtocol>,
 }
 
-pub type KymuxConfig = KyProtoConfig;
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum KymuxConfig {
+    KyProto(KyProtoConfig),
+    KyWebSocket,
+}
+
+impl KymuxConfig {
+    pub fn kyproto_config(&self) -> &KyProtoConfig {
+        match self {
+            KymuxConfig::KyProto(config) => config,
+            KymuxConfig::KyWebSocket => panic!("Not a kyproto transport"),
+        }
+    }
+}
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct StartKymux {

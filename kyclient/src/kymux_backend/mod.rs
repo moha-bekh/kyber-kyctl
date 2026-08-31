@@ -25,6 +25,8 @@ mod desktop;
 mod web;
 
 mod net_kyproto;
+#[cfg(feature = "websocket")]
+mod net_kywebsocket;
 
 use async_trait::async_trait;
 use kymux::types;
@@ -79,9 +81,26 @@ pub(crate) struct PlatformEndpoints {
     input: Option<types::InputEndpoint>,
 }
 
+enum KyTransport {
+    KyProto(net_kyproto::KyProtoTransport),
+    #[cfg(feature = "websocket")]
+    KyWebSocket,
+}
+
+impl KyTransport {
+    fn stop(&mut self) {
+        // Use a match to avoid a warning if the "websocket" feature is disabled
+        match self {
+            KyTransport::KyProto(transport) => transport.stop(),
+            #[cfg(feature = "websocket")]
+            KyTransport::KyWebSocket => {}
+        }
+    }
+}
+
 pub(crate) struct KymuxBackend {
     platform: Box<dyn BackendDriver>,
-    transport: net_kyproto::KyProtoTransport,
+    transport: KyTransport,
 }
 
 impl KymuxBackend {
@@ -89,8 +108,30 @@ impl KymuxBackend {
         backend_config: KymuxBackendConfig<'_>,
         metrics: Option<&MetricsProducer>,
     ) -> Result<Self> {
-        let (transport, endpoints) =
-            net_kyproto::KyProtoTransport::new(&backend_config, metrics).await?;
+        let (transport, endpoints) = match &backend_config.kymux_config {
+            KymuxConfig::KyProto(_) => {
+                let (transport, endpoint) =
+                    net_kyproto::KyProtoTransport::new(&backend_config, metrics).await?;
+                let transport = KyTransport::KyProto(transport);
+                (transport, endpoint)
+            }
+            // kyctl_common::KymuxConfig::KyWebSocket must exit even if the
+            // "websocket" feature is disabled: it's part of the protocol
+            // between the client and the server
+            KymuxConfig::KyWebSocket => {
+                #[cfg(feature = "websocket")]
+                {
+                    let endpoint = net_kywebsocket::new(&backend_config).await?;
+                    let transport = KyTransport::KyWebSocket;
+                    (transport, endpoint)
+                }
+                #[cfg(not(feature = "websocket"))]
+                {
+                    log::error!("WebSocket config but WebSocket feature disabled");
+                    return Err(crate::error::Error::Rejected);
+                }
+            }
+        };
 
         let platform = new_platform_backend(&backend_config, endpoints, metrics.cloned()).await?;
 
