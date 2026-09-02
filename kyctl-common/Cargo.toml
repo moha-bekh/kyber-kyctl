@@ -23,6 +23,9 @@ name = "kyctl-common"
 version = "0.1.0"
 edition = "2021"
 
+[lints]
+workspace = true
+
 [dependencies]
 kymux = { version = "0.1.0" }
 serde = { version = "1.0.197", features = ["derive"] }

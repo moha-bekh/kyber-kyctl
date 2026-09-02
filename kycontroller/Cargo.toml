@@ -3,6 +3,9 @@ name = "kycontroller"
 version = "0.1.0"
 edition = { workspace = true }
 
+[lints]
+workspace = true
+
 [dependencies]
 actix-cors = "0.7.1"
 actix-files = "0.6.6"

@@ -3,6 +3,9 @@ name = "kyclient-rs"
 version = "0.1.0"
 edition = { workspace = true }
 
+[lints]
+workspace = true
+
 [dependencies]
 libc = "0.2.153"
 log = "0.4.21"

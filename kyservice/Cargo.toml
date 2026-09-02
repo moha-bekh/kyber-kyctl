@@ -3,6 +3,9 @@ name = "kyservice"
 version = "0.1.0"
 edition = { workspace = true }
 
+[lints]
+workspace = true
+
 [dependencies]
 log = "0.4.14"
 log4ky = { version = "0.1.0", features = ["toml"] }

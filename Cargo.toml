@@ -23,3 +23,6 @@ exclude = [
 
 [patch.crates-io]
 kidd_client = { path = "kidd_client" }
+
+[workspace.lints.clippy]
+unused_async = "warn"
