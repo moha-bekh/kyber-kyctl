@@ -74,10 +74,7 @@ impl HttpClient {
         &self.base_url
     }
 
-    pub(crate) fn peer_addr_from_response(
-        &self,
-        response: &reqwest::Response,
-    ) -> Option<SocketAddr> {
+    pub(crate) fn peer_addr_from_response(response: &reqwest::Response) -> Option<SocketAddr> {
         platform_http::peer_addr_from_response(response)
     }
 

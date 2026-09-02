@@ -42,7 +42,7 @@ pub(crate) async fn capabilities(
         .error_for_status()
         .inspect_err(|err| warn!("GET failed: {err}"))?;
 
-    let peer_addr = client.peer_addr_from_response(&response);
+    let peer_addr = HttpClient::peer_addr_from_response(&response);
 
     Ok((response.json::<_>().await?, peer_addr))
 }
