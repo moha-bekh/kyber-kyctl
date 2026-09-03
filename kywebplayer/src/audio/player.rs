@@ -51,6 +51,7 @@ pub struct AudioPlayer {
 pub enum AudioPlayerEvent {
     VolumeChanged { volume: f32 },
     MuteChanged { mute: bool },
+    StateChanged { state: AudioResumeState },
     DecoderError,
 }
 

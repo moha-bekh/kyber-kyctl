@@ -106,6 +106,9 @@ impl AudioPlayerListener for AudioMessageForwarder {
             AudioPlayerEvent::MuteChanged { mute } => {
                 self.send(Message::AudioMuteChanged { mute });
             }
+            AudioPlayerEvent::StateChanged { state } => {
+                self.send(Message::AudioStateChanged { state });
+            }
             AudioPlayerEvent::DecoderError => {
                 self.send(Message::AudioDecodeError);
             }

@@ -116,6 +116,10 @@ pub(crate) enum Message {
     AudioMuteChanged {
         mute: bool,
     },
+    #[cfg(target_family = "wasm")]
+    AudioStateChanged {
+        state: crate::player::AudioResumeState,
+    },
 
     SetBitrate {
         bitrate: u32,
@@ -239,6 +243,10 @@ pub enum Event {
     },
     AudioMuteChanged {
         mute: bool,
+    },
+    #[cfg(target_family = "wasm")]
+    AudioStateChanged {
+        state: crate::player::AudioResumeState,
     },
     BitrateChanged {
         bitrate: u32,

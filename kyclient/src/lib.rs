@@ -648,6 +648,11 @@ impl Handler {
                 self.event_manager
                     .send_event(Event::AudioMuteChanged { mute });
             }
+            #[cfg(target_family = "wasm")]
+            Message::AudioStateChanged { state } => {
+                self.event_manager
+                    .send_event(Event::AudioStateChanged { state });
+            }
             Message::SetBitrate { bitrate } => {
                 host_service::set_bitrate(&self.http_client, bitrate).await?
             }

@@ -22,7 +22,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use log::warn;
-use wasm_bindgen::JsValue;
+use wasm_bindgen::closure::Closure;
+use wasm_bindgen::{JsCast, JsValue};
 use wasm_bindgen_futures::JsFuture;
 
 use super::player::{AudioPlayerEvent, AudioPlayerListener};
@@ -40,6 +41,20 @@ pub struct AudioWorklet {
     gain_cfg: RefCell<GainNodeConfig>,
     node: web_sys::AudioWorkletNode,
     listener: Rc<dyn AudioPlayerListener>,
+    _statechange_closure: Closure<dyn FnMut()>,
+}
+
+impl TryFrom<web_sys::AudioContextState> for AudioResumeState {
+    type Error = ();
+
+    // Closed maps to Err: it only happens on stop(), when nobody listens anymore.
+    fn try_from(state: web_sys::AudioContextState) -> Result<Self, ()> {
+        match state {
+            web_sys::AudioContextState::Running => Ok(Self::Running),
+            web_sys::AudioContextState::Suspended => Ok(Self::Suspended),
+            _ => Err(()),
+        }
+    }
 }
 
 impl AudioWorklet {
@@ -96,6 +111,20 @@ impl AudioWorklet {
         node.connect_with_audio_node(&gain_node)?;
         gain_node.connect_with_audio_node(&ctx.destination())?;
 
+        let statechange_closure = {
+            let ctx = ctx.clone();
+            let listener = listener.clone();
+            Closure::<dyn FnMut()>::new(move || {
+                if let Ok(state) = AudioResumeState::try_from(ctx.state()) {
+                    listener.on_event(AudioPlayerEvent::StateChanged { state });
+                }
+            })
+        };
+        ctx.set_onstatechange(Some(statechange_closure.as_ref().unchecked_ref()));
+        if let Ok(state) = AudioResumeState::try_from(ctx.state()) {
+            listener.on_event(AudioPlayerEvent::StateChanged { state });
+        }
+
         // Fire a non-blocking resume attempt. If sticky activation is already
         // set (normal connect flow) the browser resolves the promise silently.
         // If not (OIDC redirect), the browser refuses and the caller probes
@@ -110,6 +139,7 @@ impl AudioWorklet {
             gain_cfg: RefCell::new(GainNodeConfig { gain, mute }),
             node,
             listener,
+            _statechange_closure: statechange_closure,
         })
     }
 
@@ -168,6 +198,7 @@ impl AudioWorklet {
 
         let promise = self.ctx.close()?;
         JsFuture::from(promise).await?;
+        self.ctx.set_onstatechange(None);
 
         self.node.disconnect()?;
 
