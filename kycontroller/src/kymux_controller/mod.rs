@@ -694,10 +694,6 @@ async fn start_session(
     session_id: uuid::Uuid,
     request: requests::StartRequest,
 ) -> Result<StartSessionResponse> {
-    if ctrl.has_data_plane(&session_id)? {
-        return Err(Error::DataPlaneAlreadyOpened);
-    }
-
     let transport = if let KymuxConfig::KyProto(_) = &request.kymux_config {
         // Get the pending connection receiver (was created in start_mux)
         let connection_rx = {
@@ -734,6 +730,9 @@ async fn start_session(
 
         KyTransport::KyProto(connection)
     } else {
+        if ctrl.has_data_plane(&session_id)? {
+            return Err(Error::DataPlaneAlreadyOpened);
+        }
         KyTransport::KyWebSocket
     };
 
