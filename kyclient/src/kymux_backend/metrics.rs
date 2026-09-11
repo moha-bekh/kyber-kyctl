@@ -145,8 +145,10 @@ async fn run_metrics_receiver(
     metrics: MetricsProducer,
 ) -> Result<()> {
     while let Some(packet) = protocol.recv().await? {
-        let network_stats =
-            rmp_serde::from_slice(&packet.payload).map_err(|_| Error::DeserializationFailed)?;
+        let network_stats = rmp_serde::from_slice(&packet.payload).map_err(|err| {
+            warn!("Failed to deserialize NetworkStats: {err}");
+            Error::DeserializationFailed
+        })?;
         let metric = Metric::NetworkRemote(network_stats);
         if !send_metric(&metrics, metric) {
             break;
@@ -169,7 +171,10 @@ async fn run_remote_video_metrics_receiver(
     metrics: MetricsProducer,
 ) -> Result<()> {
     while let Some(packet) = protocol.recv().await? {
-        let m: Vec<RemoteVideoMetrics> = rmp_serde::from_slice(&packet.payload).unwrap();
+        let m: Vec<RemoteVideoMetrics> = rmp_serde::from_slice(&packet.payload).map_err(|err| {
+            warn!("Failed to deserialize NetworkStats: {err}");
+            Error::DeserializationFailed
+        })?;
         let m: HashMap<&str, i64> = m.iter().map(|m| (m.key.as_str(), m.value)).collect();
 
         let Some(pts) = m.get("pts").map(|&v| u64::try_from(v).unwrap()) else {
