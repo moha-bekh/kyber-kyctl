@@ -191,8 +191,9 @@ impl ConsolidatedMetricsConsumer for MetricsJSONProducer {
         obj.insert("source_id".to_string(), json!(frame_timestamps.source_id));
         obj.insert("pts".to_string(), json!(frame_timestamps.pts));
 
-        let server_offset = frame_timestamps.server_offset.expect("No server offset");
-        obj.insert("server_offset".to_string(), json!(server_offset));
+        if let Some(server_offset) = frame_timestamps.server_offset {
+            obj.insert("server_offset".to_string(), json!(server_offset));
+        }
 
         if let Some(raw_acquired) = frame_timestamps.raw_acquired {
             obj.insert("raw_acquired".to_string(), json!(raw_acquired));
@@ -594,8 +595,11 @@ impl FrameTimestampsSingleSource {
         let last_pts = self.last_pts?;
         let first = self.data.front()?;
 
-        if first.is_ready() || first.pts < last_pts - std::cmp::min(window_us, last_pts) {
+        if first.is_ready() {
             self.data.pop_front()
+        } else if first.pts < last_pts - std::cmp::min(window_us, last_pts) {
+            // Incomplete frame timestamps are only useful if a server offset is available.
+            self.data.pop_front().filter(|f| f.server_offset.is_some())
         } else {
             None
         }
