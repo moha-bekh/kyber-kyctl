@@ -476,22 +476,22 @@ impl FrameTimestamps {
 
     pub fn get_compensated_acquired(&self) -> Option<i64> {
         let offset = self.server_offset?;
-        self.raw_acquired.map(|ts| ts - offset)
+        self.raw_acquired.and_then(|ts| ts.checked_sub(offset))
     }
 
     pub fn get_compensated_encoding(&self) -> Option<i64> {
         let offset = self.server_offset?;
-        self.raw_encoding.map(|ts| ts - offset)
+        self.raw_encoding.and_then(|ts| ts.checked_sub(offset))
     }
 
     pub fn get_compensated_encoded(&self) -> Option<i64> {
         let offset = self.server_offset?;
-        self.raw_encoded.map(|ts| ts - offset)
+        self.raw_encoded.and_then(|ts| ts.checked_sub(offset))
     }
 
     pub fn get_compensated_sent(&self) -> Option<i64> {
         let offset = self.server_offset?;
-        self.raw_sent.map(|ts| ts - offset)
+        self.raw_sent.and_then(|ts| ts.checked_sub(offset))
     }
 }
 
