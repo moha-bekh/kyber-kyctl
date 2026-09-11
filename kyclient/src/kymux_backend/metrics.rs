@@ -177,8 +177,8 @@ async fn run_remote_video_metrics_receiver(
         })?;
         let m: HashMap<&str, i64> = m.iter().map(|m| (m.key.as_str(), m.value)).collect();
 
-        let Some(pts) = m.get("pts").map(|&v| u64::try_from(v).unwrap()) else {
-            warn!("Metrics without pts: ignoring");
+        let Some(pts) = m.get("pts").and_then(|&v| u64::try_from(v).ok()) else {
+            warn!("Metrics with missing or invalid pts: ignoring");
             continue;
         };
 
