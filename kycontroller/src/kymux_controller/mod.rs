@@ -666,8 +666,17 @@ pub(crate) struct StartSessionResponse {
 
 fn run_clock_sync_task(endpoint: kyproto::ClockSyncServerEndpoint) -> Task {
     Task::spawn(async move {
-        let mut protocol = endpoint.ready().await.unwrap();
-        protocol.serve().await.unwrap();
+        match endpoint.ready().await {
+            Ok(mut protocol) => {
+                // `serve()` loops until the client stops responding, so it only ever
+                // returns via `Err` (malformed datagram, disconnect, failed reply) —
+                // all expected at session end. Log and exit instead of unwrapping.
+                if let Err(e) = protocol.serve().await {
+                    info!("Clock-sync session ended: {e}");
+                }
+            }
+            Err(e) => warn!("Clock-sync endpoint ready failed: {e}"),
+        }
     })
 }
 
