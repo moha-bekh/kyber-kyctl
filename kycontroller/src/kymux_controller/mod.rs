@@ -34,7 +34,7 @@ use kymux::{kynet, kyproto, kywebsocket, types};
 use log::{info, warn};
 use tokio::sync::oneshot;
 
-use kyctl_common::kymux::{AudioProtocol, KymuxConfig, VideoProtocol};
+use kyctl_common::kymux::{KymuxConfig, VideoProtocol};
 
 pub(crate) use server::{IncomingConnectionRouter, KymuxServer};
 
@@ -328,11 +328,7 @@ async fn start_video(
     for stream_request in video_request {
         let (endpoint_id, client_endpoint, connection_tx, intra_refresh) = match &transport {
             KyTransport::KyProto(connection) => {
-                let video_protocol = request
-                    .kymux_config
-                    .kyproto_config()
-                    .video_protocol
-                    .unwrap_or(VideoProtocol::Reliable);
+                let video_protocol = request.kymux_config.kyproto_config().video_protocol;
                 let (endpoint_id, endpoint) = connection
                     .register_video_endpoint(video_protocol.into())
                     .await?;
@@ -521,11 +517,7 @@ async fn start_audio(
 
     let (endpoint_id, client_endpoint, connection_tx) = match &transport {
         KyTransport::KyProto(connection) => {
-            let audio_protocol = request
-                .kymux_config
-                .kyproto_config()
-                .audio_protocol
-                .unwrap_or(AudioProtocol::Reliable);
+            let audio_protocol = request.kymux_config.kyproto_config().audio_protocol;
 
             let (endpoint_id, endpoint) = connection
                 .register_audio_endpoint(audio_protocol.into())

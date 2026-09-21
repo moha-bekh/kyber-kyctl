@@ -23,25 +23,29 @@ use serde::{Deserialize, Serialize};
 
 use crate::enums::{CursorFormat, VideoCodec};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Default, Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub enum VideoProtocol {
+    #[default]
     Reliable,
     GopStream,
     Unreliable,
     UnreliableFec,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[derive(Default, Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub enum AudioProtocol {
+    #[default]
     Reliable,
     Unreliable,
     UnreliableFec,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Default, Clone, Debug, Deserialize, Serialize)]
 pub struct KyProtoConfig {
-    pub video_protocol: Option<VideoProtocol>,
-    pub audio_protocol: Option<AudioProtocol>,
+    #[serde(default)]
+    pub video_protocol: VideoProtocol,
+    #[serde(default)]
+    pub audio_protocol: AudioProtocol,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

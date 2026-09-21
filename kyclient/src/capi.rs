@@ -752,8 +752,8 @@ pub extern "C" fn kyclient_streaming_protocol_kymux(
 ) -> Box<StreamingProtocol> {
     let protocol = crate::StreamingProtocol::Kymux(kyctl_common::kymux::KymuxConfig::KyProto(
         kyctl_common::kymux::KyProtoConfig {
-            video_protocol: Some(video_protocol.into()),
-            audio_protocol: Some(audio_protocol.into()),
+            video_protocol: video_protocol.into(),
+            audio_protocol: audio_protocol.into(),
         },
     ));
 

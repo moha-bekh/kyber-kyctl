@@ -26,7 +26,7 @@ use crate::runtime::{self, Duration};
 use crate::util::*;
 use crate::{DataPlaneCloseReason, Message, MessageSender};
 
-use kyctl_common::kymux::{AudioProtocol, StartSessionResponse, VideoProtocol};
+use kyctl_common::kymux::StartSessionResponse;
 use kymux::{kynet, kyproto, types};
 
 use log::{error, info, warn};
@@ -288,11 +288,7 @@ fn create_video_endpoints(
         })
         .collect();
 
-    let video_protocol = backend_config
-        .kymux_config
-        .kyproto_config()
-        .video_protocol
-        .unwrap_or(VideoProtocol::Reliable);
+    let video_protocol = backend_config.kymux_config.kyproto_config().video_protocol;
     info!("Using video protocol: {video_protocol:?}");
 
     let mut video_endpoints = vec![];
@@ -323,11 +319,7 @@ fn create_audio_endpoint(
         return Err(Error::InvalidState);
     };
 
-    let audio_protocol = backend_config
-        .kymux_config
-        .kyproto_config()
-        .audio_protocol
-        .unwrap_or(AudioProtocol::Reliable);
+    let audio_protocol = backend_config.kymux_config.kyproto_config().audio_protocol;
     info!("Using audio protocol: {audio_protocol:?}");
     let endpoint_id = host_config.endpoint.expect("No audio endpoint id");
     let endpoint = connection.connect_audio_endpoint(endpoint_id, audio_protocol.into())?;
