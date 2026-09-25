@@ -156,13 +156,20 @@ pub unsafe extern "C" fn kyclient_init_platform_verifier(
     env: std::ptr::NonNull<c_void>,
     context: std::ptr::NonNull<c_void>,
 ) -> c_int {
-    let mut env =
-        jni::JNIEnv::from_raw(env.as_ptr() as *mut jni::sys::JNIEnv).expect("invalid JNIEnv");
-    let context = jni::objects::JObject::from_raw(context.as_ptr() as jni::sys::jobject);
-    match rustls_platform_verifier::android::init_with_env(&mut env, context) {
-        Ok(()) => 0,
-        Err(e) => {
+    let mut env = unsafe { jni::EnvUnowned::from_raw(env.as_ptr() as *mut jni::sys::JNIEnv) };
+    let outcome = env.with_env(|env| {
+        let context =
+            unsafe { jni::objects::JObject::from_raw(env, context.as_ptr() as jni::sys::jobject) };
+        rustls_platform_verifier::android::init_with_env(env, context)
+    });
+    match outcome.into_outcome() {
+        jni::Outcome::Ok(()) => 0,
+        jni::Outcome::Err(e) => {
             error!("Failed to init platform verifier: {:?}", e);
+            -1
+        }
+        jni::Outcome::Panic(_) => {
+            error!("Failed to init platform verifier: panic");
             -1
         }
     }
