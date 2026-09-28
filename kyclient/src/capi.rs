@@ -1239,13 +1239,9 @@ pub unsafe extern "C" fn kyclient_event_unpack_control_plane_connected(
 ) -> c_int {
     unsafe {
         if let Event::ControlPlaneConnected { displays } = event {
-            let mut displays = Box::new(displays.clone());
-
-            *out_displays = displays.as_mut_ptr();
+            let displays = displays.clone().into_boxed_slice();
             *out_len = displays.len() as u32;
-
-            std::mem::forget(displays);
-
+            *out_displays = Box::into_raw(displays).cast::<Display>();
             0
         } else {
             -1
@@ -1402,13 +1398,9 @@ pub unsafe extern "C" fn kyclient_event_unpack_display_list_updated(
 ) -> c_int {
     unsafe {
         if let Event::DisplayListUpdated { displays } = event {
-            let mut displays = Box::new(displays.clone());
-
-            *out_displays = displays.as_mut_ptr();
+            let displays = displays.clone().into_boxed_slice();
             *out_len = displays.len() as u32;
-
-            std::mem::forget(displays);
-
+            *out_displays = Box::into_raw(displays).cast::<Display>();
             0
         } else {
             -1
@@ -1416,10 +1408,15 @@ pub unsafe extern "C" fn kyclient_event_unpack_display_list_updated(
     }
 }
 
-/// @displays: (transfer full)
+/// @displays: (transfer full) (array length=len)
 #[unsafe(no_mangle)]
-pub extern "C" fn kyclient_event_free_displays(displays: Box<Display>) {
-    drop(displays);
+pub unsafe extern "C" fn kyclient_event_free_displays(displays: *mut Display, len: u32) {
+    unsafe {
+        drop(Box::from_raw(std::ptr::slice_from_raw_parts_mut(
+            displays,
+            len as usize,
+        )));
+    }
 }
 
 /// @out_type: (out)

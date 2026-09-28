@@ -277,6 +277,12 @@ struct EventSinkData {
 }
 
 impl EventSinkData {
+    unsafe fn take_displays(displays: *mut Display, len: u32) -> Vec<Display> {
+        let result = unsafe { std::slice::from_raw_parts(displays, len as usize) }.to_vec();
+        unsafe { sys::kyclient_event_free_displays(displays, len) };
+        result
+    }
+
     pub unsafe extern "C" fn on_event_cb(event: *const sys::kyclient_Event, userdata: *mut c_void) {
         let data: &EventSinkData = unsafe { &*(userdata as *mut _) };
 
@@ -298,11 +304,9 @@ impl EventSinkData {
                     return;
                 }
 
-                let displays = unsafe { std::slice::from_raw_parts(cdisplays, len as usize) };
-                data.sink.on_event(Event::ControlPlaneConnected {
-                    displays: displays.to_vec(),
-                });
-                unsafe { sys::kyclient_event_free_displays(cdisplays) };
+                let displays = unsafe { Self::take_displays(cdisplays, len) };
+                data.sink
+                    .on_event(Event::ControlPlaneConnected { displays });
             }
             sys::kyclient_EventType_KYCLIENT_EVENT_TYPE_CONTROL_PLANE_CONNECT_FAILED => {
                 let mut c_reason = mem::MaybeUninit::uninit();
@@ -470,11 +474,8 @@ impl EventSinkData {
                     return;
                 }
 
-                let displays = unsafe { std::slice::from_raw_parts(cdisplays, len as usize) };
-                data.sink.on_event(Event::DisplayListUpdated {
-                    displays: displays.to_vec(),
-                });
-                unsafe { sys::kyclient_event_free_displays(cdisplays) };
+                let displays = unsafe { Self::take_displays(cdisplays, len) };
+                data.sink.on_event(Event::DisplayListUpdated { displays });
             }
             sys::kyclient_EventType_KYCLIENT_EVENT_TYPE_INPUT_SERVICE_CONNECTED => {
                 data.sink.on_event(Event::InputServiceConnected);
