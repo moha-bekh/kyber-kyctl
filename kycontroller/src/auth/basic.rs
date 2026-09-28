@@ -42,6 +42,7 @@ impl Backend for Basic {
 
         Ok(Session {
             username: credentials.username.0,
+            sub: None,
             expiration: None,
         })
     }

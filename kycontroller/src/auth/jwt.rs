@@ -174,7 +174,8 @@ impl Backend for Jwt {
         let exp = OffsetDateTime::from_unix_timestamp(jwt.claims.exp)
             .or(Err(Error::InvalidCredentialsFormat))?;
         Ok(Session {
-            username: jwt.claims.sub,
+            username: jwt.claims.sub.clone(),
+            sub: Some(jwt.claims.sub),
             expiration: Some(exp),
         })
     }

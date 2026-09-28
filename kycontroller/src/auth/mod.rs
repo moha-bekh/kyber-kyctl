@@ -110,8 +110,10 @@ impl<'hdr> AuthorizationHeader<'hdr> {
 /// Common Kyber authenticated session.
 #[derive(Debug)]
 pub struct Session {
-    /// User identifier
+    /// User identifier resolved from the configured identity claim.
     pub username: String,
+    /// OIDC subject claim (`sub`). `None` for basic auth or a token without it.
+    pub sub: Option<String>,
     /// Session expiration time
     pub expiration: Option<OffsetDateTime>,
 }

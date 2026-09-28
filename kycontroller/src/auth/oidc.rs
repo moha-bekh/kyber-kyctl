@@ -344,7 +344,7 @@ impl Backend for Oidc {
         let claims = jwt.map_err(map_jwt_error)?.claims;
 
         let identity = match self.config.identity_claim {
-            IdentityClaim::Sub => claims.sub.ok_or_else(|| Error::MissingField {
+            IdentityClaim::Sub => claims.sub.clone().ok_or_else(|| Error::MissingField {
                 field: "sub".to_owned(),
             })?,
             IdentityClaim::Email => claims.email.ok_or_else(|| Error::MissingField {
@@ -378,8 +378,10 @@ impl Backend for Oidc {
         let exp = OffsetDateTime::from_unix_timestamp(claims.exp)
             .map_err(|_| Error::InvalidCredentialsFormat)?;
 
+        let sub = claims.sub;
         Ok(Session {
             username: identity,
+            sub,
             expiration: Some(exp),
         })
     }
