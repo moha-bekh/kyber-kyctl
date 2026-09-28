@@ -424,7 +424,15 @@ async fn websocket_service(
         sender.send(HostEvent::DisplayList { displays });
 
         let ret = ctrl.with_session(&session_id, |session| {
-            session.session = Some(controller::StreamingSession::new(sender));
+            // A control plane already set means a reconnect.
+            let step = match session
+                .session
+                .replace(controller::StreamingSession::new(sender))
+            {
+                Some(_) => controller::SessionStep::Reconnected,
+                None => controller::SessionStep::Started,
+            };
+            ctrl.report_session(step, session);
             Ok(())
         });
 
@@ -468,7 +476,10 @@ async fn logout(ctrl: web::Data<Controller>, user: Identity) -> HttpResponse {
 
     user.logout();
 
-    match ctrl.remove_session(uid).await {
+    match ctrl
+        .remove_session(uid, controller::SessionEndReason::UserLogout)
+        .await
+    {
         Ok(()) => {
             info!("Session stopped");
             HttpResponse::Ok().finish()

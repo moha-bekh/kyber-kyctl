@@ -24,6 +24,7 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::avservices_manager::StreamId;
+use crate::controller::SessionEndReason;
 use crate::utils::{Task, TypeConvert};
 use crate::{Controller, HostEvent};
 use crate::{avservice, host_events};
@@ -290,7 +291,10 @@ impl StateMachine {
                     host_events::Notification::ConnectionLost => {
                         warn!("Control Websocket disconnected for session {}", session_id);
 
-                        if let Err(err) = ctrl.remove_session(session_id).await {
+                        if let Err(err) = ctrl
+                            .remove_session(session_id, SessionEndReason::ConnectionLost)
+                            .await
+                        {
                             warn!("Fail to stop session {session_id}: {err:?}")
                         }
                     }

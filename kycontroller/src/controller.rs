@@ -74,6 +74,22 @@ impl StreamingSession {
     }
 }
 
+/// Why a client session ended.
+#[derive(Debug, Copy, Clone)]
+pub(crate) enum SessionEndReason {
+    ConnectionLost,
+    UserLogout,
+    Expired,
+}
+
+/// A step in a client session's life, as reported to kyhub.
+#[derive(Debug, Copy, Clone)]
+pub(crate) enum SessionStep {
+    Started,
+    Reconnected,
+    Ended(SessionEndReason),
+}
+
 pub(crate) struct ClientSession {
     pub(crate) uid: Uuid,
     pub(crate) username: String,
@@ -187,6 +203,9 @@ impl Controller {
         let state_machine = statemachine::run(this.clone(), events_rx);
         (this, state_machine)
     }
+
+    /// Report a session step to kyhub. Not wired to a reporter yet.
+    pub(crate) fn report_session(&self, _step: SessionStep, _session: &ClientSession) {}
 
     /// Set the tray handle for status updates.
     pub(crate) fn set_tray_handle(&self, handle: TrayHandle) {
@@ -317,13 +336,22 @@ impl Controller {
     }
 
     /// Remove a session.
-    pub(crate) async fn remove_session(&self, session_id: Uuid) -> Result<()> {
+    pub(crate) async fn remove_session(
+        &self,
+        session_id: Uuid,
+        reason: SessionEndReason,
+    ) -> Result<()> {
         let removed = self
             .sessions
             .lock()
             .unwrap()
             .remove(&session_id)
             .ok_or(Error::InvalidSession { uid: session_id })?;
+
+        // kyhub only knows sessions that reached streaming.
+        if removed.session.is_some() {
+            self.report_session(SessionStep::Ended(reason), &removed);
+        }
 
         // release_all empties the manager maps synchronously; the session
         // itself drops outside the sessions lock.
@@ -336,7 +364,11 @@ impl Controller {
     }
 
     /// Remove multiple sessions.
-    pub(crate) async fn remove_sessions_if(&self, mut f: impl FnMut(&ClientSession) -> bool) {
+    pub(crate) async fn remove_sessions_if(
+        &self,
+        mut f: impl FnMut(&ClientSession) -> bool,
+        reason: SessionEndReason,
+    ) {
         let removed = {
             let mut sessions = self.sessions.lock().unwrap();
 
@@ -351,6 +383,9 @@ impl Controller {
         };
 
         for session in &removed {
+            if session.session.is_some() {
+                self.report_session(SessionStep::Ended(reason), session);
+            }
             self.release_av_services(&session.services).await;
         }
         drop(removed);

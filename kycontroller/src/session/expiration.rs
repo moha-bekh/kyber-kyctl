@@ -48,6 +48,7 @@ use actix_web::web;
 use log::warn;
 use time::OffsetDateTime;
 
+use crate::controller::SessionEndReason;
 use crate::{Controller, utils::Task};
 
 /// Creates and starts a new expiration monitoring task.
@@ -83,13 +84,16 @@ pub(crate) fn expiration_task(ctrl: web::Data<Controller>) -> Task {
 async fn check_expiration(ctrl: &web::Data<Controller>) {
     // Collect expired sessions and extract cleanup data
     let now = OffsetDateTime::now_utc();
-    ctrl.remove_sessions_if(|s| {
-        let expired = s.expiration.is_some_and(|exp| exp < now);
-        if expired {
-            warn!("Killing expired session \"{}\"", s.uid);
-        }
-        expired
-    })
+    ctrl.remove_sessions_if(
+        |s| {
+            let expired = s.expiration.is_some_and(|exp| exp < now);
+            if expired {
+                warn!("Killing expired session \"{}\"", s.uid);
+            }
+            expired
+        },
+        SessionEndReason::Expired,
+    )
     .await;
 
     // Cleanup expired pending auth tokens in shared Kymux infrastructure
