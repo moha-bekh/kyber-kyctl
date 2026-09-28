@@ -430,7 +430,13 @@ async fn websocket_service(
                 .replace(controller::StreamingSession::new(sender))
             {
                 Some(_) => controller::SessionStep::Reconnected,
-                None => controller::SessionStep::Started,
+                None => {
+                    #[cfg(feature = "kyhub")]
+                    {
+                        session.started_at = Some(time::OffsetDateTime::now_utc());
+                    }
+                    controller::SessionStep::Started
+                }
             };
             ctrl.report_session(step, session);
             Ok(())

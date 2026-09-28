@@ -93,6 +93,11 @@ pub(crate) enum SessionStep {
 pub(crate) struct ClientSession {
     pub(crate) uid: Uuid,
     pub(crate) username: String,
+    #[cfg(feature = "kyhub")]
+    pub(crate) sub: Option<String>,
+    /// Set when the control plane first attaches. A reconnect keeps it.
+    #[cfg(feature = "kyhub")]
+    pub(crate) started_at: Option<OffsetDateTime>,
     pub(crate) expiration: Option<OffsetDateTime>,
     pub(crate) auth_tokens: ClientAuthTokens,
 
@@ -101,15 +106,72 @@ pub(crate) struct ClientSession {
 }
 
 impl ClientSession {
+    /// The subject claim, or the username when the token has none.
+    #[cfg(feature = "kyhub")]
+    pub(crate) fn user_sub(&self) -> &str {
+        self.sub.as_deref().unwrap_or(&self.username)
+    }
+
+    /// `user_sub` if it is a UUID. kyhub rejects a whole batch on one bad entry.
+    #[cfg(feature = "kyhub")]
+    pub(crate) fn kyhub_user_sub(&self) -> Option<&str> {
+        let sub = self.user_sub();
+        uuid::Uuid::parse_str(sub).is_ok().then_some(sub)
+    }
+
     pub(crate) fn new(uid: Uuid, session: auth::Session) -> Self {
+        // Destructured so `sub` stays read in builds that drop the field.
+        #[cfg_attr(not(feature = "kyhub"), allow(unused_variables))]
+        let auth::Session {
+            username,
+            sub,
+            expiration,
+        } = session;
+
         Self {
             uid,
-            username: session.username,
-            expiration: session.expiration,
+            username,
+            #[cfg(feature = "kyhub")]
+            sub,
+            #[cfg(feature = "kyhub")]
+            started_at: None,
+            expiration,
             auth_tokens: ClientAuthTokens::generate(),
             session: None,
             services: Default::default(),
         }
+    }
+}
+
+#[cfg(all(test, feature = "kyhub"))]
+mod kyhub_user_sub_tests {
+    use super::*;
+
+    fn a_session(sub: Option<&str>) -> ClientSession {
+        ClientSession::new(
+            Uuid::new_v4(),
+            auth::Session {
+                username: "operator".to_owned(),
+                sub: sub.map(str::to_owned),
+                expiration: None,
+            },
+        )
+    }
+
+    #[test]
+    fn a_uuid_subject_claim_is_kept() {
+        let sub = Uuid::new_v4().to_string();
+        assert_eq!(a_session(Some(&sub)).kyhub_user_sub(), Some(sub.as_str()));
+    }
+
+    #[test]
+    fn a_non_uuid_subject_claim_is_dropped() {
+        assert_eq!(a_session(Some("alice@example.com")).kyhub_user_sub(), None);
+    }
+
+    #[test]
+    fn no_subject_claim_falls_back_to_the_username_and_is_dropped() {
+        assert_eq!(a_session(None).kyhub_user_sub(), None);
     }
 }
 
