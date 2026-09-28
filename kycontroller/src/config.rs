@@ -70,6 +70,10 @@ pub(crate) struct Config {
     watchdog: Option<bool>,
     multi_client: Option<bool>,
     webclient: Option<String>,
+    /// Read from the top-level [kyhub] section by `from_table`.
+    #[cfg(feature = "kyhub")]
+    #[serde(skip)]
+    kyhub: Option<kyagent::Config>,
 }
 
 impl Config {
@@ -123,6 +127,12 @@ impl Config {
     pub(crate) fn webclient(&self) -> Option<&str> {
         self.webclient.as_deref()
     }
+
+    #[cfg(feature = "kyhub")]
+    #[inline]
+    pub(crate) fn kyhub(&self) -> Option<&kyagent::Config> {
+        self.kyhub.as_ref()
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -171,13 +181,22 @@ pub(crate) fn parse(override_path: Option<&Path>) -> Result<Option<toml::Table>,
 }
 
 pub(crate) fn from_table(table: &toml::Table) -> Result<Config, ParseError> {
-    let Some(controller_conf) = table.get("kycontroller") else {
-        info!("No kycontroller section found. Use default configuration");
-        return Ok(Config::default());
+    #[cfg_attr(not(feature = "kyhub"), allow(unused_mut))]
+    let mut config = match table.get("kycontroller") {
+        Some(controller_conf) => controller_conf
+            .clone()
+            .try_into()
+            .map_err(ParseError::InvalidTOML)?,
+        None => {
+            info!("No kycontroller section found. Use default configuration");
+            Config::default()
+        }
     };
 
-    controller_conf
-        .clone()
-        .try_into()
-        .map_err(ParseError::InvalidTOML)
+    #[cfg(feature = "kyhub")]
+    {
+        config.kyhub = kyagent::Config::from_toml(table)?;
+    }
+
+    Ok(config)
 }
