@@ -667,6 +667,9 @@ async fn real_main(config: config::Config) -> Result<()> {
     let listener = create_listening_socket(&config)?;
     let webclient_override = config.webclient().map(PathBuf::from);
 
+    #[cfg(feature = "kyhub")]
+    let kyber_agent_config = config.kyhub().cloned();
+
     let kycom = kymux::kycom::KyCom::start_on_any_port(Controller::KYCOM_PORTS).await?;
     let (ctrl, _state_machine) =
         Controller::new(process_factory.clone(), config, tls_config, kycom);
@@ -697,6 +700,10 @@ async fn real_main(config: config::Config) -> Result<()> {
     };
 
     let _session_exp_task = session::expiration::expiration_task(ctrl.clone());
+
+    #[cfg(feature = "kyhub")]
+    let agent_task =
+        kyber_agent_config.map(|c| kyber_agent::client::KyberAgentTask::new(c, ctrl.clone()));
 
     info!("HTTP listening on port {listening_port}");
 
@@ -799,6 +806,10 @@ async fn real_main(config: config::Config) -> Result<()> {
 
     ctrl_for_tray.shutdown_tray();
 
+    #[cfg(feature = "kyhub")]
+    if let Some(agent_task) = agent_task {
+        agent_task.stop().await;
+    }
     av_tasks_handle.stop();
 
     Ok(())

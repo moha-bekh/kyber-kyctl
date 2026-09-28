@@ -23,6 +23,8 @@ use uuid::Uuid;
 
 use crate::controller::{SessionEndReason, SessionStep};
 
+pub(crate) mod client;
+
 /// Maps session steps to kyagent's reporter.
 pub(crate) struct Reporter(kyagent::Reporter);
 
