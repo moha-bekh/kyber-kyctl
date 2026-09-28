@@ -84,6 +84,7 @@ pub(crate) enum SessionEndReason {
 
 /// A step in a client session's life, as reported to kyhub.
 #[derive(Debug, Copy, Clone)]
+#[cfg_attr(not(feature = "kyhub"), allow(dead_code))]
 pub(crate) enum SessionStep {
     Started,
     Reconnected,
@@ -233,6 +234,9 @@ pub struct Controller {
     /// `None` if not running
     pub(crate) shared_kymux_infra: AsyncMutex<Option<SharedKymuxInfra>>,
     tray_handle: Mutex<Option<TrayHandle>>,
+    /// Set once the heartbeat task is up; `None` while kyhub is unconfigured.
+    #[cfg(feature = "kyhub")]
+    kyhub_reporter: Mutex<Option<crate::kyber_agent::Reporter>>,
 
     // Shared kycom instance for all backends (IPC bridge to avserver/inputserver processes)
     pub(crate) kycom: kymux::kycom::KyCom,
@@ -259,6 +263,8 @@ impl Controller {
             state_machine_proxy: StateMachineProxy::new(events_tx),
             shared_kymux_infra: Default::default(),
             tray_handle: Mutex::new(None),
+            #[cfg(feature = "kyhub")]
+            kyhub_reporter: Mutex::new(None),
             kycom,
             av_services_manager: Default::default(),
         });
@@ -266,7 +272,29 @@ impl Controller {
         (this, state_machine)
     }
 
-    /// Report a session step to kyhub. Not wired to a reporter yet.
+    /// Take the heartbeat task's reporter, so session steps reach kyhub.
+    #[cfg(feature = "kyhub")]
+    pub(crate) fn set_kyhub_reporter(&self, reporter: crate::kyber_agent::Reporter) {
+        *self.kyhub_reporter.lock().unwrap() = Some(reporter);
+    }
+
+    /// Report a session step to kyhub. Never blocks.
+    #[cfg(feature = "kyhub")]
+    pub(crate) fn report_session(&self, step: SessionStep, session: &ClientSession) {
+        let Some(reporter) = &*self.kyhub_reporter.lock().unwrap() else {
+            return;
+        };
+        let Some(user_sub) = session.kyhub_user_sub() else {
+            warn!(
+                "kyhub session step dropped: {} is not a UUID",
+                session.user_sub()
+            );
+            return;
+        };
+        reporter.report(step, session.uid, user_sub);
+    }
+
+    #[cfg(not(feature = "kyhub"))]
     pub(crate) fn report_session(&self, _step: SessionStep, _session: &ClientSession) {}
 
     /// Set the tray handle for status updates.

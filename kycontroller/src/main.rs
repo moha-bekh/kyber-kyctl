@@ -46,6 +46,8 @@ mod controller;
 mod error;
 mod host_events;
 mod inputservice;
+#[cfg(feature = "kyhub")]
+mod kyber_agent;
 pub(crate) mod kydup;
 mod kymux_controller;
 mod rtp;
