@@ -38,7 +38,7 @@ kycontroller_linux_do_clippy()
 
 kycontroller_linux_do_test()
 {
-    cargo test -p kycontroller --features=auth-jwt,cli --release
+    cargo test -p kycontroller --features=auth-jwt,auth-oidc,cli --release
 }
 
 # macOS platform functions
