@@ -520,9 +520,11 @@ yQX6iM2kKs7vI3nTID1fVSDu6MOqsaPWbVtWnl37M8P56c57zyU=
         preferred_username: Option<String>,
         #[serde(skip_serializing_if = "Vec::is_empty")]
         groups: Vec<String>,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        aud: Vec<String>,
     }
 
-    fn make_token(claims: &TokenClaims, kid: Option<&str>) -> String {
+    fn make_token<T: serde::Serialize>(claims: &T, kid: Option<&str>) -> String {
         let encoding_key = jsonwebtoken::EncodingKey::from_rsa_pem(TEST_PRIVATE_KEY_PEM.as_bytes())
             .expect("test private key is valid RSA PEM");
         let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
@@ -554,6 +556,7 @@ yQX6iM2kKs7vI3nTID1fVSDu6MOqsaPWbVtWnl37M8P56c57zyU=
             email: None,
             preferred_username: None,
             groups: vec![],
+            aud: vec![],
         }
     }
 
@@ -872,5 +875,167 @@ yQX6iM2kKs7vI3nTID1fVSDu6MOqsaPWbVtWnl37M8P56c57zyU=
             Ok(_) => panic!("expected Err for http:// issuer"),
             Err(e) => assert!(e.contains("HTTPS"), "error should mention HTTPS, got: {e}"),
         }
+    }
+
+    #[test]
+    fn empty_audience_rejected() {
+        for audience in ["", " "] {
+            let err = normalize(&Config {
+                audience: Some(audience.to_owned()),
+                ..default_config()
+            })
+            .expect_err("empty audience must be a config error");
+            assert!(err.contains("audience"), "got: {err}");
+        }
+    }
+
+    #[test]
+    fn audience_match_allows_token() {
+        let oidc = Oidc::new_for_test(
+            Config {
+                audience: Some("machine-client-id".to_owned()),
+                ..default_config()
+            },
+            test_jwks(),
+        );
+        let claims = TokenClaims {
+            aud: vec!["machine-client-id".to_owned()],
+            ..valid_claims()
+        };
+        let token = make_token(&claims, Some("test-key-1"));
+        assert!(oidc.authenticate(&token).is_ok());
+    }
+
+    #[test]
+    fn audience_match_allows_string_aud() {
+        // A single audience can be a plain string, not an array.
+        let oidc = Oidc::new_for_test(
+            Config {
+                audience: Some("machine-client-id".to_owned()),
+                ..default_config()
+            },
+            test_jwks(),
+        );
+        let mut claims = serde_json::to_value(valid_claims()).expect("claims serialize");
+        claims["aud"] = serde_json::Value::String("machine-client-id".to_owned());
+        let token = make_token(&claims, Some("test-key-1"));
+        assert!(oidc.authenticate(&token).is_ok());
+    }
+
+    #[test]
+    fn audience_match_within_array() {
+        let oidc = Oidc::new_for_test(
+            Config {
+                audience: Some("machine-client-id".to_owned()),
+                ..default_config()
+            },
+            test_jwks(),
+        );
+        let claims = TokenClaims {
+            aud: vec!["account".to_owned(), "machine-client-id".to_owned()],
+            ..valid_claims()
+        };
+        let token = make_token(&claims, Some("test-key-1"));
+        assert!(oidc.authenticate(&token).is_ok());
+    }
+
+    #[test]
+    fn audience_mismatch_rejects_token() {
+        let oidc = Oidc::new_for_test(
+            Config {
+                audience: Some("machine-client-id".to_owned()),
+                ..default_config()
+            },
+            test_jwks(),
+        );
+        let claims = TokenClaims {
+            aud: vec!["other-audience".to_owned()],
+            ..valid_claims()
+        };
+        let token = make_token(&claims, Some("test-key-1"));
+        let err = oidc.authenticate(&token).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidAudience),
+            "expected InvalidAudience for wrong audience, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn audience_mismatch_on_expired_token_returns_audience_error() {
+        // Wrong audience wins over expiry.
+        let oidc = Oidc::new_for_test(
+            Config {
+                audience: Some("machine-client-id".to_owned()),
+                ..default_config()
+            },
+            test_jwks(),
+        );
+        let claims = TokenClaims {
+            exp: past_exp(),
+            aud: vec!["other-audience".to_owned()],
+            ..valid_claims()
+        };
+        let token = make_token(&claims, Some("test-key-1"));
+        let err = oidc.authenticate(&token).unwrap_err();
+        assert!(
+            matches!(err, Error::InvalidAudience),
+            "expected InvalidAudience for expired+wrong-audience, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn audience_unset_ignores_aud_claim() {
+        let oidc = Oidc::new_for_test(default_config(), test_jwks());
+        let claims = TokenClaims {
+            aud: vec!["account".to_owned(), "kyhub-api".to_owned()],
+            ..valid_claims()
+        };
+        assert!(
+            oidc.authenticate(&make_token(&claims, Some("test-key-1")))
+                .is_ok()
+        );
+        let mut claims = serde_json::to_value(valid_claims()).expect("claims serialize");
+        claims["aud"] = serde_json::Value::String("account".to_owned());
+        assert!(
+            oidc.authenticate(&make_token(&claims, Some("test-key-1")))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn audience_is_trimmed_at_load() {
+        let oidc = Oidc::new_for_test(
+            Config {
+                audience: Some("  machine-client-id ".to_owned()),
+                ..default_config()
+            },
+            test_jwks(),
+        );
+        let claims = TokenClaims {
+            aud: vec!["machine-client-id".to_owned()],
+            ..valid_claims()
+        };
+        assert!(
+            oidc.authenticate(&make_token(&claims, Some("test-key-1")))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn audience_configured_rejects_token_with_no_aud_claim() {
+        let oidc = Oidc::new_for_test(
+            Config {
+                audience: Some("machine-client-id".to_owned()),
+                ..default_config()
+            },
+            test_jwks(),
+        );
+        // valid_claims() has no aud.
+        let token = make_token(&valid_claims(), Some("test-key-1"));
+        let err = oidc.authenticate(&token).unwrap_err();
+        assert!(
+            matches!(&err, Error::MissingField { field } if field == "aud"),
+            "expected MissingField(aud) for missing aud, got {err:?}"
+        );
     }
 }
