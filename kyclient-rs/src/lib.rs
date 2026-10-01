@@ -1216,9 +1216,26 @@ extern "C" fn log_cb(
     log::log!(target: target, level.unwrap(), "{}", line);
 }
 
+fn to_c_level_filter(level: log::LevelFilter) -> sys::kyclient_LogLevelFilter {
+    match level {
+        log::LevelFilter::Off => sys::kyclient_LogLevelFilter_KYCLIENT_LOG_LEVEL_FILTER_OFF,
+        log::LevelFilter::Error => sys::kyclient_LogLevelFilter_KYCLIENT_LOG_LEVEL_FILTER_ERROR,
+        log::LevelFilter::Warn => sys::kyclient_LogLevelFilter_KYCLIENT_LOG_LEVEL_FILTER_WARN,
+        log::LevelFilter::Info => sys::kyclient_LogLevelFilter_KYCLIENT_LOG_LEVEL_FILTER_INFO,
+        log::LevelFilter::Debug => sys::kyclient_LogLevelFilter_KYCLIENT_LOG_LEVEL_FILTER_DEBUG,
+        log::LevelFilter::Trace => sys::kyclient_LogLevelFilter_KYCLIENT_LOG_LEVEL_FILTER_TRACE,
+    }
+}
+
+/// Call after the host logger is installed: the library inherits
+/// `log::max_level()` as it is now.
 pub fn init() {
     unsafe {
-        sys::kyclient_set_log_cb(Some(log_cb), ptr::null_mut());
+        sys::kyclient_set_log_cb(
+            Some(log_cb),
+            to_c_level_filter(log::max_level()),
+            ptr::null_mut(),
+        );
         sys::kyclient_init_crypto();
     }
 }

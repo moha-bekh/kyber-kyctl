@@ -129,14 +129,21 @@ impl From<KymuxAudioProtocol> for kyctl_common::kymux::AudioProtocol {
     }
 }
 
-pub use log4ky::capi::{LogCb, LogLevel};
+pub use log4ky::capi::{LogCb, LogLevel, LogLevelFilter};
 
+/// Routes log records to `cb`. Records above `max_level` are dropped before
+/// they are formatted, so pass the host logger's resolved level.
+///
 /// # Safety
 ///
 /// `cb` runs on any thread that logs, for as long as the process lives, so
 /// `userdata` must stay valid and usable from several threads at once.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn kyclient_set_log_cb(cb: LogCb, userdata: *mut c_void) {
+pub unsafe extern "C" fn kyclient_set_log_cb(
+    cb: LogCb,
+    max_level: LogLevelFilter,
+    userdata: *mut c_void,
+) {
     let Some(logger) = (unsafe { log4ky::capi::CbLogger::new(cb, userdata) }) else {
         eprintln!("kyclient_set_log_cb: callback cannot be NULL");
         return;
@@ -147,7 +154,7 @@ pub unsafe extern "C" fn kyclient_set_log_cb(cb: LogCb, userdata: *mut c_void) {
         return;
     }
 
-    log::set_max_level(log::LevelFilter::Trace);
+    log::set_max_level(max_level.into());
 }
 
 #[cfg(target_os = "android")]
