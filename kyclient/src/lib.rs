@@ -43,7 +43,7 @@ mod kymux_backend;
 mod rtp_backend;
 
 #[cfg(not(target_family = "wasm"))]
-use std::net::IpAddr;
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -88,10 +88,20 @@ pub(crate) use kyctl_common::capabilities::{Capabilities, ControlPlaneCapabiliti
 
 /// Peer information resolved from the HTTP `/capabilities` response.
 pub(crate) struct PeerInfo {
-    /// Peer IP address resolved by the HTTP stack (Happy Eyeballs / RFC 8305).
+    /// Peer address resolved by the HTTP stack (Happy Eyeballs / RFC 8305).
     /// Reused for QUIC so it gets the same IPv4/IPv6 choice.
+    /// Kept as a `SocketAddr` to preserve the IPv6 scope id of link-local peers.
     #[cfg(not(target_family = "wasm"))]
-    pub(crate) addr: IpAddr,
+    pub(crate) addr: SocketAddr,
+}
+
+#[cfg(not(target_family = "wasm"))]
+impl PeerInfo {
+    pub(crate) fn addr_with_port(&self, port: u16) -> SocketAddr {
+        let mut addr = self.addr;
+        addr.set_port(port);
+        addr
+    }
 }
 
 #[cfg_attr(target_family = "wasm", async_trait(?Send))]
@@ -261,7 +271,7 @@ impl Handler {
             // On desktop, peer address is required for QUIC and WebSocket connections.
             // Fail early if the HTTP stack didn't expose it.
             #[cfg(not(target_family = "wasm"))]
-            addr: _peer_addr.ok_or(Error::NoPeerAddress)?.ip(),
+            addr: _peer_addr.ok_or(Error::NoPeerAddress)?,
         };
 
         let response =

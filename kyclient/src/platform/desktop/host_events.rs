@@ -58,7 +58,7 @@ impl WsClient {
 
         // Connect with appropriate TLS verification
         let mut stream = if let Some(verify_mode) = &conn_params.verify_mode {
-            let remote_addr = SocketAddr::new(peer_info.addr, conn_params.port);
+            let remote_addr = peer_info.addr_with_port(conn_params.port);
             Self::connect_with_verify_mode(url, &remote_addr, verify_mode).await?
         } else {
             Self::connect_without_rootca(url).await?
