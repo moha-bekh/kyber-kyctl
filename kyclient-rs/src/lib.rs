@@ -122,6 +122,8 @@ pub enum StreamingProtocol {
         video_protocol: KymuxVideoProtocol,
         audio_protocol: KymuxAudioProtocol,
     },
+    #[cfg(feature = "kymux")]
+    WebSocket,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -763,6 +765,8 @@ impl StreamingSessionConfig {
                     audio_protocol.to_u32(),
                 )
             },
+            #[cfg(feature = "kymux")]
+            StreamingProtocol::WebSocket => unsafe { sys::kyclient_streaming_protocol_websocket() },
         };
 
         unsafe {

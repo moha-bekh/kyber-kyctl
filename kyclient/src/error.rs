@@ -88,6 +88,8 @@ pub enum Error {
     FileNotFound(PathBuf),
     #[error("invalid tls fingerprint")]
     TlsInvalidFingerprint,
+    #[error("missing tls certificate hash")]
+    TlsMissingCertificateHash,
     #[error("tls verification failed")]
     TlsVerificationFailed,
     #[error("invalid state")]

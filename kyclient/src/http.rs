@@ -78,6 +78,10 @@ impl HttpClient {
         platform_http::peer_addr_from_response(response)
     }
 
+    pub(crate) fn cert_hash_from_response(response: &reqwest::Response) -> Option<Vec<u8>> {
+        platform_http::cert_hash_from_response(response)
+    }
+
     #[allow(dead_code)]
     pub(crate) fn host(&self) -> &str {
         &self.host

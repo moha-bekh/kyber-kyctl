@@ -31,7 +31,7 @@ jni = "0.22"
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 async-tungstenite = { version = "0.35.0", features = ["tokio-rustls-platform-verifier", "tokio-runtime"] }
-kymux = { version = "0.1.0", features = ["backend-quinn", "ipc"], optional = true }
+kymux = { version = "0.1.0", features = ["backend-quinn", "backend-tungstenite", "ipc"], optional = true }
 kynput-rs = "0.1.0"
 kynput-sys = "0.1.0"
 kyvlcplayer = { path = "../kyvlcplayer" }
@@ -69,6 +69,7 @@ kymux = [
     "dep:kymux",
     "rmp-serde",
     "kyctl-common/kymux",
+    "websocket",
 ]
 rtp = ["kyctl-common/rtp"]
 websocket = [

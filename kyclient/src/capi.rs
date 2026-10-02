@@ -774,6 +774,15 @@ pub extern "C" fn kyclient_streaming_protocol_kymux(
     Box::new(StreamingProtocol { protocol })
 }
 
+/// Returns: (transfer full)
+#[cfg(feature = "kymux")]
+#[unsafe(no_mangle)]
+pub extern "C" fn kyclient_streaming_protocol_websocket() -> Box<StreamingProtocol> {
+    let protocol = crate::StreamingProtocol::Kymux(kyctl_common::kymux::KymuxConfig::KyWebSocket);
+
+    Box::new(StreamingProtocol { protocol })
+}
+
 /// @protocol: (transfer full)
 #[unsafe(no_mangle)]
 pub extern "C" fn kyclient_streaming_protocol_unref(protocol: Option<Box<StreamingProtocol>>) {

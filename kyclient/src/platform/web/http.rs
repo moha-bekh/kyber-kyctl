@@ -39,6 +39,11 @@ pub(crate) fn peer_addr_from_response(_response: &reqwest::Response) -> Option<S
     None
 }
 
+pub(crate) fn cert_hash_from_response(_response: &reqwest::Response) -> Option<Vec<u8>> {
+    // Only useful for native client
+    None
+}
+
 pub(crate) fn configure_request(builder: RequestBuilder) -> RequestBuilder {
     builder.fetch_credentials_include()
 }

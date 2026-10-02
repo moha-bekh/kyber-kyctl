@@ -25,39 +25,71 @@ use crate::error::Result;
 use kymux::kywebsocket;
 
 pub async fn new(backend_config: &KymuxBackendConfig<'_>) -> Result<PlatformEndpoints> {
-    let host = backend_config.http_client.host();
-
     host_service::start_stream(backend_config, false).await?;
 
-    let endpoints = create_platform_endpoints(host, backend_config).await?;
+    let endpoints = create_platform_endpoints(backend_config).await?;
     Ok(endpoints)
 }
 
+async fn connect(
+    backend_config: &KymuxBackendConfig<'_>,
+    path: &str,
+) -> Result<kywebsocket::Connection> {
+    let host = backend_config.http_client.host();
+    let url = format!("wss://{host}{path}");
+
+    let conn = {
+        #[cfg(not(target_family = "wasm"))]
+        {
+            let Some(hash) = &backend_config.peer_info.certificate_hash else {
+                return Err(crate::Error::TlsMissingCertificateHash);
+            };
+
+            // Authenticate with the current session cookie (the cookie jar is
+            // shared with the HTTP client)
+            let tls_config = kywebsocket::tungstenite::TlsConfig::ServerHash(hash.clone());
+            let mut headers = kywebsocket::tungstenite::HeaderMap::new();
+            if let Some(cookie) =
+                crate::platform::http::cookie_header(backend_config.conn_params, path)
+            {
+                headers.insert(kywebsocket::tungstenite::COOKIE, cookie);
+            }
+
+            let addr = backend_config.peer_info.addr;
+            kywebsocket::Connection::tungstenite_connect(&url, Some(addr), tls_config, headers)
+                .await
+        }
+
+        #[cfg(target_family = "wasm")]
+        {
+            kywebsocket::Connection::websocket_js_connect(&url).await
+        }
+    }?;
+
+    Ok(conn)
+}
+
 async fn create_platform_endpoints(
-    host: &str,
     backend_config: &KymuxBackendConfig<'_>,
 ) -> Result<PlatformEndpoints> {
     let video = {
         let mut vec = Vec::new();
         if !backend_config.streaming_config.video.is_empty() {
-            let url = format!("wss://{host}/websocket/video");
-            let conn = kywebsocket::Connection::websocket_js_connect(&url).await?;
+            let conn = connect(backend_config, "/websocket/video").await?;
             let endpoint = conn.into_channel().into_endpoint();
             vec.push(endpoint);
         }
         vec
     };
     let audio = if backend_config.streaming_config.audio.is_some() {
-        let url = format!("wss://{host}/websocket/audio");
-        let conn = kywebsocket::Connection::websocket_js_connect(&url).await?;
+        let conn = connect(backend_config, "/websocket/audio").await?;
         let endpoint = conn.into_channel().into_endpoint();
         Some(endpoint)
     } else {
         None
     };
     let input = if backend_config.streaming_config.input.is_some() {
-        let url = format!("wss://{host}/websocket/inputs");
-        let conn = kywebsocket::Connection::websocket_js_connect(&url).await?;
+        let conn = connect(backend_config, "/websocket/inputs").await?;
         let endpoint = conn.into_channel().into_endpoint();
         Some(endpoint)
     } else {

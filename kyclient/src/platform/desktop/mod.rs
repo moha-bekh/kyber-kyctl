@@ -130,6 +130,7 @@ pub(crate) struct ConnectionParams {
     pub(crate) tls_host: Option<String>,
     pub(crate) verify_mode: Option<VerifyMode>,
     pub(crate) credentials: AuthCredentials,
+    pub(crate) cookie_jar: Arc<reqwest::cookie::Jar>,
 }
 
 impl ConnectionParams {
@@ -140,6 +141,7 @@ impl ConnectionParams {
             tls_host: connect_config.tls_host.clone(),
             verify_mode: connect_config.verify_mode,
             credentials: connect_config.credentials,
+            cookie_jar: Arc::new(reqwest::cookie::Jar::default()),
         })
     }
 }

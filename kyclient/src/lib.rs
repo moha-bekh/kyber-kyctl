@@ -93,6 +93,8 @@ pub(crate) struct PeerInfo {
     /// Kept as a `SocketAddr` to preserve the IPv6 scope id of link-local peers.
     #[cfg(not(target_family = "wasm"))]
     pub(crate) addr: SocketAddr,
+    #[cfg(not(target_family = "wasm"))]
+    pub(crate) certificate_hash: Option<Vec<u8>>,
 }
 
 #[cfg(not(target_family = "wasm"))]
@@ -265,14 +267,8 @@ impl Handler {
         // On browsers this address is unavailable, but the WebTransport API
         // performs its own Happy Eyeballs resolution internally.
         info!("Get Host capabilities");
-        let (capabilities, _peer_addr) = host_service::capabilities(&self.http_client).await?;
-
-        let peer_info = PeerInfo {
-            // On desktop, peer address is required for QUIC and WebSocket connections.
-            // Fail early if the HTTP stack didn't expose it.
-            #[cfg(not(target_family = "wasm"))]
-            addr: _peer_addr.ok_or(Error::NoPeerAddress)?,
-        };
+        let (capabilities, _peer_addr, _cert_hash) =
+            host_service::capabilities(&self.http_client).await?;
 
         let response =
             match host_service::login(&self.http_client, &self.conn_params.credentials).await? {
@@ -282,6 +278,15 @@ impl Handler {
                 }
                 host_service::LoginResult::Success(response) => response,
             };
+
+        let peer_info = PeerInfo {
+            // On desktop, peer address is required for QUIC and WebSocket connections.
+            // Fail early if the HTTP stack didn't expose it.
+            #[cfg(not(target_family = "wasm"))]
+            addr: _peer_addr.ok_or(Error::NoPeerAddress)?,
+            #[cfg(not(target_family = "wasm"))]
+            certificate_hash: _cert_hash,
+        };
 
         info!("Logged in with uuid '{}'", response.uid);
 

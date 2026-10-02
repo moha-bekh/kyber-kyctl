@@ -32,7 +32,7 @@ use crate::{AuthCredentials, Capabilities, Display, Error};
 
 pub(crate) async fn capabilities(
     client: &HttpClient,
-) -> Result<(Capabilities, Option<SocketAddr>)> {
+) -> Result<(Capabilities, Option<SocketAddr>, Option<Vec<u8>>)> {
     let url = format!("{base_url}/capabilities", base_url = client.base_url());
 
     let response = client
@@ -43,8 +43,9 @@ pub(crate) async fn capabilities(
         .inspect_err(|err| warn!("GET failed: {err}"))?;
 
     let peer_addr = HttpClient::peer_addr_from_response(&response);
+    let cert_hash = HttpClient::cert_hash_from_response(&response);
 
-    Ok((response.json::<_>().await?, peer_addr))
+    Ok((response.json::<_>().await?, peer_addr, cert_hash))
 }
 
 pub(crate) struct OidcChallenge {

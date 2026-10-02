@@ -25,6 +25,8 @@ use std::str::FromStr;
 
 use log::{error, warn};
 use reqwest::RequestBuilder;
+use reqwest::cookie::CookieStore;
+use sha2::{Digest, Sha256};
 
 use super::tls::{self, VerifyMode};
 use crate::{ConnectionParams, Error, Result};
@@ -35,7 +37,9 @@ pub(crate) fn create_host(conn_params: &ConnectionParams) -> String {
 }
 
 pub(crate) fn create_reqwest(conn_params: ConnectionParams) -> Result<reqwest::Client> {
-    let client_builder = reqwest::ClientBuilder::new().cookie_store(true);
+    let client_builder = reqwest::ClientBuilder::new()
+        .cookie_provider(conn_params.cookie_jar.clone())
+        .tls_info(true);
 
     // Apply hostname resolution override if tls_host is set
     let client_builder = if let Some(tls_host) = &conn_params.tls_host {
@@ -95,6 +99,25 @@ pub(crate) fn create_reqwest(conn_params: ConnectionParams) -> Result<reqwest::C
 
 pub(crate) fn peer_addr_from_response(response: &reqwest::Response) -> Option<SocketAddr> {
     response.remote_addr()
+}
+
+pub(crate) fn cert_hash_from_response(response: &reqwest::Response) -> Option<Vec<u8>> {
+    response
+        .extensions()
+        .get::<reqwest::tls::TlsInfo>()
+        .and_then(|i| i.peer_certificate())
+        .map(|der| Sha256::digest(der).to_vec())
+}
+
+pub(crate) fn cookie_header(
+    conn_params: &ConnectionParams,
+    path: &str,
+) -> Option<reqwest::header::HeaderValue> {
+    let host = create_host(conn_params);
+    let url = format!("https://{host}{path}")
+        .parse::<reqwest::Url>()
+        .ok()?;
+    conn_params.cookie_jar.cookies(&url)
 }
 
 pub(crate) fn configure_request(builder: RequestBuilder) -> RequestBuilder {
