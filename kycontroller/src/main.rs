@@ -501,6 +501,15 @@ async fn logout(ctrl: web::Data<Controller>, user: Identity) -> HttpResponse {
 
 use kyctl_common::set_bitrate::SetBitrate;
 
+/// Split the global bitrate evenly across `count` streams, in the signed type
+/// the encoder expects. A share above `i32::MAX` saturates instead of turning
+/// negative. `count` is assumed non-zero; the call sites guard against an
+/// empty stream set first.
+fn split_bitrate(bitrate: u32, count: usize) -> i32 {
+    let share = bitrate / u32::try_from(count).unwrap_or(u32::MAX);
+    i32::try_from(share).unwrap_or(i32::MAX)
+}
+
 #[post("/set_bitrate")]
 pub(crate) async fn set_bitrate(
     ctrl: web::Data<Controller>,
@@ -513,10 +522,7 @@ pub(crate) async fn set_bitrate(
         return HttpResponse::Unauthorized().finish();
     };
 
-    // Split the global bitrate evenly across `count` streams and cast to the
-    // signed type the encoder expects. `count` is assumed non-zero; the call
-    // sites guard against an empty stream set first.
-    let split_bitrate = |count: usize| -> i32 { (request.bitrate / count as u32) as i32 };
+    let split_bitrate = |count: usize| split_bitrate(request.bitrate, count);
 
     let services = match ctrl.with_session(&uid, |s| Ok(s.services.clone())) {
         Ok(s) => s,
@@ -898,5 +904,26 @@ async fn main() -> ExitCode {
             e.exit_code()
         }
         Ok(_) => ExitCode::SUCCESS,
+    }
+}
+
+#[cfg(test)]
+mod split_bitrate_tests {
+    use super::split_bitrate;
+
+    #[test]
+    fn splits_evenly() {
+        assert_eq!(split_bitrate(20_000_000, 1), 20_000_000);
+        assert_eq!(split_bitrate(20_000_000, 4), 5_000_000);
+    }
+
+    // A share above i32::MAX, such as the 4 291 967 296 that wrapping clients
+    // sent, used to become a negative encoder bitrate.
+    #[test]
+    fn saturates_instead_of_turning_negative() {
+        assert_eq!(split_bitrate(4_291_967_296, 1), i32::MAX);
+        assert_eq!(split_bitrate(u32::MAX, 1), i32::MAX);
+        assert_eq!(split_bitrate(u32::MAX, 2), i32::MAX);
+        assert_eq!(split_bitrate(u32::MAX, 4), 1_073_741_823);
     }
 }
