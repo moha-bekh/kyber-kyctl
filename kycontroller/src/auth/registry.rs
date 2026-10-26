@@ -36,15 +36,17 @@ impl BackendRegistry {
     pub async fn new(config: &Config) -> Result<Self, String> {
         Ok(Self {
             #[cfg(feature = "auth-basic")]
+            // `then`, not `then_some`: a disabled backend must not be built,
+            // as building the JWT one reads its key and panics on a bad one.
             basic: config
                 .basic
                 .enabled
-                .then_some(auth::basic::Basic::new(&config.basic.inner)),
+                .then(|| auth::basic::Basic::new(&config.basic.inner)),
             #[cfg(feature = "auth-jwt")]
             jwt: config
                 .jwt
                 .enabled
-                .then_some(auth::jwt::Jwt::new(&config.jwt.inner)),
+                .then(|| auth::jwt::Jwt::new(&config.jwt.inner)),
             #[cfg(feature = "auth-oidc")]
             oidc: {
                 let cfg = config
@@ -75,5 +77,23 @@ impl BackendRegistry {
     #[cfg(feature = "auth-oidc")]
     pub fn oidc_backend(&self) -> Option<&auth::oidc::Oidc> {
         self.oidc.as_ref()
+    }
+}
+
+#[cfg(all(test, feature = "auth-jwt"))]
+mod tests {
+    use super::*;
+
+    // The key of a disabled backend is not read: a file that is gone used to
+    // panic at startup, through the eager `then_some`.
+    #[tokio::test]
+    async fn disabled_jwt_backend_does_not_read_its_key() {
+        let config: Config = toml::from_str(
+            "[jwt]\nenabled = false\nalgorithm = \"RS256\"\n\
+             key = { file = \"/nonexistent/jwt-public.pem\" }",
+        )
+        .unwrap();
+        let registry = BackendRegistry::new(&config).await.unwrap();
+        assert!(registry.backend(auth::Method::Jwt).is_none());
     }
 }
