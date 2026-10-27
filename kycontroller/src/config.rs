@@ -21,7 +21,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use log::info;
+use log::{info, warn};
 use serde::Deserialize;
 
 use crate::auth;
@@ -180,13 +180,64 @@ pub(crate) fn parse(override_path: Option<&Path>) -> Result<Option<toml::Table>,
     Ok(Some(table))
 }
 
+const SECTION: &str = "kycontroller";
+
+/// Name of the section before the kyctl renaming. A file that still uses it
+/// gets the defaults, so it is worth a warning rather than an info.
+const LEGACY_SECTION: &str = "controller";
+
+/// Keys of the section read by the logger (`log4ky`), not by `Config`.
+const SHARED_KEYS: &[&str] = &["log_level", "log_levels"];
+
+/// Deserialize the section, and return beside it the keys that nothing reads,
+/// as dotted paths (`security.same_sit`). Serde skips them without an error,
+/// so a misspelled key would otherwise leave its default in place unnoticed.
+/// The keys of the flattened auth backends are not seen (see the tests).
+fn load_section(section: &toml::Value) -> Result<(Config, Vec<String>), ParseError> {
+    let mut unknown = Vec::new();
+    let config = serde_ignored::deserialize(section.clone(), |path| {
+        let key = dotted(&path);
+        if !SHARED_KEYS.contains(&key.as_str()) {
+            unknown.push(key);
+        }
+    })?;
+    Ok((config, unknown))
+}
+
+/// `auth.basic.logins[0].username`: the path as written in the file. `Path`'s
+/// own `Display` also prints the `Option` and newtype layers, as `?`, which
+/// the file does not have.
+fn dotted(path: &serde_ignored::Path) -> String {
+    use serde_ignored::Path;
+    match path {
+        Path::Root => String::new(),
+        Path::Seq { parent, index } => format!("{}[{index}]", dotted(parent)),
+        Path::Map { parent, key } => match dotted(parent) {
+            parent if parent.is_empty() => key.clone(),
+            parent => format!("{parent}.{key}"),
+        },
+        Path::Some { parent }
+        | Path::NewtypeStruct { parent }
+        | Path::NewtypeVariant { parent } => dotted(parent),
+    }
+}
+
 pub(crate) fn from_table(table: &toml::Table) -> Result<Config, ParseError> {
     #[cfg_attr(not(feature = "kyhub"), allow(unused_mut))]
-    let mut config = match table.get("kycontroller") {
-        Some(controller_conf) => controller_conf
-            .clone()
-            .try_into()
-            .map_err(ParseError::InvalidTOML)?,
+    let mut config = match table.get(SECTION) {
+        Some(controller_conf) => {
+            let (config, unknown) = load_section(controller_conf)?;
+            for key in unknown {
+                warn!("Unknown key `{key}` in [{SECTION}] is ignored");
+            }
+            config
+        }
+        None if table.contains_key(LEGACY_SECTION) => {
+            warn!(
+                "Section [{LEGACY_SECTION}] is ignored: it was renamed [{SECTION}], using defaults"
+            );
+            Config::default()
+        }
         None => {
             info!("No kycontroller section found. Use default configuration");
             Config::default()
@@ -199,4 +250,60 @@ pub(crate) fn from_table(table: &toml::Table) -> Result<Config, ParseError> {
     }
 
     Ok(config)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn unknown_keys(toml: &str) -> Vec<String> {
+        let table: toml::Table = toml.parse().unwrap();
+        load_section(&table[SECTION]).unwrap().1
+    }
+
+    #[test]
+    fn unknown_keys_are_reported_with_their_path() {
+        let keys = unknown_keys("[kycontroller]\nport = 9443\nwatchdg = false");
+        assert_eq!(keys, ["watchdg"]);
+    }
+
+    #[test]
+    fn keys_read_by_the_logger_are_not_unknown() {
+        let keys = unknown_keys(
+            "[kycontroller]\nlog_level = \"debug\"\nlog_levels = { kynet = \"trace\" }",
+        );
+        assert!(keys.is_empty(), "{keys:?}");
+    }
+
+    #[test]
+    fn known_keys_are_not_unknown() {
+        let keys = unknown_keys(
+            "[kycontroller]\nport = 9443\nlisten_mode = \"ipv4\"\nwatchdog = false\n\
+             multi_client = false\n\
+             [kycontroller.security]\ntrusted_origins = []\nsame_site = true\n\
+             [kycontroller.auth.basic]\nenabled = true\nlogins = []",
+        );
+        assert!(keys.is_empty(), "{keys:?}");
+    }
+
+    // The auth backends' settings are flattened beside `enabled`, and serde
+    // hands a flattened struct the keys it does not know without telling
+    // serde_ignored: a typo there is not reported. Pin that limit, so that a
+    // fix of it shows up here.
+    #[cfg(feature = "auth-jwt")]
+    #[test]
+    fn unknown_keys_in_flattened_backends_are_not_seen() {
+        let keys = unknown_keys(
+            "[kycontroller.auth.jwt]\nenabled = true\nalgoritm = \"RS256\"\n\
+             key = { plain = \"k\" }",
+        );
+        assert!(keys.is_empty(), "{keys:?}");
+    }
+
+    #[test]
+    fn legacy_section_falls_back_to_defaults() {
+        let table: toml::Table = "[controller]\nport = 9443".parse().unwrap();
+        let config = from_table(&table).unwrap();
+        assert_eq!(config.port(), LISTENING_PORT);
+    }
 }
